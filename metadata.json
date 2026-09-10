@@ -1,0 +1,8 @@
+{
+  "name": "Remix Typing Challenge",
+  "description": "Đấu trường gõ phím Tiếng Việt \u0026 Đa ngôn ngữ thời gian thực với Săn Boss, Đoán Chữ, Ngẫu Hứng và Bàn phím số.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

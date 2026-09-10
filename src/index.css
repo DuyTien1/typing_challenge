@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+:root {
+  --theme-bg: #0f1117;
+  --theme-card: #131926;
+  --theme-main: #fbbf24;
+  --theme-sub: #64748b;
+  --theme-text: #f8fafc;
+  --theme-error: #ef4444;
+  --theme-border: #1e293b;
+  --typing-font: 'JetBrains Mono', monospace;
+}
+
+@keyframes caretPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.monkeytype-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2.5px;
+  background-color: var(--theme-main, #fbbf24);
+  border-radius: 2px;
+  box-shadow: 0 0 12px var(--theme-main, rgba(251, 191, 36, 0.9));
+  pointer-events: none;
+  z-index: 30;
+  transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1), height 0.08s ease-out, opacity 0.15s ease;
+  will-change: transform;
+}
+
+.monkeytype-caret.blinking {
+  animation: caretPulse 1s ease-in-out infinite;
+}
+
+/* === POWERFUL ADMIN & TITLE HALOS === */
+@keyframes adminConicRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes championFlameAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(244, 63, 94, 0.7), 0 0 30px rgba(239, 68, 68, 0.4), inset 0 0 12px rgba(251, 146, 60, 0.3);
+    border-color: #f43f5e;
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.9), 0 0 45px rgba(245, 158, 11, 0.6), inset 0 0 16px rgba(239, 68, 68, 0.5);
+    border-color: #fb923c;
+  }
+}
+
+@keyframes lightningStormAura {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(250, 204, 21, 0.7), 0 0 28px rgba(234, 179, 8, 0.4);
+    border-color: #facc15;
+  }
+  25% {
+    box-shadow: 0 0 26px rgba(255, 255, 255, 0.95), 0 0 40px rgba(250, 204, 21, 0.8);
+    border-color: #ffffff;
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(250, 204, 21, 0.85), 0 0 32px rgba(202, 138, 4, 0.5);
+    border-color: #eab308;
+  }
+}
+
+@keyframes dragonDarkBloodAura {
+  0%, 100% {
+    box-shadow: 0 0 18px rgba(220, 38, 38, 0.8), 0 0 35px rgba(153, 27, 27, 0.6), inset 0 0 14px rgba(239, 68, 68, 0.4);
+    border-color: #dc2626;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(239, 68, 68, 1), 0 0 55px rgba(185, 28, 28, 0.8), inset 0 0 20px rgba(249, 115, 22, 0.6);
+    border-color: #f97316;
+  }
+}
+
+@keyframes cosmicCyanAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.7), 0 0 30px rgba(14, 165, 233, 0.4);
+    border-color: #38bdf8;
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(34, 211, 238, 0.9), 0 0 45px rgba(59, 130, 246, 0.6);
+    border-color: #22d3ee;
+  }
+}
+
+@keyframes matrixEmeraldAura {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.7), 0 0 28px rgba(16, 185, 129, 0.4);
+    border-color: #34d399;
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.9), 0 0 40px rgba(5, 150, 105, 0.6);
+    border-color: #10b981;
+  }
+}
+
+@keyframes arcanePurpleAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(192, 132, 252, 0.7), 0 0 30px rgba(168, 85, 247, 0.4);
+    border-color: #c084fc;
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(217, 70, 239, 0.9), 0 0 45px rgba(147, 51, 234, 0.6);
+    border-color: #d946ef;
+  }
+}
+
+/* Rotating Conic Ring for Root Admin */
+.admin-conic-glow {
+  position: absolute;
+  inset: -3.5px;
+  border-radius: 18px;
+  background: conic-gradient(from 0deg, #f59e0b, #ef4444, #fbbf24, #f59e0b, #fbbf24, #ffffff, #f59e0b);
+  animation: adminConicRotate 3.2s linear infinite;
+  filter: blur(4px);
+  z-index: 0;
+  opacity: 0.95;
+}
+
+.admin-conic-sharp {
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  background: conic-gradient(from 0deg, #f59e0b, #ef4444, #fbbf24, #f59e0b, #fbbf24, #ffffff, #f59e0b);
+  animation: adminConicRotate 3.2s linear infinite;
+  z-index: 1;
+}
+
+.frame-admin-box {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.8), 0 0 40px rgba(239, 68, 68, 0.5), inset 0 0 15px rgba(251, 191, 36, 0.4);
+}
+
+.frame-flame-box {
+  animation: championFlameAura 2s ease-in-out infinite;
+}
+
+.frame-lightning-box {
+  animation: lightningStormAura 1.8s ease-in-out infinite;
+}
+
+.frame-dragon-box {
+  animation: dragonDarkBloodAura 2.2s ease-in-out infinite;
+}
+
+.frame-cosmic-box {
+  animation: cosmicCyanAura 2.4s ease-in-out infinite;
+}
+
+.frame-matrix-box {
+  animation: matrixEmeraldAura 2s ease-in-out infinite;
+}
+
+.frame-arcane-box {
+  animation: arcanePurpleAura 2.2s ease-in-out infinite;
+}
+
