@@ -12,6 +12,18 @@ export default defineConfig(() => {
       },
     },
     server: {
-    },
+    allowedHosts: [
+      'typing-challenge-plh0.onrender.com', // Tên miền cụ thể
+      // hoặc dùng '.onrender.com' (cho phép mọi subdomain của render)
+      // hoặc dùng true (cho phép tất cả các host)
+    ],
+  },
+  // Nếu bạn đang chạy lệnh "vite preview" trên Render thì thêm cả khối preview này:
+  preview: {
+    allowedHosts: [
+      'typing-challenge-plh0.onrender.com',
+      // hoặc true
+    ]
+  }
   };
 });
