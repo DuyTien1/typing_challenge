@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { HighScoreRecord, GameMode } from '../types';
 import { soundFx } from '../utils/audio';
 import { Trophy, Clock, X, Flame } from 'lucide-react';
+import { AvatarWithFrame } from '../utils/frames';
 
 interface LeaderboardModalProps {
   highScores: Record<string, HighScoreRecord | null>;
@@ -79,8 +80,15 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-900 border border-slate-800 text-center space-y-4 shadow-inner">
           {currentScore ? (
             <div className="space-y-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400/60 text-3xl shadow-lg shadow-amber-500/20">
-                👑
+              <div className="relative inline-flex items-center justify-center pt-2">
+                <AvatarWithFrame
+                  icon={currentScore.avatar || '⚡'}
+                  frameId={currentScore.frame || 'default'}
+                  size="lg"
+                />
+                <span className="absolute -top-1.5 -right-2 text-2xl filter drop-shadow-md select-none animate-bounce">
+                  👑
+                </span>
               </div>
               <div>
                 <div className="text-xs text-amber-400 uppercase tracking-widest font-bold">

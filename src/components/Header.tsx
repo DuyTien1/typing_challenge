@@ -12,6 +12,7 @@ interface HeaderProps {
   onToggleChat: () => void;
   onOpenAdmin: () => void;
   onOpenProfile: () => void;
+  onGoHome?: () => void;
   chatUnreadCount?: number;
   activeModeName: string;
 }
@@ -26,26 +27,39 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleChat,
   onOpenAdmin,
   onOpenProfile,
+  onGoHome,
   chatUnreadCount = 0,
   activeModeName,
 }) => {
   return (
     <header className="w-full border-b border-slate-800/80 bg-[#121620]/90 backdrop-blur-md sticky top-0 z-40 px-4 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        {/* Logo & Branding */}
-        <div className="flex items-center gap-3 cursor-pointer select-none" onClick={onOpenProfile}>
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-xl shadow-lg shadow-amber-500/20">
+        {/* Logo & Branding - Click to return to Home/Lobby */}
+        <div
+          id="header-brand-logo"
+          role="button"
+          tabIndex={0}
+          title="Trở về Trang chủ FastTyping"
+          className="flex items-center gap-3 cursor-pointer select-none transition-all duration-150 active:scale-95 group"
+          onClick={() => {
+            soundFx.playKeyClick();
+            if (onGoHome) onGoHome();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (onGoHome) onGoHome();
+            }
+          }}
+        >
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-xl shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
             ⚡
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-extrabold text-lg sm:text-xl tracking-tight text-white flex items-center gap-1.5">
+              <h1 className="font-extrabold text-lg sm:text-xl tracking-tight text-white flex items-center gap-1.5 group-hover:text-amber-300 transition-colors">
                 FastTyping
-                <span className="text-amber-400 font-black">Arena</span>
+                <span className="text-amber-400 font-black">Challenge</span>
               </h1>
-              <span className="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                v4.0
-              </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
               Đấu trường gõ phím Tiếng Việt thời gian thực

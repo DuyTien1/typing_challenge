@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Player, HighScoreRecord, PlayerTitle } from '../types';
 import { Crown, Shield, Flame, Zap, Globe, Hash, Sparkles, Trophy, HelpCircle, Swords, Target } from 'lucide-react';
+import { AvatarWithFrame } from './frames';
 
 export const ADMIN_TITLE: PlayerTitle = {
   id: 'admin',
@@ -174,20 +175,24 @@ export const AvatarTitleFrame: React.FC<{
   isCurrentPlayer: boolean;
   size?: 'sm' | 'md' | 'lg';
   children?: React.ReactNode;
-}> = ({ player, highScores, isAdminUser, isCurrentPlayer, size = 'md', children }) => {
+  onClick?: (e: React.MouseEvent) => void;
+}> = ({ player, highScores, isAdminUser, isCurrentPlayer, size = 'md', children, onClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const title = getPlayerTitle(player, highScores, isAdminUser, isCurrentPlayer);
 
-  const sizeClasses = {
-    sm: 'w-9 h-9 text-lg',
-    md: 'w-12 h-12 text-2xl',
-    lg: 'w-14 h-14 text-3xl',
-  }[size];
+  // Effective frame: prioritize user-selected player.frame, fallback to admin_gold for admin, or default
+  const effectiveFrame =
+    player.frame && player.frame !== 'default'
+      ? player.frame
+      : (title?.type === 'admin' ? 'admin_gold' : (player.frame || 'default'));
 
   if (!title) {
     return (
-      <div className={`relative ${sizeClasses} rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shadow-inner`}>
-        {children || player.icon}
+      <div
+        onClick={onClick}
+        className="cursor-pointer transition-transform hover:scale-105 select-none"
+      >
+        <AvatarWithFrame icon={player.icon} frameId={effectiveFrame} size={size} />
       </div>
     );
   }
@@ -195,61 +200,35 @@ export const AvatarTitleFrame: React.FC<{
   const isBossChampion = title.id === 'top_san_boss';
   const isAdmin = title.type === 'admin';
 
-  // Specific aura classes for champion types
-  const getChampionFrameClass = () => {
-    switch (title.mode) {
-      case 'vi_dau':
-        return 'frame-flame-box border-rose-500';
-      case 'vi_nodau':
-        return 'frame-lightning-box border-yellow-400';
-      case 'en':
-        return 'frame-cosmic-box border-sky-400';
-      case 'numpad':
-        return 'frame-matrix-box border-emerald-400';
-      case 'doan_chu':
-        return 'frame-arcane-box border-purple-400';
-      case 'san_boss':
-        return 'frame-dragon-box border-red-600';
-      case 'ngau_hung':
-        return 'frame-flame-box border-orange-500';
-      case 'outplay':
-        return 'frame-cosmic-box border-cyan-400';
-      default:
-        return title.borderClass;
-    }
-  };
-
   return (
     <div
       className="relative group cursor-pointer select-none"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={() => setIsHovered((prev) => !prev)}
+      onClick={(e) => {
+        if (onClick) {
+          onClick(e);
+        } else {
+          setIsHovered((prev) => !prev);
+        }
+      }}
     >
-      {/* 1. POWERFUL ADMIN CONIC ROTATING AURA */}
+      {/* 1. Admin Aura or Ambient Halo */}
       {isAdmin && (
         <>
           <div className="admin-conic-glow" />
           <div className="admin-conic-sharp" />
         </>
       )}
-
-      {/* 2. CHAMPION ELEMENTAL AMBIENT HALO */}
       {!isAdmin && (
         <div
           className={`absolute -inset-1.5 rounded-2xl ${title.glowClass} blur-[8px] opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`}
         />
       )}
 
-      {/* Main Avatar Container */}
-      <div
-        className={`relative ${sizeClasses} rounded-xl bg-slate-950 flex items-center justify-center transition-all duration-200 group-hover:scale-110 z-10 ${
-          isAdmin
-            ? 'frame-admin-box border-2 border-amber-300 ring-2 ring-amber-400/90 ring-offset-2 ring-offset-slate-950'
-            : `border-2 ${getChampionFrameClass()}`
-        }`}
-      >
-        {children || player.icon}
+      {/* Main Avatar with chosen frame */}
+      <div className="relative transition-all duration-200 group-hover:scale-105 z-10">
+        <AvatarWithFrame icon={player.icon} frameId={effectiveFrame} size={size} />
 
         {/* Top-Right Badge/Insignia */}
         <div

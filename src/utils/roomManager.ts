@@ -1,0 +1,809 @@
+import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord } from '../types';
+
+const ROOMS_STORAGE_KEY = 'fasttyping_game_rooms_v4';
+const ROOM_CHANNEL_NAME = 'fasttyping_room_sync_v4';
+const CHAT_CHANNEL_NAME = 'fasttyping_chat_sync_v4';
+
+/**
+ * Chuẩn hóa mã phòng linh hoạt và thông minh:
+ * Hỗ trợ tất cả định dạng:
+ * - "#VN-5111" -> "VN-5111"
+ * - "VN-5111" -> "VN-5111"
+ * - "vn-5111" -> "VN-5111"
+ * - "VN5111" -> "VN-5111"
+ * - "#5111" -> "VN-5111"
+ * - "5111" -> "VN-5111"
+ * - "Mã: #VN-5111" -> "VN-5111"
+ * - "Phòng #VN-5111" -> "VN-5111"
+ */
+export function normalizeRoomCode(input: string): string {
+  if (!input) return '';
+  let cleaned = input.trim().toUpperCase();
+
+  // Loại bỏ các tiền tố thường gặp: "MÃ PHÒNG:", "MÃ:", "MA:", "PHÒNG:", "PHONG:", "ROOM:", "CODE:"
+  cleaned = cleaned.replace(/^(MÃ\s*PHÒNG|MA\s*PHONG|PHÒNG|PHONG|ROOM|CODE|MÃ|MA)[:\s]*/i, '').trim();
+
+  // Loại bỏ tất cả ký tự '#' ở đầu hoặc trong chuỗi
+  cleaned = cleaned.replace(/^#+/, '').trim();
+  cleaned = cleaned.replace(/#/g, '').trim();
+
+  if (!cleaned) return '';
+
+  // Khớp định dạng VN kèm số: "VN-5111", "VN_5111", "VN 5111", "VN5111"
+  const matchVn = cleaned.match(/^VN[-_\s]*(\d+)/i);
+  if (matchVn) {
+    return `VN-${matchVn[1]}`;
+  }
+
+  // Khớp chuỗi thuần số: "5111" -> "VN-5111"
+  const matchDigits = cleaned.match(/^(\d+)$/);
+  if (matchDigits) {
+    return `VN-${matchDigits[1]}`;
+  }
+
+  // Nếu đã có tiền tố VN-
+  if (cleaned.startsWith('VN-')) {
+    return cleaned;
+  }
+
+  // Nếu bắt đầu bằng VN nhưng không có gạch nối
+  if (cleaned.startsWith('VN')) {
+    const rest = cleaned.slice(2).replace(/^[-_\s]+/, '');
+    return `VN-${rest}`;
+  }
+
+  return `VN-${cleaned}`;
+}
+
+// Tên hiển thị thân thiện cho từng chế độ chơi
+export function getModeDisplayName(mode: GameMode): string {
+  switch (mode) {
+    case 'vi_dau':
+      return 'Tiếng Việt Có Dấu';
+    case 'vi_nodau':
+      return 'Tiếng Việt Không Dấu';
+    case 'en':
+      return 'Tiếng Anh (English)';
+    case 'numpad':
+      return 'Bàn Phím Số (Numpad)';
+    case 'ngau_hung':
+      return 'Ngẫu Hứng (Rush)';
+    case 'doan_chu':
+      return 'Đoán Chữ (Mystery)';
+    case 'san_boss':
+      return 'Săn Boss (Raid)';
+    case 'outplay':
+      return 'Outplay Yourself (Solo)';
+    default:
+      return mode;
+  }
+}
+
+// Kênh BroadcastChannel đồng bộ thời gian thực giữa các tab/cửa sổ cùng trình duyệt
+let broadcastChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    broadcastChannel = new BroadcastChannel(ROOM_CHANNEL_NAME);
+  }
+} catch {
+  // Fallback nếu không hỗ trợ
+}
+
+export type RoomEvent =
+  | { type: 'room_updated'; room: GameRoom }
+  | { type: 'room_started'; roomId: string; mode: GameMode; words?: string[]; mysteryWords?: MysteryWordItem[]; room?: GameRoom }
+  | { type: 'room_closed'; roomId: string }
+  | { type: 'player_progress'; roomId: string; playerId: string; progress: number; correctChars: number; errors: number; wpm: number; isFinished: boolean; players?: Player[] };
+
+const subscribers: Array<(event: RoomEvent) => void> = [];
+
+if (broadcastChannel) {
+  broadcastChannel.onmessage = (e) => {
+    if (e.data && e.data.type) {
+      subscribers.forEach((cb) => {
+        try {
+          cb(e.data);
+        } catch (err) {
+          console.error('Room subscriber error:', err);
+        }
+      });
+    }
+  };
+}
+
+function broadcastLocalEvent(event: RoomEvent) {
+  subscribers.forEach((cb) => {
+    try {
+      cb(event);
+    } catch {
+      // Ignore
+    }
+  });
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage(event);
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+export function subscribeToRooms(callback: (event: RoomEvent) => void): () => void {
+  subscribers.push(callback);
+  return () => {
+    const idx = subscribers.indexOf(callback);
+    if (idx !== -1) subscribers.splice(idx, 1);
+  };
+}
+
+/**
+ * 1. Tạo phòng mới hoàn toàn thông qua Server API:
+ */
+export async function createNewRoom(
+  mode: GameMode,
+  host: Player,
+  isQuickRoom = false,
+  difficulty?: DifficultyLevel
+): Promise<GameRoom> {
+  try {
+    const res = await fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, host, isQuickRoom, difficulty }),
+    });
+    const data = await res.json();
+    if (data.success && data.room) {
+      broadcastLocalEvent({ type: 'room_updated', room: data.room });
+      return data.room;
+    }
+  } catch (err) {
+    console.error('createNewRoom server error:', err);
+  }
+
+  // Local fallback nếu server tạm thời bận
+  const code = `VN-${Math.floor(1000 + Math.random() * 9000)}`;
+  const fallbackRoom: GameRoom = {
+    id: code,
+    mode,
+    hostId: host.id,
+    hostName: host.username,
+    isQuickRoom,
+    status: 'waiting',
+    createdAt: Date.now(),
+    lastActive: Date.now(),
+    players: [{ ...host, isBot: false, progress: 0, wpm: 0, score: 0, errors: 0, correctChars: 0, isFinished: false, isSurrendered: false, isAFK: false }],
+    difficulty,
+    maxSlots: 8,
+  };
+  broadcastLocalEvent({ type: 'room_updated', room: fallbackRoom });
+  return fallbackRoom;
+}
+
+/**
+ * 2. Kiểm tra và Vào phòng đã có bằng mã qua Server API:
+ */
+export async function joinExistingRoom(
+  rawCode: string,
+  player: Player,
+  currentMode: GameMode
+): Promise<{
+  success: boolean;
+  room?: GameRoom;
+  error?: string;
+  isHost?: boolean;
+}> {
+  const normCode = normalizeRoomCode(rawCode);
+  if (!normCode) {
+    return {
+      success: false,
+      error: 'Vui lòng nhập mã phòng hợp lệ (VD: VN-5111 hoặc 5111).',
+    };
+  }
+
+  try {
+    const res = await fetch('/api/rooms/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawCode: normCode, player, currentMode }),
+    });
+    const data = await res.json();
+    if (data.success && data.room) {
+      broadcastLocalEvent({ type: 'room_updated', room: data.room });
+      return {
+        success: true,
+        room: data.room,
+        isHost: Boolean(data.isHost),
+      };
+    } else {
+      return {
+        success: false,
+        error: data.error || 'Không thể tham gia phòng.',
+      };
+    }
+  } catch (err) {
+    console.error('joinExistingRoom server error:', err);
+    return {
+      success: false,
+      error: 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng!',
+    };
+  }
+}
+
+/**
+ * 3. Vào phòng nhanh (Quick Match) qua Server API:
+ */
+export async function quickJoinOrCreateRoom(
+  mode: GameMode,
+  player: Player,
+  difficulty?: DifficultyLevel
+): Promise<{
+  room: GameRoom;
+  isHost: boolean;
+  isNewlyCreated: boolean;
+}> {
+  try {
+    const res = await fetch('/api/rooms/quick-join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, player, difficulty }),
+    });
+    const data = await res.json();
+    if (data.success && data.room) {
+      broadcastLocalEvent({ type: 'room_updated', room: data.room });
+      return {
+        room: data.room,
+        isHost: Boolean(data.isHost),
+        isNewlyCreated: Boolean(data.isNewlyCreated),
+      };
+    }
+  } catch (err) {
+    console.error('quickJoinOrCreateRoom server error:', err);
+  }
+
+  // Fallback
+  const fallback = await createNewRoom(mode, player, true, difficulty);
+  return {
+    room: fallback,
+    isHost: true,
+    isNewlyCreated: true,
+  };
+}
+
+// Cập nhật danh sách người chơi trong phòng (khi thêm / bớt bot)
+export async function updateRoomPlayers(roomId: string, players: Player[]): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/players`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ players }),
+    });
+  } catch (err) {
+    console.error('updateRoomPlayers error:', err);
+  }
+}
+
+// Bắt đầu trận đấu (Chủ phòng kích hoạt, đồng bộ danh sách từ thi đấu)
+export async function markRoomPlaying(
+  roomId: string,
+  mode?: GameMode,
+  words?: string[],
+  mysteryWords?: MysteryWordItem[]
+): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'playing', mode, words, mysteryWords }),
+    });
+  } catch (err) {
+    console.error('markRoomPlaying error:', err);
+  }
+}
+
+// Chuyển phòng về trạng thái chờ (khi kết thúc ván và quay lại phòng chờ)
+export async function markRoomWaiting(roomId: string): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'waiting' }),
+    });
+  } catch (err) {
+    console.error('markRoomWaiting error:', err);
+  }
+}
+
+// Đồng bộ tiến độ gõ của người chơi trong trận đấu
+let lastProgressSentTime = 0;
+export function sendPlayerProgress(
+  roomId: string,
+  playerId: string,
+  progress: number,
+  correctChars: number,
+  errors: number,
+  wpm: number,
+  force = false
+): void {
+  const now = Date.now();
+  // Throttle 200ms trừ khi hoàn thành
+  if (!force && now - lastProgressSentTime < 200) return;
+  lastProgressSentTime = now;
+
+  const normId = normalizeRoomCode(roomId);
+  fetch(`/api/rooms/${encodeURIComponent(normId)}/player-progress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      playerId,
+      progress,
+      correctChars,
+      errors,
+      wpm,
+      isFinished: progress >= 100,
+    }),
+  }).catch(() => {});
+}
+
+// Lắng nghe thay đổi của 1 phòng cụ thể (kết hợp Server SSE, Polling 1s, BroadcastChannel và Room Chat)
+export function subscribeToRoom(
+  roomId: string,
+  callback: (room: GameRoom | null) => void,
+  onRoomChat?: (msg: ChatMessage) => void
+): () => void {
+  const normId = normalizeRoomCode(roomId);
+  let isSubscribed = true;
+  const processedRoomChatIds = new Set<string>();
+
+  // 1. Initial Fetch
+  fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (isSubscribed && data.success && data.room) {
+        callback(data.room);
+      }
+    })
+    .catch(() => {});
+
+  // 2. Server-Sent Events (SSE) Stream
+  let eventSource: EventSource | null = null;
+  try {
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      eventSource = new EventSource(`/api/rooms/${encodeURIComponent(normId)}/stream`);
+      eventSource.onmessage = (e) => {
+        if (!isSubscribed || !e.data) return;
+        try {
+          const event = JSON.parse(e.data);
+          if (event.type === 'room_updated' && event.room) {
+            callback(event.room);
+          } else if (event.type === 'room_closed') {
+            callback(null);
+          } else if (event.type === 'room_started') {
+            callback({
+              ...(event.room || {}),
+              status: 'playing',
+              words: event.words,
+              mysteryWords: event.mysteryWords,
+            } as GameRoom);
+          } else if (event.type === 'chat_message' && event.message) {
+            if (onRoomChat && event.message.id) {
+              if (!processedRoomChatIds.has(event.message.id)) {
+                processedRoomChatIds.add(event.message.id);
+                onRoomChat(event.message);
+              }
+            }
+          } else if (event.type === 'init_room_chat' && Array.isArray(event.messages)) {
+            if (onRoomChat) {
+              event.messages.forEach((m: ChatMessage) => {
+                if (m.id && !processedRoomChatIds.has(m.id)) {
+                  processedRoomChatIds.add(m.id);
+                  onRoomChat(m);
+                }
+              });
+            }
+          } else if (event.type === 'player_progress' && event.players) {
+            // Live update players progress
+            fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+              .then((r) => r.json())
+              .then((data) => {
+                if (isSubscribed && data.success && data.room) {
+                  callback(data.room);
+                }
+              })
+              .catch(() => {});
+          }
+        } catch {
+          // Ignore
+        }
+      };
+      eventSource.onerror = () => {
+        // EventSource will auto-reconnect
+      };
+    }
+  } catch (err) {
+    console.error('SSE initialization error:', err);
+  }
+
+  // 3. Fallback Polling mỗi 1000ms đảm bảo đồng bộ 100% qua mọi tường lửa và trình duyệt ẩn danh
+  const pollTimer = setInterval(() => {
+    if (!isSubscribed) return;
+    fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!isSubscribed) return;
+        if (data.success && data.room) {
+          callback(data.room);
+        } else if (data.status === 404 || data.error === 'Room not found') {
+          callback(null);
+        }
+      })
+      .catch(() => {});
+  }, 1000);
+
+  // 4. Local BroadcastChannel subscription
+  const unsubscribeBroadcast = subscribeToRooms((ev) => {
+    if (!isSubscribed) return;
+    if (ev.type === 'room_updated' && normalizeRoomCode(ev.room.id) === normId) {
+      callback(ev.room);
+    } else if (ev.type === 'room_closed' && normalizeRoomCode(ev.roomId) === normId) {
+      callback(null);
+    } else if (ev.type === 'room_started' && normalizeRoomCode(ev.roomId) === normId) {
+      fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (isSubscribed && data.success && data.room) {
+            callback({
+              ...data.room,
+              status: 'playing',
+              words: ev.words || data.room.words,
+              mysteryWords: ev.mysteryWords || data.room.mysteryWords,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  });
+
+  return () => {
+    isSubscribed = false;
+    clearInterval(pollTimer);
+    if (eventSource) {
+      eventSource.close();
+    }
+    unsubscribeBroadcast();
+  };
+}
+
+// Người chơi rời phòng
+export function leaveRoom(roomId: string, playerId: string): void {
+  const normId = normalizeRoomCode(roomId);
+  const payload = JSON.stringify({ playerId });
+
+  // 1. Dùng navigator.sendBeacon cho tab unload
+  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon(`/api/rooms/${encodeURIComponent(normId)}/leave`, blob);
+    } catch {
+      // Fallback to fetch
+    }
+  }
+
+  // 2. Gọi fetch
+  fetch(`/api/rooms/${encodeURIComponent(normId)}/leave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {});
+}
+
+// ==========================================
+// CHAT SYNCHRONIZATION (GLOBAL + ROOM)
+// ==========================================
+
+let chatBroadcastChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    chatBroadcastChannel = new BroadcastChannel(CHAT_CHANNEL_NAME);
+  }
+} catch {
+  // BroadcastChannel unavailable
+}
+
+export function broadcastLocalChat(msg: ChatMessage) {
+  try {
+    if (chatBroadcastChannel) {
+      chatBroadcastChannel.postMessage({ type: 'new_chat_message', message: msg });
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+export function broadcastLocalChatClear() {
+  try {
+    if (chatBroadcastChannel) {
+      chatBroadcastChannel.postMessage({ type: 'chat_cleared' });
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+/**
+ * Fetch chat messages from server
+ */
+export async function fetchChatMessages(channel: 'global' | 'room', roomId?: string): Promise<ChatMessage[]> {
+  try {
+    const url = channel === 'room' && roomId
+      ? `/api/chat/messages?channel=room&roomId=${encodeURIComponent(normalizeRoomCode(roomId))}`
+      : `/api/chat/messages?channel=global`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.messages)) {
+      return data.messages;
+    }
+  } catch (err) {
+    console.error('Error fetching chat messages:', err);
+  }
+  return [];
+}
+
+/**
+ * Send chat message to server and broadcast locally
+ */
+export async function sendChatMessage(msg: {
+  id?: string;
+  username: string;
+  avatar?: string;
+  frame?: string;
+  message: string;
+  channel: 'global' | 'room';
+  roomId?: string;
+  isAdmin?: boolean;
+}): Promise<ChatMessage | null> {
+  try {
+    const res = await fetch('/api/chat/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(msg),
+    });
+    const data = await res.json();
+    if (data.success && data.message) {
+      return data.message;
+    }
+  } catch (err) {
+    console.error('Error sending chat message:', err);
+  }
+  return null;
+}
+
+/**
+ * Admin clear global chat
+ */
+export async function clearServerChat(): Promise<void> {
+  try {
+    await fetch('/api/chat/clear', { method: 'POST' });
+    broadcastLocalChatClear();
+  } catch (err) {
+    console.error('Error clearing chat:', err);
+  }
+}
+
+/**
+ * Fetch real-time active online user count
+ */
+export async function fetchOnlineCount(): Promise<number> {
+  try {
+    const res = await fetch('/api/online-count');
+    const data = await res.json();
+    if (data && typeof data.count === 'number') {
+      return data.count;
+    }
+  } catch {
+    // ignore
+  }
+  return 1;
+}
+
+/**
+ * Fetch real server-wide high scores
+ */
+export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord | null>> {
+  try {
+    const res = await fetch('/api/leaderboard');
+    const data = await res.json();
+    if (data && data.success && data.highScores) {
+      return data.highScores;
+    }
+  } catch (err) {
+    console.error('Failed to fetch leaderboard:', err);
+  }
+  return {
+    vi_dau: null,
+    vi_nodau: null,
+    en: null,
+    numpad: null,
+    ngau_hung: null,
+    doan_chu: null,
+    san_boss: null,
+  };
+}
+
+/**
+ * Submit player score to server leaderboard
+ */
+export async function submitScoreToLeaderboard(record: {
+  mode: string;
+  username: string;
+  wpm?: number;
+  score?: number;
+  errors?: number;
+  avatar?: string;
+  frame?: string;
+}): Promise<{ success: boolean; isNewRecord: boolean; highScores: Record<string, HighScoreRecord | null> }> {
+  try {
+    const res = await fetch('/api/leaderboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error('Error submitting score to leaderboard:', err);
+    return { success: false, isNewRecord: false, highScores: {} };
+  }
+}
+
+/**
+ * Admin update high scores
+ */
+export async function adminUpdateLeaderboard(highScores: Record<string, HighScoreRecord | null>): Promise<boolean> {
+  try {
+    const res = await fetch('/api/leaderboard/admin-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ highScores }),
+    });
+    const data = await res.json();
+    return !!data.success;
+  } catch (err) {
+    console.error('Error updating leaderboard:', err);
+    return false;
+  }
+}
+
+/**
+ * Admin reset leaderboard
+ */
+export async function adminResetLeaderboard(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/leaderboard/reset', { method: 'POST' });
+    const data = await res.json();
+    return !!data.success;
+  } catch (err) {
+    console.error('Error resetting leaderboard:', err);
+    return false;
+  }
+}
+
+/**
+ * Subscribe to real-time global chat updates (SSE stream + Polling fallback + BroadcastChannel)
+ */
+export function subscribeToGlobalChat(
+  onMsg: (msg: ChatMessage) => void,
+  onClear?: () => void,
+  onOnlineCount?: (count: number) => void,
+  onLeaderboard?: (highScores: Record<string, HighScoreRecord | null>) => void,
+  userId?: string
+): () => void {
+  let isSubscribed = true;
+  let isSseConnected = false;
+  const processedGlobalIds = new Set<string>();
+
+  const dispatchMsg = (m: ChatMessage) => {
+    if (!m || !m.id) return;
+    if (processedGlobalIds.has(m.id)) return;
+    processedGlobalIds.add(m.id);
+    onMsg(m);
+  };
+
+  // 1. Initial fetch
+  fetchChatMessages('global').then((msgs) => {
+    if (!isSubscribed) return;
+    msgs.forEach((m) => dispatchMsg(m));
+  });
+
+  if (onOnlineCount) {
+    fetchOnlineCount().then((count) => {
+      if (isSubscribed && onOnlineCount) onOnlineCount(count);
+    });
+  }
+
+  if (onLeaderboard) {
+    fetchLeaderboard().then((records) => {
+      if (isSubscribed && onLeaderboard) onLeaderboard(records);
+    });
+  }
+
+  // 2. Global Chat & Presence & Leaderboard SSE stream
+  let eventSource: EventSource | null = null;
+  try {
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      const url = userId ? `/api/chat/stream?userId=${encodeURIComponent(userId)}` : '/api/chat/stream';
+      eventSource = new EventSource(url);
+      eventSource.onopen = () => {
+        isSseConnected = true;
+      };
+      eventSource.onerror = () => {
+        isSseConnected = false;
+      };
+      eventSource.onmessage = (e) => {
+        if (!isSubscribed || !e.data) return;
+        try {
+          const ev = JSON.parse(e.data);
+          if (ev.type === 'new_chat_message' && ev.message) {
+            dispatchMsg(ev.message);
+          } else if (ev.type === 'init_chat' && Array.isArray(ev.messages)) {
+            ev.messages.forEach((m: ChatMessage) => dispatchMsg(m));
+          } else if (ev.type === 'chat_cleared') {
+            processedGlobalIds.clear();
+            if (onClear) onClear();
+          } else if (ev.type === 'online_count' && typeof ev.count === 'number') {
+            if (onOnlineCount) onOnlineCount(ev.count);
+          } else if (ev.type === 'leaderboard_updated' && ev.highScores) {
+            if (onLeaderboard) onLeaderboard(ev.highScores);
+          }
+        } catch {
+          // Ignore
+        }
+      };
+    }
+  } catch {
+    // SSE fallback
+  }
+
+  // 3. Fallback periodic polling every 3000ms ONLY when SSE is disconnected
+  const pollTimer = setInterval(() => {
+    if (!isSubscribed || isSseConnected) return;
+    fetchChatMessages('global').then((msgs) => {
+      if (!isSubscribed) return;
+      msgs.forEach((m) => dispatchMsg(m));
+    });
+    if (onOnlineCount) {
+      fetchOnlineCount().then((count) => {
+        if (isSubscribed && onOnlineCount) onOnlineCount(count);
+      });
+    }
+  }, 4000);
+
+  // 4. BroadcastChannel subscription for instantaneous cross-tab synchronization
+  const handleBcMessage = (event: MessageEvent) => {
+    if (!isSubscribed || !event.data) return;
+    if (event.data.type === 'new_chat_message' && event.data.message) {
+      dispatchMsg(event.data.message);
+    } else if (event.data.type === 'chat_cleared') {
+      processedGlobalIds.clear();
+      if (onClear) onClear();
+    }
+  };
+
+  if (chatBroadcastChannel) {
+    chatBroadcastChannel.addEventListener('message', handleBcMessage);
+  }
+
+  return () => {
+    isSubscribed = false;
+    clearInterval(pollTimer);
+    if (eventSource) {
+      eventSource.close();
+    }
+    if (chatBroadcastChannel) {
+      chatBroadcastChannel.removeEventListener('message', handleBcMessage);
+    }
+  };
+}

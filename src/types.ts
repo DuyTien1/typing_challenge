@@ -14,6 +14,9 @@ export interface Player {
   id: string;
   username: string;
   icon: string;
+  frame?: string;
+  bestWpm?: number;
+  totalGames?: number;
   progress: number;
   wpm: number;
   score: number;
@@ -45,6 +48,11 @@ export interface PerformanceChartPoint {
   sessionBestWpm?: number;
   errors: number;
   errorPlot?: number | null;
+}
+
+export interface ConditionStatRecord {
+  lastWpm: number;
+  bestWpm: number;
 }
 
 export interface PlayerTitle {
@@ -103,15 +111,21 @@ export interface HighScoreRecord {
   score: number;
   errors: number;
   timestamp: number;
+  avatar?: string;
+  frame?: string;
 }
 
 export interface ChatMessage {
   id: string;
   username: string;
+  avatar?: string;
+  frame?: string;
   message: string;
   timestamp: number;
   isSystem?: boolean;
   channel: 'global' | 'room';
+  roomId?: string;
+  isAdmin?: boolean;
 }
 
 export interface MysteryWordItem {
@@ -199,4 +213,20 @@ export interface GameConfig {
   sanBoss: {
     difficulties: Record<string, BossDifficultyConfig>;
   };
+}
+
+export interface GameRoom {
+  id: string; // e.g. "VN-4921"
+  mode: GameMode;
+  hostId: string;
+  hostName: string;
+  isQuickRoom: boolean;
+  status: 'waiting' | 'playing' | 'finished';
+  createdAt: number;
+  lastActive: number;
+  players: Player[];
+  difficulty?: DifficultyLevel;
+  maxSlots: number;
+  words?: string[];
+  mysteryWords?: MysteryWordItem[];
 }

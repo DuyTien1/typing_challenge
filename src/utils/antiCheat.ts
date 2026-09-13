@@ -9,33 +9,80 @@ export interface ValidationResult {
 }
 
 /**
- * Giải pháp 3: Tính toán chỉ số Consistency chuyên sâu (Monkeytype Standard)
- * Consistency = max(0, 100 * (1 - (sigma / mu)))
- * mu: mean interval in milliseconds
- * sigma: standard deviation of keystroke intervals
+ * Monkeytype Kogasa consistency mapping function:
+ * Converts coefficient of variation (stddev / avg) of raw WPM into a 0 - 100% score.
+ * Formula from Monkeytype (frontend/src/ts/utils/numbers.ts):
+ * kogasa(x) = 100 * (1 - tanh(x + x^3/3 + x^5/5))
  */
-export function calculateConsistency(keystrokes: { time: number }[]): number {
-  if (!keystrokes || keystrokes.length < 5) return 100;
+export function kogasa(x: number): number {
+  if (x <= 0) return 100;
+  const x3 = Math.pow(x, 3) / 3;
+  const x5 = Math.pow(x, 5) / 5;
+  const val = 100 * (1 - Math.tanh(x + x3 + x5));
+  return Math.max(0, Math.min(100, Math.round(val)));
+}
 
-  const intervals: number[] = [];
-  for (let i = 1; i < keystrokes.length; i++) {
-    const dt = keystrokes[i].time - keystrokes[i - 1].time;
-    if (dt > 0 && dt < 4000) { // filter out pauses longer than 4s
-      intervals.push(dt);
+/**
+ * Tính toán chỉ số Consistency theo chuẩn Monkeytype (github.com/monkeytypegame/monkeytype):
+ * 1. Thu thập tốc độ gõ thô (raw WPM) theo từng giây (mỗi giây = số ký tự / 5 * 60).
+ * 2. Tính giá trị trung bình (mean) và độ lệch chuẩn (stdDev) của raw WPM theo từng giây.
+ * 3. Tính hệ số biến thiên: cv = stdDev / mean.
+ * 4. Áp dụng hàm ánh xạ phi tuyến tính Kogasa của Monkeytype: kogasa(cv) = 100 * (1 - tanh(cv + cv^3/3 + cv^5/5)).
+ */
+export function calculateConsistency(
+  keystrokes: { time: number }[],
+  durationSeconds?: number
+): number {
+  if (!keystrokes || keystrokes.length < 3) return 100;
+
+  const startTime = keystrokes[0].time;
+  const lastTime = keystrokes[keystrokes.length - 1].time;
+  const elapsedMs = Math.max(1, lastTime - startTime);
+  const elapsedSec = Math.max(1, Math.ceil(elapsedMs / 1000));
+
+  // Determine total 1-second bins: ensure it is always a safe, non-negative integer
+  const safeDuration =
+    durationSeconds && Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? Math.ceil(durationSeconds)
+      : elapsedSec;
+  const totalSec = Math.max(1, Math.min(3600, Math.floor(safeDuration)));
+
+  // If the test has less than 2 seconds of data (e.g. at the start), compute based on inter-keystroke interval CV
+  if (totalSec < 2) {
+    const intervals: number[] = [];
+    for (let i = 1; i < keystrokes.length; i++) {
+      const dt = keystrokes[i].time - keystrokes[i - 1].time;
+      if (dt > 0 && dt < 4000) intervals.push(dt);
+    }
+    if (intervals.length < 2) return 100;
+    const mean = intervals.reduce((acc, v) => acc + v, 0) / intervals.length;
+    if (mean <= 0) return 0;
+    const variance = intervals.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / intervals.length;
+    const stdDev = Math.sqrt(variance);
+    return kogasa(stdDev / mean);
+  }
+
+  // Group keystrokes into 1-second bins (Monkeytype rawPerSecond array)
+  const buckets = new Array(totalSec).fill(0);
+  for (const ks of keystrokes) {
+    const sec = Math.floor((ks.time - startTime) / 1000);
+    if (sec >= 0 && sec < totalSec) {
+      buckets[sec]++;
     }
   }
 
-  if (intervals.length < 3) return 100;
+  // Convert character count in each second to raw WPM (characters / 5 * 60 = characters * 12)
+  const rawPerSecond = buckets.map((count) => count * 12);
 
-  const mean = intervals.reduce((acc, v) => acc + v, 0) / intervals.length;
+  const n = rawPerSecond.length;
+  const mean = rawPerSecond.reduce((acc, v) => acc + v, 0) / n;
   if (mean <= 0) return 0;
 
-  const variance = intervals.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / intervals.length;
+  const variance = rawPerSecond.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / n;
   const stdDev = Math.sqrt(variance);
+  const cv = stdDev / mean;
 
-  // Consistency % score
-  const score = Math.max(0, Math.round(100 * (1 - stdDev / mean)));
-  return Math.min(100, score);
+  return kogasa(cv);
 }
 
 /**

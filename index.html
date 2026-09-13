@@ -3,12 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FastTyping Challenge - Đấu trường gõ phím Tiếng Việt v4.0</title>
+    <title>FastTyping Challenge - Đấu trường gõ phím Tiếng Việt</title>
     <meta name="description" content="Đấu trường gõ phím Tiếng Việt & Đa ngôn ngữ thời gian thực với Săn Boss, Đoán Chữ, Ngẫu Hứng và Bàn phím số." />
-    <meta property="og:title" content="FastTyping Challenge - Đấu trường gõ phím Tiếng Việt v4.0" />
+    <meta property="og:title" content="FastTyping Challenge - Đấu trường gõ phím Tiếng Việt" />
     <meta property="og:description" content="Đấu trường gõ phím Tiếng Việt & Đa ngôn ngữ thời gian thực với Săn Boss, Đoán Chữ, Ngẫu Hứng và Bàn phím số." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Suppress benign Vite HMR websocket connection errors in proxy/iframe environment
+      (function() {
+        var origConsoleError = console.error;
+        console.error = function() {
+          var msg = arguments[0];
+          if (typeof msg === 'string' && (
+            msg.indexOf('[vite] failed to connect to websocket') !== -1 ||
+            msg.indexOf('WebSocket closed without opened') !== -1
+          )) {
+            return;
+          }
+          origConsoleError.apply(console, arguments);
+        };
+        window.addEventListener('error', function(e) {
+          if (e && e.message && (
+            e.message.indexOf('WebSocket closed without opened') !== -1 ||
+            e.message.indexOf('[vite] failed to connect to websocket') !== -1
+          )) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro&family=Be+Vietnam+Pro:wght@400;500;600;700&family=Comfortaa:wght@400;600;700&family=Courier+Prime&family=Cutive+Mono&family=Fira+Code:wght@400;500;600&family=Inconsolata:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Lexend+Deca:wght@400;500;600&family=Major+Mono+Display&family=Overpass+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&family=Share+Tech+Mono&family=Source+Code+Pro:wght@400;500;600&family=Space+Mono:wght@400;700&family=Syne+Mono&family=Ubuntu+Mono:wght@400;700&family=VT323&display=swap" rel="stylesheet">

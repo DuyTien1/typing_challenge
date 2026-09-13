@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Player, KeystrokeEvent, PerformanceChartPoint } from '../types';
 import { soundFx } from '../utils/audio';
 import { calculateConsistency, validateWordSubmission } from '../utils/antiCheat';
+import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { GhostCaret } from './GhostCaret';
 import {
@@ -64,10 +65,12 @@ interface TypingArenaProps {
   onHome?: () => void;
   modeName: string;
   isOutplay?: boolean;
+  isMultiplayer?: boolean;
   lastGameWpm?: number;
   sessionBestWpm?: number;
+  conditionStats?: Record<string, { lastWpm: number; bestWpm: number }>;
   onUpdateSessionStats?: (lastWpm: number, sessionBestWpm: number) => void;
-  initialCountdown?: number;
+  onUpdateConditionStats?: (conditionKey: string, lastWpm: number, bestWpm: number) => void;
 }
 
 const VOCAB_OPTIONS: { id: OutplaySubMode; label: string; flag: string }[] = [
@@ -97,14 +100,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   onHome,
   modeName,
   isOutplay = false,
+  isMultiplayer = false,
   lastGameWpm: propLastGameWpm = 0,
   sessionBestWpm: propSessionBestWpm = 0,
+  conditionStats: propConditionStats,
   onUpdateSessionStats,
-  initialCountdown = 0,
+  onUpdateConditionStats,
 }) => {
-  // Multiplayer In-Arena Countdown state (3 -> 2 -> 1 -> 0)
-  const [arenaCountdown, setArenaCountdown] = useState<number>(initialCountdown || 0);
-
   // Outplay Mode Persistent Settings (Monkeytype Architecture)
   const [outplaySubMode, setOutplaySubMode] = useState<OutplaySubMode>(() => {
     return (localStorage.getItem('fasttyping_outplay_submode') as OutplaySubMode) || 'vi_dau';
@@ -132,24 +134,56 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     return saved ? parseInt(saved, 10) : 80;
   });
 
-  // Tốc độ ván trước và cao nhất được lưu trữ riêng theo từng điều kiện trong bộ nhớ phòng chơi này
-  // Ví dụ: numpad_number_time_15 vs numpad_fullsize_time_15 vs vi_dau_words_25
-  // Khi người chơi rời khỏi phòng hoặc reset/F5 web sẽ lập tức xóa sạch (chỉ lưu trên bảng vàng localStorage)
-  const [conditionStats, setConditionStats] = useState<Record<string, { lastWpm: number; bestWpm: number }>>({});
-
+  // In-memory Condition Statistics for HUD Realtime tracking (No local/session storage)
+  const [internalConditionStats, setInternalConditionStats] = useState<Record<string, { lastWpm: number; bestWpm: number }>>({});
+  
+  // Condition Key logic:
+  // In 'time' mode: key by duration and vocab (e.g. time_15_vi_dau, time_60_en)
+  // In 'words' mode: key by word count and vocab (e.g. words_25_vi_dau, words_50_en)
   const currentConditionKey = isOutplay
-    ? `${outplaySubMode}_${outplayTestType}_${outplayTestType === 'time' ? outplayDuration : outplayWordCount}`
-    : `${modeName}_${duration}`;
+    ? (outplayTestType === 'time'
+        ? `time_${outplayDuration}_${outplaySubMode}`
+        : `words_${outplayWordCount}_${outplaySubMode}`)
+    : `${modeName}_time_${duration}`;
 
-  const activeCondition = conditionStats[currentConditionKey] || {
-    lastWpm: 0,
-    bestWpm: 0,
-  };
-  const lastGameWpm = activeCondition.lastWpm;
-  const sessionBestWpm = activeCondition.bestWpm;
+  const activeConditionStats = propConditionStats || internalConditionStats;
+  const currentConditionStat = activeConditionStats[currentConditionKey];
 
-  // Elapsed seconds timer in Outplay 'words' mode
-  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  // In Outplay mode: Only load scores if this exact condition pair was already played in this room.
+  // If not, leave empty (0 -> rendered as '---' in HUD).
+  const lastGameWpm = isOutplay
+    ? (currentConditionStat && currentConditionStat.lastWpm > 0 ? currentConditionStat.lastWpm : 0)
+    : (currentConditionStat && currentConditionStat.lastWpm > 0 ? currentConditionStat.lastWpm : (propLastGameWpm || 0));
+
+  const sessionBestWpm = isOutplay
+    ? (currentConditionStat && currentConditionStat.bestWpm > 0 ? currentConditionStat.bestWpm : 0)
+    : (currentConditionStat && currentConditionStat.bestWpm > 0 ? currentConditionStat.bestWpm : (propSessionBestWpm || 0));
+
+  // In-room countdown for multiplayer: starts at 3 when entering the room
+  const [inRoomCountdown, setInRoomCountdown] = useState<number | null>(() => {
+    return isMultiplayer && !isOutplay ? 3 : null;
+  });
+
+  useEffect(() => {
+    if (inRoomCountdown === null) return;
+
+    if (inRoomCountdown > 0) {
+      soundFx.playCountdown(false);
+      const timer = setTimeout(() => {
+        setInRoomCountdown((prev) => (prev !== null ? prev - 1 : null));
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (inRoomCountdown === 0) {
+      soundFx.playCountdown(true);
+      const timer = setTimeout(() => {
+        setInRoomCountdown(null);
+        startTimePerfRef.current = performance.now();
+        lastWordTimestampRef.current = performance.now();
+        inputRef.current?.focus();
+      }, 650);
+      return () => clearTimeout(timer);
+    }
+  }, [inRoomCountdown]);
 
   // Outplay state: Timer does not start until the first keystroke
   const [hasStartedTyping, setHasStartedTyping] = useState<boolean>(!isOutplay);
@@ -210,7 +244,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Performance timeline for post-match chart
   const performanceTimelineRef = useRef<PerformanceChartPoint[]>([]);
-  const lastSampledTenSecRef = useRef<number>(0);
+  const lastSampledSecRef = useRef<number>(-1);
 
   // Custom ghost WPM input ref & state buffer (prevents focus loss and typing glitches)
   const customWpmInputRef = useRef<HTMLInputElement>(null);
@@ -239,8 +273,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Stored ghost replay record for the current configuration
   const activeGhostRecord = useMemo(() => {
     if (!isOutplay || outplayPaceMode === 'custom') return null;
-    return getStoredGhostRecord(outplayPaceMode, outplaySubMode, outplayDuration);
-  }, [isOutplay, outplayPaceMode, outplaySubMode, outplayDuration]);
+    return getStoredGhostRecord(
+      outplayPaceMode,
+      outplaySubMode,
+      outplayTestType === 'time' ? outplayDuration : outplayWordCount,
+      outplayTestType
+    );
+  }, [isOutplay, outplayPaceMode, outplaySubMode, outplayDuration, outplayWordCount, outplayTestType]);
 
   // Line scrolling offset for Virtual 3-Line System
   const [lineOffsetY, setLineOffsetY] = useState(0);
@@ -364,14 +403,15 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     soundFx.playError();
     setShowSurrenderModal(false);
 
-    // Reset last game WPM for the current condition in this room, but keep sessionBestWpm
-    setConditionStats((prev) => ({
+    // Clear last game WPM for current condition, but keep session best WPM
+    setInternalConditionStats((prev) => ({
       ...prev,
       [currentConditionKey]: {
         lastWpm: 0,
-        bestWpm: prev[currentConditionKey]?.bestWpm || 0,
+        bestWpm: sessionBestWpm || 0,
       },
     }));
+    onUpdateConditionStats?.(currentConditionKey, 0, sessionBestWpm || 0);
     onUpdateSessionStats?.(0, sessionBestWpm || 0);
 
     onSurrender();
@@ -389,6 +429,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     isOutplay,
     sessionBestWpm,
     currentConditionKey,
+    onUpdateConditionStats,
     onUpdateSessionStats,
     handleResetOutplay,
     outplaySubMode,
@@ -558,8 +599,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       if (isFinishedRef.current) return;
       const now = performance.now();
       const elapsedSec = Math.max(1, Math.round((now - startTimePerfRef.current) / 1000));
-      if (elapsedSec >= 10 && elapsedSec % 10 === 0 && elapsedSec !== lastSampledTenSecRef.current) {
-        lastSampledTenSecRef.current = elapsedSec;
+      if (elapsedSec !== lastSampledSecRef.current) {
+        lastSampledSecRef.current = elapsedSec;
         recordTimelinePoint(elapsedSec, false);
       }
     }, 1000);
@@ -567,37 +608,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     return () => clearInterval(timelineInterval);
   }, [hasStartedTyping, isPlayerSurrendered, recordTimelinePoint]);
 
-  // In-arena 3s countdown effect for multiplayer room
-  useEffect(() => {
-    if (arenaCountdown <= 0) return;
-    soundFx.playCountdown(false);
-
-    const timer = setInterval(() => {
-      setArenaCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          soundFx.playCountdown(true);
-          setTimeout(() => {
-            inputRef.current?.focus();
-            setIsFocused(true);
-          }, 30);
-          return 0;
-        }
-        soundFx.playCountdown(false);
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
   // Timer countdown:
-  // In multiplayer: waits until arenaCountdown reaches 0!
   // In Outplay mode: Only runs after user presses their first keystroke!
+  // In Multiplayer mode: Only runs after inRoomCountdown finishes!
   useEffect(() => {
     if (isPlayerSurrendered) return;
-    if (arenaCountdown > 0) return; // In multiplayer: wait for 3s in-arena countdown!
-    if (isOutplay && !hasStartedTyping) return; // In Outplay: wait for first keypress!
+    if (inRoomCountdown !== null) return; // Wait for in-room countdown!
+    if (isOutplay && !hasStartedTyping) return; // Wait for first keypress!
     if (isOutplay && outplayTestType === 'words') return; // Words mode finishes on words completed
 
     const timer = setInterval(() => {
@@ -605,26 +622,15 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [arenaCountdown, hasStartedTyping, isPlayerSurrendered, isOutplay, outplayTestType]);
-
-  // In Outplay 'words' mode: count elapsed seconds from first keypress
-  useEffect(() => {
-    if (!isOutplay || outplayTestType !== 'words' || !hasStartedTyping || isPlayerSurrendered) return;
-
-    const timer = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isOutplay, outplayTestType, hasStartedTyping, isPlayerSurrendered]);
+  }, [hasStartedTyping, isPlayerSurrendered, isOutplay, outplayTestType, inRoomCountdown]);
 
   // When timeLeft reaches 0 (time mode), trigger onFinish safely in useEffect
   useEffect(() => {
     if (isOutplay && outplayTestType === 'words') return;
     if (timeLeft <= 0 && !isFinishedRef.current) {
       isFinishedRef.current = true;
-      const consistency = calculateConsistency(keystrokesRef.current);
       const elapsedSeconds = Math.max(0.1, (performance.now() - startTimePerfRef.current) / 1000);
+      const consistency = calculateConsistency(keystrokesRef.current, effectiveDuration);
       const elapsedMins = elapsedSeconds / 60;
       const finalWpm = Math.round((correctCharsRef.current / 5) / elapsedMins);
       const finalAcc = Math.round(
@@ -638,19 +644,21 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           outplayDuration,
           finalWpm,
           finalAcc,
-          ghostJourneyRef.current
+          ghostJourneyRef.current,
+          'time'
         );
       }
 
-      // Cập nhật tốc độ ván trước & cao nhất cho mảng điều kiện hiện tại trong phòng
-      const nextSessionBest = isOutplay ? Math.max(sessionBestWpm || 0, finalWpm) : 0;
-      setConditionStats((prev) => ({
+      // Update condition stats
+      const nextSessionBest = isOutplay ? Math.max(sessionBestWpm || 0, finalWpm) : finalWpm;
+      setInternalConditionStats((prev) => ({
         ...prev,
         [currentConditionKey]: {
           lastWpm: finalWpm,
           bestWpm: nextSessionBest,
         },
       }));
+      onUpdateConditionStats?.(currentConditionKey, finalWpm, nextSessionBest);
       onUpdateSessionStats?.(finalWpm, isOutplay ? nextSessionBest : 0);
 
       const ghostWpm = activeGhostRecord?.wpm ?? (outplayPaceMode === 'custom' ? outplayCustomWpm : 0);
@@ -658,6 +666,14 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       // Add final point to timeline
       const finalSec = Math.max(1, Math.round(elapsedSeconds));
       recordTimelinePoint(finalSec, false);
+
+      const normalizedChart = normalizeChartTimeline(
+        performanceTimelineRef.current,
+        elapsedSeconds,
+        finalWpm,
+        isOutplay ? nextSessionBest : undefined,
+        ghostWpm > 0 ? ghostWpm : undefined
+      );
 
       onFinishRef.current(
         correctCharsRef.current,
@@ -669,7 +685,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           sessionBestWpm: isOutplay ? nextSessionBest : undefined,
           finalWpm,
           elapsedSeconds,
-          chartData: [...performanceTimelineRef.current],
+          chartData: normalizedChart,
           ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
             ghostWpm,
             wpmDiff: finalWpm - ghostWpm,
@@ -940,7 +956,14 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     // Millisecond-accurate WPM
     const elapsedMinutes = Math.max(0.01, (now - startTimePerfRef.current) / 60000);
     const liveWpm = Math.round(newCorrectChars / 5 / elapsedMinutes);
-    const targetWordCount = isOutplay && outplayTestType === 'words' ? outplayWordCount : effectiveWords.length;
+    const targetWordCount = Math.max(
+      1,
+      isOutplay && outplayTestType === 'words'
+        ? outplayWordCount
+        : effectiveWords.length > 0
+        ? effectiveWords.length
+        : 150
+    );
     const progress = Math.min(100, Math.round((nextIndex / targetWordCount) * 100));
 
     onUpdateProgress(progress, newCorrectChars, newErrors, liveWpm);
@@ -955,37 +978,48 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       if (isOutplay && hasStartedTyping && ghostJourneyRef.current.length > 0 && outplayPaceMode !== 'off') {
         saveGhostRun(
           outplaySubMode,
-          outplayDuration,
+          outplayWordCount,
           liveWpm,
           finalAcc,
-          ghostJourneyRef.current
+          ghostJourneyRef.current,
+          'words'
         );
       }
 
-      // Cập nhật tốc độ ván trước & cao nhất cho mảng điều kiện hiện tại trong phòng
-      const nextSessionBest = isOutplay ? Math.max(sessionBestWpm || 0, liveWpm) : 0;
-      setConditionStats((prev) => ({
+      // Update condition stats
+      const nextSessionBest = isOutplay ? Math.max(sessionBestWpm || 0, liveWpm) : liveWpm;
+      setInternalConditionStats((prev) => ({
         ...prev,
         [currentConditionKey]: {
           lastWpm: liveWpm,
           bestWpm: nextSessionBest,
         },
       }));
+      onUpdateConditionStats?.(currentConditionKey, liveWpm, nextSessionBest);
       onUpdateSessionStats?.(liveWpm, isOutplay ? nextSessionBest : 0);
 
       const ghostWpm = activeGhostRecord?.wpm ?? (outplayPaceMode === 'custom' ? outplayCustomWpm : 0);
       const elapsedSeconds = Math.max(0.1, (now - startTimePerfRef.current) / 1000);
+      const finalConsistency = calculateConsistency(keystrokesRef.current, elapsedSeconds);
 
       // Add final point to timeline
       const finalSec = Math.max(1, Math.round(elapsedSeconds));
       recordTimelinePoint(finalSec, false);
 
-      onFinish(newCorrectChars, newErrors, keystrokesRef.current, currentConsistency, {
+      const normalizedChart = normalizeChartTimeline(
+        performanceTimelineRef.current,
+        elapsedSeconds,
+        liveWpm,
+        isOutplay ? nextSessionBest : undefined,
+        ghostWpm > 0 ? ghostWpm : undefined
+      );
+
+      onFinish(newCorrectChars, newErrors, keystrokesRef.current, finalConsistency, {
         lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
         sessionBestWpm: isOutplay ? nextSessionBest : undefined,
         finalWpm: liveWpm,
         elapsedSeconds,
-        chartData: [...performanceTimelineRef.current],
+        chartData: normalizedChart,
         ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
           ghostWpm,
           wpmDiff: liveWpm - ghostWpm,
@@ -1020,25 +1054,26 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     onUpdateSessionStats,
   ]);
 
-  // Start Outplay timer immediately on first keypress without waiting for first word
-  const startOutplayTimerIfNeeded = useCallback(() => {
+  // Outplay start typing helper: starts timer & records baseline immediately
+  const startTypingIfNeeded = useCallback(() => {
     if (isOutplay && !hasStartedTyping) {
-      const now = performance.now();
       setHasStartedTyping(true);
+      const now = performance.now();
       startTimePerfRef.current = now;
       lastWordTimestampRef.current = now;
       ghostJourneyRef.current = [{ t: 0, charIdx: 0 }];
     }
   }, [isOutplay, hasStartedTyping]);
 
-  // Composition API Listeners
+  // Composition API Listeners (Vietnamese IME)
   const handleCompositionStart = () => {
     isComposingRef.current = true;
-    startOutplayTimerIfNeeded();
+    startTypingIfNeeded();
   };
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
     isComposingRef.current = false;
+    startTypingIfNeeded();
     const val = e.currentTarget.value;
     setCurrentInput(val);
 
@@ -1055,13 +1090,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     soundFx.playKeyClick(false);
   };
 
-  // Main Input Change Handler
+  // Main Input Change Handler - Live feedback per character
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     const now = performance.now();
 
-    // Bắt đầu tính giờ ngay khi người chơi nhấn phím (không đợi hoàn thành chữ đầu tiên)
-    startOutplayTimerIfNeeded();
+    // Outplay mode: Start timer immediately on first character!
+    startTypingIfNeeded();
 
     // Record sub-millisecond keystroke
     keystrokesRef.current.push({
@@ -1081,23 +1116,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
 
-    // Cập nhật live WPM và tiến độ tức thời ngay khi gõ từng ký tự
-    const targetW = effectiveWords[currentWordIndex] || '';
-    let partChars = 0;
-    for (let i = 0; i < val.length; i++) {
-      if (val[i] === targetW[i]) partChars += 1;
-      else break;
-    }
-    const liveCorrect = correctChars + partChars;
-    const elapsedMinutes = Math.max(0.01, (now - startTimePerfRef.current) / 60000);
-    const liveCurrentWpm = Math.round(liveCorrect / 5 / elapsedMinutes);
-    const targetWordCount = isOutplay && outplayTestType === 'words' ? outplayWordCount : effectiveWords.length;
-    const liveProgress = Math.min(
-      100,
-      Math.round(((currentWordIndex + (val.length / Math.max(1, targetW.length))) / targetWordCount) * 100)
-    );
-    onUpdateProgress(liveProgress, liveCorrect, totalErrors, liveCurrentWpm);
-
     // If space pressed and not composing Vietnamese tones
     if (!isComposingRef.current && (val.endsWith(' ') || val.endsWith('\n'))) {
       soundFx.playKeyClick(true);
@@ -1109,20 +1127,45 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     if (!isComposingRef.current) {
       soundFx.playKeyClick(false);
     }
+
+    // Realtime live WPM and progress feedback
+    const targetWord = effectiveWords[currentWordIndex] || '';
+    let matchingCharsInVal = 0;
+    for (let i = 0; i < val.length && i < targetWord.length; i++) {
+      if (val[i] === targetWord[i]) matchingCharsInVal++;
+      else break;
+    }
+    const currentLiveCorrect = correctChars + matchingCharsInVal;
+    const nowElapsedMin = Math.max(0.003, (now - startTimePerfRef.current) / 60000);
+    const charLiveWpm = Math.max(0, Math.round((currentLiveCorrect / 5) / nowElapsedMin));
+    const targetWordCount = Math.max(
+      1,
+      isOutplay && outplayTestType === 'words'
+        ? outplayWordCount
+        : effectiveWords.length > 0
+        ? effectiveWords.length
+        : 150
+    );
+    // Stable monotonic progress based on completed words, advancing smoothly when space is pressed
+    const stableProg = Math.min(100, Math.round((currentWordIndex / targetWordCount) * 100));
+
+    onUpdateProgress(stableProg, currentLiveCorrect, totalErrors, charLiveWpm);
   };
 
   // Backspace key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Start Outplay timer on first keypress if not started
+    if (inRoomCountdown !== null) {
+      e.preventDefault();
+      return;
+    }
+
+    // Start Outplay timer immediately on first keypress (including printable characters, backspace, IME keys)
     if (
       isOutplay &&
       !hasStartedTyping &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      !e.altKey &&
-      !['Tab', 'Escape', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)
+      !['Tab', 'Alt', 'Control', 'Meta', 'Escape', 'Shift', 'CapsLock'].includes(e.key)
     ) {
-      startOutplayTimerIfNeeded();
+      startTypingIfNeeded();
     }
 
     if (e.key === 'Backspace') {
@@ -1166,8 +1209,16 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               }
             }, 0);
 
-            const progress = Math.min(100, Math.round((prevIndex / effectiveWords.length) * 100));
-            const elapsed = Math.max(0.01, (performance.now() - startTimePerfRef.current) / 60000);
+            const targetWordCount = Math.max(
+              1,
+              isOutplay && outplayTestType === 'words'
+                ? outplayWordCount
+                : effectiveWords.length > 0
+                ? effectiveWords.length
+                : 150
+            );
+            const progress = Math.min(100, Math.round((prevIndex / targetWordCount) * 100));
+            const elapsed = Math.max(0.003, (performance.now() - startTimePerfRef.current) / 60000);
             const liveWpmVal = Math.round(correctChars / 5 / elapsed);
             onUpdateProgress(progress, correctChars, newErrors, liveWpmVal);
           }
@@ -1176,12 +1227,19 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }
   };
 
-  // Sub-millisecond Live WPM & Accuracy
-  const elapsedMinutes = Math.max(0.01, (performance.now() - startTimePerfRef.current) / 60000);
-  const liveWpm = hasStartedTyping ? Math.round(correctChars / 5 / elapsedMinutes) : 0;
+  // Sub-millisecond Live WPM & Accuracy (Calculated with matching characters of current word)
+  const currentTargetWord = effectiveWords[currentWordIndex] || '';
+  let matchingCharsInCurrent = 0;
+  for (let i = 0; i < currentInput.length && i < currentTargetWord.length; i++) {
+    if (currentInput[i] === currentTargetWord[i]) matchingCharsInCurrent++;
+    else break;
+  }
+  const totalLiveCorrect = correctChars + matchingCharsInCurrent;
+  const elapsedMinutes = Math.max(0.003, (performance.now() - startTimePerfRef.current) / 60000);
+  const liveWpm = hasStartedTyping ? Math.max(0, Math.round(totalLiveCorrect / 5 / elapsedMinutes)) : 0;
   const accuracy = Math.max(
     0,
-    Math.round((correctChars / Math.max(1, correctChars + totalErrors * 5)) * 100)
+    Math.round((totalLiveCorrect / Math.max(1, totalLiveCorrect + totalErrors * 5)) * 100)
   );
 
   return (
@@ -1486,15 +1544,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                       {timeLeft}s
                     </span>
                   ) : (
-                    <span className="text-amber-400 flex items-center justify-end gap-1">
-                      <span>{currentWordIndex}</span>
-                      <span className="text-slate-600 text-lg">/</span>
-                      <span>{outplayWordCount}</span>
-                      {hasStartedTyping && (
-                        <span className="text-xs font-medium text-slate-400 ml-1 font-sans">
-                          ({elapsedSeconds}s)
-                        </span>
-                      )}
+                    <span className="text-amber-400">
+                      {currentWordIndex} <span className="text-slate-600 text-lg">/</span> {outplayWordCount}
                     </span>
                   )}
                 </div>
@@ -1514,12 +1565,14 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             <div className="flex items-center gap-2">
               <span className="flex items-center gap-1 text-slate-300 font-mono">
                 <Clock className="w-3.5 h-3.5 text-sky-400" />
-                {arenaCountdown > 0 ? (
+                {inRoomCountdown !== null ? (
                   <span className="text-amber-400 font-bold animate-pulse">
-                    Bắt đầu sau: 00:0{arenaCountdown}
+                    Đếm ngược: {inRoomCountdown === 0 ? 'XUẤT PHÁT!' : `${inRoomCountdown}s`}
                   </span>
                 ) : (
-                  `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`
+                  <span>
+                    {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                  </span>
                 )}
               </span>
             </div>
@@ -1598,62 +1651,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         </div>
       )}
 
-      {/* Surrendered Notice Banner for Current Player (Now with Home Button) */}
-      {isPlayerSurrendered && (
-        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/50 text-center space-y-2.5 animate-fadeIn">
-          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
-            <Flag className="w-4 h-4 text-rose-400" />
-            <span>Bạn đã đầu hàng ván đấu này.</span>
-          </div>
-          <p className="text-xs text-slate-400">
-            Bạn có thể xem bảng kết quả, chơi lại ván mới hoặc quay về trang chủ ngay.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
-            <button
-              id="btn-surrender-view-summary"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                if (!isFinishedRef.current) {
-                  isFinishedRef.current = true;
-                  onFinish(correctChars, totalErrors, keystrokesRef.current, liveConsistency);
-                }
-              }}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-            >
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>Xem Bảng Xếp Hạng</span>
-            </button>
-            <button
-              id="btn-surrender-restart-game"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                onRestart();
-              }}
-              className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Chơi Ván Mới</span>
-            </button>
-            {onHome && (
-              <button
-                id="btn-surrender-home"
-                type="button"
-                onClick={() => {
-                  soundFx.playKeyClick();
-                  onHome();
-                }}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-              >
-                <Home className="w-4 h-4 text-sky-400" />
-                <span>Trang Chủ</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Live Stats HUD (Session Focused: Tốc độ, Số lỗi, Tốc độ ván trước, Tốc độ cao nhất phiên) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* 1. Tốc Độ (WPM) */}
@@ -1691,7 +1688,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           </div>
         </div>
 
-        {/* 4. Tốc Độ Cao Nhất */}
+        {/* 4. Tốc Độ Cao Nhất Phiên Này */}
         <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-center shadow-md">
           <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-center gap-1.5">
             <Trophy className="w-3.5 h-3.5 text-yellow-400" />
@@ -1701,10 +1698,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             {sessionBestWpm && sessionBestWpm > 0 ? (
               <span>
                 {sessionBestWpm} <span className="text-xs font-normal text-slate-400">WPM</span>
-              </span>
-            ) : liveWpm > 0 ? (
-              <span>
-                {liveWpm} <span className="text-xs font-normal text-slate-400">WPM</span>
               </span>
             ) : (
               <span className="text-slate-500 font-sans font-medium text-lg">---</span>
@@ -1726,24 +1719,24 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         onClick={handleArenaClick}
         className="p-6 rounded-2xl bg-[#131722] border border-slate-800 shadow-2xl relative overflow-hidden cursor-text"
       >
-        {/* In-Arena Multiplayer Countdown Overlay (3s count before match starts) */}
-        {arenaCountdown > 0 && (
-          <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-3 select-none pointer-events-auto">
-            <div className="text-[11px] uppercase font-black tracking-widest text-amber-400 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 shadow-lg flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 animate-spin" />
-              <span>Chuẩn Bị Xuất Phát</span>
+        {/* Multiplayer In-Room 3s Countdown Overlay */}
+        {inRoomCountdown !== null && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-[2px] rounded-2xl select-none">
+            <div
+              key={inRoomCountdown}
+              className="text-8xl sm:text-9xl font-black text-amber-400 font-mono drop-shadow-[0_0_35px_rgba(251,191,36,0.7)] animate-pulse"
+            >
+              {inRoomCountdown === 0 ? 'XUẤT PHÁT!' : inRoomCountdown}
             </div>
-            <div className="text-8xl sm:text-9xl font-black font-mono text-amber-400 drop-shadow-[0_0_35px_rgba(251,191,36,0.6)] animate-bounce">
-              {arenaCountdown}
-            </div>
-            <div className="text-slate-300 text-xs sm:text-sm font-semibold tracking-wide">
-              Đồng hồ đếm ngược <span className="text-amber-400 font-bold">{arenaCountdown}s</span> rồi mới chạy thời gian ván đấu
+            <div className="mt-4 px-4 py-1.5 rounded-full bg-slate-900/90 border border-amber-500/40 text-amber-300 font-mono text-xs sm:text-sm tracking-wider uppercase flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span>{inRoomCountdown === 0 ? 'Bắt đầu ván đấu!' : 'Chuẩn bị bàn phím...'}</span>
             </div>
           </div>
         )}
 
         {/* Monkeytype Unfocused Overlay - ONLY during an active test where typing has started */}
-        {!isFocused && hasStartedTyping && !isPlayerSurrendered && timeLeft > 0 && !isVocabOpen && !isGhostOpen && (
+        {!isFocused && hasStartedTyping && !isPlayerSurrendered && timeLeft > 0 && !isVocabOpen && !isGhostOpen && inRoomCountdown === null && (
           <div
             onClick={(e) => {
               e.stopPropagation();
@@ -1883,7 +1876,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               ref={inputRef}
               type="text"
               value={currentInput}
-              disabled={arenaCountdown > 0 || isPlayerSurrendered || (isOutplay ? false : timeLeft <= 0)}
+              disabled={isPlayerSurrendered || timeLeft <= 0 || inRoomCountdown !== null}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
               onCompositionStart={handleCompositionStart}
@@ -1900,10 +1893,10 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               }}
               onPaste={(e) => e.preventDefault()}
               placeholder={
-                arenaCountdown > 0
-                  ? `Đang đếm ngược chuẩn bị ${arenaCountdown}s...`
-                  : isPlayerSurrendered
+                isPlayerSurrendered
                   ? "Bạn đã đầu hàng ván đấu này."
+                  : inRoomCountdown !== null
+                  ? `Trận đấu sẽ bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
                   : isOutplay && !hasStartedTyping
                   ? "Gõ phím bất kỳ để bắt đầu tính giờ..."
                   : "Nhập chữ ở đây và bấm Cách (Space) để qua từ..."
@@ -1960,6 +1953,75 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Surrendered Notice Banner for Current Player - Placed at the very bottom of the screen */}
+      {isPlayerSurrendered && (
+        <div className="fixed bottom-4 inset-x-4 max-w-2xl mx-auto z-40 p-4 rounded-2xl bg-slate-900/95 border-2 border-rose-500/60 shadow-2xl backdrop-blur-md text-center space-y-2.5 animate-fadeIn">
+          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
+            <Flag className="w-4 h-4 text-rose-400" />
+            <span>Bạn đã đầu hàng ván đấu này.</span>
+          </div>
+          <p className="text-xs text-slate-400">
+            Bạn có thể xem bảng kết quả, chơi lại ván mới hoặc quay về trang chủ ngay.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+            <button
+              id="btn-surrender-view-summary"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                if (!isFinishedRef.current) {
+                  isFinishedRef.current = true;
+                  const elapsedSeconds = Math.max(0.1, (performance.now() - startTimePerfRef.current) / 1000);
+                  const normalizedChart = normalizeChartTimeline(
+                    performanceTimelineRef.current,
+                    elapsedSeconds,
+                    liveWpm,
+                    isOutplay ? sessionBestWpm : undefined
+                  );
+                  onFinish(correctChars, totalErrors, keystrokesRef.current, liveConsistency, {
+                    lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
+                    sessionBestWpm: isOutplay ? sessionBestWpm : undefined,
+                    finalWpm: liveWpm,
+                    elapsedSeconds,
+                    chartData: normalizedChart,
+                  });
+                }
+              }}
+              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+            >
+              <Trophy className="w-4 h-4 text-amber-400" />
+              <span>Xem Bảng Xếp Hạng</span>
+            </button>
+            <button
+              id="btn-surrender-restart-game"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                onRestart();
+              }}
+              className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Chơi Ván Mới</span>
+            </button>
+            {onHome && (
+              <button
+                id="btn-surrender-home"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  onHome();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                <Home className="w-4 h-4 text-sky-400" />
+                <span>Trang Chủ</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Surrender Confirmation Modal with Esc & Enter Support */}
       {showSurrenderModal && (

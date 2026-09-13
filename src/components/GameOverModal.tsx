@@ -3,6 +3,7 @@ import { Player } from '../types';
 import { soundFx } from '../utils/audio';
 import { Trophy, CheckCircle2, RotateCcw, Home, Users, Gauge, Target, Activity, AlertTriangle, TrendingUp } from 'lucide-react';
 import { PerformanceChart } from './PerformanceChart';
+import { normalizeChartTimeline } from '../utils/chartHelper';
 
 interface GameOverModalProps {
   players: Player[];
@@ -49,6 +50,17 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const wpmDiffFromLast = me?.lastWpm && me.lastWpm > 0 && me.wpm
     ? me.wpm - me.lastWpm
     : 0;
+
+  const chartDataToDisplay = React.useMemo(() => {
+    if (me?.chartData && me.chartData.length > 0) {
+      return me.chartData;
+    }
+    const finalWpm = me?.wpm || (me?.correctChars ? Math.round((me.correctChars / 5) / 1) : 0);
+    if (finalWpm > 0) {
+      return normalizeChartTimeline([], 60, finalWpm, isOutplay ? me?.sessionBestWpm : undefined);
+    }
+    return [];
+  }, [me?.chartData, me?.wpm, me?.correctChars, isOutplay, me?.sessionBestWpm]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn overflow-y-auto">
@@ -204,12 +216,12 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             )}
 
             {/* Performance Timeline Chart (Đường người chơi, đường ghost, kỷ lục phiên, các lỗi sai) */}
-            {me.chartData && me.chartData.length > 0 && (
+            {chartDataToDisplay.length > 0 && (
               <PerformanceChart
-                data={me.chartData}
-                sessionBestWpm={isOutplay ? me.sessionBestWpm : undefined}
-                ghostWpm={me.ghostDiff?.ghostWpm}
-                hasGhost={!!me.ghostDiff}
+                data={chartDataToDisplay}
+                sessionBestWpm={isOutplay ? me?.sessionBestWpm : undefined}
+                ghostWpm={me?.ghostDiff?.ghostWpm}
+                hasGhost={!!me?.ghostDiff}
               />
             )}
 

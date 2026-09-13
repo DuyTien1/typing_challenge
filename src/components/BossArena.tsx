@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Player, BossState, KeystrokeEvent } from '../types';
+import { Player, BossState, KeystrokeEvent, PerformanceChartPoint } from '../types';
 import { soundFx } from '../utils/audio';
 import { calculateBossDamageServer } from '../utils/antiCheat';
+import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { 
   ShieldAlert, 
@@ -21,9 +22,9 @@ interface BossArenaProps {
   currentPlayerId: string;
   onDealDamage: (damage: number, errors: number) => void;
   onSelfDestruct: () => void;
-  onFinish: (isVictory: boolean, totalDamage: number, errors: number) => void;
+  onFinish: (isVictory: boolean, totalDamage: number, errors: number, chartData?: PerformanceChartPoint[]) => void;
   onRestart: () => void;
-  initialCountdown?: number;
+  isMultiplayer?: boolean;
 }
 
 export const BossArena: React.FC<BossArenaProps> = ({
@@ -35,10 +36,31 @@ export const BossArena: React.FC<BossArenaProps> = ({
   onSelfDestruct,
   onFinish,
   onRestart,
-  initialCountdown = 0,
+  isMultiplayer = false,
 }) => {
-  const [arenaCountdown, setArenaCountdown] = useState<number>(initialCountdown || 0);
   const [boss, setBoss] = useState<BossState>(initialBoss);
+  const [inRoomCountdown, setInRoomCountdown] = useState<number | null>(() => {
+    return isMultiplayer ? 3 : null;
+  });
+
+  useEffect(() => {
+    if (inRoomCountdown === null) return;
+
+    if (inRoomCountdown > 0) {
+      soundFx.playCountdown(false);
+      const timer = setTimeout(() => {
+        setInRoomCountdown((prev) => (prev !== null ? prev - 1 : null));
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (inRoomCountdown === 0) {
+      soundFx.playCountdown(true);
+      const timer = setTimeout(() => {
+        setInRoomCountdown(null);
+        inputRef.current?.focus();
+      }, 650);
+      return () => clearTimeout(timer);
+    }
+  }, [inRoomCountdown]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentInput, setCurrentInput] = useState('');
   const [totalDamageDealt, setTotalDamageDealt] = useState(0);
@@ -66,6 +88,8 @@ export const BossArena: React.FC<BossArenaProps> = ({
   const isComposingRef = useRef(false);
   const lastWordTimestampRef = useRef<number>(performance.now());
   const keystrokesRef = useRef<KeystrokeEvent[]>([]);
+  const startTimeRef = useRef<number>(performance.now());
+  const performanceTimelineRef = useRef<PerformanceChartPoint[]>([]);
 
   // Auto focus & global keypress capture
   useEffect(() => {
@@ -107,57 +131,47 @@ export const BossArena: React.FC<BossArenaProps> = ({
     onFinishRef.current = onFinish;
   }, [onFinish]);
 
-  // In-arena 3s countdown effect for multiplayer room
+  // Countdown timer: decrement pure timeLeft & sample performance timeline
   useEffect(() => {
-    if (arenaCountdown <= 0) return;
-    soundFx.playCountdown(false);
-
-    const timer = setInterval(() => {
-      setArenaCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          soundFx.playCountdown(true);
-          setTimeout(() => {
-            inputRef.current?.focus();
-            setIsFocused(true);
-          }, 30);
-          return 0;
-        }
-        soundFx.playCountdown(false);
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  // Countdown timer: decrement pure timeLeft after in-arena countdown
-  useEffect(() => {
-    if (arenaCountdown > 0) return;
+    if (inRoomCountdown !== null) return;
     const timer = setInterval(() => {
       setTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+
+      if (!isFinishedRef.current) {
+        const elapsedSec = Math.max(1, Math.round((performance.now() - startTimeRef.current) / 1000));
+        const liveWpm = Math.max(0, Math.round((totalDamageRef.current / 5) / (elapsedSec / 60)));
+        performanceTimelineRef.current.push({
+          second: elapsedSec,
+          playerWpm: liveWpm,
+          errors: 0,
+          errorPlot: null,
+        });
+      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [arenaCountdown]);
+  }, [inRoomCountdown]);
 
   // When timeLeft reaches 0, trigger onFinish safely in useEffect
   useEffect(() => {
     if (timeLeft <= 0 && !isFinishedRef.current) {
       isFinishedRef.current = true;
       const victory = bossHpRef.current <= 0;
-      onFinishRef.current(victory, totalDamageRef.current, totalErrorsRef.current);
+      const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
+      const finalWpm = Math.max(0, Math.round((totalDamageRef.current / 5) / (elapsedSec / 60)));
+      const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
+      onFinishRef.current(victory, totalDamageRef.current, totalErrorsRef.current, chartData);
     }
   }, [timeLeft]);
 
   // Boss Skill cyclical loop
   useEffect(() => {
-    if (arenaCountdown > 0) return;
+    if (inRoomCountdown !== null) return;
     const intervalMs = (boss.skillInterval || 14) * 1000;
     const warningDurationSec = boss.skillWarningDuration || 2;
 
     const skillInterval = setInterval(() => {
-      if (boss.hp <= 0 || arenaCountdown > 0) return;
+      if (boss.hp <= 0) return;
 
       const rates = boss.skillRates || {
         shield: 25,
@@ -347,8 +361,13 @@ export const BossArena: React.FC<BossArenaProps> = ({
           currentHp = Math.max(0, currentHp - dmg);
         }
 
-        if (currentHp <= 0) {
-          onFinish(true, totalDamageDealt + damageResult.damage, totalErrors);
+        if (currentHp <= 0 && !isFinishedRef.current) {
+          isFinishedRef.current = true;
+          const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
+          const finalDmg = totalDamageDealt + damageResult.damage;
+          const finalWpm = Math.max(0, Math.round((finalDmg / 5) / (elapsedSec / 60)));
+          const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
+          onFinish(true, finalDmg, totalErrors, chartData);
         }
 
         return {
@@ -367,6 +386,14 @@ export const BossArena: React.FC<BossArenaProps> = ({
       soundFx.playError();
       setCombo(0);
       setTotalErrors((err) => err + 1);
+      const elapsedSec = Math.max(1, Math.round((performance.now() - startTimeRef.current) / 1000));
+      const liveWpm = Math.max(0, Math.round((totalDamageRef.current / 5) / (elapsedSec / 60)));
+      performanceTimelineRef.current.push({
+        second: elapsedSec,
+        playerWpm: liveWpm,
+        errors: 1,
+        errorPlot: liveWpm,
+      });
     }
 
     setCurrentWordIndex((idx) => (idx + 1) % words.length);
@@ -532,13 +559,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
           <div className="flex items-center gap-3">
             <div className="px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700 flex items-center gap-1.5 font-mono text-xs text-slate-300">
               <Clock className="w-4 h-4 text-amber-400" />
-              {arenaCountdown > 0 ? (
-                <span className="text-amber-400 font-bold animate-pulse">
-                  Bắt đầu sau: 00:0{arenaCountdown}
-                </span>
-              ) : (
-                <span>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
-              )}
+              <span>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
             </div>
             <div className="text-right">
               <div className="text-xs text-slate-400 font-medium">Sát thương của bạn</div>
@@ -623,22 +644,6 @@ export const BossArena: React.FC<BossArenaProps> = ({
       <div className={`p-6 rounded-2xl bg-[#141824] border border-slate-800 shadow-2xl relative ${
         smokeEffect ? 'filter blur-xs opacity-75' : ''
       }`}>
-        {/* In-Arena Multiplayer Countdown Overlay */}
-        {arenaCountdown > 0 && (
-          <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-3 select-none pointer-events-auto rounded-2xl">
-            <div className="text-[11px] uppercase font-black tracking-widest text-amber-400 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 shadow-lg flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 animate-spin" />
-              <span>Săn Boss Hắc Long</span>
-            </div>
-            <div className="text-8xl font-black font-mono text-amber-400 drop-shadow-[0_0_35px_rgba(251,191,36,0.6)] animate-bounce">
-              {arenaCountdown}
-            </div>
-            <div className="text-slate-300 text-xs sm:text-sm font-semibold tracking-wide">
-              Trận chiến bắt đầu sau <span className="text-amber-400 font-bold">{arenaCountdown}s</span> rồi mới chạy thời gian!
-            </div>
-          </div>
-        )}
-
         {/* Active Debuff Badges */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {reverseEffect && (
@@ -670,8 +675,23 @@ export const BossArena: React.FC<BossArenaProps> = ({
           }}
           className="relative text-center py-6 px-4 my-2 rounded-xl bg-slate-950/60 border border-slate-800/80 overflow-hidden cursor-text select-none"
         >
+          {/* Multiplayer In-Room 3s Countdown Overlay */}
+          {inRoomCountdown !== null && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-[2px] rounded-xl select-none">
+              <div
+                key={inRoomCountdown}
+                className="text-7xl sm:text-8xl font-black text-amber-400 font-mono drop-shadow-[0_0_30px_rgba(251,191,36,0.7)] animate-pulse"
+              >
+                {inRoomCountdown === 0 ? 'XUẤT PHÁT!' : inRoomCountdown}
+              </div>
+              <div className="mt-3 px-3 py-1 rounded-full bg-slate-900/90 border border-amber-500/40 text-amber-300 font-mono text-xs tracking-wider uppercase">
+                {inRoomCountdown === 0 ? 'Tấn công Boss!' : 'Chuẩn bị xuất chiêu...'}
+              </div>
+            </div>
+          )}
+
           {/* Monkeytype Unfocused Overlay */}
-          {!isFocused && (
+          {!isFocused && inRoomCountdown === null && (
             <div
               onClick={() => {
                 inputRef.current?.focus();
@@ -763,19 +783,19 @@ export const BossArena: React.FC<BossArenaProps> = ({
             ref={inputRef}
             type="text"
             value={currentInput}
-            disabled={arenaCountdown > 0 || isFinishedRef.current || timeLeft <= 0}
             onChange={handleInputChange}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             onPaste={(e) => e.preventDefault()}
+            disabled={timeLeft <= 0 || inRoomCountdown !== null}
             placeholder={
-              arenaCountdown > 0
-                ? `Đang đếm ngược chuẩn bị ${arenaCountdown}s...`
+              inRoomCountdown !== null
+                ? `Trận chiến bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
                 : "Gõ từ trên và bấm Cách (Space) để xuất chiêu..."
             }
-            className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-red-500/50 text-white font-['JetBrains_Mono',monospace] text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-red-500/50 text-white font-['JetBrains_Mono',monospace] text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner"
             autoComplete="off"
             autoCorrect="off"
             spellCheck="false"

@@ -11,6 +11,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { PerformanceChartPoint } from '../types';
+import { getStandardTimeTicks } from '../utils/chartHelper';
 
 interface PerformanceChartProps {
   data: PerformanceChartPoint[];
@@ -38,19 +39,17 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({
   );
   const yUpper = Math.ceil((maxDataWpm + 15) / 10) * 10;
 
-  // Generate X-axis ticks: 10s intervals + event points (errors or finish)
-  const xTicks = React.useMemo(() => {
+  // Find max second duration of the match
+  const maxSec = React.useMemo(() => {
     const seconds = data.map((d) => d.second);
-    const maxSec = Math.max(...seconds, 10);
-    const baseTicks: number[] = [];
-    for (let s = 10; s <= maxSec; s += 10) {
-      baseTicks.push(s);
-    }
-    const eventTicks = data
-      .filter((d) => d.errors > 0 || d.second === maxSec)
-      .map((d) => d.second);
-    return Array.from(new Set([...baseTicks, ...eventTicks])).sort((a, b) => a - b);
+    return Math.max(...seconds, 1);
   }, [data]);
+
+  // Calculate 8 to 15 standard time milestones based strictly on match duration
+  const standardTicks = React.useMemo(() => {
+    const { ticks } = getStandardTimeTicks(maxSec);
+    return ticks;
+  }, [maxSec]);
 
   return (
     <div className="w-full p-4 rounded-2xl bg-slate-950/80 border border-slate-800/90 shadow-xl">
@@ -58,12 +57,14 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <XAxis
+              type="number"
               dataKey="second"
+              domain={[0, maxSec]}
               stroke="#64748b"
               fontSize={11}
               tickLine={false}
               axisLine={{ stroke: '#334155' }}
-              ticks={xTicks}
+              ticks={standardTicks}
               tickFormatter={(v) => `${v}s`}
             />
             <YAxis
