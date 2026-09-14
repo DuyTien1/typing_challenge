@@ -12,7 +12,8 @@ import {
   Clock, 
   ShieldCheck,
   AlertTriangle,
-  MousePointerClick
+  MousePointerClick,
+  Home
 } from 'lucide-react';
 
 interface BossArenaProps {
@@ -20,10 +21,11 @@ interface BossArenaProps {
   boss: BossState;
   players: Player[];
   currentPlayerId: string;
-  onDealDamage: (damage: number, errors: number) => void;
+  onDealDamage: (damage: number, errors: number, playerId?: string) => void;
   onSelfDestruct: () => void;
   onFinish: (isVictory: boolean, totalDamage: number, errors: number, chartData?: PerformanceChartPoint[]) => void;
   onRestart: () => void;
+  onHome?: () => void;
   isMultiplayer?: boolean;
 }
 
@@ -36,6 +38,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
   onSelfDestruct,
   onFinish,
   onRestart,
+  onHome,
   isMultiplayer = false,
 }) => {
   const [boss, setBoss] = useState<BossState>(initialBoss);
@@ -283,6 +286,113 @@ export const BossArena: React.FC<BossArenaProps> = ({
     boss.skillRates,
     players.length,
   ]);
+
+  // Stable bot key so player score changes don't re-trigger or tear down intervals
+  const botKey = players
+    .filter((p) => p.isBot)
+    .map((p) => `${p.id}:${p.botTargetWpm}`)
+    .join('|');
+
+  // Bot Attack Simulation in Boss Arena
+  useEffect(() => {
+    if (inRoomCountdown !== null) return;
+    const botPlayers = players.filter((p) => p.isBot && !p.isSurrendered);
+    if (botPlayers.length === 0) return;
+
+    const botIntervals: NodeJS.Timeout[] = [];
+
+    botPlayers.forEach((bot) => {
+      const targetWpm = bot.botTargetWpm || 65;
+      // Realistic attack interval based on typing speed:
+      // At 60 WPM, 1 word per sec. Attack every 1.2s to 2.2s
+      const attackIntervalMs = Math.max(1200, Math.min(2600, Math.round((60 / targetWpm) * 1700)));
+
+      const timer = setInterval(() => {
+        if (isFinishedRef.current) return;
+
+        // Base damage scaled with bot WPM + small variance
+        const baseDmg = Math.max(6, Math.round((targetWpm / 60) * 10 + (Math.random() * 4 - 2)));
+
+        setBoss((prev) => {
+          if (prev.hp <= 0) return prev;
+
+          const isCrit = prev.isStunned || Math.random() < 0.15;
+          let dmg = isCrit ? Math.round(baseDmg * 1.5) : baseDmg;
+          let currentShield = prev.shield;
+          let currentHp = prev.hp;
+          let isStunned = prev.isStunned;
+          let isShieldActive = prev.isShieldActive;
+
+          if (prev.isShieldActive && currentShield > 0) {
+            if (currentShield <= dmg) {
+              dmg -= currentShield;
+              currentShield = 0;
+              isShieldActive = false;
+              isStunned = true;
+              soundFx.playShieldBreak();
+              setCombatLogs((l) => [
+                `⚡ [${bot.username}] ĐÃ PHÁ VỠ KHIÊN BOSS! Boss bị Choáng!`,
+                ...l.slice(0, 5),
+              ]);
+              setTimeout(() => {
+                setBoss((b) => ({ ...b, isStunned: false }));
+              }, boss.stunDuration * 1000);
+            } else {
+              currentShield -= dmg;
+              dmg = 0;
+            }
+          }
+
+          if (dmg > 0) {
+            currentHp = Math.max(0, currentHp - dmg);
+          }
+
+          // Floating damage animation for bot
+          const dmgId = Date.now() + Math.random();
+          setFloatingDamages((f) => [
+            ...f,
+            { id: dmgId, text: `-${baseDmg} (${bot.username})`, isCrit },
+          ]);
+          setTimeout(() => {
+            setFloatingDamages((f) => f.filter((d) => d.id !== dmgId));
+          }, 900);
+
+          // Add to combat logs occasionally
+          setCombatLogs((l) => [
+            `⚔️ [${bot.username}] tấn công gây ${dmg || baseDmg} DMG!`,
+            ...l.slice(0, 5),
+          ]);
+
+          // Check Boss victory
+          if (currentHp <= 0 && !isFinishedRef.current) {
+            isFinishedRef.current = true;
+            const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
+            const finalDmg = totalDamageRef.current;
+            const finalWpm = Math.max(0, Math.round((finalDmg / 5) / (elapsedSec / 60)));
+            const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
+            onFinishRef.current(true, finalDmg, totalErrorsRef.current, chartData);
+          }
+
+          return {
+            ...prev,
+            shield: currentShield,
+            hp: currentHp,
+            isShieldActive,
+            isStunned,
+          };
+        });
+
+        // Award damage to bot
+        onDealDamage(baseDmg, 0, bot.id);
+      }, attackIntervalMs);
+
+      botIntervals.push(timer);
+    });
+
+    return () => {
+      botIntervals.forEach((t) => clearInterval(t));
+    };
+  }, [inRoomCountdown, botKey, boss.stunDuration, onDealDamage]);
 
   // Giải pháp 4: Thẩm định sát thương Boss Server-Side
   const commitBossWord = useCallback(() => {
@@ -824,10 +934,76 @@ export const BossArena: React.FC<BossArenaProps> = ({
               onRestart();
             }}
             className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-            title="Đấu lại"
+            title={isMultiplayer ? 'Đấu lại (Về phòng chờ)' : 'Đấu lại'}
           >
             <RotateCcw className="w-5 h-5" />
           </button>
+
+          {onHome && (
+            <button
+              id="btn-boss-home"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick(false);
+                onHome();
+              }}
+              className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              title="Về Trang Chủ"
+            >
+              <Home className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Raid Team Scoreboard / Damage Meter */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs text-slate-400 font-medium px-1">
+          <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px] text-slate-300">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            Đội Hình Săn Boss ({players.length} dũng sĩ)
+          </span>
+          <span className="text-[11px] text-slate-500">
+            Tổng sát thương đã gây: <strong className="text-red-400 font-mono">{boss.maxHp - boss.hp} DMG</strong>
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {players.map((p) => {
+            const isMe = p.id === currentPlayerId;
+            const dmg = isMe ? totalDamageDealt : (p.score || 0);
+            return (
+              <div
+                key={p.id}
+                className={`p-3 rounded-xl border flex flex-col justify-between gap-1.5 transition-all ${
+                  isMe
+                    ? 'bg-amber-500/10 border-amber-500/50 shadow-md shadow-amber-500/5 ring-1 ring-amber-500/30'
+                    : 'bg-slate-900/90 border-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-base">{p.icon}</span>
+                    <span className="text-xs font-semibold text-white truncate flex items-center gap-1">
+                      {p.username}
+                      {p.isBot && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                          BOT
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-800/80">
+                  <span className="text-[10px] text-slate-400">
+                    {p.isSurrendered ? 'Đã tự bạo' : isMe ? 'Bạn' : p.isBot ? `${p.botTargetWpm || 60} WPM` : 'Đồng đội'}
+                  </span>
+                  <span className="font-mono text-xs font-black text-rose-400">
+                    {dmg} <span className="text-[10px] text-slate-400 font-normal">DMG</span>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -21,6 +21,7 @@ interface Player {
   isAFK: boolean;
   isBot?: boolean;
   botTargetWpm?: number;
+  inMatch?: boolean;
 }
 
 interface GameRoom {
@@ -188,18 +189,66 @@ function saveLeaderboardToFile() {
   }
 }
 
-// Presence and SSE Client Tracking
-const sseGlobalClients = new Map<express.Response, string>(); // res -> userId
+// Presence and SSE Client Tracking with multi-layer heartbeat & session management
+interface PresenceSession {
+  tabId: string;
+  userId: string;
+  lastSeen: number;
+}
+
+const activePresenceSessions = new Map<string, PresenceSession>(); // tabId -> session
+const sseGlobalClients = new Map<express.Response, string>(); // res -> tabId
 const sseGlobalChatClients = new Set<express.Response>();
 
-function getRealOnlineCount(): number {
-  const uniqueUsers = new Set<string>();
-  for (const [, userId] of sseGlobalClients.entries()) {
-    if (userId) {
-      uniqueUsers.add(userId);
+function cleanStaleSessions(): boolean {
+  const now = Date.now();
+  const TIMEOUT_MS = 10000; // Tab considered inactive after 10s without ping or stream
+  let removed = false;
+  for (const [tabId, session] of activePresenceSessions.entries()) {
+    if (now - session.lastSeen > TIMEOUT_MS) {
+      activePresenceSessions.delete(tabId);
+      removed = true;
     }
   }
-  return Math.max(1, uniqueUsers.size);
+  return removed;
+}
+
+function getRealOnlineCount(): number {
+  cleanStaleSessions();
+  const activeTabs = new Set<string>();
+  for (const [tabId] of activePresenceSessions.entries()) {
+    activeTabs.add(tabId);
+  }
+  for (const [, tabId] of sseGlobalClients.entries()) {
+    if (tabId) {
+      activeTabs.add(tabId);
+    }
+  }
+  return Math.max(1, activeTabs.size);
+}
+
+function registerPresence(tabId: string, userId?: string) {
+  if (!tabId) return;
+  const prevCount = getRealOnlineCount();
+  activePresenceSessions.set(tabId, {
+    tabId,
+    userId: userId || tabId,
+    lastSeen: Date.now(),
+  });
+  const newCount = getRealOnlineCount();
+  if (newCount !== prevCount) {
+    broadcastOnlinePresence();
+  }
+}
+
+function removePresence(tabId: string) {
+  if (!tabId) return;
+  const prevCount = getRealOnlineCount();
+  activePresenceSessions.delete(tabId);
+  const newCount = getRealOnlineCount();
+  if (newCount !== prevCount) {
+    broadcastOnlinePresence();
+  }
 }
 
 function broadcastOnlinePresence() {
@@ -214,6 +263,16 @@ function broadcastOnlinePresence() {
     }
   }
 }
+
+// Background cleanup check every 4 seconds
+setInterval(() => {
+  const countBefore = getRealOnlineCount();
+  const removed = cleanStaleSessions();
+  const countAfter = getRealOnlineCount();
+  if (removed && countBefore !== countAfter) {
+    broadcastOnlinePresence();
+  }
+}, 4000);
 
 function broadcastLeaderboard() {
   const payload = `data: ${JSON.stringify({ type: 'leaderboard_updated', highScores: serverHighScores })}\n\n`;
@@ -595,6 +654,24 @@ async function startServer() {
     if (mysteryWords) room.mysteryWords = mysteryWords;
     if (mode) room.mode = mode;
 
+    if (status === 'playing') {
+      // Khi bắt đầu: tất cả người chơi trong phòng được đánh dấu inMatch = true (avatar xám)
+      room.players.forEach((p) => {
+        p.inMatch = true;
+        p.isSurrendered = false;
+        p.isFinished = false;
+        p.progress = 0;
+      });
+    } else if (status === 'waiting') {
+      // Khi trở về phòng chờ: tắt inMatch (avatar sáng lên)
+      room.players.forEach((p) => {
+        p.inMatch = false;
+        p.isSurrendered = false;
+        p.isFinished = false;
+        p.progress = 0;
+      });
+    }
+
     rooms.set(norm, room);
 
     if (status === 'playing') {
@@ -607,6 +684,29 @@ async function startServer() {
         room,
       });
     } else {
+      broadcastToRoom(norm, { type: 'room_updated', room });
+    }
+
+    res.json({ success: true, room });
+  });
+
+  // Update specific player status in room (e.g. surrender and return to waiting room -> inMatch: false)
+  app.post('/api/rooms/:id/player-status', (req, res) => {
+    const norm = normalizeRoomCode(req.params.id);
+    const room = rooms.get(norm);
+    if (!room) {
+      res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+
+    const { playerId, inMatch, isSurrendered, isFinished } = req.body;
+    const player = room.players.find((p) => p.id === playerId);
+    if (player) {
+      if (typeof inMatch === 'boolean') player.inMatch = inMatch;
+      if (typeof isSurrendered === 'boolean') player.isSurrendered = isSurrendered;
+      if (typeof isFinished === 'boolean') player.isFinished = isFinished;
+      room.lastActive = Date.now();
+      rooms.set(norm, room);
       broadcastToRoom(norm, { type: 'room_updated', room });
     }
 
@@ -649,7 +749,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Leave room
+  // Leave room: Xóa người chơi khỏi phòng chờ, nếu chủ phòng rời/bị xóa thì slot kế tiếp được đôn lên làm chủ phòng
   app.post('/api/rooms/:id/leave', (req, res) => {
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
@@ -659,6 +759,7 @@ async function startServer() {
     }
 
     const { playerId } = req.body;
+    const wasHost = room.hostId === playerId;
     room.players = room.players.filter((p) => p.id !== playerId);
 
     const humanPlayers = room.players.filter((p) => !p.isBot);
@@ -666,16 +767,18 @@ async function startServer() {
       rooms.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
     } else {
-      if (room.hostId === playerId) {
-        room.hostId = humanPlayers[0].id;
-        room.hostName = humanPlayers[0].username;
+      if (wasHost) {
+        // Slot kế tiếp trong danh sách người chơi thực được đôn lên làm chủ phòng
+        const nextHost = humanPlayers[0];
+        room.hostId = nextHost.id;
+        room.hostName = nextHost.username;
       }
       room.lastActive = Date.now();
       rooms.set(norm, room);
       broadcastToRoom(norm, { type: 'room_updated', room });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, room });
   });
 
   // SSE Stream for realtime room synchronization
@@ -781,7 +884,31 @@ async function startServer() {
   });
 
   // GET /api/online-count: Get exact real-time active online users
-  app.get('/api/online-count', (_req, res) => {
+  app.get('/api/online-count', (req, res) => {
+    const tabId = String(req.query.tabId || '').trim();
+    const userId = String(req.query.userId || '').trim();
+    if (tabId) {
+      registerPresence(tabId, userId);
+    }
+    res.json({ success: true, count: getRealOnlineCount() });
+  });
+
+  // POST or GET /api/presence/ping: Heartbeat ping from any active tab
+  app.all('/api/presence/ping', (req, res) => {
+    const tabId = String(req.query.tabId || req.body?.tabId || '').trim();
+    const userId = String(req.query.userId || req.body?.userId || '').trim();
+    if (tabId) {
+      registerPresence(tabId, userId);
+    }
+    res.json({ success: true, count: getRealOnlineCount() });
+  });
+
+  // POST or GET /api/presence/leave: Beacon sent when a tab unloads/closes
+  app.all('/api/presence/leave', (req, res) => {
+    const tabId = String(req.query.tabId || req.body?.tabId || '').trim();
+    if (tabId) {
+      removePresence(tabId);
+    }
     res.json({ success: true, count: getRealOnlineCount() });
   });
 
@@ -879,11 +1006,15 @@ async function startServer() {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
+    const tabId = req.query.tabId
+      ? String(req.query.tabId).trim()
+      : (req.query.userId ? String(req.query.userId).trim() : `tab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
     const userId = req.query.userId
-      ? String(req.query.userId)
+      ? String(req.query.userId).trim()
       : `guest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-    sseGlobalClients.set(res, userId);
+    registerPresence(tabId, userId);
+    sseGlobalClients.set(res, tabId);
     sseGlobalChatClients.add(res);
 
     // Initial sync of chat messages, real online count, and leaderboard
@@ -891,21 +1022,23 @@ async function startServer() {
     res.write(`data: ${JSON.stringify({ type: 'online_count', count: getRealOnlineCount() })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'leaderboard_updated', highScores: serverHighScores })}\n\n`);
 
-    // Broadcast presence update to other connected users
+    // Broadcast presence update to all connected users
     broadcastOnlinePresence();
 
     const heartbeat = setInterval(() => {
       try {
+        registerPresence(tabId, userId);
         res.write(': heartbeat\n\n');
       } catch {
         clearInterval(heartbeat);
       }
-    }, 15000);
+    }, 6000);
 
     req.on('close', () => {
       clearInterval(heartbeat);
       sseGlobalChatClients.delete(res);
       sseGlobalClients.delete(res);
+      removePresence(tabId);
       broadcastOnlinePresence();
     });
   });

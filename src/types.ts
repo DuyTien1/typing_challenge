@@ -38,6 +38,7 @@ export interface Player {
   isAFK: boolean;
   isBot?: boolean;
   botTargetWpm?: number;
+  inMatch?: boolean; // true if player is currently in active gameplay; false/undefined if back in waiting room
 }
 
 export interface PerformanceChartPoint {

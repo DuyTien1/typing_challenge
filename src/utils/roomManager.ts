@@ -316,6 +316,27 @@ export async function markRoomWaiting(roomId: string): Promise<void> {
   }
 }
 
+// Cập nhật trạng thái cụ thể của người chơi trong phòng (inMatch: false khi về phòng chờ, isSurrendered, ...)
+export async function updatePlayerRoomStatus(
+  roomId: string,
+  playerId: string,
+  updates: { inMatch?: boolean; isSurrendered?: boolean; isFinished?: boolean }
+): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/player-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerId,
+        ...updates,
+      }),
+    });
+  } catch (err) {
+    console.error('updatePlayerRoomStatus error:', err);
+  }
+}
+
 // Đồng bộ tiến độ gõ của người chơi trong trận đấu
 let lastProgressSentTime = 0;
 export function sendPlayerProgress(
@@ -501,16 +522,30 @@ export function leaveRoom(roomId: string, playerId: string): void {
 }
 
 // ==========================================
-// CHAT SYNCHRONIZATION (GLOBAL + ROOM)
+// CHAT & PRESENCE SYNCHRONIZATION
 // ==========================================
 
+const PRESENCE_CHANNEL_NAME = 'fasttyping_presence_sync_v4';
+
 let chatBroadcastChannel: BroadcastChannel | null = null;
+let presenceBroadcastChannel: BroadcastChannel | null = null;
 try {
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     chatBroadcastChannel = new BroadcastChannel(CHAT_CHANNEL_NAME);
+    presenceBroadcastChannel = new BroadcastChannel(PRESENCE_CHANNEL_NAME);
   }
 } catch {
   // BroadcastChannel unavailable
+}
+
+export function broadcastLocalPresenceCount(count: number) {
+  try {
+    if (presenceBroadcastChannel) {
+      presenceBroadcastChannel.postMessage({ type: 'online_count', count });
+    }
+  } catch {
+    // Ignore
+  }
 }
 
 export function broadcastLocalChat(msg: ChatMessage) {
@@ -594,11 +629,16 @@ export async function clearServerChat(): Promise<void> {
 }
 
 /**
- * Fetch real-time active online user count
+ * Fetch real-time active online user count with tab presence registration
  */
-export async function fetchOnlineCount(): Promise<number> {
+export async function fetchOnlineCount(tabId?: string, userId?: string): Promise<number> {
   try {
-    const res = await fetch('/api/online-count');
+    const params = new URLSearchParams();
+    if (tabId) params.append('tabId', tabId);
+    if (userId) params.append('userId', userId);
+    const qs = params.toString();
+    const url = qs ? `/api/online-count?${qs}` : '/api/online-count';
+    const res = await fetch(url, { cache: 'no-store' });
     const data = await res.json();
     if (data && typeof data.count === 'number') {
       return data.count;
@@ -607,6 +647,42 @@ export async function fetchOnlineCount(): Promise<number> {
     // ignore
   }
   return 1;
+}
+
+/**
+ * Send heartbeat presence ping to server
+ */
+export async function sendPresencePing(tabId: string, userId?: string): Promise<number> {
+  try {
+    const params = new URLSearchParams();
+    if (tabId) params.append('tabId', tabId);
+    if (userId) params.append('userId', userId);
+    const res = await fetch(`/api/presence/ping?${params.toString()}`, { method: 'POST', cache: 'no-store' });
+    const data = await res.json();
+    if (data && typeof data.count === 'number') {
+      return data.count;
+    }
+  } catch {
+    // ignore
+  }
+  return 1;
+}
+
+/**
+ * Send beacon when tab is closing or unloading
+ */
+export function sendPresenceLeave(tabId: string) {
+  if (!tabId || typeof window === 'undefined') return;
+  try {
+    const url = `/api/presence/leave?tabId=${encodeURIComponent(tabId)}`;
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url);
+    } else {
+      fetch(url, { method: 'POST', keepalive: true }).catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -692,18 +768,29 @@ export async function adminResetLeaderboard(): Promise<boolean> {
 }
 
 /**
- * Subscribe to real-time global chat updates (SSE stream + Polling fallback + BroadcastChannel)
+ * Subscribe to real-time global chat updates (SSE stream + Polling fallback + BroadcastChannel + Tab Presence)
  */
 export function subscribeToGlobalChat(
   onMsg: (msg: ChatMessage) => void,
   onClear?: () => void,
   onOnlineCount?: (count: number) => void,
   onLeaderboard?: (highScores: Record<string, HighScoreRecord | null>) => void,
-  userId?: string
+  userId?: string,
+  tabId?: string
 ): () => void {
   let isSubscribed = true;
   let isSseConnected = false;
   const processedGlobalIds = new Set<string>();
+
+  const actualTabId = tabId || (typeof window !== 'undefined' ? `tab_${Math.random().toString(36).slice(2, 9)}` : 'tab_init');
+  const actualUserId = userId || actualTabId;
+
+  const updatePresence = (count: number) => {
+    if (typeof count === 'number' && onOnlineCount) {
+      onOnlineCount(count);
+      broadcastLocalPresenceCount(count);
+    }
+  };
 
   const dispatchMsg = (m: ChatMessage) => {
     if (!m || !m.id) return;
@@ -719,8 +806,8 @@ export function subscribeToGlobalChat(
   });
 
   if (onOnlineCount) {
-    fetchOnlineCount().then((count) => {
-      if (isSubscribed && onOnlineCount) onOnlineCount(count);
+    fetchOnlineCount(actualTabId, actualUserId).then((count) => {
+      if (isSubscribed) updatePresence(count);
     });
   }
 
@@ -734,7 +821,7 @@ export function subscribeToGlobalChat(
   let eventSource: EventSource | null = null;
   try {
     if (typeof window !== 'undefined' && 'EventSource' in window) {
-      const url = userId ? `/api/chat/stream?userId=${encodeURIComponent(userId)}` : '/api/chat/stream';
+      const url = `/api/chat/stream?tabId=${encodeURIComponent(actualTabId)}&userId=${encodeURIComponent(actualUserId)}`;
       eventSource = new EventSource(url);
       eventSource.onopen = () => {
         isSseConnected = true;
@@ -754,7 +841,7 @@ export function subscribeToGlobalChat(
             processedGlobalIds.clear();
             if (onClear) onClear();
           } else if (ev.type === 'online_count' && typeof ev.count === 'number') {
-            if (onOnlineCount) onOnlineCount(ev.count);
+            updatePresence(ev.count);
           } else if (ev.type === 'leaderboard_updated' && ev.highScores) {
             if (onLeaderboard) onLeaderboard(ev.highScores);
           }
@@ -767,21 +854,44 @@ export function subscribeToGlobalChat(
     // SSE fallback
   }
 
-  // 3. Fallback periodic polling every 3000ms ONLY when SSE is disconnected
-  const pollTimer = setInterval(() => {
-    if (!isSubscribed || isSseConnected) return;
-    fetchChatMessages('global').then((msgs) => {
-      if (!isSubscribed) return;
-      msgs.forEach((m) => dispatchMsg(m));
+  // 3. Periodic Presence Ping & Heartbeat (every 3000ms)
+  // Keeps session alive on server and fetches up-to-date presence count
+  const pingTimer = setInterval(() => {
+    if (!isSubscribed) return;
+    sendPresencePing(actualTabId, actualUserId).then((count) => {
+      if (isSubscribed) updatePresence(count);
     });
-    if (onOnlineCount) {
-      fetchOnlineCount().then((count) => {
-        if (isSubscribed && onOnlineCount) onOnlineCount(count);
+    if (!isSseConnected) {
+      fetchChatMessages('global').then((msgs) => {
+        if (!isSubscribed) return;
+        msgs.forEach((m) => dispatchMsg(m));
       });
     }
-  }, 4000);
+  }, 3000);
 
-  // 4. BroadcastChannel subscription for instantaneous cross-tab synchronization
+  // 4. Instant refresh on Tab focus & visibility change (e.g. switching between tabs in Brave)
+  const handleVisibilityOrFocus = () => {
+    if (!isSubscribed) return;
+    fetchOnlineCount(actualTabId, actualUserId).then((count) => {
+      if (isSubscribed) updatePresence(count);
+    });
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+  }
+
+  // 5. Send leave beacon on tab unload
+  const handleUnload = () => {
+    sendPresenceLeave(actualTabId);
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', handleUnload);
+    window.addEventListener('beforeunload', handleUnload);
+  }
+
+  // 6. BroadcastChannel subscriptions for instantaneous cross-tab synchronization
   const handleBcMessage = (event: MessageEvent) => {
     if (!isSubscribed || !event.data) return;
     if (event.data.type === 'new_chat_message' && event.data.message) {
@@ -792,18 +902,37 @@ export function subscribeToGlobalChat(
     }
   };
 
+  const handlePresenceBcMessage = (event: MessageEvent) => {
+    if (!isSubscribed || !event.data) return;
+    if (event.data.type === 'online_count' && typeof event.data.count === 'number') {
+      if (onOnlineCount) onOnlineCount(event.data.count);
+    }
+  };
+
   if (chatBroadcastChannel) {
     chatBroadcastChannel.addEventListener('message', handleBcMessage);
+  }
+  if (presenceBroadcastChannel) {
+    presenceBroadcastChannel.addEventListener('message', handlePresenceBcMessage);
   }
 
   return () => {
     isSubscribed = false;
-    clearInterval(pollTimer);
+    clearInterval(pingTimer);
     if (eventSource) {
       eventSource.close();
     }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('pagehide', handleUnload);
+      window.removeEventListener('beforeunload', handleUnload);
+    }
     if (chatBroadcastChannel) {
       chatBroadcastChannel.removeEventListener('message', handleBcMessage);
+    }
+    if (presenceBroadcastChannel) {
+      presenceBroadcastChannel.removeEventListener('message', handlePresenceBcMessage);
     }
   };
 }

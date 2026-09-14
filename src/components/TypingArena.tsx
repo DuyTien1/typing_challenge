@@ -1962,7 +1962,9 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             <span>Bạn đã đầu hàng ván đấu này.</span>
           </div>
           <p className="text-xs text-slate-400">
-            Bạn có thể xem bảng kết quả, chơi lại ván mới hoặc quay về trang chủ ngay.
+            {isMultiplayer
+              ? 'Bạn có thể nhấn "Đấu lại" để trở lại phòng chờ (avatar của bạn sẽ sáng lên) hoặc về trang chủ để rời phòng.'
+              : 'Bạn có thể xem bảng kết quả, chơi lại ván mới hoặc quay về trang chủ ngay.'}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             <button
@@ -2003,7 +2005,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>Chơi Ván Mới</span>
+              <span>{isMultiplayer ? 'Đấu Lại (Về Phòng Chờ)' : 'Chơi Ván Mới'}</span>
             </button>
             {onHome && (
               <button

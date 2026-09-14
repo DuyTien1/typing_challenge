@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MysteryWordItem, Player } from '../types';
 import { soundFx } from '../utils/audio';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
-import { Lightbulb, Clock, Trophy, ArrowRight, MousePointerClick } from 'lucide-react';
+import { Lightbulb, Clock, Trophy, ArrowRight, MousePointerClick, Flag, RotateCcw, Home } from 'lucide-react';
 
 interface MysteryWordArenaProps {
   roundItems: MysteryWordItem[];
@@ -11,8 +11,12 @@ interface MysteryWordArenaProps {
   roundDurationSec: number;
   players: Player[];
   currentPlayerId: string;
-  onFinishRound: (round: number, scoreEarned: number, correct: boolean) => void;
+  onFinishRound: (round: number, scoreEarned: number, correct: boolean, playerId?: string) => void;
   onFinishGame: () => void;
+  onSurrender?: () => void;
+  onRestart?: () => void;
+  onHome?: () => void;
+  isMultiplayer?: boolean;
 }
 
 export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
@@ -24,6 +28,10 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   currentPlayerId,
   onFinishRound,
   onFinishGame,
+  onSurrender,
+  onRestart,
+  onHome,
+  isMultiplayer = false,
 }) => {
   const [currentRound, setCurrentRound] = useState(1);
   const [revealedChars, setRevealedChars] = useState<(string | null)[]>([]);
@@ -32,6 +40,19 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   const [isRoundSolved, setIsRoundSolved] = useState(false);
   const [solvedMessage, setSolvedMessage] = useState<string | null>(null);
   const [roundScore, setRoundScore] = useState(0);
+  const [isSurrendered, setIsSurrendered] = useState(false);
+  const [roundSolvers, setRoundSolvers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
+
+  const isRoundSolvedRef = useRef(false);
+  const revealedCharsRef = useRef<(string | null)[]>([]);
+
+  useEffect(() => {
+    isRoundSolvedRef.current = isRoundSolved;
+  }, [isRoundSolved]);
+
+  useEffect(() => {
+    revealedCharsRef.current = revealedChars;
+  }, [revealedChars]);
 
   // Monkeytype Caret State & Focus
   const [caretPos, setCaretPos] = useState<{ x: number; y: number; height?: number } | null>(null);
@@ -117,6 +138,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   // Initialize round
   useEffect(() => {
     setIsRoundSolved(false);
+    isRoundSolvedRef.current = false;
     setSolvedMessage(null);
     setGuessInput('');
     setRoundTimeLeft(roundDurationSec);
@@ -124,6 +146,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     // Initial revealed array preserving spaces
     const initialRevealed = targetWord.split('').map((c) => (c === ' ' ? ' ' : null));
     setRevealedChars(initialRevealed);
+    revealedCharsRef.current = initialRevealed;
 
     // Auto reveal letters progressively
     const unrevealedIndices: number[] = [];
@@ -132,6 +155,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     });
 
     const revealTimer = setInterval(() => {
+      if (isRoundSolvedRef.current) return;
       if (unrevealedIndices.length > 0) {
         const randIdx = Math.floor(Math.random() * unrevealedIndices.length);
         const charIdx = unrevealedIndices.splice(randIdx, 1)[0];
@@ -140,6 +164,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         setRevealedChars((prev) => {
           const updated = [...prev];
           updated[charIdx] = char;
+          revealedCharsRef.current = updated;
           return updated;
         });
       }
@@ -147,6 +172,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
 
     // Round countdown
     const countdownTimer = setInterval(() => {
+      if (isRoundSolvedRef.current) return;
       setRoundTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
@@ -158,35 +184,98 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     };
   }, [currentRound, targetWord, revealIntervalSec, roundDurationSec]);
 
+  // Stable bot key so player score changes don't cancel active bot deduction timers
+  const botKey = players
+    .filter((p) => p.isBot)
+    .map((p) => `${p.id}:${p.botTargetWpm}`)
+    .join('|');
+
+  // Bot deduction simulation in Mystery Word
+  useEffect(() => {
+    if (!targetWord) return;
+    const botPlayers = players.filter((p) => p.isBot);
+    if (botPlayers.length === 0) return;
+
+    const botTimeouts: NodeJS.Timeout[] = [];
+    botPlayers.forEach((bot) => {
+      const wpm = bot.botTargetWpm || 65;
+      // High chance of bot finding the answer as letters unlock
+      const willSolve = Math.random() < Math.min(0.92, 0.65 + (wpm / 150) * 0.25);
+      if (!willSolve) return;
+
+      // Realistic delay: bots deduce answer after letters start revealing
+      const baseDelay = Math.max(5.5, Math.min(roundDurationSec - 3, 20 - (wpm / 120) * 11));
+      const jitter = (Math.random() * 4) - 2;
+      const finalDelaySec = Math.max(4.5, Math.min(roundDurationSec - 2, baseDelay + jitter));
+      const delayMs = Math.round(finalDelaySec * 1000);
+
+      const timer = setTimeout(() => {
+        if (isRoundSolvedRef.current) return;
+        isRoundSolvedRef.current = true;
+        setIsRoundSolved(true);
+
+        // Fully reveal the word
+        setRevealedChars(targetWord.split(''));
+
+        // Calculate points based on remaining hidden characters
+        const hiddenCount = revealedCharsRef.current.filter((c) => c === null).length;
+        const points = Math.max(3, 5 + hiddenCount);
+
+        setRoundSolvers([{ id: bot.id, rank: 1, pts: points, name: bot.username }]);
+        setSolvedMessage(`🤖 ${bot.username} đã đoán đúng từ bí mật: "${targetWord}" (+${points} điểm)!`);
+        onFinishRound(currentRound, points, false, bot.id);
+
+        setTimeout(() => {
+          nextRound();
+        }, 2500);
+      }, delayMs);
+
+      botTimeouts.push(timer);
+    });
+
+    return () => {
+      botTimeouts.forEach((t) => clearTimeout(t));
+    };
+  }, [currentRound, targetWord, botKey, roundDurationSec, onFinishRound, nextRound]);
+
   // Round timeout handler triggered safely when roundTimeLeft reaches 0
   useEffect(() => {
-    if (roundTimeLeft <= 0 && !isRoundSolved) {
+    if (roundTimeLeft <= 0 && !isRoundSolvedRef.current) {
+      isRoundSolvedRef.current = true;
+      setIsRoundSolved(true);
+      setRevealedChars(targetWord.split(''));
       setSolvedMessage(`Hết giờ! Đáp án chính xác là: "${targetWord}"`);
       const timer = setTimeout(() => {
         nextRound();
       }, 2500);
       return () => clearTimeout(timer);
     }
-  }, [roundTimeLeft, isRoundSolved, targetWord, nextRound]);
+  }, [roundTimeLeft, targetWord, nextRound]);
 
   const handleGuessSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRoundSolved || !guessInput.trim()) return;
+    if (isRoundSolvedRef.current || !guessInput.trim()) return;
 
     const guess = guessInput.trim().toLowerCase();
     const correct = targetWord.toLowerCase();
 
     if (guess === correct) {
-      soundFx.playVictory();
+      isRoundSolvedRef.current = true;
       setIsRoundSolved(true);
+      soundFx.playVictory();
+
+      // Reveal all letters
+      setRevealedChars(targetWord.split(''));
 
       // Count remaining hidden letters for bonus
-      const hiddenCount = revealedChars.filter((c) => c === null).length;
+      const hiddenCount = revealedCharsRef.current.filter((c) => c === null).length;
       const points = 5 + hiddenCount;
       setRoundScore((s) => s + points);
 
+      const myPlayer = players.find((p) => p.id === currentPlayerId);
+      setRoundSolvers([{ id: currentPlayerId, rank: 1, pts: points, name: myPlayer?.username || 'Bạn' }]);
       setSolvedMessage(`🎉 CHÍNH XÁC! Bạn nhận được +${points} điểm (${hiddenCount} chữ chưa mở)!`);
-      onFinishRound(currentRound, points, true);
+      onFinishRound(currentRound, points, true, currentPlayerId);
 
       setTimeout(() => {
         nextRound();
@@ -195,6 +284,12 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       soundFx.playError();
       setGuessInput('');
     }
+  };
+
+  const handleSurrenderClick = () => {
+    setIsSurrendered(true);
+    soundFx.playError();
+    onSurrender?.();
   };
 
   return (
@@ -213,17 +308,105 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 font-mono text-sm text-slate-300">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 font-mono text-sm text-slate-300 bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
             <Clock className="w-4 h-4 text-amber-400" />
             <span>{roundTimeLeft}s</span>
           </div>
-          <div className="flex items-center gap-1 text-sm font-bold text-amber-400 font-mono">
+          <div className="flex items-center gap-1 text-sm font-bold text-amber-400 font-mono bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
             <Trophy className="w-4 h-4" />
             <span>{roundScore} đ</span>
           </div>
+
+          {!isSurrendered && onSurrender && (
+            <button
+              id="btn-mystery-surrender"
+              type="button"
+              onClick={handleSurrenderClick}
+              className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+              title="Đầu hàng ván đấu này"
+            >
+              <Flag className="w-3.5 h-3.5" />
+              <span>Đầu Hàng</span>
+            </button>
+          )}
+
+          {onRestart && (
+            <button
+              id="btn-mystery-restart"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick(false);
+                onRestart();
+              }}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              title={isMultiplayer ? 'Đấu lại (Về phòng chờ)' : 'Đấu lại'}
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
+
+          {onHome && (
+            <button
+              id="btn-mystery-home"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick(false);
+                onHome();
+              }}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              title="Về Trang Chủ"
+            >
+              <Home className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Surrendered Banner */}
+      {isSurrendered && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-center space-y-2 animate-in fade-in zoom-in duration-200">
+          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
+            <Flag className="w-4 h-4 text-rose-400" />
+            <span>Bạn đã đầu hàng ván đoán chữ này.</span>
+          </div>
+          <p className="text-xs text-slate-400">
+            {isMultiplayer
+              ? 'Bạn có thể nhấn "Đấu lại" để trở lại phòng chờ (avatar của bạn sẽ sáng lên) hoặc về trang chủ để rời phòng.'
+              : 'Bạn có thể chơi lại ván mới hoặc quay về trang chủ ngay.'}
+          </p>
+          <div className="flex items-center justify-center gap-3 pt-1">
+            {onRestart && (
+              <button
+                id="btn-surrender-mystery-restart"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  onRestart();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{isMultiplayer ? 'Đấu Lại (Về Phòng Chờ)' : 'Chơi Ván Mới'}</span>
+              </button>
+            )}
+            {onHome && (
+              <button
+                id="btn-surrender-mystery-home"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  onHome();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                <Home className="w-4 h-4 text-sky-400" />
+                <span>Trang Chủ</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Guess Box */}
       <div className="p-8 rounded-2xl bg-[#141824] border border-slate-800 shadow-2xl space-y-6 text-center">
@@ -371,6 +554,70 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+      </div>
+
+      {/* Live scoreboard / Danh Sách Người Chơi */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs text-slate-400 font-medium px-1">
+          <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px] text-slate-300">
+            <Trophy className="w-3.5 h-3.5 text-amber-400" />
+            Danh Sách Người Chơi ({players.length})
+          </span>
+          <span className="text-[11px] text-slate-500">
+            Vòng {currentRound} / {totalRounds}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {players.map((p) => {
+            const isMe = p.id === currentPlayerId;
+            const solver = roundSolvers.find((s) => s.id === p.id);
+            return (
+              <div
+                key={p.id}
+                className={`p-3 rounded-xl border flex flex-col justify-between gap-1.5 transition-all ${
+                  isMe
+                    ? 'bg-amber-500/10 border-amber-500/50 shadow-md shadow-amber-500/5 ring-1 ring-amber-500/30'
+                    : 'bg-slate-900/90 border-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-base">{p.icon}</span>
+                    <span className="text-xs font-semibold text-white truncate flex items-center gap-1">
+                      {p.username}
+                      {p.isBot && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                          BOT
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <span className="font-mono text-xs font-bold text-amber-400">{p.score || 0}đ</span>
+                </div>
+                {p.isSurrendered ? (
+                  <div className="text-[10px] font-bold text-rose-400 text-right">
+                    Đã đầu hàng
+                  </div>
+                ) : solver ? (
+                  <div className="text-[11px] font-bold text-emerald-400 flex items-center justify-end gap-1">
+                    {solver.rank === 1 && `🥇 Đoán đúng (+${solver.pts}đ)`}
+                    {solver.rank > 1 && `✓ Đoán đúng (+${solver.pts}đ)`}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-slate-500 text-right">
+                    {isRoundSolved
+                      ? 'Chưa giải được'
+                      : p.isBot
+                      ? `Đang suy đoán (~${p.botTargetWpm || 60} WPM)...`
+                      : isMe
+                      ? 'Đang nhập...'
+                      : 'Đang suy đoán...'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

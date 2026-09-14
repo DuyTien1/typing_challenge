@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Player } from '../types';
 import { soundFx } from '../utils/audio';
-import { Trophy, CheckCircle2, RotateCcw, Home, Users, Gauge, Target, Activity, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Trophy, CheckCircle2, RotateCcw, Home, Users, Gauge, Target, Activity, AlertTriangle, TrendingUp, Clock } from 'lucide-react';
 import { PerformanceChart } from './PerformanceChart';
 import { normalizeChartTimeline } from '../utils/chartHelper';
 
@@ -13,6 +13,7 @@ interface GameOverModalProps {
   onPlayAgain: () => void;
   onBackToLobby: () => void;
   onBackToWaitingRoom?: () => void;
+  onAutoTimeoutLeave?: () => void;
   modeName: string;
   isSolo?: boolean;
   isOutplay?: boolean;
@@ -26,10 +27,28 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onPlayAgain,
   onBackToLobby,
   onBackToWaitingRoom,
+  onAutoTimeoutLeave,
   modeName,
   isSolo = false,
   isOutplay = false,
 }) => {
+  // 10s auto-leave countdown for multiplayer: nếu trong 10s không nhấn chơi lại/về phòng chờ thì xóa người chơi khỏi phòng
+  const [countdown, setCountdown] = useState(10);
+
+  useEffect(() => {
+    if (isSolo) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          onAutoTimeoutLeave?.();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isSolo, onAutoTimeoutLeave]);
   // Sort players by WPM or Score
   const sorted = [...players].sort((a, b) => {
     if (isBossMode || a.score > 0) {
@@ -274,6 +293,19 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   {me.correctChars || 0} <span className="text-xs text-slate-400 font-normal">ký tự</span>
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 10s Countdown Bar for Multiplayer */}
+        {!isSolo && (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300">
+            <div className="flex items-center gap-2 font-medium">
+              <Clock className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+              <span>Tự động rời phòng chờ nếu không bấm chơi tiếp:</span>
+            </div>
+            <div className="font-mono font-black text-sm bg-amber-500/20 px-3 py-1 rounded-xl border border-amber-500/40 text-amber-300 shrink-0">
+              {countdown}s
             </div>
           </div>
         )}

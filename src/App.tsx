@@ -33,6 +33,7 @@ import {
   markRoomPlaying,
   markRoomWaiting,
   leaveRoom,
+  updatePlayerRoomStatus,
   sendPlayerProgress,
   subscribeToGlobalChat,
   sendChatMessage,
@@ -286,6 +287,11 @@ export default function App() {
     return id;
   });
 
+  // Unique Tab ID per page instance in memory (guaranteed unique for every tab even if cloned or incognito)
+  const [currentTabId] = useState<string>(() => {
+    return 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+  });
+
   // Real Online Presence & Server-wide Leaderboard (Zero mock data)
   const [onlineCount, setOnlineCount] = useState<number>(1);
   const [highScores, setHighScores] = useState<Record<string, HighScoreRecord | null>>(() => {
@@ -354,12 +360,13 @@ export default function App() {
         setHighScores(serverRecords);
         localStorage.setItem('fasttyping_highscores', JSON.stringify(serverRecords));
       },
-      currentUserId
+      currentUserId,
+      currentTabId
     );
     return () => {
       unsubscribeGlobalChat();
     };
-  }, [appendChatMessage, currentUserId]);
+  }, [appendChatMessage, currentUserId, currentTabId]);
 
   // Players list & Room Management
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
@@ -737,9 +744,11 @@ export default function App() {
     }
   };
 
-  // Bot Simulation in Playing state
+  // Bot Simulation in Playing state (for standard typing modes)
   useEffect(() => {
     if (gameState !== 'playing') return;
+    // Special modes (san_boss, doan_chu, ngau_hung) have dedicated, realistic bot mechanics inside their arenas
+    if (gameMode === 'san_boss' || gameMode === 'doan_chu' || gameMode === 'ngau_hung') return;
 
     const botInterval = setInterval(() => {
       setPlayers((prev) =>
@@ -756,7 +765,7 @@ export default function App() {
             progress: newProgress,
             correctChars: newCorrectChars,
             wpm: targetWpm + Math.floor(Math.random() * 6 - 3),
-            score: p.score + (gameMode === 'san_boss' ? Math.floor(targetWpm / 15) : 0),
+            score: p.score,
             isFinished: newProgress >= 100,
           };
         })
@@ -884,14 +893,19 @@ export default function App() {
   }, [bestWpm, totalGames, currentUserId, highScores, gameMode, username, lastGameWpm, sessionBestWpm, avatar, userFrame]);
 
   // Boss Mode Damage & Victory Handlers
-  const handleBossDamage = (dmg: number, errors: number) => {
-    setPlayers((prev) =>
-      prev.map((p) =>
-        p.id === currentUserId
-          ? { ...p, score: p.score + dmg, errors, correctChars: p.correctChars + dmg }
+  const handleBossDamage = (dmg: number, errors: number, targetPlayerId?: string) => {
+    const id = targetPlayerId || currentUserId;
+    setPlayers((prev) => {
+      const next = prev.map((p) =>
+        p.id === id
+          ? { ...p, score: p.score + dmg, errors: targetPlayerId ? p.errors : errors, correctChars: p.correctChars + dmg }
           : p
-      )
-    );
+      );
+      if (playType === 'multiplayer' && currentRoomId) {
+        updateRoomPlayers(currentRoomId, next);
+      }
+      return next;
+    });
   };
 
   const handleBossSelfDestruct = () => {
@@ -957,7 +971,35 @@ export default function App() {
           : p
       )
     );
+
+    if (playType === 'multiplayer' && currentRoomId) {
+      updatePlayerRoomStatus(currentRoomId, currentUserId, {
+        isSurrendered: true,
+      });
+    }
+
     soundFx.playError();
+  };
+
+  // Surrender Rematch Handler: if player surrendered while match is ongoing, return them to waiting room and light up their avatar
+  const handleSurrenderRestart = () => {
+    if (playType === 'multiplayer' && currentRoomId) {
+      updatePlayerRoomStatus(currentRoomId, currentUserId, {
+        inMatch: false,
+        isSurrendered: true,
+        isFinished: false,
+      });
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === currentUserId
+            ? { ...p, inMatch: false, isSurrendered: true, isFinished: false, progress: 0 }
+            : p
+        )
+      );
+      setGameState('waiting_room');
+    } else {
+      handleStartGame();
+    }
   };
 
   // Return to lobby & clear session-only stats (Strictly Session-Only per Room)
@@ -977,11 +1019,36 @@ export default function App() {
     } catch {}
   };
 
+  // Return to waiting room after match completion or rematch click
   const handleBackToWaitingRoom = () => {
-    if (currentRoomId && isRoomHost) {
-      markRoomWaiting(currentRoomId);
+    if (currentRoomId) {
+      updatePlayerRoomStatus(currentRoomId, currentUserId, {
+        inMatch: false,
+        isSurrendered: false,
+        isFinished: false,
+      });
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === currentUserId
+            ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0 }
+            : p
+        )
+      );
+      if (isRoomHost) {
+        markRoomWaiting(currentRoomId);
+      }
     }
     setGameState('waiting_room');
+  };
+
+  // 10s auto-leave timeout when match ends: xóa người chơi khỏi phòng chờ, nếu là chủ phòng thì slot kế tiếp làm chủ phòng
+  const handleAutoTimeoutLeave = () => {
+    if (currentRoomId) {
+      leaveRoom(currentRoomId, currentUserId);
+      setCurrentRoomId(null);
+    }
+    setIsRoomHost(true);
+    setGameState('lobby');
   };
 
   const handleUpdateConditionStats = (conditionKey: string, lastWpm: number, bestWpm: number) => {
@@ -1216,7 +1283,7 @@ export default function App() {
                 onUpdateProgress={handleUpdatePlayerProgress}
                 onFinish={handleFinishMatch}
                 onSurrender={handleSurrender}
-                onRestart={handleStartGame}
+                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
                 onHome={handleReturnToLobby}
                 modeName={getModeTitle()}
                 isOutplay={gameMode === 'outplay'}
@@ -1242,7 +1309,8 @@ export default function App() {
                 onDealDamage={handleBossDamage}
                 onSelfDestruct={handleBossSelfDestruct}
                 onFinish={handleBossFinish}
-                onRestart={handleStartGame}
+                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
+                onHome={handleReturnToLobby}
                 isMultiplayer={playType === 'multiplayer'}
               />
             )}
@@ -1256,14 +1324,23 @@ export default function App() {
                 roundDurationSec={25}
                 players={players}
                 currentPlayerId={currentUserId}
-                onFinishRound={(round, scoreEarned) => {
-                  setPlayers((prev) =>
-                    prev.map((p) =>
-                      p.id === currentUserId
+                onSurrender={handleSurrender}
+                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
+                onHome={handleReturnToLobby}
+                isMultiplayer={playType === 'multiplayer'}
+                onFinishRound={(round, scoreEarned, correct, targetId) => {
+                  const id = targetId || currentUserId;
+                  setPlayers((prev) => {
+                    const next = prev.map((p) =>
+                      p.id === id
                         ? { ...p, score: p.score + scoreEarned }
                         : p
-                    )
-                  );
+                    );
+                    if (playType === 'multiplayer' && currentRoomId) {
+                      updateRoomPlayers(currentRoomId, next);
+                    }
+                    return next;
+                  });
                 }}
                 onFinishGame={() => {
                   const me = players.find((p) => p.id === currentUserId);
@@ -1296,6 +1373,10 @@ export default function App() {
                 intermissionDurationSec={3}
                 players={players}
                 currentPlayerId={currentUserId}
+                onSurrender={handleSurrender}
+                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
+                onHome={handleReturnToLobby}
+                isMultiplayer={playType === 'multiplayer'}
                 onFinishGame={() => {
                   const me = players.find((p) => p.id === currentUserId);
                   const finalScore = me ? me.score : 0;
@@ -1315,12 +1396,17 @@ export default function App() {
                   soundFx.playVictory();
                   setGameState('gameover');
                 }}
-                onUpdateScore={(pts) => {
-                  setPlayers((prev) =>
-                    prev.map((p) =>
-                      p.id === currentUserId ? { ...p, score: p.score + pts } : p
-                    )
-                  );
+                onUpdateScore={(pts, targetId) => {
+                  const id = targetId || currentUserId;
+                  setPlayers((prev) => {
+                    const next = prev.map((p) =>
+                      p.id === id ? { ...p, score: p.score + pts } : p
+                    );
+                    if (playType === 'multiplayer' && currentRoomId) {
+                      updateRoomPlayers(currentRoomId, next);
+                    }
+                    return next;
+                  });
                 }}
               />
             )}
@@ -1334,9 +1420,10 @@ export default function App() {
             currentPlayerId={currentUserId}
             isBossMode={gameMode === 'san_boss'}
             isBossVictory={isBossVictory}
-            onPlayAgain={handleStartGame}
+            onPlayAgain={playType === 'multiplayer' ? handleBackToWaitingRoom : handleStartGame}
             onBackToLobby={handleReturnToLobby}
             onBackToWaitingRoom={handleBackToWaitingRoom}
+            onAutoTimeoutLeave={handleAutoTimeoutLeave}
             modeName={getModeTitle()}
             isSolo={playType === 'solo'}
             isOutplay={gameMode === 'outplay'}

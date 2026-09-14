@@ -19,7 +19,8 @@ import {
   BookOpen,
   Info,
   Clock,
-  Shield
+  Shield,
+  RotateCcw
 } from 'lucide-react';
 
 interface WaitingRoomViewProps {
@@ -41,6 +42,7 @@ interface WaitingRoomViewProps {
   isAdmin?: boolean;
   roomId?: string;
   isHost?: boolean;
+  hostId?: string;
 }
 
 interface PlayerSpeech {
@@ -79,6 +81,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   isAdmin = false,
   roomId,
   isHost,
+  hostId,
 }) => {
   const [playerSpeeches, setPlayerSpeeches] = useState<Record<string, PlayerSpeech>>({});
   const [lastCheerTime, setLastCheerTime] = useState(0);
@@ -86,8 +89,10 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   const [, setTick] = useState(0);
   const [inspectedPlayer, setInspectedPlayer] = useState<Player | null>(null);
 
-  // Compute active room ID & Host status
-  const userIsHost = isHost !== undefined ? isHost : (players[0]?.id === currentPlayerId);
+  // Compute active room ID & Host status: nếu chủ phòng bị xóa/thay đổi thì slot kế tiếp được đôn lên làm chủ phòng
+  const firstHumanId = players.find((p) => !p.isBot)?.id || players[0]?.id;
+  const effectiveHostId = hostId || firstHumanId;
+  const userIsHost = isHost !== undefined ? isHost : (effectiveHostId === currentPlayerId);
   const activeRoomId = roomId || ('VN-' + Math.abs((mode.length * 3791) % 9000 + 1000));
 
   // Periodic tick to clean up old speeches
@@ -414,11 +419,27 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             )}
           </div>
 
+          {/* Ongoing Match Notice (when room is persisted and players are still racing or returned) */}
+          {players.some((p) => p.inMatch) && (
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300 animate-fadeIn">
+              <div className="flex items-center gap-2 font-medium">
+                <Clock className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+                <span>
+                  Ván đấu đang diễn ra. Có <strong>{players.filter((p) => p.inMatch).length}</strong> người chơi đang thi đấu (avatar xám).
+                </span>
+              </div>
+              <span className="text-[10px] font-bold bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 text-amber-200 shrink-0">
+                Đang chờ kết thúc
+              </span>
+            </div>
+          )}
+
           {/* Slots Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             {players.map((p, idx) => {
               const isMe = p.id === currentPlayerId;
-              const isHost = idx === 0;
+              const isPlayerHost = p.id === effectiveHostId;
+              const isPlayerInMatch = p.inMatch === true;
               const speech = playerSpeeches[p.id];
               const isSpeaking = !!speech && (Date.now() - speech.timestamp < 7000);
               const playerTitle = getPlayerTitle(p, highScores, isAdmin, isMe);
@@ -428,7 +449,9 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                   key={p.id}
                   id={`player-slot-${idx}`}
                   className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 relative transition-all ${
-                    isSpeaking
+                    isPlayerInMatch
+                      ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                      : isSpeaking
                       ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400 shadow-xl shadow-amber-500/20 z-10 scale-101'
                       : isMe
                       ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-400/40 shadow-md'
@@ -451,13 +474,21 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
 
                   <div className="flex items-center gap-3 min-w-0">
                     <div 
-                      className="relative cursor-pointer group/avatar"
+                      className={`relative cursor-pointer group/avatar ${
+                        isPlayerInMatch
+                          ? 'grayscale opacity-45 contrast-75'
+                          : 'grayscale-0 opacity-100 transition-all duration-300 drop-shadow-md'
+                      }`}
                       onClick={(e) => {
                         e.stopPropagation();
                         soundFx.playKeyClick();
                         setInspectedPlayer(p);
                       }}
-                      title={`Nhấp để xem hồ sơ của ${p.username}`}
+                      title={
+                        isPlayerInMatch
+                          ? `${p.username} đang trong ván đấu`
+                          : `Nhấp để xem hồ sơ của ${p.username}`
+                      }
                     >
                       {/* Avatar with Dynamic Title Frame & Hover Popover */}
                       <AvatarTitleFrame
@@ -482,7 +513,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black p-0.5 rounded-full shadow-md animate-pulse z-20" title="Đang nói chuyện">
                           <MessageSquare className="w-3 h-3 fill-black" />
                         </div>
-                      ) : isHost && !playerTitle ? (
+                      ) : isPlayerHost && !playerTitle ? (
                         <div className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-amber-500 text-black shadow-sm z-20" title="Chủ phòng">
                           <Crown className="w-3 h-3 fill-black" />
                         </div>
@@ -535,13 +566,19 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         </div>
                       ) : (
                         <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                          <span>Slot #{idx + 1}</span>
+                          {isPlayerHost ? (
+                            <span className="text-amber-400 font-bold flex items-center gap-1">
+                              <Crown className="w-3 h-3 text-amber-400" /> Chủ phòng (Slot #{idx + 1})
+                            </span>
+                          ) : (
+                            <span>Slot #{idx + 1}</span>
+                          )}
                           {p.isBot && (
                             <span className="text-cyan-400 font-medium">
                               ~{p.botTargetWpm} WPM
                             </span>
                           )}
-                          {!p.isBot && !isMe && (
+                          {!p.isBot && !isMe && !isPlayerHost && (
                             <span className="text-slate-400 font-medium">Khách</span>
                           )}
                         </div>
@@ -553,6 +590,14 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     {isSpeaking ? (
                       <span className="text-[10px] font-extrabold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40 flex items-center gap-1 shadow-sm animate-pulse">
                         <MessageSquare className="w-2.5 h-2.5" /> Đang nói
+                      </span>
+                    ) : isPlayerInMatch ? (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700 flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5 text-amber-400 animate-spin" /> Đang thi đấu...
+                      </span>
+                    ) : p.isSurrendered ? (
+                      <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1 shadow-sm">
+                        <RotateCcw className="w-2.5 h-2.5 text-amber-400" /> Đã về phòng chờ
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
