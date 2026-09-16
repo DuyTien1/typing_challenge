@@ -13,7 +13,11 @@ import {
   ChevronDown,
   Edit3,
   Award,
-  Lock
+  Lock,
+  History,
+  Trophy,
+  Flag,
+  Target
 } from 'lucide-react';
 import { 
   MONKEY_THEMES, 
@@ -32,6 +36,7 @@ import {
   isFrameOwned,
   checkIsAdmin
 } from '../utils/frames';
+import { MatchRecord, getStoredMatchHistory } from '../utils/matchHistory';
 
 interface ProfileModalProps {
   username: string;
@@ -40,6 +45,7 @@ interface ProfileModalProps {
   bestWpm: number;
   totalGames: number;
   isAdmin?: boolean;
+  matchHistory?: MatchRecord[];
   onChangeUsername: (name: string) => void;
   onChangeAvatar: (emoji: string) => void;
   onChangeFrame?: (frameId: string) => void;
@@ -53,6 +59,18 @@ const SWITCHES: { id: SwitchType; name: string; desc: string; icon: string }[] =
   { id: 'thock', name: 'Deep Thock', desc: 'Trầm ấm, âm trầm hộp phím sâu (340Hz)', icon: '⬛' },
 ];
 
+function formatRelativeTime(ts: number): string {
+  if (!ts) return '';
+  const diffSec = Math.floor((Date.now() - ts) / 1000);
+  if (diffSec < 60) return 'Vừa xong';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} phút trước`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours} giờ trước`;
+  const d = new Date(ts);
+  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} - ${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+}
+
 export const ProfileModal: React.FC<ProfileModalProps> = ({
   username,
   avatar,
@@ -60,6 +78,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   bestWpm,
   totalGames,
   isAdmin = false,
+  matchHistory,
   onChangeUsername,
   onChangeAvatar,
   onChangeFrame,
@@ -68,6 +87,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [nameInput, setNameInput] = useState(username);
   const [selectedAvatar, setSelectedAvatar] = useState(avatar);
   const [selectedFrame, setSelectedFrame] = useState<string>(() => frame || getStoredFrame());
+  const [history] = useState<MatchRecord[]>(() => matchHistory || getStoredMatchHistory());
+  const recentMatches = history.slice(0, 5);
 
   // Popups state
   const [isAvatarFrameModalOpen, setIsAvatarFrameModalOpen] = useState(false);
@@ -268,6 +289,107 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               {totalGames} <span className="text-xs text-slate-400 font-normal">trận</span>
             </div>
           </div>
+        </div>
+
+        {/* Lịch Sử Đấu Của Tôi (5 trận gần nhất) */}
+        <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <History className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                  Lịch Sử Đấu Của Tôi
+                </h4>
+                <p className="text-[10px] text-slate-400">Hiển thị 5 trận đấu gần nhất</p>
+              </div>
+            </div>
+            <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-amber-300">
+              {recentMatches.length}/5 trận
+            </span>
+          </div>
+
+          {recentMatches.length === 0 ? (
+            <div className="py-6 text-center rounded-xl bg-slate-900/40 border border-dashed border-slate-800/80 text-slate-500 text-xs space-y-1">
+              <History className="w-6 h-6 mx-auto text-slate-600 mb-1" />
+              <p className="font-medium text-slate-400">Chưa có lịch sử thi đấu</p>
+              <p className="text-[11px] text-slate-500">Hoàn thành ván đấu để ghi nhận kết quả và chỉ số tại đây.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+              {recentMatches.map((m, idx) => {
+                const isWin = m.result === 'Thắng';
+                const isSurrender = m.result === 'Đầu hàng';
+                const isLoss = m.result === 'Thua';
+
+                return (
+                  <div
+                    key={m.id || idx}
+                    className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/90 hover:border-slate-700/80 flex items-center justify-between gap-2.5 text-xs transition-colors"
+                  >
+                    {/* Chế độ & Thời gian */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono font-bold text-slate-500 text-[10px] w-4 shrink-0 text-center">
+                        #{idx + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate max-w-[110px] sm:max-w-[150px] flex items-center gap-1.5">
+                          <span className="truncate">{m.mode}</span>
+                          {m.playType === 'multiplayer' && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0 font-normal">
+                              Phòng
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {formatRelativeTime(m.timestamp)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* WPM & Độ chính xác */}
+                    <div className="flex items-center gap-3 shrink-0 font-mono text-right">
+                      <div>
+                        <div className="text-[9px] uppercase font-bold text-slate-500">Tốc độ</div>
+                        <div className="font-bold text-amber-400 text-xs sm:text-sm">
+                          {m.wpm} <span className="text-[10px] text-slate-400 font-normal">WPM</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] uppercase font-bold text-slate-500">Độ chính xác</div>
+                        <div className="font-bold text-emerald-400 text-xs sm:text-sm">
+                          {m.accuracy}%
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Kết quả (Thắng / Thua / Đầu hàng) */}
+                    <div className="shrink-0 w-22 text-right">
+                      {isWin && (
+                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
+                          <Trophy className="w-3 h-3 shrink-0" />
+                          <span>Thắng</span>
+                        </span>
+                      )}
+                      {isLoss && (
+                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
+                          <X className="w-3 h-3 shrink-0" />
+                          <span>Thua</span>
+                        </span>
+                      )}
+                      {isSurrender && (
+                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold">
+                          <Flag className="w-3 h-3 shrink-0" />
+                          <span>Đầu hàng</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Form */}

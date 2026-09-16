@@ -309,7 +309,9 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
               <Crown className="w-3.5 h-3.5 text-amber-400" />
               <span>Cấu hình độ khó phòng (Chủ phòng):</span>
             </label>
-            <span className="text-[11px] text-slate-500">Áp dụng cho mọi người chơi trong phòng</span>
+            <span className="text-[11px] text-slate-500">
+              {userIsHost ? 'Áp dụng cho mọi người chơi trong phòng' : 'Chỉ chủ phòng mới có quyền đổi độ khó'}
+            </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
             {difficulties.map((diff) => {
@@ -319,11 +321,16 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                   id={`btn-room-diff-${diff.id}`}
                   type="button"
                   key={diff.id}
+                  disabled={!userIsHost}
                   onClick={() => {
+                    if (!userIsHost) return;
                     soundFx.playKeyClick();
                     onSelectDifficulty(diff.id);
                   }}
-                  className={`p-3 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                  title={userIsHost ? diff.name : 'Chỉ chủ phòng mới có quyền đổi độ khó'}
+                  className={`p-3 rounded-xl border text-left flex items-center gap-3 transition-all ${
+                    userIsHost ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'
+                  } ${
                     active
                       ? `bg-slate-800/90 ${diff.color} ring-2 ring-amber-400/50 shadow-md`
                       : 'bg-slate-900/40 border-slate-800 hover:border-slate-700 text-slate-400'
@@ -594,10 +601,6 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     ) : isPlayerInMatch ? (
                       <span className="text-[10px] font-bold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700 flex items-center gap-1">
                         <Clock className="w-2.5 h-2.5 text-amber-400 animate-spin" /> Đang thi đấu...
-                      </span>
-                    ) : p.isSurrendered ? (
-                      <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1 shadow-sm">
-                        <RotateCcw className="w-2.5 h-2.5 text-amber-400" /> Đã về phòng chờ
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">

@@ -49,9 +49,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, [isSolo, onAutoTimeoutLeave]);
-  // Sort players by WPM or Score
+  // Sort players by WPM or Score, putting surrendered players at the bottom
   const sorted = [...players].sort((a, b) => {
-    if (isBossMode || a.score > 0) {
+    if (a.isSurrendered && !b.isSurrendered) return 1;
+    if (!a.isSurrendered && b.isSurrendered) return -1;
+    if (isBossMode || (a.score || 0) > 0 || (b.score || 0) > 0) {
       return (b.score || 0) - (a.score || 0);
     }
     return (b.wpm || 0) - (a.wpm || 0);
@@ -215,6 +217,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                           <span className="truncate max-w-[140px] text-white">
                             {p.username} {isMe && '(Bạn)'}
                           </span>
+                          {p.isSurrendered && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-bold border border-rose-500/30">
+                              Đầu Hàng
+                            </span>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-4 font-mono">
@@ -299,13 +306,22 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
         {/* 10s Countdown Bar for Multiplayer */}
         {!isSolo && (
-          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300">
-            <div className="flex items-center gap-2 font-medium">
-              <Clock className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
-              <span>Tự động rời phòng chờ nếu không bấm chơi tiếp:</span>
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+            <div className="flex items-center justify-between gap-3 text-xs text-amber-300">
+              <div className="flex items-center gap-2 font-medium">
+                <Clock className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+                <span>Tự động rời phòng chờ nếu không thao tác tiếp:</span>
+              </div>
+              <div className="font-mono font-black text-sm bg-amber-500/20 px-3 py-1 rounded-xl border border-amber-500/40 text-amber-300 shrink-0">
+                {countdown}s
+              </div>
             </div>
-            <div className="font-mono font-black text-sm bg-amber-500/20 px-3 py-1 rounded-xl border border-amber-500/40 text-amber-300 shrink-0">
-              {countdown}s
+            {/* Smooth animated progress bar */}
+            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-1000 ease-linear rounded-full"
+                style={{ width: `${Math.max(0, (countdown / 10) * 100)}%` }}
+              />
             </div>
           </div>
         )}

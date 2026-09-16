@@ -5,6 +5,8 @@ import { calculateConsistency, validateWordSubmission } from '../utils/antiCheat
 import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { GhostCaret } from './GhostCaret';
+import { InGameMilestoneToast } from './InGameMilestoneToast';
+import { useInGameMilestones } from '../hooks/useInGameMilestones';
 import {
   OutplayPaceMode,
   OutplaySubMode,
@@ -225,8 +227,18 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const [liveConsistency, setLiveConsistency] = useState(100);
   const [cheatWarning, setCheatWarning] = useState<string | null>(null);
 
+  // In-Game Real-Time Milestone Toasts (WPM & Combo streaks)
+  const {
+    toasts: milestoneToasts,
+    dismissToast: dismissMilestoneToast,
+    checkWpmMilestone,
+    checkComboMilestone,
+    resetMilestones,
+  } = useInGameMilestones();
+
   // Surrender Modal & State
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
+  const showSurrenderModalRef = useRef(false);
   const currentPlayerData = players.find((p) => p.id === currentPlayerId);
   const isPlayerSurrendered = !!currentPlayerData?.isSurrendered;
 
@@ -304,7 +316,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Reset word history when words change
   useEffect(() => {
     wordHistoryRef.current = [];
-  }, [effectiveWords]);
+    resetMilestones();
+  }, [effectiveWords, resetMilestones]);
 
   // Reset Internal Arena Game State (Monkeytype Outplay switcher)
   const handleResetOutplay = useCallback(
@@ -338,6 +351,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       setCaretPos(null);
       setGhostCaretPos(null);
       setGhostLeadDelta(0);
+      resetMilestones();
       isFinishedRef.current = false;
       ghostJourneyRef.current = [];
       wordHistoryRef.current = [];
@@ -396,11 +410,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const openSurrenderModal = useCallback(() => {
     if (isPlayerSurrendered || timeLeft <= 0) return;
     soundFx.playKeyClick(false);
+    showSurrenderModalRef.current = true;
     setShowSurrenderModal(true);
   }, [isPlayerSurrendered, timeLeft]);
 
   const confirmSurrender = useCallback(() => {
     soundFx.playError();
+    showSurrenderModalRef.current = false;
     setShowSurrenderModal(false);
 
     // Clear last game WPM for current condition, but keep session best WPM
@@ -440,6 +456,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   const cancelSurrender = useCallback(() => {
     soundFx.playKeyClick(false);
+    showSurrenderModalRef.current = false;
     setShowSurrenderModal(false);
     setTimeout(() => {
       inputRef.current?.focus();
@@ -465,7 +482,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       }
 
       // 1. Modal is open: Enter to confirm, Esc to cancel
-      if (showSurrenderModal) {
+      if (showSurrenderModalRef.current || showSurrenderModal) {
         if (e.key === 'Enter') {
           e.preventDefault();
           e.stopPropagation();
@@ -944,6 +961,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     setCorrectChars(newCorrectChars);
     setTotalErrors(newErrors);
     setCombo(newCombo);
+    checkComboMilestone(newCombo);
 
     // Live consistency
     const currentConsistency = calculateConsistency(keystrokesRef.current);
@@ -1242,8 +1260,20 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     Math.round((totalLiveCorrect / Math.max(1, totalLiveCorrect + totalErrors * 5)) * 100)
   );
 
+  // Real-time WPM milestone check
+  useEffect(() => {
+    if (!hasStartedTyping || isPlayerSurrendered || isFinishedRef.current) return;
+    const elapsedSec = (performance.now() - startTimePerfRef.current) / 1000;
+    checkWpmMilestone(liveWpm, elapsedSec, currentWordIndex);
+  }, [liveWpm, hasStartedTyping, isPlayerSurrendered, currentWordIndex, checkWpmMilestone]);
+
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-5 select-none">
+    <div className="w-full max-w-5xl mx-auto space-y-5 select-none relative">
+      {/* In-Game Real-Time Milestone Toasts */}
+      <InGameMilestoneToast
+        toasts={milestoneToasts}
+        onDismiss={dismissMilestoneToast}
+      />
       {/* 1. MONKEYTYPE CONFIGURATION BAR (Single Row, No Jumping) */}
       {isOutplay && (
         <div className="space-y-2.5">
@@ -1968,34 +1998,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             <button
-              id="btn-surrender-view-summary"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                if (!isFinishedRef.current) {
-                  isFinishedRef.current = true;
-                  const elapsedSeconds = Math.max(0.1, (performance.now() - startTimePerfRef.current) / 1000);
-                  const normalizedChart = normalizeChartTimeline(
-                    performanceTimelineRef.current,
-                    elapsedSeconds,
-                    liveWpm,
-                    isOutplay ? sessionBestWpm : undefined
-                  );
-                  onFinish(correctChars, totalErrors, keystrokesRef.current, liveConsistency, {
-                    lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
-                    sessionBestWpm: isOutplay ? sessionBestWpm : undefined,
-                    finalWpm: liveWpm,
-                    elapsedSeconds,
-                    chartData: normalizedChart,
-                  });
-                }
-              }}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-            >
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>Xem Bảng Xếp Hạng</span>
-            </button>
-            <button
               id="btn-surrender-restart-game"
               type="button"
               onClick={() => {
@@ -2019,6 +2021,36 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               >
                 <Home className="w-4 h-4 text-sky-400" />
                 <span>Trang Chủ</span>
+              </button>
+            )}
+            {!isMultiplayer && (
+              <button
+                id="btn-surrender-view-summary"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  if (!isFinishedRef.current) {
+                    isFinishedRef.current = true;
+                    const elapsedSeconds = Math.max(0.1, (performance.now() - startTimePerfRef.current) / 1000);
+                    const normalizedChart = normalizeChartTimeline(
+                      performanceTimelineRef.current,
+                      elapsedSeconds,
+                      liveWpm,
+                      isOutplay ? sessionBestWpm : undefined
+                    );
+                    onFinish(correctChars, totalErrors, keystrokesRef.current, liveConsistency, {
+                      lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
+                      sessionBestWpm: isOutplay ? sessionBestWpm : undefined,
+                      finalWpm: liveWpm,
+                      elapsedSeconds,
+                      chartData: normalizedChart,
+                    });
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>Xem Bảng Xếp Hạng</span>
               </button>
             )}
           </div>

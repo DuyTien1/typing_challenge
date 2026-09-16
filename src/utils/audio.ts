@@ -294,6 +294,58 @@ class SoundEffects {
       });
     } catch {}
   }
+
+  // In-Game milestone chime sound (WPM milestone or Combo streak achievement)
+  public playMilestone(type: 'combo' | 'wpm' = 'combo') {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+      if (type === 'combo') {
+        // Combo: Ascending upbeat chime
+        const freqs = [587.33, 880.0, 1174.66]; // D5, A5, D6
+        freqs.forEach((freq, idx) => {
+          const osc = this.ctx!.createOscillator();
+          const gain = this.ctx!.createGain();
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.07);
+
+          gain.gain.setValueAtTime(0, now + idx * 0.07);
+          gain.gain.linearRampToValueAtTime(0.12, now + idx * 0.07 + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.22);
+
+          osc.connect(gain);
+          gain.connect(this.ctx!.destination);
+
+          osc.start(now + idx * 0.07);
+          osc.stop(now + idx * 0.07 + 0.23);
+        });
+      } else {
+        // WPM: Harmonic synth chime
+        const freqs = [659.25, 987.77, 1318.51]; // E5, B5, E6
+        freqs.forEach((freq, idx) => {
+          const osc = this.ctx!.createOscillator();
+          const gain = this.ctx!.createGain();
+
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+          gain.gain.setValueAtTime(0, now + idx * 0.08);
+          gain.gain.linearRampToValueAtTime(0.14, now + idx * 0.08 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.3);
+
+          osc.connect(gain);
+          gain.connect(this.ctx!.destination);
+
+          osc.start(now + idx * 0.08);
+          osc.stop(now + idx * 0.08 + 0.31);
+        });
+      }
+    } catch {}
+  }
 }
 
 export const soundFx = new SoundEffects();

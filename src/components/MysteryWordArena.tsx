@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MysteryWordItem, Player } from '../types';
 import { soundFx } from '../utils/audio';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
-import { Lightbulb, Clock, Trophy, ArrowRight, MousePointerClick, Flag, RotateCcw, Home } from 'lucide-react';
+import { Lightbulb, Clock, Trophy, ArrowRight, MousePointerClick, Flag, RotateCcw, Home, AlertTriangle } from 'lucide-react';
 
 interface MysteryWordArenaProps {
   roundItems: MysteryWordItem[];
@@ -41,6 +41,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   const [solvedMessage, setSolvedMessage] = useState<string | null>(null);
   const [roundScore, setRoundScore] = useState(0);
   const [isSurrendered, setIsSurrendered] = useState(false);
+  const [showSurrenderModal, setShowSurrenderModal] = useState(false);
+  const showSurrenderModalRef = useRef(false);
   const [roundSolvers, setRoundSolvers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
 
   const isRoundSolvedRef = useRef(false);
@@ -66,22 +68,90 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
 
-  // Auto focus & global keypress capture
+  // Surrender action handlers with Esc + Enter support
+  const openSurrenderModal = useCallback(() => {
+    if (isSurrendered) return;
+    soundFx.playKeyClick(false);
+    showSurrenderModalRef.current = true;
+    setShowSurrenderModal(true);
+  }, [isSurrendered]);
+
+  const confirmSurrender = useCallback(() => {
+    soundFx.playError();
+    showSurrenderModalRef.current = false;
+    setShowSurrenderModal(false);
+    setIsSurrendered(true);
+    onSurrender?.();
+  }, [onSurrender]);
+
+  const cancelSurrender = useCallback(() => {
+    soundFx.playKeyClick(false);
+    showSurrenderModalRef.current = false;
+    setShowSurrenderModal(false);
+    setTimeout(() => {
+      if (!isSurrendered) {
+        inputRef.current?.focus();
+        setIsFocused(true);
+      }
+    }, 50);
+  }, [isSurrendered]);
+
+  // Auto focus & global keypress capture with Esc + Enter surrender
   useEffect(() => {
-    inputRef.current?.focus();
+    if (!isSurrendered) {
+      inputRef.current?.focus();
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Modal is open: Enter to confirm surrender, Escape to cancel
+      if (showSurrenderModalRef.current || showSurrenderModal) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmSurrender();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cancelSurrender();
+          return;
+        }
+        return;
+      }
+
+      // 2. Modal is NOT open: Esc to trigger surrender modal
+      if (e.key === 'Escape') {
+        if (!isSurrendered && onSurrender) {
+          e.preventDefault();
+          e.stopPropagation();
+          openSurrenderModal();
+          return;
+        }
+      }
+
+      // 3. Auto focus input
       if (
+        !isSurrendered &&
         document.activeElement !== inputRef.current &&
         !['Tab', 'Alt', 'Control', 'Meta', 'Escape'].includes(e.key) &&
         !e.metaKey &&
         !e.ctrlKey
       ) {
+        const activeTag = document.activeElement?.tagName?.toLowerCase();
+        if (
+          activeTag === 'select' ||
+          activeTag === 'button' ||
+          (activeTag === 'input' && document.activeElement !== inputRef.current) ||
+          document.activeElement?.closest('select, input, button, [role="menu"]')
+        ) {
+          return;
+        }
         inputRef.current?.focus();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isSurrendered, onSurrender, openSurrenderModal, confirmSurrender, cancelSurrender, showSurrenderModal]);
 
   // Cập nhật vị trí con trỏ Monkeytype từng ký tự trong ô phán đoán
   const updateCaret = useCallback(() => {
@@ -176,7 +246,9 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       setRoundTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
-    inputRef.current?.focus();
+    if (!isSurrendered) {
+      inputRef.current?.focus();
+    }
 
     return () => {
       clearInterval(revealTimer);
@@ -254,7 +326,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
 
   const handleGuessSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRoundSolvedRef.current || !guessInput.trim()) return;
+    if (isRoundSolvedRef.current || !guessInput.trim() || isSurrendered) return;
 
     const guess = guessInput.trim().toLowerCase();
     const correct = targetWord.toLowerCase();
@@ -287,9 +359,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   };
 
   const handleSurrenderClick = () => {
-    setIsSurrendered(true);
-    soundFx.playError();
-    onSurrender?.();
+    openSurrenderModal();
   };
 
   return (
@@ -324,7 +394,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
               type="button"
               onClick={handleSurrenderClick}
               className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-              title="Đầu hàng ván đấu này"
+              title="Đầu hàng ván đấu này (Esc + Enter)"
             >
               <Flag className="w-3.5 h-3.5" />
               <span>Đầu Hàng</span>
@@ -371,9 +441,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             <span>Bạn đã đầu hàng ván đoán chữ này.</span>
           </div>
           <p className="text-xs text-slate-400">
-            {isMultiplayer
-              ? 'Bạn có thể nhấn "Đấu lại" để trở lại phòng chờ (avatar của bạn sẽ sáng lên) hoặc về trang chủ để rời phòng.'
-              : 'Bạn có thể chơi lại ván mới hoặc quay về trang chủ ngay.'}
+            Ô gõ đã bị khóa. Bạn vẫn có thể tiếp tục xem các người chơi khác đoán từ cho đến khi kết thúc trận đấu, hoặc bấm nút bên dưới để chuyển tiếp:
           </p>
           <div className="flex items-center justify-center gap-3 pt-1">
             {onRestart && (
@@ -454,11 +522,13 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
           className="relative max-w-md mx-auto p-4 px-6 rounded-xl bg-slate-950/80 border border-purple-500/40 min-h-[64px] flex items-center justify-start cursor-text select-none overflow-hidden"
         >
           {/* Monkeytype Unfocused Overlay */}
-          {!isFocused && !isRoundSolved && (
+          {!isFocused && !isRoundSolved && !isSurrendered && (
             <div
               onClick={() => {
-                inputRef.current?.focus();
-                setIsFocused(true);
+                if (!isSurrendered) {
+                  inputRef.current?.focus();
+                  setIsFocused(true);
+                }
               }}
               className="absolute inset-0 bg-slate-950/85 backdrop-blur-[2px] z-40 flex items-center justify-center gap-2 cursor-pointer"
             >
@@ -469,13 +539,15 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             </div>
           )}
 
-          <MonkeytypeCaret
-            caretPos={caretPos}
-            isTyping={isTyping}
-            isFocused={isFocused}
-            colorClass="bg-purple-400"
-            glowColor="rgba(192, 132, 252, 0.85)"
-          />
+          {!isSurrendered && (
+            <MonkeytypeCaret
+              caretPos={caretPos}
+              isTyping={isTyping}
+              isFocused={isFocused}
+              colorClass="bg-purple-400"
+              glowColor="rgba(192, 132, 252, 0.85)"
+            />
+          )}
 
           <div
             data-mystery-stream="true"
@@ -521,6 +593,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             type="text"
             value={guessInput}
             onChange={(e) => {
+              if (isSurrendered) return;
               setGuessInput(e.target.value);
               setIsTyping(true);
               if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
@@ -530,6 +603,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
               isComposingRef.current = true;
             }}
             onCompositionEnd={(e) => {
+              if (isSurrendered) return;
               isComposingRef.current = false;
               setGuessInput(e.currentTarget.value);
               setIsTyping(true);
@@ -538,17 +612,28 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             }}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            disabled={isRoundSolved}
-            placeholder="Nhập phán đoán của bạn và bấm Enter..."
-            className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-purple-500/50 text-white font-medium text-base outline-none focus:ring-2 focus:ring-purple-400"
+            disabled={isRoundSolved || isSurrendered}
+            readOnly={isSurrendered}
+            placeholder={
+              isSurrendered
+                ? "Bạn đã đầu hàng. Đang theo dõi các người chơi khác..."
+                : isRoundSolved
+                ? "Vòng này đã giải xong! Đang chuyển vòng..."
+                : "Nhập phán đoán của bạn và bấm Enter..."
+            }
+            className={`flex-1 px-4 py-3 rounded-xl bg-slate-950 border ${
+              isSurrendered
+                ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
+                : 'border-purple-500/50 text-white'
+            } font-medium text-base outline-none focus:ring-2 focus:ring-purple-400`}
             autoComplete="off"
             spellCheck="false"
           />
           <button
             id="btn-submit-mystery-guess"
             type="submit"
-            disabled={isRoundSolved}
-            className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer"
+            disabled={isRoundSolved || isSurrendered}
+            className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
           >
             <span>ĐOÁN</span>
             <ArrowRight className="w-4 h-4" />
@@ -619,6 +704,46 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
           })}
         </div>
       </div>
+
+      {/* Surrender Confirmation Modal with Esc & Enter Support */}
+      {showSurrenderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-rose-500/50 p-6 text-center space-y-4 shadow-2xl shadow-rose-950/50">
+            <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Xác Nhận Đầu Hàng?</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {isMultiplayer
+                  ? 'Bạn sẽ dừng trận đoán chữ ngay và có thể trở lại phòng chờ để chuẩn bị cho ván kế tiếp.'
+                  : 'Bạn sẽ dừng trận đoán chữ ngay lập tức.'}
+              </p>
+              <div className="mt-2 text-[11px] text-amber-400/90 font-mono bg-amber-500/10 border border-amber-500/20 rounded-lg py-1 px-2 inline-block">
+                Nhấn <span className="font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Enter</span> để xác nhận &bull; <span className="font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Esc</span> để hủy
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                id="btn-cancel-mystery-surrender"
+                type="button"
+                onClick={cancelSurrender}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Hủy (Esc)
+              </button>
+              <button
+                id="btn-confirm-mystery-surrender"
+                type="button"
+                onClick={confirmSurrender}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 cursor-pointer transition-colors"
+              >
+                Đầu Hàng (Enter)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

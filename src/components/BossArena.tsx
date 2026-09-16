@@ -4,6 +4,8 @@ import { soundFx } from '../utils/audio';
 import { calculateBossDamageServer } from '../utils/antiCheat';
 import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
+import { InGameMilestoneToast } from './InGameMilestoneToast';
+import { useInGameMilestones } from '../hooks/useInGameMilestones';
 import { 
   ShieldAlert, 
   Bomb, 
@@ -13,7 +15,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   MousePointerClick,
-  Home
+  Home,
+  Flag
 } from 'lucide-react';
 
 interface BossArenaProps {
@@ -24,6 +27,7 @@ interface BossArenaProps {
   onDealDamage: (damage: number, errors: number, playerId?: string) => void;
   onSelfDestruct: () => void;
   onFinish: (isVictory: boolean, totalDamage: number, errors: number, chartData?: PerformanceChartPoint[]) => void;
+  onSurrender?: () => void;
   onRestart: () => void;
   onHome?: () => void;
   isMultiplayer?: boolean;
@@ -37,6 +41,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
   onDealDamage,
   onSelfDestruct,
   onFinish,
+  onSurrender,
   onRestart,
   onHome,
   isMultiplayer = false,
@@ -79,6 +84,18 @@ export const BossArena: React.FC<BossArenaProps> = ({
   const [capslockEffect, setCapslockEffect] = useState(false);
   const [timeLeft, setTimeLeft] = useState(initialBoss.duration || 150);
   const [cheatWarning, setCheatWarning] = useState<string | null>(null);
+  const [isSurrendered, setIsSurrendered] = useState(false);
+  const [showSurrenderModal, setShowSurrenderModal] = useState(false);
+  const showSurrenderModalRef = useRef(false);
+
+  // In-Game Real-Time Milestone Toasts
+  const {
+    toasts: milestoneToasts,
+    dismissToast: dismissMilestoneToast,
+    checkWpmMilestone,
+    checkComboMilestone,
+    resetMilestones,
+  } = useInGameMilestones();
 
   // Monkeytype Caret State & Focus
   const [caretPos, setCaretPos] = useState<{ x: number; y: number; height?: number } | null>(null);
@@ -94,22 +111,90 @@ export const BossArena: React.FC<BossArenaProps> = ({
   const startTimeRef = useRef<number>(performance.now());
   const performanceTimelineRef = useRef<PerformanceChartPoint[]>([]);
 
-  // Auto focus & global keypress capture
+  // Surrender action handlers with Esc + Enter support
+  const openSurrenderModal = useCallback(() => {
+    if (isSurrendered || timeLeft <= 0 || isFinishedRef.current) return;
+    soundFx.playKeyClick(false);
+    showSurrenderModalRef.current = true;
+    setShowSurrenderModal(true);
+  }, [isSurrendered, timeLeft]);
+
+  const confirmSurrender = useCallback(() => {
+    soundFx.playError();
+    showSurrenderModalRef.current = false;
+    setShowSurrenderModal(false);
+    setIsSurrendered(true);
+    onSurrender?.();
+  }, [onSurrender]);
+
+  const cancelSurrender = useCallback(() => {
+    soundFx.playKeyClick(false);
+    showSurrenderModalRef.current = false;
+    setShowSurrenderModal(false);
+    setTimeout(() => {
+      if (!isSurrendered) {
+        inputRef.current?.focus();
+        setIsFocused(true);
+      }
+    }, 50);
+  }, [isSurrendered]);
+
+  // Auto focus & global keypress capture with Esc + Enter surrender
   useEffect(() => {
-    inputRef.current?.focus();
+    if (!isSurrendered) {
+      inputRef.current?.focus();
+    }
     const handleWindowKeyDown = (e: KeyboardEvent) => {
+      // 1. Modal is open: Enter to confirm surrender, Esc to cancel
+      if (showSurrenderModalRef.current || showSurrenderModal) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmSurrender();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cancelSurrender();
+          return;
+        }
+        return;
+      }
+
+      // 2. Modal is NOT open: Esc to trigger surrender modal
+      if (e.key === 'Escape') {
+        if (!isSurrendered && onSurrender && timeLeft > 0 && !isFinishedRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          openSurrenderModal();
+          return;
+        }
+      }
+
+      // 3. Auto focus input
       if (
+        !isSurrendered &&
         document.activeElement !== inputRef.current &&
         !['Tab', 'Alt', 'Control', 'Meta', 'Escape'].includes(e.key) &&
         !e.metaKey &&
         !e.ctrlKey
       ) {
+        const activeTag = document.activeElement?.tagName?.toLowerCase();
+        if (
+          activeTag === 'select' ||
+          activeTag === 'button' ||
+          (activeTag === 'input' && document.activeElement !== inputRef.current) ||
+          document.activeElement?.closest('select, input, button, [role="menu"]')
+        ) {
+          return;
+        }
         inputRef.current?.focus();
       }
     };
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, []);
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown, true);
+  }, [isSurrendered, timeLeft, onSurrender, openSurrenderModal, confirmSurrender, cancelSurrender, showSurrenderModal]);
 
   // Countdown timer refs & handlers
   const isFinishedRef = useRef(false);
@@ -149,6 +234,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
           errors: 0,
           errorPlot: null,
         });
+        checkWpmMilestone(liveWpm, elapsedSec, Math.round(totalDamageRef.current / 5));
       }
     }, 1000);
 
@@ -396,6 +482,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
 
   // Giải pháp 4: Thẩm định sát thương Boss Server-Side
   const commitBossWord = useCallback(() => {
+    if (isSurrendered) return;
     const typedWord = currentInput.trim();
     let targetWord = words[currentWordIndex] || '';
 
@@ -490,11 +577,13 @@ export const BossArena: React.FC<BossArenaProps> = ({
       });
 
       setCombo(nextCombo);
+      checkComboMilestone(nextCombo);
       setTotalDamageDealt((d) => d + damageResult.damage);
       onDealDamage(damageResult.damage, totalErrors);
     } else {
       soundFx.playError();
       setCombo(0);
+      checkComboMilestone(0);
       setTotalErrors((err) => err + 1);
       const elapsedSec = Math.max(1, Math.round((performance.now() - startTimeRef.current) / 1000));
       const liveWpm = Math.max(0, Math.round((totalDamageRef.current / 5) / (elapsedSec / 60)));
@@ -529,6 +618,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
   };
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    if (isSurrendered) return;
     isComposingRef.current = false;
     const val = e.currentTarget.value;
     setCurrentInput(val);
@@ -541,6 +631,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (timeLeft <= 0 || inRoomCountdown !== null || isSurrendered) return;
     const val = e.target.value;
 
     keystrokesRef.current.push({
@@ -630,11 +721,18 @@ export const BossArena: React.FC<BossArenaProps> = ({
 
   return (
     <div
-      className={`w-full max-w-5xl mx-auto space-y-5 select-none transition-transform ${
+      className={`w-full max-w-5xl mx-auto space-y-5 select-none transition-transform relative ${
         screenShake ? 'animate-bounce' : ''
       }`}
-      onClick={() => inputRef.current?.focus()}
+      onClick={() => {
+        if (!isSurrendered) inputRef.current?.focus();
+      }}
     >
+      {/* In-Game Real-Time Milestone Toasts */}
+      <InGameMilestoneToast
+        toasts={milestoneToasts}
+        onDismiss={dismissMilestoneToast}
+      />
       {/* Epic Boss Bar & Status */}
       <div className="p-5 rounded-2xl bg-gradient-to-b from-red-950/60 via-slate-900 to-slate-950 border border-red-500/30 shadow-2xl relative overflow-hidden">
         {/* Boss Header */}
@@ -780,8 +878,10 @@ export const BossArena: React.FC<BossArenaProps> = ({
         <div 
           ref={wordContainerRef}
           onClick={() => {
-            inputRef.current?.focus();
-            setIsFocused(true);
+            if (!isSurrendered) {
+              inputRef.current?.focus();
+              setIsFocused(true);
+            }
           }}
           className="relative text-center py-6 px-4 my-2 rounded-xl bg-slate-950/60 border border-slate-800/80 overflow-hidden cursor-text select-none"
         >
@@ -801,11 +901,13 @@ export const BossArena: React.FC<BossArenaProps> = ({
           )}
 
           {/* Monkeytype Unfocused Overlay */}
-          {!isFocused && inRoomCountdown === null && (
+          {!isFocused && inRoomCountdown === null && !isSurrendered && (
             <div
               onClick={() => {
-                inputRef.current?.focus();
-                setIsFocused(true);
+                if (!isSurrendered) {
+                  inputRef.current?.focus();
+                  setIsFocused(true);
+                }
               }}
               className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px] z-40 flex flex-col items-center justify-center gap-1.5 cursor-pointer"
             >
@@ -820,13 +922,15 @@ export const BossArena: React.FC<BossArenaProps> = ({
           )}
 
           {/* Smooth Monkeytype Caret */}
-          <MonkeytypeCaret
-            caretPos={caretPos}
-            isTyping={isTyping}
-            isFocused={isFocused}
-            colorClass="bg-red-400"
-            glowColor="rgba(248, 113, 113, 0.9)"
-          />
+          {!isSurrendered && (
+            <MonkeytypeCaret
+              caretPos={caretPos}
+              isTyping={isTyping}
+              isFocused={isFocused}
+              colorClass="bg-red-400"
+              glowColor="rgba(248, 113, 113, 0.9)"
+            />
+          )}
 
           <div className="flex items-center justify-center gap-4 sm:gap-6 overflow-hidden">
             {/* Previous word preview (dimmed) */}
@@ -899,32 +1003,55 @@ export const BossArena: React.FC<BossArenaProps> = ({
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             onPaste={(e) => e.preventDefault()}
-            disabled={timeLeft <= 0 || inRoomCountdown !== null}
+            disabled={timeLeft <= 0 || inRoomCountdown !== null || isSurrendered}
+            readOnly={isSurrendered}
             placeholder={
-              inRoomCountdown !== null
+              isSurrendered
+                ? "Bạn đã đầu hàng. Đang theo dõi trận săn boss..."
+                : inRoomCountdown !== null
                 ? `Trận chiến bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
                 : "Gõ từ trên và bấm Cách (Space) để xuất chiêu..."
             }
-            className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-red-500/50 text-white font-['JetBrains_Mono',monospace] text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner"
+            className={`flex-1 px-4 py-3 rounded-xl bg-slate-950 border ${
+              isSurrendered
+                ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
+                : 'border-red-500/50 text-white'
+            } font-['JetBrains_Mono',monospace] text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner`}
             autoComplete="off"
             autoCorrect="off"
             spellCheck="false"
           />
 
           {/* Self-destruct button */}
-          <button
-            id="btn-boss-self-destruct"
-            type="button"
-            onClick={() => {
-              soundFx.playBossHit();
-              onSelfDestruct();
-            }}
-            className="px-4 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-            title="Lao vào Boss tự bạo gây sát thương khổng lồ"
-          >
-            <Bomb className="w-4 h-4" />
-            <span>TỰ BẠO</span>
-          </button>
+          {!isSurrendered && (
+            <button
+              id="btn-boss-self-destruct"
+              type="button"
+              onClick={() => {
+                soundFx.playBossHit();
+                onSelfDestruct();
+              }}
+              className="px-4 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title="Lao vào Boss tự bạo gây sát thương khổng lồ"
+            >
+              <Bomb className="w-4 h-4" />
+              <span>TỰ BẠO</span>
+            </button>
+          )}
+
+          {/* Surrender button */}
+          {!isSurrendered && onSurrender && (
+            <button
+              id="btn-boss-surrender"
+              type="button"
+              onClick={openSurrenderModal}
+              className="px-4 py-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Đầu hàng ván đấu này (Esc + Enter)"
+            >
+              <Flag className="w-4 h-4" />
+              <span className="hidden sm:inline">Đầu Hàng</span>
+            </button>
+          )}
 
           <button
             id="btn-boss-restart"
@@ -955,6 +1082,49 @@ export const BossArena: React.FC<BossArenaProps> = ({
           )}
         </div>
       </div>
+
+      {/* Surrender Banner */}
+      {isSurrendered && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-center space-y-2 animate-in fade-in zoom-in duration-200">
+          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
+            <Flag className="w-4 h-4 text-rose-400" />
+            <span>Bạn đã đầu hàng ván săn boss này.</span>
+          </div>
+          <p className="text-xs text-slate-400">
+            Ô gõ đã bị khóa. Bạn vẫn có thể tiếp tục xem trận săn boss cho đến khi kết thúc, hoặc bấm nút bên dưới để chuyển tiếp:
+          </p>
+          <div className="flex items-center justify-center gap-3 pt-1">
+            {onRestart && (
+              <button
+                id="btn-surrender-boss-restart"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  onRestart();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{isMultiplayer ? 'Đấu Lại (Về Phòng Chờ)' : 'Chơi Ván Mới'}</span>
+              </button>
+            )}
+            {onHome && (
+              <button
+                id="btn-surrender-boss-home"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  onHome();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                <Home className="w-4 h-4 text-sky-400" />
+                <span>Trang Chủ</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Raid Team Scoreboard / Damage Meter */}
       <div className="space-y-2">
@@ -1016,6 +1186,46 @@ export const BossArena: React.FC<BossArenaProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Surrender Confirmation Modal with Esc & Enter Support */}
+      {showSurrenderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-rose-500/50 p-6 text-center space-y-4 shadow-2xl shadow-rose-950/50">
+            <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Xác Nhận Đầu Hàng?</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {isMultiplayer
+                  ? 'Bạn sẽ dừng trận săn boss ngay và có thể trở lại phòng chờ để chuẩn bị cho ván kế tiếp.'
+                  : 'Bạn sẽ dừng trận săn boss ngay lập tức.'}
+              </p>
+              <div className="mt-2 text-[11px] text-amber-400/90 font-mono bg-amber-500/10 border border-amber-500/20 rounded-lg py-1 px-2 inline-block">
+                Nhấn <span className="font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Enter</span> để xác nhận &bull; <span className="font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Esc</span> để hủy
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                id="btn-cancel-boss-surrender"
+                type="button"
+                onClick={cancelSurrender}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Hủy (Esc)
+              </button>
+              <button
+                id="btn-confirm-boss-surrender"
+                type="button"
+                onClick={confirmSurrender}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 cursor-pointer transition-colors"
+              >
+                Đầu Hàng (Enter)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

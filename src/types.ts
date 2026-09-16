@@ -223,6 +223,7 @@ export interface GameRoom {
   hostName: string;
   isQuickRoom: boolean;
   status: 'waiting' | 'playing' | 'finished';
+  matchId?: string;
   createdAt: number;
   lastActive: number;
   players: Player[];

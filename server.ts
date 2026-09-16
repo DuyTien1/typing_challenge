@@ -31,6 +31,7 @@ interface GameRoom {
   hostName: string;
   isQuickRoom: boolean;
   status: 'waiting' | 'playing' | 'finished';
+  matchId?: string;
   createdAt: number;
   lastActive: number;
   players: Player[];
@@ -408,7 +409,7 @@ async function startServer() {
       createdAt: Date.now(),
       lastActive: Date.now(),
       players: [hostPlayer],
-      difficulty,
+      difficulty: difficulty || (mode === 'numpad' ? 'number' : 'normal'),
       maxSlots: 8,
     };
 
@@ -603,7 +604,7 @@ async function startServer() {
       createdAt: now,
       lastActive: now,
       players: [hostPlayer],
-      difficulty,
+      difficulty: difficulty || (mode === 'numpad' ? 'number' : 'normal'),
       maxSlots: 8,
     };
 
@@ -638,6 +639,26 @@ async function startServer() {
     res.json({ success: true, room });
   });
 
+  // Update room difficulty (Host configuration)
+  app.post('/api/rooms/:id/difficulty', (req, res) => {
+    const norm = normalizeRoomCode(req.params.id);
+    const room = rooms.get(norm);
+    if (!room) {
+      res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+
+    const { difficulty } = req.body;
+    if (difficulty) {
+      room.difficulty = difficulty;
+      room.lastActive = Date.now();
+      rooms.set(norm, room);
+      broadcastToRoom(norm, { type: 'room_updated', room });
+    }
+
+    res.json({ success: true, room });
+  });
+
   // Update room status (waiting / playing / finished + synchronize words)
   app.post('/api/rooms/:id/status', (req, res) => {
     const norm = normalizeRoomCode(req.params.id);
@@ -647,14 +668,17 @@ async function startServer() {
       return;
     }
 
-    const { status, mode, words, mysteryWords } = req.body;
+    const { status, mode, words, mysteryWords, matchId, difficulty } = req.body;
     room.status = status;
     room.lastActive = Date.now();
     if (words) room.words = words;
     if (mysteryWords) room.mysteryWords = mysteryWords;
     if (mode) room.mode = mode;
+    if (difficulty) room.difficulty = difficulty;
 
     if (status === 'playing') {
+      // Gán mã định danh duy nhất cho từng trận đấu (matchId) để phòng tránh hiện tượng tự động reset phòng
+      room.matchId = matchId || ('match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
       // Khi bắt đầu: tất cả người chơi trong phòng được đánh dấu inMatch = true (avatar xám)
       room.players.forEach((p) => {
         p.inMatch = true;
@@ -678,6 +702,7 @@ async function startServer() {
       broadcastToRoom(norm, {
         type: 'room_started',
         roomId: norm,
+        matchId: room.matchId,
         mode: room.mode,
         words: room.words,
         mysteryWords: room.mysteryWords,
@@ -705,6 +730,25 @@ async function startServer() {
       if (typeof inMatch === 'boolean') player.inMatch = inMatch;
       if (typeof isSurrendered === 'boolean') player.isSurrendered = isSurrendered;
       if (typeof isFinished === 'boolean') player.isFinished = isFinished;
+
+      // Khi người chơi cuối cùng đầu hàng hoặc out trong phòng đang thi đấu (playing):
+      // Kết thúc phòng ngay lập tức và tổng kết mà không đợi hết thời gian
+      if (room.status === 'playing') {
+        const humanPlayers = room.players.filter((p) => !p.isBot);
+        const activeHumanPlayers = humanPlayers.filter(
+          (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
+        );
+        if (activeHumanPlayers.length === 0) {
+          room.status = 'finished';
+        }
+      }
+
+      // Nếu tất cả người chơi thực đã trở về phòng chờ (không còn ai inMatch), phòng tự động chuyển về trạng thái 'waiting'
+      const humanPlayers = room.players.filter((p) => !p.isBot);
+      if (humanPlayers.length > 0 && humanPlayers.every((p) => !p.inMatch)) {
+        room.status = 'waiting';
+      }
+
       room.lastActive = Date.now();
       rooms.set(norm, room);
       broadcastToRoom(norm, { type: 'room_updated', room });
@@ -772,6 +816,19 @@ async function startServer() {
         const nextHost = humanPlayers[0];
         room.hostId = nextHost.id;
         room.hostName = nextHost.username;
+      }
+      // Nếu phòng đang thi đấu (status === 'playing') mà người chơi cuối cùng rời phòng (out):
+      // Kết thúc phòng ngay lập tức và tổng kết
+      if (room.status === 'playing') {
+        const activeHumanPlayers = humanPlayers.filter(
+          (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
+        );
+        if (activeHumanPlayers.length === 0) {
+          room.status = 'finished';
+        }
+      }
+      if (humanPlayers.length > 0 && humanPlayers.every((p) => !p.inMatch)) {
+        room.status = 'waiting';
       }
       room.lastActive = Date.now();
       rooms.set(norm, room);
@@ -919,11 +976,55 @@ async function startServer() {
 
   // POST /api/leaderboard: Submit real score achieved by player
   app.post('/api/leaderboard', (req, res) => {
-    const { mode, username, wpm = 0, score = 0, errors = 0, avatar, frame } = req.body;
+    const {
+      mode,
+      username,
+      wpm = 0,
+      score = 0,
+      errors = 0,
+      avatar,
+      frame,
+      isSurrendered,
+      isCompleted = true,
+      roomId,
+      playerId,
+    } = req.body;
+
     const validModes = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'ngau_hung', 'doan_chu', 'san_boss'];
     if (!mode || !validModes.includes(mode) || !username) {
       res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
       return;
+    }
+
+    // QUY TẮC BẢNG VÀNG:
+    // Người chơi chỉ có thể lên Bảng Vàng khi và chỉ khi ván đấu diễn ra trọn vẹn, không đầu hàng và không out phòng.
+    if (isSurrendered === true || isCompleted === false) {
+      res.json({
+        success: false,
+        isNewRecord: false,
+        error: 'Ván đấu không trọn vẹn hoặc người chơi đã đầu hàng / rời phòng. Điểm không đủ điều kiện lên Bảng Vàng.',
+        highScores: serverHighScores,
+      });
+      return;
+    }
+
+    // Nếu là phòng thi đấu multiplayer: kiểm tra trạng thái thực tế của người chơi trong phòng
+    if (roomId && playerId) {
+      const norm = normalizeRoomCode(roomId);
+      const room = rooms.get(norm);
+      if (room) {
+        const roomPlayer = room.players.find((p) => p.id === playerId);
+        // Nếu người chơi không còn trong phòng (out phòng) hoặc đã bị đánh dấu đầu hàng: từ chối ghi nhận
+        if (!roomPlayer || roomPlayer.isSurrendered) {
+          res.json({
+            success: false,
+            isNewRecord: false,
+            error: 'Người chơi đã đầu hàng hoặc rời phòng trong ván đấu này. Điểm không đủ điều kiện lên Bảng Vàng.',
+            highScores: serverHighScores,
+          });
+          return;
+        }
+      }
     }
 
     const cleanUsername = String(username).trim().slice(0, 30);

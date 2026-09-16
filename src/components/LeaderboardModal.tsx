@@ -127,6 +127,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           )}
         </div>
 
+        {/* Rule banner */}
+        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-center gap-2">
+          <span className="text-sm select-none">⚖️</span>
+          <span>
+            <b>Điều kiện vinh danh:</b> Ván đấu phải diễn ra trọn vẹn từ đầu đến cuối. Người chơi đầu hàng hoặc rời phòng (out) sẽ không được ghi danh dù đủ điểm.
+          </span>
+        </div>
+
         {/* Footer info */}
         <div className="text-center">
           <button

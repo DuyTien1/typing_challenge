@@ -283,19 +283,35 @@ export async function updateRoomPlayers(roomId: string, players: Player[]): Prom
   }
 }
 
-// Bắt đầu trận đấu (Chủ phòng kích hoạt, đồng bộ danh sách từ thi đấu)
+// Cập nhật cấu hình độ khó phòng thi đấu (Chủ phòng)
+export async function updateRoomDifficulty(roomId: string, difficulty: DifficultyLevel): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/difficulty`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ difficulty }),
+    });
+  } catch (err) {
+    console.error('updateRoomDifficulty error:', err);
+  }
+}
+
+// Bắt đầu trận đấu (Chủ phòng kích hoạt, đồng bộ danh sách từ thi đấu và mã phiên đấu)
 export async function markRoomPlaying(
   roomId: string,
   mode?: GameMode,
   words?: string[],
-  mysteryWords?: MysteryWordItem[]
+  mysteryWords?: MysteryWordItem[],
+  matchId?: string,
+  difficulty?: DifficultyLevel
 ): Promise<void> {
   const normId = normalizeRoomCode(roomId);
   try {
     await fetch(`/api/rooms/${encodeURIComponent(normId)}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'playing', mode, words, mysteryWords }),
+      body: JSON.stringify({ status: 'playing', mode, words, mysteryWords, matchId, difficulty }),
     });
   } catch (err) {
     console.error('markRoomPlaying error:', err);
@@ -313,6 +329,20 @@ export async function markRoomWaiting(roomId: string): Promise<void> {
     });
   } catch (err) {
     console.error('markRoomWaiting error:', err);
+  }
+}
+
+// Chuyển phòng về trạng thái kết thúc (khi người chơi cuối cùng đầu hàng hoặc out)
+export async function markRoomFinished(roomId: string): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'finished' }),
+    });
+  } catch (err) {
+    console.error('markRoomFinished error:', err);
   }
 }
 
@@ -405,6 +435,7 @@ export function subscribeToRoom(
             callback({
               ...(event.room || {}),
               status: 'playing',
+              matchId: event.matchId || event.room?.matchId,
               words: event.words,
               mysteryWords: event.mysteryWords,
             } as GameRoom);
@@ -577,12 +608,13 @@ export async function fetchChatMessages(channel: 'global' | 'room', roomId?: str
       ? `/api/chat/messages?channel=room&roomId=${encodeURIComponent(normalizeRoomCode(roomId))}`
       : `/api/chat/messages?channel=global`;
     const res = await fetch(url);
+    if (!res.ok) return [];
     const data = await res.json();
-    if (data.success && Array.isArray(data.messages)) {
+    if (data && data.success && Array.isArray(data.messages)) {
       return data.messages;
     }
-  } catch (err) {
-    console.error('Error fetching chat messages:', err);
+  } catch {
+    // Fallback quietly if server is reconnecting or offline
   }
   return [];
 }
@@ -606,12 +638,13 @@ export async function sendChatMessage(msg: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(msg),
     });
+    if (!res.ok) return null;
     const data = await res.json();
-    if (data.success && data.message) {
+    if (data && data.success && data.message) {
       return data.message;
     }
-  } catch (err) {
-    console.error('Error sending chat message:', err);
+  } catch {
+    // Fallback quietly
   }
   return null;
 }
@@ -623,8 +656,8 @@ export async function clearServerChat(): Promise<void> {
   try {
     await fetch('/api/chat/clear', { method: 'POST' });
     broadcastLocalChatClear();
-  } catch (err) {
-    console.error('Error clearing chat:', err);
+  } catch {
+    // Fallback quietly
   }
 }
 
@@ -711,6 +744,7 @@ export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord
 
 /**
  * Submit player score to server leaderboard
+ * Chỉ được ghi nhận khi ván đấu diễn ra trọn vẹn, người chơi không đầu hàng hoặc out phòng
  */
 export async function submitScoreToLeaderboard(record: {
   mode: string;
@@ -720,7 +754,21 @@ export async function submitScoreToLeaderboard(record: {
   errors?: number;
   avatar?: string;
   frame?: string;
-}): Promise<{ success: boolean; isNewRecord: boolean; highScores: Record<string, HighScoreRecord | null> }> {
+  isSurrendered?: boolean;
+  isCompleted?: boolean;
+  roomId?: string;
+  playerId?: string;
+}): Promise<{ success: boolean; isNewRecord: boolean; highScores: Record<string, HighScoreRecord | null>; error?: string }> {
+  // Chặn ngay lập tức tại client nếu người chơi đã đầu hàng hoặc ván đấu không trọn vẹn
+  if (record.isSurrendered === true || record.isCompleted === false) {
+    return {
+      success: false,
+      isNewRecord: false,
+      highScores: {},
+      error: 'Ván đấu không trọn vẹn hoặc người chơi đã đầu hàng/out phòng. Không đủ điều kiện lên Bảng Vàng.',
+    };
+  }
+
   try {
     const res = await fetch('/api/leaderboard', {
       method: 'POST',
