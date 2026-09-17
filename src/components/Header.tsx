@@ -7,11 +7,13 @@ interface HeaderProps {
   avatar: string;
   onlineCount: number;
   isMuted: boolean;
+  isAdmin?: boolean;
   onToggleMute: () => void;
   onOpenLeaderboard: () => void;
   onToggleChat: () => void;
   onOpenAdmin: () => void;
   onOpenProfile: () => void;
+  onOpenOnlineUsers?: () => void;
   onGoHome?: () => void;
   chatUnreadCount?: number;
   activeModeName: string;
@@ -22,11 +24,13 @@ export const Header: React.FC<HeaderProps> = ({
   avatar,
   onlineCount,
   isMuted,
+  isAdmin = false,
   onToggleMute,
   onOpenLeaderboard,
   onToggleChat,
   onOpenAdmin,
   onOpenProfile,
+  onOpenOnlineUsers,
   onGoHome,
   chatUnreadCount = 0,
   activeModeName,
@@ -77,12 +81,36 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
-          {/* Online Counter */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20 text-xs text-emerald-400 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <Users className="w-3.5 h-3.5" />
-            <span>{onlineCount} Online</span>
-          </div>
+          {/* Online Counter - Clickable for Admin only */}
+          {isAdmin ? (
+            <button
+              id="btn-online-count-admin"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                if (onOpenOnlineUsers) onOpenOnlineUsers();
+              }}
+              title="Nhấn để xem danh sách và chi tiết người chơi online (Quyền Quản Trị)"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/90 border border-emerald-500/40 hover:border-emerald-400 text-xs text-emerald-300 hover:text-emerald-100 font-medium transition-all duration-150 shadow-sm shadow-emerald-950 hover:shadow-emerald-500/20 active:scale-95 cursor-pointer group"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse group-hover:scale-125 transition-transform"></span>
+              <Users className="w-3.5 h-3.5 text-emerald-400 group-hover:text-emerald-300" />
+              <span className="font-semibold">{onlineCount} Online</span>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1 py-0.5 rounded border border-emerald-500/30">
+                Admin
+              </span>
+            </button>
+          ) : (
+            <div
+              id="badge-online-count-normal"
+              title="Người chơi đang trực tuyến"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20 text-xs text-emerald-400 font-medium cursor-default select-none"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <Users className="w-3.5 h-3.5" />
+              <span>{onlineCount} Online</span>
+            </div>
+          )}
 
           {/* Sound Toggle */}
           <button

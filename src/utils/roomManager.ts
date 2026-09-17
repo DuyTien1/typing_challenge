@@ -1,4 +1,16 @@
-import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord } from '../types';
+import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord, OnlineUserDetail } from '../types';
+
+export interface PresenceUserMeta {
+  username?: string;
+  avatar?: string;
+  frame?: string;
+  bestWpm?: number;
+  totalGames?: number;
+  currentRoomId?: string | null;
+  currentMode?: string | null;
+  status?: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
+  isAdmin?: boolean;
+}
 
 const ROOMS_STORAGE_KEY = 'fasttyping_game_rooms_v4';
 const ROOM_CHANNEL_NAME = 'fasttyping_room_sync_v4';
@@ -368,7 +380,7 @@ export async function updatePlayerRoomStatus(
 }
 
 // Đồng bộ tiến độ gõ của người chơi trong trận đấu
-let lastProgressSentTime = 0;
+const lastProgressSentTimeMap = new Map<string, number>();
 export function sendPlayerProgress(
   roomId: string,
   playerId: string,
@@ -379,9 +391,10 @@ export function sendPlayerProgress(
   force = false
 ): void {
   const now = Date.now();
-  // Throttle 200ms trừ khi hoàn thành
-  if (!force && now - lastProgressSentTime < 200) return;
-  lastProgressSentTime = now;
+  const lastTime = lastProgressSentTimeMap.get(playerId) || 0;
+  // Throttle 150ms trừ khi hoàn thành
+  if (!force && now - lastTime < 150) return;
+  lastProgressSentTimeMap.set(playerId, now);
 
   const normId = normalizeRoomCode(roomId);
   fetch(`/api/rooms/${encodeURIComponent(normId)}/player-progress`, {
@@ -398,22 +411,69 @@ export function sendPlayerProgress(
   }).catch(() => {});
 }
 
+// Chuyển quyền chủ phòng và đổi slot
+export async function transferRoomHost(
+  roomId: string,
+  targetPlayerId: string,
+  requesterId: string
+): Promise<{ success: boolean; room?: GameRoom; error?: string }> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    const res = await fetch(`/api/rooms/${encodeURIComponent(normId)}/transfer-host`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetPlayerId, requesterId }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error('transferRoomHost error:', err);
+    return { success: false, error: 'Lỗi mạng khi chuyển quyền chủ phòng' };
+  }
+}
+
+// Đá người chơi hoặc bot khỏi phòng
+export async function kickRoomPlayer(
+  roomId: string,
+  targetPlayerId: string,
+  requesterId: string
+): Promise<{ success: boolean; room?: GameRoom; error?: string }> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    const res = await fetch(`/api/rooms/${encodeURIComponent(normId)}/kick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetPlayerId, requesterId }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error('kickRoomPlayer error:', err);
+    return { success: false, error: 'Lỗi mạng khi mời người chơi rời phòng' };
+  }
+}
+
 // Lắng nghe thay đổi của 1 phòng cụ thể (kết hợp Server SSE, Polling 1s, BroadcastChannel và Room Chat)
 export function subscribeToRoom(
   roomId: string,
   callback: (room: GameRoom | null) => void,
-  onRoomChat?: (msg: ChatMessage) => void
+  onRoomChat?: (msg: ChatMessage) => void,
+  onPlayerKicked?: (playerId: string, username: string) => void
 ): () => void {
   const normId = normalizeRoomCode(roomId);
   let isSubscribed = true;
+  let currentCachedRoom: GameRoom | null = null;
   const processedRoomChatIds = new Set<string>();
+
+  const safeCallback = (room: GameRoom | null) => {
+    currentCachedRoom = room;
+    callback(room);
+  };
 
   // 1. Initial Fetch
   fetch(`/api/rooms/${encodeURIComponent(normId)}`)
     .then((r) => r.json())
     .then((data) => {
       if (isSubscribed && data.success && data.room) {
-        callback(data.room);
+        safeCallback(data.room);
       }
     })
     .catch(() => {});
@@ -428,11 +488,11 @@ export function subscribeToRoom(
         try {
           const event = JSON.parse(e.data);
           if (event.type === 'room_updated' && event.room) {
-            callback(event.room);
+            safeCallback(event.room);
           } else if (event.type === 'room_closed') {
-            callback(null);
+            safeCallback(null);
           } else if (event.type === 'room_started') {
-            callback({
+            safeCallback({
               ...(event.room || {}),
               status: 'playing',
               matchId: event.matchId || event.room?.matchId,
@@ -455,16 +515,28 @@ export function subscribeToRoom(
                 }
               });
             }
+          } else if (event.type === 'player_kicked' && event.playerId) {
+            if (onPlayerKicked) {
+              onPlayerKicked(event.playerId, event.username || '');
+            }
           } else if (event.type === 'player_progress' && event.players) {
-            // Live update players progress
-            fetch(`/api/rooms/${encodeURIComponent(normId)}`)
-              .then((r) => r.json())
-              .then((data) => {
-                if (isSubscribed && data.success && data.room) {
-                  callback(data.room);
-                }
-              })
-              .catch(() => {});
+            // Live update players progress instantly without extra fetch
+            if (currentCachedRoom) {
+              currentCachedRoom = {
+                ...currentCachedRoom,
+                players: event.players,
+              };
+              callback(currentCachedRoom);
+            } else {
+              fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+                .then((r) => r.json())
+                .then((data) => {
+                  if (isSubscribed && data.success && data.room) {
+                    safeCallback(data.room);
+                  }
+                })
+                .catch(() => {});
+            }
           }
         } catch {
           // Ignore
@@ -664,11 +736,21 @@ export async function clearServerChat(): Promise<void> {
 /**
  * Fetch real-time active online user count with tab presence registration
  */
-export async function fetchOnlineCount(tabId?: string, userId?: string): Promise<number> {
+export async function fetchOnlineCount(tabId?: string, userId?: string, meta?: PresenceUserMeta): Promise<number> {
   try {
     const params = new URLSearchParams();
     if (tabId) params.append('tabId', tabId);
     if (userId) params.append('userId', userId);
+    if (meta?.username) params.append('username', meta.username);
+    if (meta?.avatar) params.append('avatar', meta.avatar);
+    if (meta?.frame) params.append('frame', meta.frame);
+    if (typeof meta?.bestWpm === 'number') params.append('bestWpm', meta.bestWpm.toString());
+    if (typeof meta?.totalGames === 'number') params.append('totalGames', meta.totalGames.toString());
+    if (meta?.currentRoomId) params.append('currentRoomId', meta.currentRoomId);
+    if (meta?.currentMode) params.append('currentMode', meta.currentMode);
+    if (meta?.status) params.append('status', meta.status);
+    if (meta?.isAdmin) params.append('isAdmin', 'true');
+
     const qs = params.toString();
     const url = qs ? `/api/online-count?${qs}` : '/api/online-count';
     const res = await fetch(url, { cache: 'no-store' });
@@ -683,14 +765,21 @@ export async function fetchOnlineCount(tabId?: string, userId?: string): Promise
 }
 
 /**
- * Send heartbeat presence ping to server
+ * Send heartbeat presence ping to server with rich metadata
  */
-export async function sendPresencePing(tabId: string, userId?: string): Promise<number> {
+export async function sendPresencePing(tabId: string, userId?: string, meta?: PresenceUserMeta): Promise<number> {
   try {
-    const params = new URLSearchParams();
-    if (tabId) params.append('tabId', tabId);
-    if (userId) params.append('userId', userId);
-    const res = await fetch(`/api/presence/ping?${params.toString()}`, { method: 'POST', cache: 'no-store' });
+    const payload = {
+      tabId,
+      userId,
+      ...meta,
+    };
+    const res = await fetch('/api/presence/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
     const data = await res.json();
     if (data && typeof data.count === 'number') {
       return data.count;
@@ -699,6 +788,25 @@ export async function sendPresencePing(tabId: string, userId?: string): Promise<
     // ignore
   }
   return 1;
+}
+
+/**
+ * Admin action: Fetch list of real-time online players with rich details
+ */
+export async function fetchOnlineUsers(): Promise<OnlineUserDetail[]> {
+  try {
+    const res = await fetch('/api/admin/online-users', {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    const data = await res.json();
+    if (data && data.success && Array.isArray(data.users)) {
+      return data.users as OnlineUserDetail[];
+    }
+  } catch (err) {
+    console.error('Error fetching online users:', err);
+  }
+  return [];
 }
 
 /**
@@ -802,11 +910,15 @@ export async function adminUpdateLeaderboard(highScores: Record<string, HighScor
 }
 
 /**
- * Admin reset leaderboard
+ * Admin reset leaderboard (resets all or a specific mode if provided)
  */
-export async function adminResetLeaderboard(): Promise<boolean> {
+export async function adminResetLeaderboard(mode?: string): Promise<boolean> {
   try {
-    const res = await fetch('/api/leaderboard/reset', { method: 'POST' });
+    const res = await fetch('/api/leaderboard/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mode ? { mode } : {}),
+    });
     const data = await res.json();
     return !!data.success;
   } catch (err) {
@@ -824,7 +936,8 @@ export function subscribeToGlobalChat(
   onOnlineCount?: (count: number) => void,
   onLeaderboard?: (highScores: Record<string, HighScoreRecord | null>) => void,
   userId?: string,
-  tabId?: string
+  tabId?: string,
+  getUserMeta?: () => PresenceUserMeta
 ): () => void {
   let isSubscribed = true;
   let isSseConnected = false;
@@ -853,8 +966,10 @@ export function subscribeToGlobalChat(
     msgs.forEach((m) => dispatchMsg(m));
   });
 
+  const initialMeta = getUserMeta ? getUserMeta() : undefined;
+
   if (onOnlineCount) {
-    fetchOnlineCount(actualTabId, actualUserId).then((count) => {
+    fetchOnlineCount(actualTabId, actualUserId, initialMeta).then((count) => {
       if (isSubscribed) updatePresence(count);
     });
   }
@@ -869,7 +984,22 @@ export function subscribeToGlobalChat(
   let eventSource: EventSource | null = null;
   try {
     if (typeof window !== 'undefined' && 'EventSource' in window) {
-      const url = `/api/chat/stream?tabId=${encodeURIComponent(actualTabId)}&userId=${encodeURIComponent(actualUserId)}`;
+      const meta = getUserMeta ? getUserMeta() : undefined;
+      const params = new URLSearchParams({
+        tabId: actualTabId,
+        userId: actualUserId,
+      });
+      if (meta?.username) params.append('username', meta.username);
+      if (meta?.avatar) params.append('avatar', meta.avatar);
+      if (meta?.frame) params.append('frame', meta.frame);
+      if (typeof meta?.bestWpm === 'number') params.append('bestWpm', meta.bestWpm.toString());
+      if (typeof meta?.totalGames === 'number') params.append('totalGames', meta.totalGames.toString());
+      if (meta?.currentRoomId) params.append('currentRoomId', meta.currentRoomId);
+      if (meta?.currentMode) params.append('currentMode', meta.currentMode);
+      if (meta?.status) params.append('status', meta.status);
+      if (meta?.isAdmin) params.append('isAdmin', 'true');
+
+      const url = `/api/chat/stream?${params.toString()}`;
       eventSource = new EventSource(url);
       eventSource.onopen = () => {
         isSseConnected = true;
@@ -906,7 +1036,8 @@ export function subscribeToGlobalChat(
   // Keeps session alive on server and fetches up-to-date presence count
   const pingTimer = setInterval(() => {
     if (!isSubscribed) return;
-    sendPresencePing(actualTabId, actualUserId).then((count) => {
+    const currentMeta = getUserMeta ? getUserMeta() : undefined;
+    sendPresencePing(actualTabId, actualUserId, currentMeta).then((count) => {
       if (isSubscribed) updatePresence(count);
     });
     if (!isSseConnected) {
@@ -920,7 +1051,8 @@ export function subscribeToGlobalChat(
   // 4. Instant refresh on Tab focus & visibility change (e.g. switching between tabs in Brave)
   const handleVisibilityOrFocus = () => {
     if (!isSubscribed) return;
-    fetchOnlineCount(actualTabId, actualUserId).then((count) => {
+    const currentMeta = getUserMeta ? getUserMeta() : undefined;
+    fetchOnlineCount(actualTabId, actualUserId, currentMeta).then((count) => {
       if (isSubscribed) updatePresence(count);
     });
   };

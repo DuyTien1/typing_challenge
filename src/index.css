@@ -167,3 +167,97 @@
   animation: arcanePurpleAura 2.2s ease-in-out infinite;
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Smooth enter animation for players & bots entering waiting room slots */
+@keyframes slotEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-slot-enter {
+  animation: slotEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* ========================================================================= */
+/* CUSTOM LUXURY THEMED SCROLLBAR - APPLIED GLOBALLY TO ALL SCROLLBARS      */
+/* ========================================================================= */
+
+/* Firefox standard */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.4) rgba(15, 23, 42, 0.6);
+}
+
+/* WebKit (Chrome, Edge, Safari, Opera) */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.65);
+  border-radius: 9999px;
+  margin: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.4), rgba(217, 119, 6, 0.45));
+  border-radius: 9999px;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  transition: all 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.85), rgba(245, 158, 11, 0.9));
+  border-color: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #fbbf24;
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.8);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ========================================================================= */
+/* CUSTOM NUMBER INPUT SPINNER BUTTONS (TĂNG / GIẢM)                         */
+/* ========================================================================= */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  cursor: pointer;
+  opacity: 0.75;
+  filter: invert(0.85) sepia(100%) saturate(400%) hue-rotate(5deg);
+  transition: opacity 0.15s ease, filter 0.15s ease;
+  height: 24px;
+}
+
+input[type="number"]::-webkit-inner-spin-button:hover,
+input[type="number"]::-webkit-outer-spin-button:hover {
+  opacity: 1;
+  filter: invert(0.95) sepia(100%) saturate(800%) hue-rotate(15deg) drop-shadow(0 0 5px rgba(251, 191, 36, 0.8));
+}
+

@@ -1,6 +1,8 @@
 {
-  "name": "FastTyping Challenge",
-  "description": "Đấu trường gõ phím Tiếng Việt & Đa ngôn ngữ thời gian thực với Săn Boss, Đoán Chữ, Ngẫu Hứng và Bàn phím số.",
+  "name": "Remix Remix Typing Challenge",
+  "description": "giữ nguyên tất cả code của app cũ",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

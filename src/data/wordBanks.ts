@@ -1,4 +1,4 @@
-import { MysteryWordItem } from '../types';
+import { MysteryWordItem, WordPoolType } from '../types';
 
 export function removeVietnameseTones(str: string): string {
   return str
@@ -108,6 +108,20 @@ export const MYSTERY_WORD_BANKS = {
     { word: 'chim cánh cụt', hint: 'Động vật sống tại Nam Cực lạnh giá' },
     { word: 'khủng long bạo chúa', hint: 'Động vật thời tiền sử T-Rex' }
   ],
+  vi_nodau: [
+    { word: 'mat troi', hint: 'Thiên văn học / Vũ trụ (không dấu)' },
+    { word: 'ban phim', hint: 'Công nghệ / Tin học (không dấu)' },
+    { word: 'lap trinh vien', hint: 'Nghề nghiệp công nghệ (không dấu)' },
+    { word: 'con su tu', hint: 'Động vật ăn thịt hoang dã (không dấu)' },
+    { word: 'hoa huong duong', hint: 'Thực vật / Loài hoa hướng nắng (không dấu)' },
+    { word: 'banh chung', hint: 'Món ăn truyền thống ngày Tết (không dấu)' },
+    { word: 'thanh pho', hint: 'Địa lý / Đô thị sầm uất (không dấu)' },
+    { word: 'may vi tinh', hint: 'Thiết bị điện tử bàn làm việc (không dấu)' },
+    { word: 'vinh ha long', hint: 'Kỳ quan thiên nhiên thế giới (không dấu)' },
+    { word: 'nui fansipan', hint: 'Nóc nhà Đông Dương (không dấu)' },
+    { word: 'ho hoan kiem', hint: 'Thắng cảnh lịch sử Hà Nội (không dấu)' },
+    { word: 'tri tue nhan tao', hint: 'Trí tuệ máy tính tương lai (không dấu)' }
+  ],
   en: [
     { word: 'sunflower', hint: 'Nature / Beautiful yellow flower' },
     { word: 'keyboard', hint: 'Computer Hardware' },
@@ -119,10 +133,46 @@ export const MYSTERY_WORD_BANKS = {
     { word: 'golden bridge', hint: 'Famous bridge held by giant hands in Da Nang' },
     { word: 'cheetah', hint: 'Fastest land animal on Earth' },
     { word: 'chocolate cake', hint: 'Sweet dessert / Bakery treat' }
+  ],
+  numbers: [
+    { word: '1945', hint: 'Mốc son lịch sử / Cách mạng Tháng Tám' },
+    { word: '314159', hint: 'Hằng số Pi trong toán học (3.14159)' },
+    { word: '88888', hint: 'Dãy số ngũ quý đại cát tài lộc' },
+    { word: '2026', hint: 'Năm dương lịch hiện tại' },
+    { word: '9999', hint: 'Tứ quý phong thủy may mắn trường tồn' },
+    { word: '1024', hint: 'Số Bytes trong một Kilobyte' },
+    { word: '365', hint: 'Số ngày trong một năm dương lịch thường' },
+    { word: '86400', hint: 'Tổng số giây trong 24 giờ' },
+    { word: '1000000', hint: 'Một triệu / Mốc số tròn chục sáu số 0' },
+    { word: '114', hint: 'Tổng đài cứu hỏa cứu nạn Việt Nam' },
+    { word: '115', hint: 'Tổng đài cấp cứu y tế khẩn cấp' },
+    { word: '113', hint: 'Tổng đài lực lượng cảnh sát phản ứng nhanh' }
+  ],
+  fullsize: [
+    { word: '58008', hint: 'Mật mã máy tính bỏ túi cổ điển (BOOBS xoay ngược)' },
+    { word: '80085', hint: 'Easter egg huyền thoại trên máy tính Casio' },
+    { word: '1+2+3=6', hint: 'Biểu thức số học cộng liên tiếp' },
+    { word: '100*2=200', hint: 'Phép tính nhân cơ bản hai trăm' },
+    { word: '3.1416', hint: 'Số thập phân xấp xỉ hằng số Pi' },
+    { word: '777-999', hint: 'Dãy số ghép phép trừ đặc biệt' },
+    { word: '10/2=5', hint: 'Phép tính chia nguyên mười chia hai' },
+    { word: '07734', hint: 'Mã số máy tính ngược chữ HELLO' },
+    { word: '5318008', hint: 'Mã số đảo ngược nổi tiếng trên màn hình Numpad' },
+    { word: '99*9=891', hint: 'Phép nhân hai chữ số ra 891' }
   ]
 };
 
-export function generate58008Word(subMode: 'number' | 'fullsize' = 'fullsize'): string {
+export function generate58008Word(subMode: 'number' | 'fullsize' = 'fullsize', longNumberRatePercent?: number): string {
+  // If longNumberRatePercent is specified, roll probability to produce a 5 or 6 digit string
+  if (longNumberRatePercent !== undefined && Math.random() < longNumberRatePercent / 100) {
+    const len = Math.random() < 0.5 ? 5 : 6;
+    let numStr = (Math.floor(Math.random() * 9) + 1).toString();
+    for (let i = 1; i < len; i++) {
+      numStr += Math.floor(Math.random() * 10).toString();
+    }
+    return numStr;
+  }
+
   if (subMode === 'number') {
     const lengths = [1, 2, 2, 3, 3, 4, 4, 5, 6];
     const len = lengths[Math.floor(Math.random() * lengths.length)];
@@ -173,11 +223,12 @@ export function generateWords(
   mode: string,
   count: number = 150,
   difficulty: string = 'normal',
-  customHardRate?: number
+  customHardRate?: number,
+  allowedPools?: WordPoolType[]
 ): string[] {
   if (mode === 'numpad') {
     const subMode = difficulty === 'number' ? 'number' : 'fullsize';
-    return Array.from({ length: count }, () => generate58008Word(subMode));
+    return Array.from({ length: count }, () => generate58008Word(subMode, customHardRate));
   }
 
   const hardRate = customHardRate !== undefined
@@ -185,16 +236,25 @@ export function generateWords(
     : (difficulty === 'legendary' || difficulty === 'hell' ? 70 : difficulty === 'hard' ? 45 : 25);
 
   if (mode === 'san_boss' || mode === 'ngau_hung') {
+    const activePools: WordPoolType[] = (allowedPools && allowedPools.length > 0)
+      ? allowedPools
+      : ['vi_dau', 'vi_nodau', 'en', 'numbers'];
+
     return Array.from({ length: count }, () => {
-      const rand = Math.random();
-      if (rand < 0.35) {
-        return getRandomWordFromBank(BIG_WORD_BANKS.vi_dau.easy, BIG_WORD_BANKS.vi_dau.hard, hardRate);
-      } else if (rand < 0.65) {
-        return getRandomWordFromBank(BIG_WORD_BANKS_VI_NODAU.easy, BIG_WORD_BANKS_VI_NODAU.hard, hardRate);
-      } else if (rand < 0.85) {
-        return getRandomWordFromBank(BIG_WORD_BANKS.en.easy, BIG_WORD_BANKS.en.hard, hardRate);
-      } else {
-        return generate58008Word('number');
+      const chosenPool = activePools[Math.floor(Math.random() * activePools.length)];
+      switch (chosenPool) {
+        case 'vi_dau':
+          return getRandomWordFromBank(BIG_WORD_BANKS.vi_dau.easy, BIG_WORD_BANKS.vi_dau.hard, hardRate);
+        case 'vi_nodau':
+          return getRandomWordFromBank(BIG_WORD_BANKS_VI_NODAU.easy, BIG_WORD_BANKS_VI_NODAU.hard, hardRate);
+        case 'en':
+          return getRandomWordFromBank(BIG_WORD_BANKS.en.easy, BIG_WORD_BANKS.en.hard, hardRate);
+        case 'numbers':
+          return generate58008Word('number');
+        case 'fullsize':
+          return generate58008Word('fullsize');
+        default:
+          return getRandomWordFromBank(BIG_WORD_BANKS.vi_dau.easy, BIG_WORD_BANKS.vi_dau.hard, hardRate);
       }
     });
   }
@@ -217,15 +277,42 @@ export function generateWords(
   );
 }
 
-export function generateDoanChuWords(difficulty: string = 'normal', count: number = 10): MysteryWordItem[] {
-  const isEn = difficulty === 'hard' && Math.random() < 0.3;
-  const bank = isEn ? MYSTERY_WORD_BANKS.en : MYSTERY_WORD_BANKS.vi_dau;
+export function generateDoanChuWords(
+  difficulty: string = 'normal',
+  count: number = 10,
+  allowedPools?: WordPoolType[]
+): MysteryWordItem[] {
+  let activePools: WordPoolType[];
+  if (allowedPools && allowedPools.length > 0) {
+    activePools = allowedPools;
+  } else {
+    if (difficulty === 'legendary') {
+      activePools = ['vi_dau', 'en'];
+    } else if (difficulty === 'hard') {
+      activePools = ['vi_dau', 'vi_nodau', 'en'];
+    } else {
+      activePools = ['vi_dau', 'vi_nodau'];
+    }
+  }
+
+  const combinedBank: MysteryWordItem[] = [];
+  activePools.forEach((pool) => {
+    const bank = MYSTERY_WORD_BANKS[pool];
+    if (bank && bank.length > 0) {
+      combinedBank.push(...bank);
+    }
+  });
+
+  const sourceBank = combinedBank.length > 0 ? combinedBank : MYSTERY_WORD_BANKS.vi_dau;
+  const shuffled = [...sourceBank].sort(() => 0.5 - Math.random());
   
-  const shuffled = [...bank].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count).map(item => ({
-    word: difficulty === 'normal' ? removeVietnameseTones(item.word) : item.word,
-    hint: item.hint
-  }));
+  const result: MysteryWordItem[] = [];
+  let index = 0;
+  while (result.length < count) {
+    result.push(shuffled[index % shuffled.length]);
+    index++;
+  }
+  return result;
 }
 
 export interface OutplayWordOptions {

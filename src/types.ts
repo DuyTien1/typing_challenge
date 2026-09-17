@@ -139,6 +139,8 @@ export interface KeystrokeEvent {
   time: number;
 }
 
+export type WordPoolType = 'vi_dau' | 'vi_nodau' | 'en' | 'numbers' | 'fullsize';
+
 export interface ModeDurationsConfig {
   vi_dau: number;
   vi_nodau: number;
@@ -165,6 +167,7 @@ export interface BossDifficultyConfig {
   reverseDuration: number;
   capslockDuration: number;
   skillRates: BossSkillRates;
+  allowedPools?: WordPoolType[];
 }
 
 export interface ModeHardWordRates {
@@ -177,10 +180,19 @@ export interface ModeHardWordRates {
   numpad: number;     // 0 - 100%
 }
 
+export interface ModeWordCountsConfig {
+  vi_dau: number;
+  vi_nodau: number;
+  en: number;
+  numpad: number;
+  outplay: number;
+}
+
 export interface GameConfig {
   hardWordRate?: number; // legacy fallback
   modeHardWordRates: ModeHardWordRates;
   modeDurations: ModeDurationsConfig;
+  modeWordCounts?: ModeWordCountsConfig;
   normalRace: {
     duration: number;
     wordCount: number;
@@ -197,6 +209,7 @@ export interface GameConfig {
       roundDuration: number;
       intermissionDuration: number;
       totalRounds: number;
+      allowedPools?: WordPoolType[];
     }>;
   };
   doanChu: {
@@ -209,6 +222,7 @@ export interface GameConfig {
       intermissionDuration: number;
       totalRounds: number;
       showHint: boolean;
+      allowedPools?: WordPoolType[];
     }>;
   };
   sanBoss: {
@@ -231,4 +245,98 @@ export interface GameRoom {
   maxSlots: number;
   words?: string[];
   mysteryWords?: MysteryWordItem[];
+}
+
+export interface OnlineUserDetail {
+  userId: string;
+  tabId: string;
+  username: string;
+  avatar: string;
+  frame?: string;
+  bestWpm?: number;
+  totalGames?: number;
+  currentRoomId?: string | null;
+  currentMode?: string | null;
+  status: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
+  isAdmin?: boolean;
+  ip?: string;
+  browser?: string;
+  device?: string;
+  connectedAt: number;
+  lastSeen: number;
+  tabCount?: number;
+  roomInfo?: {
+    roomId: string;
+    mode: string;
+    modeName: string;
+    roomStatus: 'waiting' | 'playing' | 'finished';
+    isHost: boolean;
+    playerCount: number;
+    maxSlots: number;
+    playerProgress?: number;
+    playerWpm?: number;
+    isFinished?: boolean;
+    isSurrendered?: boolean;
+  } | null;
+}
+
+// Chi tiết thống kê cho Chế độ Ngẫu Hứng
+export interface NgauHungRoundResult {
+  round: number;
+  word: string;
+  placement: number | null; // 1, 2, 3, or null
+  pts: number;
+  timeSec: number;
+  isPerfect?: boolean;
+}
+
+export interface NgauHungGameStats {
+  totalRounds: number;
+  completedRounds: number;
+  top1Count: number;
+  top2Count: number;
+  top3Count: number;
+  bestTimeSec: number | null;
+  avgTimeSec: number;
+  totalScore: number;
+  perfectRounds: number;
+  roundHistory: NgauHungRoundResult[];
+}
+
+// Chi tiết thống kê cho Chế độ Đoán Chữ
+export interface MysteryWordRoundResult {
+  round: number;
+  word: string;
+  category?: string;
+  isCorrect: boolean;
+  solverName: string;
+  pts: number;
+  hiddenCount: number;
+  solveTimeSec?: number;
+}
+
+export interface MysteryWordGameStats {
+  totalRounds: number;
+  correctGuesses: number;
+  accuracyRate: number;
+  totalScore: number;
+  totalBonusLetters: number;
+  fastestGuessSec?: number | null;
+  roundHistory: MysteryWordRoundResult[];
+}
+
+// Chi tiết thống kê cho Chế độ Săn Boss
+export interface BossBattleStats {
+  isVictory: boolean;
+  totalDamage: number;
+  bossMaxHp: number;
+  bossRemainingHp: number;
+  battleDurationSec: number;
+  dps: number;
+  maxCombo: number;
+  critCount: number;
+  critRate: number;
+  shieldBreaks: number;
+  totalErrors: number;
+  chartData?: PerformanceChartPoint[];
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Player, BossState, KeystrokeEvent, PerformanceChartPoint } from '../types';
+import { Player, BossState, KeystrokeEvent, PerformanceChartPoint, BossBattleStats } from '../types';
 import { soundFx } from '../utils/audio';
 import { calculateBossDamageServer } from '../utils/antiCheat';
 import { normalizeChartTimeline } from '../utils/chartHelper';
@@ -26,7 +26,7 @@ interface BossArenaProps {
   currentPlayerId: string;
   onDealDamage: (damage: number, errors: number, playerId?: string) => void;
   onSelfDestruct: () => void;
-  onFinish: (isVictory: boolean, totalDamage: number, errors: number, chartData?: PerformanceChartPoint[]) => void;
+  onFinish: (isVictory: boolean, totalDamage: number, errors: number, chartData?: PerformanceChartPoint[], stats?: BossBattleStats) => void;
   onSurrender?: () => void;
   onRestart: () => void;
   onHome?: () => void;
@@ -203,6 +203,33 @@ export const BossArena: React.FC<BossArenaProps> = ({
   const bossHpRef = useRef(boss.hp);
   const onFinishRef = useRef(onFinish);
 
+  // Performance & combat capability stats tracking
+  const critCountRef = useRef(0);
+  const totalAttacksRef = useRef(0);
+  const maxComboRef = useRef(0);
+  const shieldBreaksRef = useRef(0);
+
+  const getBossBattleStats = useCallback((isVictory: boolean, finalDmg: number, chartData?: PerformanceChartPoint[]): BossBattleStats => {
+    const battleDurationSec = Math.max(1, Math.round((performance.now() - startTimeRef.current) / 1000));
+    const dps = Math.round(finalDmg / Math.max(1, battleDurationSec));
+    const critRate = totalAttacksRef.current > 0 ? Math.round((critCountRef.current / totalAttacksRef.current) * 100) : 0;
+
+    return {
+      isVictory,
+      totalDamage: finalDmg,
+      bossMaxHp: boss.maxHp,
+      bossRemainingHp: Math.max(0, bossHpRef.current),
+      battleDurationSec,
+      dps,
+      maxCombo: maxComboRef.current,
+      critCount: critCountRef.current,
+      critRate,
+      shieldBreaks: shieldBreaksRef.current,
+      totalErrors: totalErrorsRef.current,
+      chartData,
+    };
+  }, [boss.maxHp]);
+
   useEffect(() => {
     totalDamageRef.current = totalDamageDealt;
   }, [totalDamageDealt]);
@@ -249,9 +276,23 @@ export const BossArena: React.FC<BossArenaProps> = ({
       const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
       const finalWpm = Math.max(0, Math.round((totalDamageRef.current / 5) / (elapsedSec / 60)));
       const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
-      onFinishRef.current(victory, totalDamageRef.current, totalErrorsRef.current, chartData);
+      const stats = getBossBattleStats(victory, totalDamageRef.current, chartData);
+      onFinishRef.current(victory, totalDamageRef.current, totalErrorsRef.current, chartData, stats);
     }
-  }, [timeLeft]);
+  }, [timeLeft, getBossBattleStats]);
+
+  // When Boss HP reaches 0, trigger victory onFinish safely in useEffect
+  useEffect(() => {
+    if (boss.hp <= 0 && !isFinishedRef.current) {
+      isFinishedRef.current = true;
+      const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
+      const finalDmg = totalDamageRef.current;
+      const finalWpm = Math.max(0, Math.round((finalDmg / 5) / (elapsedSec / 60)));
+      const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
+      const stats = getBossBattleStats(true, finalDmg, chartData);
+      onFinishRef.current(true, finalDmg, totalErrorsRef.current, chartData, stats);
+    }
+  }, [boss.hp, getBossBattleStats]);
 
   // Boss Skill cyclical loop
   useEffect(() => {
@@ -321,13 +362,11 @@ export const BossArena: React.FC<BossArenaProps> = ({
           ]);
 
           setTimeout(() => {
+            let shieldLost = false;
             setBoss((prev) => {
               if (prev.isShieldActive && prev.shield > 0) {
                 const healed = prev.shield;
-                setCombatLogs((l) => [
-                  `⚠️ Không phá kịp giáp! Boss hồi phục +${healed} HP!`,
-                  ...l.slice(0, 5),
-                ]);
+                shieldLost = true;
                 return {
                   ...prev,
                   hp: Math.min(prev.maxHp, prev.hp + healed),
@@ -337,6 +376,12 @@ export const BossArena: React.FC<BossArenaProps> = ({
               }
               return prev;
             });
+            if (shieldLost) {
+              setCombatLogs((l) => [
+                `⚠️ Không phá kịp giáp! Boss hồi phục HP!`,
+                ...l.slice(0, 5),
+              ]);
+            }
           }, boss.shieldDuration * 1000);
         } else if (selected === 'shake') {
           setScreenShake(true);
@@ -399,11 +444,16 @@ export const BossArena: React.FC<BossArenaProps> = ({
         // Base damage scaled with bot WPM + small variance
         const baseDmg = Math.max(6, Math.round((targetWpm / 60) * 10 + (Math.random() * 4 - 2)));
 
+        let isCrit = false;
+        let shieldBroken = false;
+        let actualDmg = baseDmg;
+
         setBoss((prev) => {
           if (prev.hp <= 0) return prev;
 
-          const isCrit = prev.isStunned || Math.random() < 0.15;
+          isCrit = prev.isStunned || Math.random() < 0.15;
           let dmg = isCrit ? Math.round(baseDmg * 1.5) : baseDmg;
+          actualDmg = dmg;
           let currentShield = prev.shield;
           let currentHp = prev.hp;
           let isStunned = prev.isStunned;
@@ -415,14 +465,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
               currentShield = 0;
               isShieldActive = false;
               isStunned = true;
-              soundFx.playShieldBreak();
-              setCombatLogs((l) => [
-                `⚡ [${bot.username}] ĐÃ PHÁ VỠ KHIÊN BOSS! Boss bị Choáng!`,
-                ...l.slice(0, 5),
-              ]);
-              setTimeout(() => {
-                setBoss((b) => ({ ...b, isStunned: false }));
-              }, boss.stunDuration * 1000);
+              shieldBroken = true;
             } else {
               currentShield -= dmg;
               dmg = 0;
@@ -433,32 +476,6 @@ export const BossArena: React.FC<BossArenaProps> = ({
             currentHp = Math.max(0, currentHp - dmg);
           }
 
-          // Floating damage animation for bot
-          const dmgId = Date.now() + Math.random();
-          setFloatingDamages((f) => [
-            ...f,
-            { id: dmgId, text: `-${baseDmg} (${bot.username})`, isCrit },
-          ]);
-          setTimeout(() => {
-            setFloatingDamages((f) => f.filter((d) => d.id !== dmgId));
-          }, 900);
-
-          // Add to combat logs occasionally
-          setCombatLogs((l) => [
-            `⚔️ [${bot.username}] tấn công gây ${dmg || baseDmg} DMG!`,
-            ...l.slice(0, 5),
-          ]);
-
-          // Check Boss victory
-          if (currentHp <= 0 && !isFinishedRef.current) {
-            isFinishedRef.current = true;
-            const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
-            const finalDmg = totalDamageRef.current;
-            const finalWpm = Math.max(0, Math.round((finalDmg / 5) / (elapsedSec / 60)));
-            const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
-            onFinishRef.current(true, finalDmg, totalErrorsRef.current, chartData);
-          }
-
           return {
             ...prev,
             shield: currentShield,
@@ -467,6 +484,33 @@ export const BossArena: React.FC<BossArenaProps> = ({
             isStunned,
           };
         });
+
+        if (shieldBroken) {
+          soundFx.playShieldBreak();
+          setCombatLogs((l) => [
+            `⚡ [${bot.username}] ĐÃ PHÁ VỠ KHIÊN BOSS! Boss bị Choáng!`,
+            ...l.slice(0, 5),
+          ]);
+          setTimeout(() => {
+            setBoss((b) => ({ ...b, isStunned: false }));
+          }, boss.stunDuration * 1000);
+        }
+
+        // Floating damage animation for bot
+        const dmgId = Date.now() + Math.random();
+        setFloatingDamages((f) => [
+          ...f,
+          { id: dmgId, text: `-${baseDmg} (${bot.username})`, isCrit },
+        ]);
+        setTimeout(() => {
+          setFloatingDamages((f) => f.filter((d) => d.id !== dmgId));
+        }, 900);
+
+        // Add to combat logs occasionally
+        setCombatLogs((l) => [
+          `⚔️ [${bot.username}] tấn công gây ${actualDmg} DMG!`,
+          ...l.slice(0, 5),
+        ]);
 
         // Award damage to bot
         onDealDamage(baseDmg, 0, bot.id);
@@ -514,6 +558,13 @@ export const BossArena: React.FC<BossArenaProps> = ({
       const isCrit = damageResult.isCrit;
       const nextCombo = damageResult.nextCombo;
 
+      // Track capability metrics
+      totalAttacksRef.current += 1;
+      if (isCrit) {
+        critCountRef.current += 1;
+      }
+      maxComboRef.current = Math.max(maxComboRef.current, nextCombo);
+
       soundFx.playBossHit();
 
       // Floating damage animation
@@ -527,44 +578,29 @@ export const BossArena: React.FC<BossArenaProps> = ({
       }, 900);
 
       // Apply to Shield then HP
+      let shieldBroken = false;
       setBoss((prev) => {
         let currentShield = prev.shield;
         let currentHp = prev.hp;
         let isStunned = prev.isStunned;
         let isShieldActive = prev.isShieldActive;
+        let remainingDmg = dmg;
 
         if (prev.isShieldActive && currentShield > 0) {
-          if (currentShield <= dmg) {
-            dmg -= currentShield;
+          if (currentShield <= remainingDmg) {
+            remainingDmg -= currentShield;
             currentShield = 0;
             isShieldActive = false;
             isStunned = true; // Stunned!
-            soundFx.playShieldBreak();
-            setCombatLogs((l) => [
-              '⚡ GIÁP ĐÃ VỠ! Boss bị Choáng (Nhận x1.5 sát thương)!',
-              ...l.slice(0, 5),
-            ]);
-
-            setTimeout(() => {
-              setBoss((b) => ({ ...b, isStunned: false }));
-            }, boss.stunDuration * 1000);
+            shieldBroken = true;
           } else {
-            currentShield -= dmg;
-            dmg = 0;
+            currentShield -= remainingDmg;
+            remainingDmg = 0;
           }
         }
 
-        if (dmg > 0) {
-          currentHp = Math.max(0, currentHp - dmg);
-        }
-
-        if (currentHp <= 0 && !isFinishedRef.current) {
-          isFinishedRef.current = true;
-          const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
-          const finalDmg = totalDamageDealt + damageResult.damage;
-          const finalWpm = Math.max(0, Math.round((finalDmg / 5) / (elapsedSec / 60)));
-          const chartData = normalizeChartTimeline(performanceTimelineRef.current, elapsedSec, finalWpm);
-          onFinish(true, finalDmg, totalErrors, chartData);
+        if (remainingDmg > 0) {
+          currentHp = Math.max(0, currentHp - remainingDmg);
         }
 
         return {
@@ -576,6 +612,20 @@ export const BossArena: React.FC<BossArenaProps> = ({
         };
       });
 
+      if (shieldBroken) {
+        shieldBreaksRef.current += 1;
+        soundFx.playShieldBreak();
+        setCombatLogs((l) => [
+          '⚡ GIÁP ĐÃ VỠ! Boss bị Choáng (Nhận x1.5 sát thương)!',
+          ...l.slice(0, 5),
+        ]);
+
+        setTimeout(() => {
+          setBoss((b) => ({ ...b, isStunned: false }));
+        }, boss.stunDuration * 1000);
+      }
+
+      totalDamageRef.current = totalDamageDealt + damageResult.damage;
       setCombo(nextCombo);
       checkComboMilestone(nextCombo);
       setTotalDamageDealt((d) => d + damageResult.damage);
@@ -1050,34 +1100,6 @@ export const BossArena: React.FC<BossArenaProps> = ({
             >
               <Flag className="w-4 h-4" />
               <span className="hidden sm:inline">Đầu Hàng</span>
-            </button>
-          )}
-
-          <button
-            id="btn-boss-restart"
-            type="button"
-            onClick={() => {
-              soundFx.playKeyClick(false);
-              onRestart();
-            }}
-            className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-            title={isMultiplayer ? 'Đấu lại (Về phòng chờ)' : 'Đấu lại'}
-          >
-            <RotateCcw className="w-5 h-5" />
-          </button>
-
-          {onHome && (
-            <button
-              id="btn-boss-home"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick(false);
-                onHome();
-              }}
-              className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-              title="Về Trang Chủ"
-            >
-              <Home className="w-5 h-5" />
             </button>
           )}
         </div>

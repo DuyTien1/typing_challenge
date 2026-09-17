@@ -191,15 +191,102 @@ function saveLeaderboardToFile() {
 }
 
 // Presence and SSE Client Tracking with multi-layer heartbeat & session management
-interface PresenceSession {
+export interface PresenceSession {
   tabId: string;
   userId: string;
+  username: string;
+  avatar: string;
+  frame?: string;
+  bestWpm?: number;
+  totalGames?: number;
+  currentRoomId?: string | null;
+  currentMode?: string | null;
+  status: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
+  isAdmin?: boolean;
+  ip?: string;
+  browser?: string;
+  device?: string;
+  connectedAt: number;
   lastSeen: number;
 }
 
 const activePresenceSessions = new Map<string, PresenceSession>(); // tabId -> session
 const sseGlobalClients = new Map<express.Response, string>(); // res -> tabId
 const sseGlobalChatClients = new Set<express.Response>();
+
+function parseUserAgent(ua?: string): { browser: string; device: string } {
+  if (!ua) return { browser: 'Web Browser', device: 'Desktop' };
+  let device = 'Desktop';
+  if (/mobile|iphone|ipod|android.*mobile|windows phone/i.test(ua)) {
+    device = 'Mobile';
+  } else if (/ipad|tablet|android(?!.*mobile)/i.test(ua)) {
+    device = 'Tablet';
+  }
+
+  let browser = 'Web Browser';
+  if (/edg\//i.test(ua)) {
+    browser = 'Edge';
+  } else if (/opr\/|opera/i.test(ua)) {
+    browser = 'Opera';
+  } else if (/chrome|crios/i.test(ua)) {
+    browser = 'Chrome';
+  } else if (/firefox|fxios/i.test(ua)) {
+    browser = 'Firefox';
+  } else if (/safari/i.test(ua)) {
+    browser = 'Safari';
+  }
+  return { browser, device };
+}
+
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket?.remoteAddress || '127.0.0.1';
+}
+
+function extractSessionMetaFromReq(req: express.Request) {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const query = req.query || {};
+
+  const username = String(body.username || query.username || '').trim();
+  const avatar = String(body.avatar || query.avatar || '').trim();
+  const frame = String(body.frame || query.frame || '').trim();
+  const rawBestWpm = body.bestWpm !== undefined ? body.bestWpm : query.bestWpm;
+  const rawTotalGames = body.totalGames !== undefined ? body.totalGames : query.totalGames;
+  const bestWpm = rawBestWpm !== undefined ? Number(rawBestWpm) : undefined;
+  const totalGames = rawTotalGames !== undefined ? Number(rawTotalGames) : undefined;
+  const currentRoomId = body.currentRoomId !== undefined ? String(body.currentRoomId).trim() : (query.currentRoomId !== undefined ? String(query.currentRoomId).trim() : undefined);
+  const currentMode = body.currentMode !== undefined ? String(body.currentMode).trim() : (query.currentMode !== undefined ? String(query.currentMode).trim() : undefined);
+  const rawStatus = String(body.status || query.status || '').trim();
+  const isAdmin = body.isAdmin === true || body.isAdmin === 'true' || query.isAdmin === 'true';
+
+  const ua = String(req.headers['user-agent'] || '');
+  const { browser, device } = parseUserAgent(ua);
+  const ip = getClientIp(req);
+
+  return {
+    username: username || undefined,
+    avatar: avatar || undefined,
+    frame: frame || undefined,
+    bestWpm: bestWpm !== undefined && !isNaN(bestWpm) ? bestWpm : undefined,
+    totalGames: totalGames !== undefined && !isNaN(totalGames) ? totalGames : undefined,
+    currentRoomId: currentRoomId !== undefined ? (currentRoomId || null) : undefined,
+    currentMode: currentMode !== undefined ? (currentMode || null) : undefined,
+    status: (['lobby', 'waiting_room', 'playing', 'outplay', 'gameover'].includes(rawStatus) ? rawStatus : undefined) as
+      | 'lobby'
+      | 'waiting_room'
+      | 'playing'
+      | 'outplay'
+      | 'gameover'
+      | undefined,
+    isAdmin,
+    ip,
+    browser,
+    device,
+  };
+}
 
 function cleanStaleSessions(): boolean {
   const now = Date.now();
@@ -228,14 +315,48 @@ function getRealOnlineCount(): number {
   return Math.max(1, activeTabs.size);
 }
 
-function registerPresence(tabId: string, userId?: string) {
+function registerPresence(
+  tabId: string,
+  userId?: string,
+  meta?: {
+    username?: string;
+    avatar?: string;
+    frame?: string;
+    bestWpm?: number;
+    totalGames?: number;
+    currentRoomId?: string | null;
+    currentMode?: string | null;
+    status?: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
+    isAdmin?: boolean;
+    ip?: string;
+    browser?: string;
+    device?: string;
+  }
+) {
   if (!tabId) return;
+  const now = Date.now();
   const prevCount = getRealOnlineCount();
+  const existing = activePresenceSessions.get(tabId);
+
   activePresenceSessions.set(tabId, {
     tabId,
-    userId: userId || tabId,
-    lastSeen: Date.now(),
+    userId: userId || existing?.userId || tabId,
+    username: meta?.username || existing?.username || 'Khách ' + tabId.slice(-4),
+    avatar: meta?.avatar || existing?.avatar || '⚡',
+    frame: meta?.frame !== undefined ? meta.frame : existing?.frame || 'default',
+    bestWpm: typeof meta?.bestWpm === 'number' ? meta.bestWpm : existing?.bestWpm || 0,
+    totalGames: typeof meta?.totalGames === 'number' ? meta.totalGames : existing?.totalGames || 0,
+    currentRoomId: meta?.currentRoomId !== undefined ? meta.currentRoomId : existing?.currentRoomId || null,
+    currentMode: meta?.currentMode !== undefined ? meta.currentMode : existing?.currentMode || null,
+    status: meta?.status || existing?.status || 'lobby',
+    isAdmin: meta?.isAdmin !== undefined ? meta.isAdmin : existing?.isAdmin || false,
+    ip: meta?.ip || existing?.ip || '127.0.0.1',
+    browser: meta?.browser || existing?.browser || 'Chrome',
+    device: meta?.device || existing?.device || 'Desktop',
+    connectedAt: existing?.connectedAt || now,
+    lastSeen: now,
   });
+
   const newCount = getRealOnlineCount();
   if (newCount !== prevCount) {
     broadcastOnlinePresence();
@@ -326,6 +447,7 @@ function cleanupInactiveRooms() {
   const now = Date.now();
   for (const [id, room] of rooms.entries()) {
     if (now - (room.lastActive || room.createdAt) > 30 * 60 * 1000) {
+      stopRoomBots(id);
       rooms.delete(id);
       broadcastToRoom(id, { type: 'room_closed', roomId: id });
     }
@@ -346,6 +468,96 @@ function broadcastToRoom(roomId: string, event: any) {
       clients.delete(res);
     }
   }
+}
+
+// Room Bot Simulation Engine for standard typing race modes (vi_dau, vi_nodau, en, numpad)
+const roomBotIntervals = new Map<string, NodeJS.Timeout>();
+
+function stopRoomBots(roomId: string) {
+  const norm = normalizeRoomCode(roomId);
+  const existing = roomBotIntervals.get(norm);
+  if (existing) {
+    clearInterval(existing);
+    roomBotIntervals.delete(norm);
+  }
+}
+
+function startRoomBots(roomId: string) {
+  const norm = normalizeRoomCode(roomId);
+  stopRoomBots(norm);
+
+  const room = rooms.get(norm);
+  if (!room || room.status !== 'playing') return;
+
+  // Bot simulation is exclusively for standard typing races (vi_dau, vi_nodau, en, numpad)
+  const standardModes = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'outplay'];
+  if (!standardModes.includes(room.mode)) return;
+
+  const bots = room.players.filter((p) => p.isBot);
+  if (bots.length === 0) return;
+
+  const startTime = Date.now();
+  const countdownDelayMs = 3500; // Match TypingArena inRoomCountdown (3s + start buffer)
+
+  const interval = setInterval(() => {
+    const currentRoom = rooms.get(norm);
+    if (!currentRoom || currentRoom.status !== 'playing') {
+      stopRoomBots(norm);
+      return;
+    }
+
+    const elapsedTotal = Date.now() - startTime;
+    if (elapsedTotal < countdownDelayMs) {
+      return; // Waiting for in-room countdown to finish
+    }
+
+    const elapsedTypingSec = (elapsedTotal - countdownDelayMs) / 1000;
+    const totalWords = Math.max(1, currentRoom.words?.length || 150);
+    let anyBotUpdated = false;
+
+    currentRoom.players.forEach((p, idx) => {
+      if (!p.isBot || p.isFinished || p.isSurrendered) return;
+
+      const targetWpm = p.botTargetWpm || 60;
+      // Realistic human-like variation (+/- 4 WPM smooth fluctuation)
+      const variance = Math.sin(idx * 7 + elapsedTypingSec * 1.5) * 3 + Math.cos(elapsedTypingSec * 0.8) * 2;
+      const liveWpm = Math.max(20, Math.round(targetWpm + variance));
+
+      // Calculate words typed based on targetWpm
+      const wordsTyped = (targetWpm / 60) * elapsedTypingSec;
+      const progress = Math.min(100, parseFloat(((wordsTyped / totalWords) * 100).toFixed(1)));
+      const correctChars = Math.round(wordsTyped * 5);
+
+      p.wpm = liveWpm;
+      p.progress = progress;
+      p.correctChars = correctChars;
+      if (progress >= 100) {
+        p.isFinished = true;
+      }
+      anyBotUpdated = true;
+    });
+
+    if (anyBotUpdated) {
+      currentRoom.lastActive = Date.now();
+      broadcastToRoom(norm, {
+        type: 'player_progress',
+        roomId: norm,
+        players: currentRoom.players,
+      });
+    }
+
+    // Check if all bots are finished and all humans are finished
+    const activePlayers = currentRoom.players.filter(
+      (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
+    );
+    if (activePlayers.length === 0) {
+      currentRoom.status = 'finished';
+      stopRoomBots(norm);
+      broadcastToRoom(norm, { type: 'room_updated', room: currentRoom });
+    }
+  }, 500);
+
+  roomBotIntervals.set(norm, interval);
 }
 
 async function startServer() {
@@ -639,6 +851,114 @@ async function startServer() {
     res.json({ success: true, room });
   });
 
+  // Transfer host: Chủ phòng nhường quyền cho người chơi khác, người được chọn lên Slot 1 (index 0), chủ cũ vào slot người kia để lại
+  app.post('/api/rooms/:id/transfer-host', (req, res) => {
+    const norm = normalizeRoomCode(req.params.id);
+    const room = rooms.get(norm);
+    if (!room) {
+      res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+
+    const { targetPlayerId, requesterId } = req.body;
+    if (room.hostId !== requesterId) {
+      res.status(403).json({ success: false, error: 'Chỉ chủ phòng mới có quyền chuyển nhượng chủ phòng' });
+      return;
+    }
+
+    const targetIdx = room.players.findIndex((p) => p.id === targetPlayerId);
+    if (targetIdx === -1) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy người chơi được chọn' });
+      return;
+    }
+
+    const targetPlayer = room.players[targetIdx];
+    if (targetPlayer.isBot) {
+      res.status(400).json({ success: false, error: 'Không thể nhường chủ phòng cho Bot' });
+      return;
+    }
+
+    const hostIdx = room.players.findIndex((p) => p.id === room.hostId);
+    const effectiveHostIdx = hostIdx !== -1 ? hostIdx : 0;
+    const oldHostPlayer = room.players[effectiveHostIdx];
+
+    // Hoán đổi vị trí:
+    // Slot 1 (index 0) là người được nhường (targetPlayer)
+    // Slot của targetPlayer được thay bằng oldHostPlayer
+    const newPlayers = [...room.players];
+    if (effectiveHostIdx === 0) {
+      newPlayers[0] = targetPlayer;
+      newPlayers[targetIdx] = oldHostPlayer;
+    } else {
+      const slot0 = newPlayers[0];
+      newPlayers[0] = targetPlayer;
+      newPlayers[targetIdx] = oldHostPlayer;
+      newPlayers[effectiveHostIdx] = slot0;
+    }
+
+    room.players = newPlayers;
+    room.hostId = targetPlayer.id;
+    room.hostName = targetPlayer.username;
+    room.lastActive = Date.now();
+    rooms.set(norm, room);
+
+    broadcastToRoom(norm, {
+      type: 'host_transferred',
+      oldHostId: requesterId,
+      newHostId: targetPlayer.id,
+      newHostName: targetPlayer.username,
+      room,
+    });
+    broadcastToRoom(norm, { type: 'room_updated', room });
+
+    res.json({ success: true, room });
+  });
+
+  // Kick player or bot: Chủ phòng đá người chơi hoặc bot khỏi phòng
+  app.post('/api/rooms/:id/kick', (req, res) => {
+    const norm = normalizeRoomCode(req.params.id);
+    const room = rooms.get(norm);
+    if (!room) {
+      res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+
+    const { targetPlayerId, requesterId } = req.body;
+    if (room.hostId !== requesterId) {
+      res.status(403).json({ success: false, error: 'Chỉ chủ phòng mới có quyền mời người chơi rời phòng' });
+      return;
+    }
+
+    if (targetPlayerId === room.hostId) {
+      res.status(400).json({ success: false, error: 'Chủ phòng không thể tự đá chính mình' });
+      return;
+    }
+
+    const targetPlayer = room.players.find((p) => p.id === targetPlayerId);
+    if (!targetPlayer) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy người chơi' });
+      return;
+    }
+
+    room.players = room.players.filter((p) => p.id !== targetPlayerId);
+    room.lastActive = Date.now();
+    rooms.set(norm, room);
+
+    // Nếu người bị đá là người chơi thực, broadcast event player_kicked
+    if (!targetPlayer.isBot) {
+      broadcastToRoom(norm, {
+        type: 'player_kicked',
+        roomId: norm,
+        playerId: targetPlayerId,
+        username: targetPlayer.username,
+      });
+    }
+
+    broadcastToRoom(norm, { type: 'room_updated', room });
+
+    res.json({ success: true, room });
+  });
+
   // Update room difficulty (Host configuration)
   app.post('/api/rooms/:id/difficulty', (req, res) => {
     const norm = normalizeRoomCode(req.params.id);
@@ -685,15 +1005,25 @@ async function startServer() {
         p.isSurrendered = false;
         p.isFinished = false;
         p.progress = 0;
+        p.wpm = 0;
+        p.correctChars = 0;
+        p.errors = 0;
       });
+      startRoomBots(norm);
     } else if (status === 'waiting') {
+      stopRoomBots(norm);
       // Khi trở về phòng chờ: tắt inMatch (avatar sáng lên)
       room.players.forEach((p) => {
         p.inMatch = false;
         p.isSurrendered = false;
         p.isFinished = false;
         p.progress = 0;
+        p.wpm = 0;
+        p.correctChars = 0;
+        p.errors = 0;
       });
+    } else if (status === 'finished') {
+      stopRoomBots(norm);
     }
 
     rooms.set(norm, room);
@@ -740,6 +1070,7 @@ async function startServer() {
         );
         if (activeHumanPlayers.length === 0) {
           room.status = 'finished';
+          stopRoomBots(norm);
         }
       }
 
@@ -747,6 +1078,7 @@ async function startServer() {
       const humanPlayers = room.players.filter((p) => !p.isBot);
       if (humanPlayers.length > 0 && humanPlayers.every((p) => !p.inMatch)) {
         room.status = 'waiting';
+        stopRoomBots(norm);
       }
 
       room.lastActive = Date.now();
@@ -775,6 +1107,16 @@ async function startServer() {
       player.wpm = wpm;
       if (typeof isFinished === 'boolean') {
         player.isFinished = isFinished;
+        if (isFinished && room.status === 'playing') {
+          const humanPlayers = room.players.filter((p) => !p.isBot);
+          const activeHumans = humanPlayers.filter(
+            (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
+          );
+          if (activeHumans.length === 0) {
+            room.status = 'finished';
+            stopRoomBots(norm);
+          }
+        }
       }
       room.lastActive = Date.now();
       broadcastToRoom(norm, {
@@ -808,6 +1150,7 @@ async function startServer() {
 
     const humanPlayers = room.players.filter((p) => !p.isBot);
     if (humanPlayers.length === 0) {
+      stopRoomBots(norm);
       rooms.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
     } else {
@@ -825,10 +1168,12 @@ async function startServer() {
         );
         if (activeHumanPlayers.length === 0) {
           room.status = 'finished';
+          stopRoomBots(norm);
         }
       }
       if (humanPlayers.length > 0 && humanPlayers.every((p) => !p.inMatch)) {
         room.status = 'waiting';
+        stopRoomBots(norm);
       }
       room.lastActive = Date.now();
       rooms.set(norm, room);
@@ -945,7 +1290,8 @@ async function startServer() {
     const tabId = String(req.query.tabId || '').trim();
     const userId = String(req.query.userId || '').trim();
     if (tabId) {
-      registerPresence(tabId, userId);
+      const meta = extractSessionMetaFromReq(req);
+      registerPresence(tabId, userId, meta);
     }
     res.json({ success: true, count: getRealOnlineCount() });
   });
@@ -955,7 +1301,8 @@ async function startServer() {
     const tabId = String(req.query.tabId || req.body?.tabId || '').trim();
     const userId = String(req.query.userId || req.body?.userId || '').trim();
     if (tabId) {
-      registerPresence(tabId, userId);
+      const meta = extractSessionMetaFromReq(req);
+      registerPresence(tabId, userId, meta);
     }
     res.json({ success: true, count: getRealOnlineCount() });
   });
@@ -967,6 +1314,87 @@ async function startServer() {
       removePresence(tabId);
     }
     res.json({ success: true, count: getRealOnlineCount() });
+  });
+
+  // GET /api/admin/online-users: Detailed list of real-time online players for Admin inspection
+  app.get('/api/admin/online-users', (_req, res) => {
+    cleanStaleSessions();
+
+    const usersByUserId = new Map<string, any>();
+
+    for (const session of activePresenceSessions.values()) {
+      let roomInfo: any = null;
+      if (session.currentRoomId) {
+        const norm = normalizeRoomCode(session.currentRoomId);
+        const r = rooms.get(norm);
+        if (r) {
+          const playerInRoom = r.players.find((p) => p.id === session.userId);
+          roomInfo = {
+            roomId: r.id,
+            mode: r.mode,
+            modeName: getModeDisplayName(r.mode),
+            roomStatus: r.status,
+            isHost: r.hostId === session.userId,
+            playerCount: r.players.length,
+            maxSlots: r.maxSlots,
+            playerProgress: playerInRoom?.progress || 0,
+            playerWpm: playerInRoom?.wpm || 0,
+            isFinished: playerInRoom?.isFinished || false,
+            isSurrendered: playerInRoom?.isSurrendered || false,
+          };
+        }
+      }
+
+      if (!usersByUserId.has(session.userId)) {
+        usersByUserId.set(session.userId, {
+          userId: session.userId,
+          tabId: session.tabId,
+          username: session.username,
+          avatar: session.avatar,
+          frame: session.frame,
+          bestWpm: session.bestWpm,
+          totalGames: session.totalGames,
+          currentRoomId: session.currentRoomId,
+          currentMode: session.currentMode,
+          status: session.status,
+          isAdmin: session.isAdmin,
+          ip: session.ip,
+          browser: session.browser,
+          device: session.device,
+          connectedAt: session.connectedAt,
+          lastSeen: session.lastSeen,
+          tabCount: 1,
+          roomInfo,
+        });
+      } else {
+        const existing = usersByUserId.get(session.userId)!;
+        existing.tabCount += 1;
+        if (session.currentRoomId && !existing.currentRoomId) {
+          existing.currentRoomId = session.currentRoomId;
+          existing.roomInfo = roomInfo;
+        }
+        if (session.lastSeen > existing.lastSeen) {
+          existing.lastSeen = session.lastSeen;
+          existing.status = session.status;
+          if (session.username && session.username !== 'Khách ' + session.tabId.slice(-4)) {
+            existing.username = session.username;
+          }
+        }
+      }
+    }
+
+    const users = Array.from(usersByUserId.values()).sort((a, b) => {
+      if (a.isAdmin && !b.isAdmin) return -1;
+      if (!a.isAdmin && b.isAdmin) return 1;
+      return b.lastSeen - a.lastSeen;
+    });
+
+    res.json({
+      success: true,
+      count: users.length,
+      totalConnections: activePresenceSessions.size,
+      users,
+    });
   });
 
   // GET /api/leaderboard: Get real server-wide high scores
@@ -1083,17 +1511,23 @@ async function startServer() {
     res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
   });
 
-  // POST /api/leaderboard/reset: Reset leaderboard to clean state
-  app.post('/api/leaderboard/reset', (_req, res) => {
-    serverHighScores = {
-      vi_dau: null,
-      vi_nodau: null,
-      en: null,
-      numpad: null,
-      ngau_hung: null,
-      doan_chu: null,
-      san_boss: null,
-    };
+  // POST /api/leaderboard/reset: Reset leaderboard to clean state (or single mode if provided)
+  app.post('/api/leaderboard/reset', (req, res) => {
+    const { mode } = req.body || {};
+    if (mode && typeof mode === 'string') {
+      serverHighScores[mode] = null;
+    } else {
+      serverHighScores = {
+        vi_dau: null,
+        vi_nodau: null,
+        en: null,
+        numpad: null,
+        outplay: null,
+        ngau_hung: null,
+        doan_chu: null,
+        san_boss: null,
+      };
+    }
     saveLeaderboardToFile();
     broadcastLeaderboard();
     res.json({ success: true, highScores: serverHighScores });
@@ -1114,7 +1548,8 @@ async function startServer() {
       ? String(req.query.userId).trim()
       : `guest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-    registerPresence(tabId, userId);
+    const initialMeta = extractSessionMetaFromReq(req);
+    registerPresence(tabId, userId, initialMeta);
     sseGlobalClients.set(res, tabId);
     sseGlobalChatClients.add(res);
 

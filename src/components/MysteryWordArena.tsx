@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MysteryWordItem, Player } from '../types';
+import { MysteryWordItem, Player, MysteryWordGameStats, MysteryWordRoundResult } from '../types';
 import { soundFx } from '../utils/audio';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { Lightbulb, Clock, Trophy, ArrowRight, MousePointerClick, Flag, RotateCcw, Home, AlertTriangle } from 'lucide-react';
@@ -12,7 +12,7 @@ interface MysteryWordArenaProps {
   players: Player[];
   currentPlayerId: string;
   onFinishRound: (round: number, scoreEarned: number, correct: boolean, playerId?: string) => void;
-  onFinishGame: () => void;
+  onFinishGame: (stats?: MysteryWordGameStats) => void;
   onSurrender?: () => void;
   onRestart?: () => void;
   onHome?: () => void;
@@ -47,6 +47,10 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
 
   const isRoundSolvedRef = useRef(false);
   const revealedCharsRef = useRef<(string | null)[]>([]);
+
+  // Performance & deduction capability stats tracking
+  const historyRef = useRef<MysteryWordRoundResult[]>([]);
+  const roundStartTimeRef = useRef<number>(performance.now());
 
   useEffect(() => {
     isRoundSolvedRef.current = isRoundSolved;
@@ -197,13 +201,34 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     };
   }, [guessInput, isRoundSolved, updateCaret]);
 
+  const finishEntireGame = useCallback(() => {
+    const history = historyRef.current;
+    const correctGuesses = history.filter((h) => h.isCorrect).length;
+    const accuracyRate = totalRounds > 0 ? Math.round((correctGuesses / totalRounds) * 100) : 0;
+    const totalScore = history.reduce((sum, h) => sum + h.pts, 0);
+    const totalBonusLetters = history.reduce((sum, h) => sum + h.hiddenCount, 0);
+    const correctSolves = history.filter((h) => h.isCorrect && h.solveTimeSec);
+    const fastestGuessSec = correctSolves.length > 0 ? Math.min(...correctSolves.map((h) => h.solveTimeSec!)) : null;
+
+    const stats: MysteryWordGameStats = {
+      totalRounds,
+      correctGuesses,
+      accuracyRate,
+      totalScore,
+      totalBonusLetters,
+      fastestGuessSec,
+      roundHistory: [...history],
+    };
+    onFinishGame(stats);
+  }, [totalRounds, onFinishGame]);
+
   const nextRound = useCallback(() => {
     if (currentRound >= totalRounds) {
-      onFinishGame();
+      finishEntireGame();
     } else {
       setCurrentRound((r) => r + 1);
     }
-  }, [currentRound, totalRounds, onFinishGame]);
+  }, [currentRound, totalRounds, finishEntireGame]);
 
   // Initialize round
   useEffect(() => {
@@ -212,6 +237,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     setSolvedMessage(null);
     setGuessInput('');
     setRoundTimeLeft(roundDurationSec);
+    roundStartTimeRef.current = performance.now();
 
     // Initial revealed array preserving spaces
     const initialRevealed = targetWord.split('').map((c) => (c === ' ' ? ' ' : null));
@@ -297,9 +323,23 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         setSolvedMessage(`🤖 ${bot.username} đã đoán đúng từ bí mật: "${targetWord}" (+${points} điểm)!`);
         onFinishRound(currentRound, points, false, bot.id);
 
-        setTimeout(() => {
-          nextRound();
-        }, 2500);
+        historyRef.current.push({
+          round: currentRound,
+          word: targetWord,
+          category: currentItem.hint,
+          isCorrect: false,
+          solverName: bot.username,
+          pts: 0,
+          hiddenCount: 0,
+        });
+
+        if (currentRound >= totalRounds) {
+          finishEntireGame();
+        } else {
+          setTimeout(() => {
+            nextRound();
+          }, 2500);
+        }
       }, delayMs);
 
       botTimeouts.push(timer);
@@ -308,21 +348,36 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     return () => {
       botTimeouts.forEach((t) => clearTimeout(t));
     };
-  }, [currentRound, targetWord, botKey, roundDurationSec, onFinishRound, nextRound]);
+  }, [currentRound, targetWord, botKey, roundDurationSec, onFinishRound, nextRound, totalRounds, finishEntireGame, currentItem.hint]);
 
-  // Round timeout handler triggered safely when roundTimeLeft reaches 0
+  // Round timeout handler triggered safely when roundTimeLeft reaches 0 (vòng cuối thì kết thúc và tổng kết ngay)
   useEffect(() => {
     if (roundTimeLeft <= 0 && !isRoundSolvedRef.current) {
       isRoundSolvedRef.current = true;
       setIsRoundSolved(true);
-      setRevealedChars(targetWord.split(''));
-      setSolvedMessage(`Hết giờ! Đáp án chính xác là: "${targetWord}"`);
-      const timer = setTimeout(() => {
-        nextRound();
-      }, 2500);
-      return () => clearTimeout(timer);
+
+      historyRef.current.push({
+        round: currentRound,
+        word: targetWord,
+        category: currentItem.hint,
+        isCorrect: false,
+        solverName: 'Hết giờ',
+        pts: 0,
+        hiddenCount: 0,
+      });
+
+      if (currentRound >= totalRounds) {
+        finishEntireGame();
+      } else {
+        setRevealedChars(targetWord.split(''));
+        setSolvedMessage(`Hết giờ! Đáp án chính xác là: "${targetWord}"`);
+        const timer = setTimeout(() => {
+          nextRound();
+        }, 2500);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [roundTimeLeft, targetWord, nextRound]);
+  }, [roundTimeLeft, targetWord, nextRound, currentRound, totalRounds, finishEntireGame, currentItem.hint]);
 
   const handleGuessSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -349,9 +404,25 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       setSolvedMessage(`🎉 CHÍNH XÁC! Bạn nhận được +${points} điểm (${hiddenCount} chữ chưa mở)!`);
       onFinishRound(currentRound, points, true, currentPlayerId);
 
-      setTimeout(() => {
-        nextRound();
-      }, 2000);
+      const solveTimeSec = parseFloat(Math.max(0.5, (performance.now() - roundStartTimeRef.current) / 1000).toFixed(1));
+      historyRef.current.push({
+        round: currentRound,
+        word: targetWord,
+        category: currentItem.hint,
+        isCorrect: true,
+        solverName: myPlayer?.username || 'Bạn',
+        pts: points,
+        hiddenCount,
+        solveTimeSec,
+      });
+
+      if (currentRound >= totalRounds) {
+        finishEntireGame();
+      } else {
+        setTimeout(() => {
+          nextRound();
+        }, 2000);
+      }
     } else {
       soundFx.playError();
       setGuessInput('');
@@ -398,36 +469,6 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             >
               <Flag className="w-3.5 h-3.5" />
               <span>Đầu Hàng</span>
-            </button>
-          )}
-
-          {onRestart && (
-            <button
-              id="btn-mystery-restart"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick(false);
-                onRestart();
-              }}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-              title={isMultiplayer ? 'Đấu lại (Về phòng chờ)' : 'Đấu lại'}
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          )}
-
-          {onHome && (
-            <button
-              id="btn-mystery-home"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick(false);
-                onHome();
-              }}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-              title="Về Trang Chủ"
-            >
-              <Home className="w-4 h-4" />
             </button>
           )}
         </div>

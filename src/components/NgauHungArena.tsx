@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Player } from '../types';
+import { Player, NgauHungGameStats, NgauHungRoundResult } from '../types';
 import { soundFx } from '../utils/audio';
 import { Zap, Clock, Trophy, Flag, RotateCcw, Home, AlertTriangle } from 'lucide-react';
 
@@ -10,7 +10,7 @@ interface NgauHungArenaProps {
   intermissionDurationSec: number;
   players: Player[];
   currentPlayerId: string;
-  onFinishGame: () => void;
+  onFinishGame: (stats?: NgauHungGameStats) => void;
   onUpdateScore: (points: number, playerId?: string) => void;
   onSurrender?: () => void;
   onRestart?: () => void;
@@ -45,6 +45,12 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
   const finishersRef = useRef<string[]>([]);
+  const roundHandledForRef = useRef<number>(0);
+
+  // Performance & capability stats tracking
+  const historyRef = useRef<NgauHungRoundResult[]>([]);
+  const roundStartTimeRef = useRef<number>(performance.now());
+  const roundErrorsRef = useRef<number>(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
@@ -62,6 +68,8 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     } else if (inRoomCountdown === 0) {
       soundFx.playCountdown(true);
       const timer = setTimeout(() => {
+        roundStartTimeRef.current = performance.now();
+        roundErrorsRef.current = 0;
         setInRoomCountdown(null);
       }, 700);
       return () => clearTimeout(timer);
@@ -152,57 +160,122 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isSurrendered, onSurrender, openSurrenderModal, confirmSurrender, cancelSurrender, showSurrenderModal]);
 
-  // Round Active Countdown
+  // Kết thúc vòng hiện tại: nếu là vòng cuối thì tổng kết ngay, nếu chưa thì vào 3s nghỉ giải lao
+  const endCurrentRound = useCallback(() => {
+    // Ngăn chặn gọi trùng lặp nhiều lần cho cùng 1 vòng
+    if (roundHandledForRef.current === currentRound) return;
+    roundHandledForRef.current = currentRound;
+
+    // Ghi nhận lịch sử vòng nếu người chơi chưa hoàn thành (hết giờ)
+    const alreadyRecorded = historyRef.current.some((h) => h.round === currentRound);
+    if (!alreadyRecorded) {
+      historyRef.current.push({
+        round: currentRound,
+        word: words[currentRound - 1] || '',
+        placement: null,
+        pts: 0,
+        timeSec: roundDurationSec,
+        isPerfect: false,
+      });
+    }
+
+    if (currentRound >= totalRounds) {
+      const history = historyRef.current;
+      const top1Count = history.filter((h) => h.placement === 1).length;
+      const top2Count = history.filter((h) => h.placement === 2).length;
+      const top3Count = history.filter((h) => h.placement === 3).length;
+      const completed = history.filter((h) => h.placement !== null);
+      const bestTimeSec = completed.length > 0 ? Math.min(...completed.map((h) => h.timeSec)) : null;
+      const totalScore = history.reduce((sum, h) => sum + h.pts, 0);
+      const avgTimeSec = completed.length > 0
+        ? parseFloat((completed.reduce((sum, h) => sum + h.timeSec, 0) / completed.length).toFixed(2))
+        : roundDurationSec;
+      const perfectRounds = history.filter((h) => h.isPerfect && h.placement !== null).length;
+
+      const stats: NgauHungGameStats = {
+        totalRounds,
+        completedRounds: completed.length,
+        top1Count,
+        top2Count,
+        top3Count,
+        bestTimeSec,
+        avgTimeSec,
+        totalScore,
+        perfectRounds,
+        roundHistory: [...history],
+      };
+      onFinishGame(stats);
+    } else {
+      setIsIntermission(true);
+      setIntermissionLeft(intermissionDurationSec);
+    }
+  }, [currentRound, totalRounds, intermissionDurationSec, onFinishGame, roundDurationSec, words]);
+
+  // Round Active Countdown: đếm ngược thời gian vòng chơi, khi hết giờ thì gọi endCurrentRound
   useEffect(() => {
     if (inRoomCountdown !== null || isIntermission) return;
 
-    setUserFinishedThisRound(false);
-    setRoundPlacement(null);
-    setRoundFinishers([]);
-    finishersRef.current = [];
-    setInputVal('');
-    setRoundTimeLeft(roundDurationSec);
     if (!isSurrendered) {
       inputRef.current?.focus();
     }
 
     const timer = setInterval(() => {
-      setRoundTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+      setRoundTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          endCurrentRound();
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [currentRound, isIntermission, roundDurationSec, isSurrendered, inRoomCountdown]);
-
-  // Trigger intermission safely when round time ends
-  useEffect(() => {
-    if (inRoomCountdown === null && !isIntermission && roundTimeLeft <= 0) {
-      setIsIntermission(true);
-      setIntermissionLeft(intermissionDurationSec);
-    }
-  }, [roundTimeLeft, isIntermission, intermissionDurationSec, inRoomCountdown]);
+  }, [currentRound, isIntermission, inRoomCountdown, isSurrendered, endCurrentRound]);
 
   // Intermission Countdown (Đếm ngược 3s nghỉ trước khi qua màn mới)
+  // Khi kết thúc 3s nghỉ: đồng thời chuyển sang vòng mới và reset TOÀN BỘ state vòng chơi
   useEffect(() => {
     if (!isIntermission) return;
 
     const intTimer = setInterval(() => {
-      setIntermissionLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+      setIntermissionLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(intTimer);
+          // Hết 3s nghỉ giải lao: chuyển sang vòng mới và đồng thời reset toàn bộ state cho vòng mới
+          setCurrentRound((r) => r + 1);
+          setIsIntermission(false);
+          setIntermissionLeft(intermissionDurationSec);
+          setRoundTimeLeft(roundDurationSec);
+          setUserFinishedThisRound(false);
+          setRoundPlacement(null);
+          setRoundFinishers([]);
+          finishersRef.current = [];
+          setInputVal('');
+          roundStartTimeRef.current = performance.now();
+          roundErrorsRef.current = 0;
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(intTimer);
-  }, [isIntermission]);
+  }, [isIntermission, intermissionDurationSec, roundDurationSec]);
 
-  // Handle intermission finish: chuyển ngay sang màn mới mà không đếm ngược thêm
+  // Multiplayer: Kiểm tra nếu tất cả người chơi thực đã hoàn thành khi người dùng hiện tại đã xong
   useEffect(() => {
-    if (isIntermission && intermissionLeft <= 0) {
-      if (currentRound >= totalRounds) {
-        onFinishGame();
-      } else {
-        setCurrentRound((r) => r + 1);
-        setIsIntermission(false);
-      }
+    if (inRoomCountdown !== null || isIntermission || !userFinishedThisRound) return;
+    if (roundHandledForRef.current === currentRound) return;
+
+    const activeHumans = players.filter((p) => !p.isBot && !p.isSurrendered);
+    const allHumansFinished = activeHumans.every(
+      (p) => p.id === currentPlayerId || finishersRef.current.includes(p.id)
+    );
+    if (allHumansFinished) {
+      endCurrentRound();
     }
-  }, [isIntermission, intermissionLeft, currentRound, totalRounds, onFinishGame]);
+  }, [players, inRoomCountdown, isIntermission, userFinishedThisRound, currentRound, endCurrentRound, currentPlayerId]);
 
   // Stable key for bot list so scores updating doesn't cancel active timers
   const botKey = players
@@ -274,16 +347,27 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         onUpdateScore(pts, currentPlayerId);
       }
 
+      // Ghi nhận thành tích vòng đấu của người chơi
+      const elapsed = Math.max(0.1, (performance.now() - roundStartTimeRef.current) / 1000);
+      const isPerfect = roundErrorsRef.current === 0;
+      historyRef.current.push({
+        round: currentRound,
+        word: targetWord,
+        placement: place,
+        pts,
+        timeSec: parseFloat(elapsed.toFixed(2)),
+        isPerfect,
+      });
+
       // Khi người chơi (hoặc tất cả người chơi thực) đã hoàn thành vòng:
-      // Chuyển ngay sang 3s nghỉ giải lao, không bắt đợi hết thời gian của vòng
+      // Nếu là vòng cuối, lập tức kết thúc trận đấu và tổng kết; nếu chưa thì chuyển sang giải lao
       const activeHumans = players.filter((p) => !p.isBot && !p.isSurrendered);
       const allHumansFinished = activeHumans.every(
         (p) => p.id === currentPlayerId || finishersRef.current.includes(p.id)
       );
 
       if (allHumansFinished || !isMultiplayer) {
-        setIsIntermission(true);
-        setIntermissionLeft(intermissionDurationSec);
+        endCurrentRound();
       }
     }
   };
@@ -295,6 +379,10 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
 
     if (!isComposingRef.current) {
       soundFx.playKeyClick(false);
+      // Ghi nhận lỗi khi gõ sai từ khóa mục tiêu
+      if (val && !targetWord.startsWith(val.trim())) {
+        roundErrorsRef.current += 1;
+      }
       checkFinishWord(val);
     }
   };
@@ -331,36 +419,6 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
             >
               <Flag className="w-3.5 h-3.5" />
               <span>Đầu Hàng</span>
-            </button>
-          )}
-
-          {onRestart && (
-            <button
-              id="btn-ngauhung-restart"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick(false);
-                onRestart();
-              }}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-              title={isMultiplayer ? 'Đấu lại (Về phòng chờ)' : 'Đấu lại'}
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          )}
-
-          {onHome && (
-            <button
-              id="btn-ngauhung-home"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick(false);
-                onHome();
-              }}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-              title="Về Trang Chủ"
-            >
-              <Home className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -514,7 +572,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                     : isSurrendered
                     ? "Bạn đã đầu hàng. Đang theo dõi trận đấu..."
                     : userFinishedThisRound
-                    ? "Đã hoàn thành vòng này! Nghỉ ngơi chờ vòng mới..."
+                    ? (currentRound >= totalRounds ? "Đã hoàn thành vòng cuối! Đang tổng kết..." : "Đã hoàn thành vòng này! Nghỉ ngơi chờ vòng mới...")
                     : "Gõ từ trên thật nhanh..."
                 }
                 className={`w-full px-4 py-3 rounded-xl bg-slate-950 border ${

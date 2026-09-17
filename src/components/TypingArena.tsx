@@ -5,6 +5,7 @@ import { calculateConsistency, validateWordSubmission } from '../utils/antiCheat
 import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { GhostCaret } from './GhostCaret';
+import { CustomNumberInput } from './CustomNumberInput';
 import { InGameMilestoneToast } from './InGameMilestoneToast';
 import { useInGameMilestones } from '../hooks/useInGameMilestones';
 import {
@@ -73,6 +74,10 @@ interface TypingArenaProps {
   conditionStats?: Record<string, { lastWpm: number; bestWpm: number }>;
   onUpdateSessionStats?: (lastWpm: number, sessionBestWpm: number) => void;
   onUpdateConditionStats?: (conditionKey: string, lastWpm: number, bestWpm: number) => void;
+  savedPaceMode?: OutplayPaceMode;
+  onPaceModeChange?: (newPace: OutplayPaceMode) => void;
+  savedCustomWpm?: number;
+  onCustomWpmChange?: (newWpm: number) => void;
 }
 
 const VOCAB_OPTIONS: { id: OutplaySubMode; label: string; flag: string }[] = [
@@ -108,33 +113,80 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   conditionStats: propConditionStats,
   onUpdateSessionStats,
   onUpdateConditionStats,
+  savedPaceMode,
+  onPaceModeChange,
+  savedCustomWpm,
+  onCustomWpmChange,
 }) => {
   // Outplay Mode Persistent Settings (Monkeytype Architecture)
   const [outplaySubMode, setOutplaySubMode] = useState<OutplaySubMode>(() => {
-    return (localStorage.getItem('fasttyping_outplay_submode') as OutplaySubMode) || 'vi_dau';
+    try {
+      const saved = localStorage.getItem('fasttyping_outplay_submode');
+      return (saved as OutplaySubMode) || 'vi_dau';
+    } catch {
+      return 'vi_dau';
+    }
   });
   const [outplayTestType, setOutplayTestType] = useState<'time' | 'words'>(() => {
-    return (localStorage.getItem('fasttyping_outplay_test_type') as 'time' | 'words') || 'time';
+    try {
+      const saved = localStorage.getItem('fasttyping_outplay_test_type');
+      return (saved as 'time' | 'words') || 'time';
+    } catch {
+      return 'time';
+    }
   });
   const [outplayDuration, setOutplayDuration] = useState<number>(() => {
-    const saved = localStorage.getItem('fasttyping_outplay_duration');
-    return saved ? parseInt(saved, 10) : 60;
+    try {
+      const saved = localStorage.getItem('fasttyping_outplay_duration');
+      return saved ? parseInt(saved, 10) : 60;
+    } catch {
+      return 60;
+    }
   });
   const [outplayWordCount, setOutplayWordCount] = useState<10 | 25 | 50 | 100>(() => {
-    const saved = localStorage.getItem('fasttyping_outplay_word_count');
-    return saved ? (parseInt(saved, 10) as 10 | 25 | 50 | 100) : 25;
+    try {
+      const saved = localStorage.getItem('fasttyping_outplay_word_count');
+      return saved ? (parseInt(saved, 10) as 10 | 25 | 50 | 100) : 25;
+    } catch {
+      return 25;
+    }
   });
   const [outplayPaceMode, setOutplayPaceMode] = useState<OutplayPaceMode>(() => {
-    const saved = localStorage.getItem('fasttyping_outplay_pacemode');
-    if (saved && ['last', 'pb', 'custom'].includes(saved)) {
-      return saved as OutplayPaceMode;
+    if (savedPaceMode && ['last', 'pb', 'custom', 'off'].includes(savedPaceMode)) {
+      return savedPaceMode;
     }
+    try {
+      const saved = localStorage.getItem('fasttyping_outplay_pacemode');
+      if (saved && ['last', 'pb', 'custom', 'off'].includes(saved)) {
+        return saved as OutplayPaceMode;
+      }
+    } catch {}
     return 'last';
   });
   const [outplayCustomWpm, setOutplayCustomWpm] = useState<number>(() => {
-    const saved = localStorage.getItem('fasttyping_outplay_custom_wpm');
-    return saved ? parseInt(saved, 10) : 80;
+    if (savedCustomWpm !== undefined && savedCustomWpm > 0) {
+      return savedCustomWpm;
+    }
+    try {
+      const saved = localStorage.getItem('fasttyping_outplay_custom_wpm');
+      return saved ? parseInt(saved, 10) : 80;
+    } catch {
+      return 80;
+    }
   });
+
+  // Keep state in sync with parent prop if provided
+  useEffect(() => {
+    if (savedPaceMode && ['last', 'pb', 'custom', 'off'].includes(savedPaceMode)) {
+      setOutplayPaceMode(savedPaceMode);
+    }
+  }, [savedPaceMode]);
+
+  useEffect(() => {
+    if (savedCustomWpm !== undefined && savedCustomWpm > 0) {
+      setOutplayCustomWpm(savedCustomWpm);
+    }
+  }, [savedCustomWpm]);
 
   // In-memory Condition Statistics for HUD Realtime tracking (No local/session storage)
   const [internalConditionStats, setInternalConditionStats] = useState<Record<string, { lastWpm: number; bestWpm: number }>>({});
@@ -372,38 +424,52 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Monkeytype Setting Handlers
   const handleSubModeChange = (newSub: OutplaySubMode) => {
     setOutplaySubMode(newSub);
-    localStorage.setItem('fasttyping_outplay_submode', newSub);
+    try {
+      localStorage.setItem('fasttyping_outplay_submode', newSub);
+    } catch {}
     handleResetOutplay(newSub, outplayDuration, outplayTestType, outplayWordCount);
   };
 
   const handleTestTypeChange = (newType: 'time' | 'words') => {
     setOutplayTestType(newType);
-    localStorage.setItem('fasttyping_outplay_test_type', newType);
+    try {
+      localStorage.setItem('fasttyping_outplay_test_type', newType);
+    } catch {}
     handleResetOutplay(outplaySubMode, outplayDuration, newType, outplayWordCount);
   };
 
   const handleDurationChange = (newDur: number) => {
     setOutplayDuration(newDur);
-    localStorage.setItem('fasttyping_outplay_duration', newDur.toString());
+    try {
+      localStorage.setItem('fasttyping_outplay_duration', newDur.toString());
+    } catch {}
     handleResetOutplay(outplaySubMode, newDur, 'time', outplayWordCount, true);
   };
 
   const handleWordCountChange = (newCount: 10 | 25 | 50 | 100) => {
     setOutplayWordCount(newCount);
-    localStorage.setItem('fasttyping_outplay_word_count', newCount.toString());
+    try {
+      localStorage.setItem('fasttyping_outplay_word_count', newCount.toString());
+    } catch {}
     handleResetOutplay(outplaySubMode, outplayDuration, 'words', newCount);
   };
 
   const handlePaceModeChange = (newPace: OutplayPaceMode) => {
     setOutplayPaceMode(newPace);
-    localStorage.setItem('fasttyping_outplay_pacemode', newPace);
+    try {
+      localStorage.setItem('fasttyping_outplay_pacemode', newPace);
+    } catch {}
+    onPaceModeChange?.(newPace);
     setGhostCaretPos(null);
   };
 
   const handleCustomWpmChange = (wpm: number) => {
     const clamped = Math.max(20, Math.min(250, wpm || 60));
     setOutplayCustomWpm(clamped);
-    localStorage.setItem('fasttyping_outplay_custom_wpm', clamped.toString());
+    try {
+      localStorage.setItem('fasttyping_outplay_custom_wpm', clamped.toString());
+    } catch {}
+    onCustomWpmChange?.(clamped);
   };
 
   // Surrender action handlers
@@ -1443,7 +1509,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                   }`}
                 >
                   <Ghost className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span>{GHOST_OPTIONS.find((g) => g.id === outplayPaceMode)?.label}</span>
+                  <span>{GHOST_OPTIONS.find((g) => g.id === outplayPaceMode)?.label || 'Ghost: Ván trước'}</span>
                   <ChevronDown className={`w-3 h-3 transition-transform ${isGhostOpen ? 'rotate-180 text-cyan-400' : 'text-slate-400'}`} />
                 </button>
 
@@ -1487,37 +1553,25 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               </div>
 
               {outplayPaceMode === 'custom' && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <input
-                    ref={customWpmInputRef}
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                  <CustomNumberInput
                     id="input-custom-ghost-wpm"
-                    type="number"
+                    size="sm"
                     min={20}
                     max={300}
-                    value={customWpmInputVal !== null ? customWpmInputVal : outplayCustomWpm}
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter' || e.key === 'Escape') {
-                        e.currentTarget.blur();
-                        inputRef.current?.focus();
-                      }
-                    }}
-                    onChange={(e) => {
-                      const valStr = e.target.value;
-                      setCustomWpmInputVal(valStr);
-                      const parsed = parseInt(valStr, 10);
-                      if (!isNaN(parsed) && parsed > 0) {
-                        handleCustomWpmChange(parsed);
-                      }
+                    step={5}
+                    value={customWpmInputVal !== null ? Number(customWpmInputVal) : outplayCustomWpm}
+                    onChange={(val) => {
+                      setCustomWpmInputVal(String(val));
+                      handleCustomWpmChange(val);
                     }}
                     onBlur={() => {
                       setCustomWpmInputVal(null);
                     }}
-                    className="w-14 h-7 px-1 rounded-lg bg-slate-950 border border-cyan-500/40 text-center text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+                    className="w-24"
+                    focusBorderColor="focus-within:border-cyan-400"
                   />
-                  <span className="text-[10px] text-slate-500 font-mono">WPM</span>
+                  <span className="text-[10px] text-cyan-400/80 font-mono font-bold">WPM</span>
                 </div>
               )}
             </div>
