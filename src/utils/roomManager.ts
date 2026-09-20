@@ -1,10 +1,13 @@
-import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord, OnlineUserDetail } from '../types';
+import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord, OnlineUserDetail, BestWpmRecord, CultivationLeaderboardEntry } from '../types';
+import { getStoredAuthToken } from './auth';
 
 export interface PresenceUserMeta {
   username?: string;
   avatar?: string;
   frame?: string;
+  deviceId?: string;
   bestWpm?: number;
+  bestWpmRecord?: BestWpmRecord;
   totalGames?: number;
   currentRoomId?: string | null;
   currentMode?: string | null;
@@ -525,6 +528,7 @@ export function subscribeToRoom(
               currentCachedRoom = {
                 ...currentCachedRoom,
                 players: event.players,
+                status: event.status || currentCachedRoom.status,
               };
               callback(currentCachedRoom);
             } else {
@@ -741,6 +745,7 @@ export async function fetchOnlineCount(tabId?: string, userId?: string, meta?: P
     const params = new URLSearchParams();
     if (tabId) params.append('tabId', tabId);
     if (userId) params.append('userId', userId);
+    if (meta?.deviceId) params.append('deviceId', meta.deviceId);
     if (meta?.username) params.append('username', meta.username);
     if (meta?.avatar) params.append('avatar', meta.avatar);
     if (meta?.frame) params.append('frame', meta.frame);
@@ -804,7 +809,7 @@ export async function fetchOnlineUsers(): Promise<OnlineUserDetail[]> {
       return data.users as OnlineUserDetail[];
     }
   } catch (err) {
-    console.error('Error fetching online users:', err);
+    console.warn('Unable to fetch online users:', err);
   }
   return [];
 }
@@ -827,19 +832,10 @@ export function sendPresenceLeave(tabId: string) {
 }
 
 /**
- * Fetch real server-wide high scores
+ * Get stored local high scores cache as fallback
  */
-export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord | null>> {
-  try {
-    const res = await fetch('/api/leaderboard');
-    const data = await res.json();
-    if (data && data.success && data.highScores) {
-      return data.highScores;
-    }
-  } catch (err) {
-    console.error('Failed to fetch leaderboard:', err);
-  }
-  return {
+export function getStoredHighScores(): Record<string, HighScoreRecord | null> {
+  const fallback: Record<string, HighScoreRecord | null> = {
     vi_dau: null,
     vi_nodau: null,
     en: null,
@@ -848,6 +844,119 @@ export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord
     doan_chu: null,
     san_boss: null,
   };
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const saved = localStorage.getItem('fasttyping_highscores');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
+        return { ...fallback, ...parsed };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
+/**
+ * Fetch real server-wide high scores with resilient retries, timeout, and local cache fallback
+ */
+export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord | null>> {
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch('/api/leaderboard', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && data.highScores) {
+          try {
+            localStorage.setItem('fasttyping_highscores', JSON.stringify(data.highScores));
+          } catch {}
+          return data.highScores;
+        }
+      }
+    } catch (err: any) {
+      if (attempt < maxRetries) {
+        // Exponential backoff before retry (300ms, 700ms)
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 350));
+        continue;
+      }
+      console.warn('Leaderboard service currently unreachable, using local cache:', err?.message || err);
+    }
+  }
+  return getStoredHighScores();
+}
+
+/**
+ * Fetch top 50 cultivators with highest tu vi from server
+ */
+export async function fetchCultivationLeaderboard(params?: {
+  username?: string;
+  userId?: string;
+  force?: boolean;
+  cultivation?: any;
+}): Promise<{
+  success: boolean;
+  top50: CultivationLeaderboardEntry[];
+  totalCount?: number;
+  currentUserRank?: {
+    rank: number;
+    username: string;
+    level: number;
+    realmIndex: number;
+    realmName: string;
+    tier: number;
+    subStage: string;
+    exp: number;
+  } | null;
+  currentUserActualCultivation?: any;
+  lastUpdated?: number;
+  nextUpdate?: number;
+  remainingSeconds?: number;
+  updateInterval?: number;
+}> {
+  try {
+    const query = new URLSearchParams();
+    if (params?.username) query.set('username', params.username);
+    if (params?.userId) query.set('userId', params.userId);
+    if (params?.force) query.set('force', 'true');
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    // Nếu có dữ liệu tu vi hiện tại, đồng bộ lên server trước hoặc truyền kèm
+    if (params?.cultivation && token) {
+      fetch('/api/cultivation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ cultivation: params.cultivation }),
+      }).catch(() => {});
+    }
+
+    const res = await fetch(`/api/leaderboard/cultivation?${query.toString()}`, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.top50)) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch cultivation leaderboard:', err);
+  }
+  return { success: false, top50: [] };
 }
 
 /**
@@ -866,7 +975,7 @@ export async function submitScoreToLeaderboard(record: {
   isCompleted?: boolean;
   roomId?: string;
   playerId?: string;
-}): Promise<{ success: boolean; isNewRecord: boolean; highScores: Record<string, HighScoreRecord | null>; error?: string }> {
+}): Promise<{ success: boolean; isNewRecord: boolean; highScores: Record<string, HighScoreRecord | null>; isGuest?: boolean; error?: string }> {
   // Chặn ngay lập tức tại client nếu người chơi đã đầu hàng hoặc ván đấu không trọn vẹn
   if (record.isSurrendered === true || record.isCompleted === false) {
     return {
@@ -877,16 +986,30 @@ export async function submitScoreToLeaderboard(record: {
     };
   }
 
+  const token = getStoredAuthToken();
+  if (!token) {
+    return {
+      success: false,
+      isGuest: true,
+      isNewRecord: false,
+      highScores: {},
+      error: 'Người chơi đang ở chế độ Khách. Kỷ lục chỉ được lưu khi đăng nhập tài khoản.',
+    };
+  }
+
   try {
     const res = await fetch('/api/leaderboard', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ ...record, authToken: token }),
     });
     const data = await res.json();
     return data;
   } catch (err) {
-    console.error('Error submitting score to leaderboard:', err);
+    console.warn('Error submitting score to leaderboard:', err);
     return { success: false, isNewRecord: false, highScores: {} };
   }
 }
@@ -904,7 +1027,7 @@ export async function adminUpdateLeaderboard(highScores: Record<string, HighScor
     const data = await res.json();
     return !!data.success;
   } catch (err) {
-    console.error('Error updating leaderboard:', err);
+    console.warn('Error updating leaderboard:', err);
     return false;
   }
 }
@@ -922,7 +1045,7 @@ export async function adminResetLeaderboard(mode?: string): Promise<boolean> {
     const data = await res.json();
     return !!data.success;
   } catch (err) {
-    console.error('Error resetting leaderboard:', err);
+    console.warn('Error resetting leaderboard:', err);
     return false;
   }
 }
@@ -989,6 +1112,7 @@ export function subscribeToGlobalChat(
         tabId: actualTabId,
         userId: actualUserId,
       });
+      if (meta?.deviceId) params.append('deviceId', meta.deviceId);
       if (meta?.username) params.append('username', meta.username);
       if (meta?.avatar) params.append('avatar', meta.avatar);
       if (meta?.frame) params.append('frame', meta.frame);
@@ -1102,6 +1226,7 @@ export function subscribeToGlobalChat(
     if (eventSource) {
       eventSource.close();
     }
+    sendPresenceLeave(actualTabId);
     if (typeof window !== 'undefined') {
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);

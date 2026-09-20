@@ -195,6 +195,133 @@ export const NgauHungResultView: React.FC<NgauHungResultViewProps> = ({
         </div>
       </div>
 
+      {/* Đánh Giá Khả Năng & Chỉ Số Năng Lực Của Người Chơi (Ability Matrix) */}
+      <div className="p-4 rounded-2xl bg-slate-950/80 border border-amber-500/20 space-y-3.5 shadow-inner">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>Chỉ Số Năng Lực Chuyên Biệt (Ngẫu Hứng)</span>
+          </h4>
+          <span className="text-[11px] text-slate-400 font-mono">Đánh giá chuẩn xác theo trận</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          {/* 1. Tốc độ phản xạ */}
+          {(() => {
+            const reflexScore = Math.min(100, Math.max(20, avgTimeSec > 0 ? Math.round(100 - (avgTimeSec - 1.2) * 25) : 50));
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    ⚡ Phản Xạ Bứt Tốc
+                  </span>
+                  <span className="font-mono font-bold text-amber-400">{reflexScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full" style={{ width: `${reflexScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {reflexScore >= 85 ? 'Phản xạ thần tốc, xuất phát gần như tức thì' : reflexScore >= 60 ? 'Nhịp độ ổn định, bứt tốc tốt ở cự ly ngắn' : 'Cần rèn luyện thêm độ nhạy ngón tay'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 2. Độ chuẩn xác bứt tốc */}
+          {(() => {
+            const accScore = completedRounds > 0 ? Math.round((perfectRounds / completedRounds) * 100) : 50;
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    🎯 Chuẩn Xác Tuyệt Đối
+                  </span>
+                  <span className="font-mono font-bold text-emerald-400">{accScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" style={{ width: `${accScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {accScore >= 70 ? 'Tay gõ chuẩn chỉ, hạn chế tối đa lỗi ngón tay' : accScore >= 40 ? 'Gõ khá chuẩn, duy trì nhịp độ an toàn' : 'Hãy gõ chắc tay hơn để tránh mất điểm'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 3. Bản lĩnh dứt điểm Top 1 */}
+          {(() => {
+            const clutchScore = Math.min(100, Math.round((top1Count / Math.max(1, totalRounds)) * 140));
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    👑 Bản Lĩnh Dứt Điểm (Top 1)
+                  </span>
+                  <span className="font-mono font-bold text-sky-400">{clutchScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-sky-500 to-cyan-400 rounded-full" style={{ width: `${clutchScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {clutchScore >= 70 ? 'Áp đảo hoàn toàn, khả năng giật cúp xuất sắc' : clutchScore >= 35 ? 'Cạnh tranh sòng phẳng ở các vị trí dẫn đầu' : 'Tập trung chớp thời cơ ở những giây đầu'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 4. Độ bền bỉ và tập trung */}
+          {(() => {
+            const focusScore = completionRate;
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    🛡️ Bền Bỉ & Tập Trung
+                  </span>
+                  <span className="font-mono font-bold text-purple-400">{focusScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-purple-500 to-pink-400 rounded-full" style={{ width: `${focusScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {focusScore >= 80 ? 'Tâm lý thi đấu vững vàng suốt tất cả các vòng' : focusScore >= 50 ? 'Khả năng duy trì nhịp tốt ở giai đoạn chính' : 'Cần giữ bình tĩnh khi thời gian đếm ngược'}
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Huy hiệu năng lực đạt được trong ván đấu */}
+        <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold text-slate-400">Huy hiệu đạt được:</span>
+          {bestTimeSec !== null && bestTimeSec < 2.0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/40">
+              ⚡ Tia Chớp Vàng (&lt;2s)
+            </span>
+          )}
+          {perfectRounds >= 3 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40">
+              🎯 Bách Phát Bách Trúng (0 Lỗi)
+            </span>
+          )}
+          {winRate >= 40 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 text-[10px] font-bold border border-sky-500/40">
+              👑 Vua Nước Rút (Winrate {winRate}%)
+            </span>
+          )}
+          {completionRate === 100 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/40">
+              🛡️ Chiến Binh Bền Bỉ (100% Vòng)
+            </span>
+          )}
+          {(!bestTimeSec || bestTimeSec >= 2.0) && perfectRounds < 3 && winRate < 40 && completionRate < 100 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-semibold border border-slate-700">
+              🌱 Tân Binh Đang Tỏa Sáng
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Round-by-Round Breakdown History */}
       {roundHistory.length > 0 && (
         <div className="space-y-2">

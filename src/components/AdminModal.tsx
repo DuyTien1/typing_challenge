@@ -1798,7 +1798,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/40 via-slate-950 to-slate-900 border-2 border-amber-500/50 flex flex-col sm:flex-row items-center gap-4 shadow-xl shadow-amber-500/10">
                     <div className="relative w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center text-3xl border-2 border-amber-400 ring-4 ring-amber-400/40 ring-offset-2 ring-offset-slate-950 shadow-[0_0_25px_rgba(251,191,36,0.7)] animate-pulse">
                       👑
-                      <div className="absolute -top-2 -right-2 p-1 rounded-full bg-amber-400 text-black shadow-md">
+                      <div className="absolute -top-2 -right-2 p-1 rounded-full bg-amber-400 text-black shadow-lg z-30 flex items-center justify-center">
                         <Crown className="w-3.5 h-3.5 fill-black" />
                       </div>
                     </div>

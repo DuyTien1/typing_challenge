@@ -6,6 +6,8 @@ export interface CustomNumberInputProps {
   id?: string;
   value: number;
   onChange: (val: number) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   min?: number;
   max?: number;
   step?: number;
@@ -17,10 +19,12 @@ export interface CustomNumberInputProps {
   size?: 'sm' | 'md';
 }
 
-export const CustomNumberInput: React.FC<CustomNumberInputProps> = ({
+export const CustomNumberInput = React.forwardRef<HTMLInputElement, CustomNumberInputProps>(({
   id,
   value,
   onChange,
+  onBlur,
+  onKeyDown,
   min = 0,
   max = 999999,
   step = 1,
@@ -30,7 +34,7 @@ export const CustomNumberInput: React.FC<CustomNumberInputProps> = ({
   placeholder,
   focusBorderColor = 'focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-400/40',
   size = 'md',
-}) => {
+}, ref) => {
   const [textVal, setTextVal] = useState<string>(String(value ?? 0));
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -119,7 +123,7 @@ export const CustomNumberInput: React.FC<CustomNumberInputProps> = ({
     }
   };
 
-  const handleBlur = () => {
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     let parsed = Number(textVal);
     if (isNaN(parsed) || textVal.trim() === '') {
       parsed = min ?? 0;
@@ -133,6 +137,26 @@ export const CustomNumberInput: React.FC<CustomNumberInputProps> = ({
 
     setTextVal(String(parsed));
     onChange(parsed);
+    onBlur?.(e);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      let parsed = Number(textVal);
+      if (isNaN(parsed) || textVal.trim() === '') {
+        parsed = min ?? 0;
+      }
+      if (min !== undefined && parsed < min) parsed = min;
+      if (max !== undefined && parsed > max) parsed = max;
+
+      if (decimals > 0) {
+        parsed = Number(parsed.toFixed(decimals));
+      }
+
+      setTextVal(String(parsed));
+      onChange(parsed);
+    }
+    onKeyDown?.(e);
   };
 
   const isUpDisabled = disabled || (max !== undefined && Number(textVal) >= max);
@@ -147,10 +171,12 @@ export const CustomNumberInput: React.FC<CustomNumberInputProps> = ({
       } ${focusBorderColor} ${className}`}
     >
       <input
+        ref={ref}
         id={id}
         type="number"
         value={textVal}
         onChange={handleChange}
+        onKeyDown={handleKeyDown}
         onBlur={handleBlur}
         disabled={disabled}
         placeholder={placeholder}
@@ -206,4 +232,6 @@ export const CustomNumberInput: React.FC<CustomNumberInputProps> = ({
       </div>
     </div>
   );
-};
+});
+
+CustomNumberInput.displayName = 'CustomNumberInput';

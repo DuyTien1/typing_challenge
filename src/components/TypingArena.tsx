@@ -6,8 +6,6 @@ import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { GhostCaret } from './GhostCaret';
 import { CustomNumberInput } from './CustomNumberInput';
-import { InGameMilestoneToast } from './InGameMilestoneToast';
-import { useInGameMilestones } from '../hooks/useInGameMilestones';
 import {
   OutplayPaceMode,
   OutplaySubMode,
@@ -36,6 +34,8 @@ import {
   Target,
   FileText,
   Keyboard,
+  CheckCircle2,
+  Eye,
 } from 'lucide-react';
 
 interface TypingArenaProps {
@@ -279,20 +279,21 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const [liveConsistency, setLiveConsistency] = useState(100);
   const [cheatWarning, setCheatWarning] = useState<string | null>(null);
 
-  // In-Game Real-Time Milestone Toasts (WPM & Combo streaks)
-  const {
-    toasts: milestoneToasts,
-    dismissToast: dismissMilestoneToast,
-    checkWpmMilestone,
-    checkComboMilestone,
-    resetMilestones,
-  } = useInGameMilestones();
-
   // Surrender Modal & State
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
   const currentPlayerData = players.find((p) => p.id === currentPlayerId);
   const isPlayerSurrendered = !!currentPlayerData?.isSurrendered;
+
+  // Finished & Spectating State for Multiplayer
+  const [hasUserFinished, setHasUserFinished] = useState(false);
+  const isUserFinished = hasUserFinished || !!currentPlayerData?.isFinished;
+  const activeCompetitors = players.filter(
+    (p) => p.id !== currentPlayerId && !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+  );
+  const remainingActiveCount = activeCompetitors.length;
+  const finishedPlayersList = players.filter((p) => p.isFinished);
+  const myPlacement = finishedPlayersList.findIndex((p) => p.id === currentPlayerId) + 1 || Math.max(1, finishedPlayersList.length);
 
   // Monkeytype Caret State & Focus
   const [caretPos, setCaretPos] = useState<{ x: number; y: number; height?: number } | null>(null);
@@ -368,8 +369,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Reset word history when words change
   useEffect(() => {
     wordHistoryRef.current = [];
-    resetMilestones();
-  }, [effectiveWords, resetMilestones]);
+  }, [effectiveWords]);
 
   // Reset Internal Arena Game State (Monkeytype Outplay switcher)
   const handleResetOutplay = useCallback(
@@ -403,7 +403,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       setCaretPos(null);
       setGhostCaretPos(null);
       setGhostLeadDelta(0);
-      resetMilestones();
       isFinishedRef.current = false;
       ghostJourneyRef.current = [];
       wordHistoryRef.current = [];
@@ -464,7 +463,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   };
 
   const handleCustomWpmChange = (wpm: number) => {
-    const clamped = Math.max(20, Math.min(250, wpm || 60));
+    const clamped = Math.max(20, Math.min(300, wpm || 60));
     setOutplayCustomWpm(clamped);
     try {
       localStorage.setItem('fasttyping_outplay_custom_wpm', clamped.toString());
@@ -712,6 +711,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     if (isOutplay && outplayTestType === 'words') return;
     if (timeLeft <= 0 && !isFinishedRef.current) {
       isFinishedRef.current = true;
+      setHasUserFinished(true);
       const elapsedSeconds = Math.max(0.1, (performance.now() - startTimePerfRef.current) / 1000);
       const consistency = calculateConsistency(keystrokesRef.current, effectiveDuration);
       const elapsedMins = elapsedSeconds / 60;
@@ -799,6 +799,10 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const LINE_HEIGHT = 48;
 
   const updateCaretAndLines = useCallback(() => {
+    if (isUserFinished || isPlayerSurrendered) {
+      setCaretPos(null);
+      return;
+    }
     if (!wordsStreamRef.current || !wordsContainerRef.current) return;
     const streamEl = wordsStreamRef.current;
     const streamRect = streamEl.getBoundingClientRect();
@@ -1027,7 +1031,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     setCorrectChars(newCorrectChars);
     setTotalErrors(newErrors);
     setCombo(newCombo);
-    checkComboMilestone(newCombo);
 
     // Live consistency
     const currentConsistency = calculateConsistency(keystrokesRef.current);
@@ -1055,6 +1058,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     // Completed all target words
     if (nextIndex >= targetWordCount && !isFinishedRef.current) {
       isFinishedRef.current = true;
+      setHasUserFinished(true);
 
       const finalAcc = Math.round((newCorrectChars / Math.max(1, newCorrectChars + newErrors * 5)) * 100);
 
@@ -1176,6 +1180,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Main Input Change Handler - Live feedback per character
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isUserFinished || isPlayerSurrendered || timeLeft <= 0) return;
     const val = e.target.value;
     const now = performance.now();
 
@@ -1238,6 +1243,10 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Backspace key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isUserFinished || isPlayerSurrendered || timeLeft <= 0) {
+      e.preventDefault();
+      return;
+    }
     if (inRoomCountdown !== null) {
       e.preventDefault();
       return;
@@ -1326,20 +1335,52 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     Math.round((totalLiveCorrect / Math.max(1, totalLiveCorrect + totalErrors * 5)) * 100)
   );
 
-  // Real-time WPM milestone check
-  useEffect(() => {
-    if (!hasStartedTyping || isPlayerSurrendered || isFinishedRef.current) return;
-    const elapsedSec = (performance.now() - startTimePerfRef.current) / 1000;
-    checkWpmMilestone(liveWpm, elapsedSec, currentWordIndex);
-  }, [liveWpm, hasStartedTyping, isPlayerSurrendered, currentWordIndex, checkWpmMilestone]);
-
   return (
     <div className="w-full max-w-5xl mx-auto space-y-5 select-none relative">
-      {/* In-Game Real-Time Milestone Toasts */}
-      <InGameMilestoneToast
-        toasts={milestoneToasts}
-        onDismiss={dismissMilestoneToast}
-      />
+      {/* Multiplayer Finished & Spectating Announcement Banner */}
+      {isMultiplayer && isUserFinished && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-slate-900/95 to-amber-500/15 border-2 border-emerald-500/50 shadow-2xl space-y-3 animate-fadeIn">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                🏁
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-black text-white text-base sm:text-lg tracking-wide">
+                    BẠN ĐÃ VỀ ĐÍCH THÀNH CÔNG!
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black font-mono border border-emerald-500/40">
+                    Hạng #{myPlacement > 0 ? myPlacement : 1}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Tốc độ của bạn: <strong className="text-amber-400 font-mono font-bold">{currentPlayerData?.wpm || liveWpm} WPM</strong> • Độ chính xác: <strong className="text-emerald-400 font-mono font-bold">{currentPlayerData?.accuracy ?? accuracy}%</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-semibold text-amber-300 bg-amber-500/10 px-3.5 py-1.5 rounded-xl border border-amber-500/30 shrink-0">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <span>
+                {remainingActiveCount > 0
+                  ? `Đang theo dõi: còn ${remainingActiveCount} tuyển thủ đang đua`
+                  : 'Tất cả đấu thủ đã hoàn thành'}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-2.5 border-t border-slate-800/80 flex items-center gap-2 text-xs text-slate-300">
+            <Eye className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
+            <span>
+              <strong>Chế độ theo dõi trực tiếp:</strong> Bạn đang trực tiếp quan sát các người chơi còn lại thi đấu. Bảng tổng kết chung sẽ tự động hiển thị đầy đủ ngay khi người cuối cùng kết thúc phần thi!
+            </span>
+          </div>
+        </div>
+      )}
       {/* 1. MONKEYTYPE CONFIGURATION BAR (Single Row, No Jumping) */}
       {isOutplay && (
         <div className="space-y-2.5">
@@ -1553,8 +1594,24 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               </div>
 
               {outplayPaceMode === 'custom' && (
-                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                <div
+                  className="flex items-center gap-1.5 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const finalVal = customWpmInputVal !== null ? Number(customWpmInputVal) : outplayCustomWpm;
+                      handleCustomWpmChange(finalVal);
+                      setCustomWpmInputVal(null);
+                      inputRef.current?.focus();
+                      setIsFocused(true);
+                    }
+                  }}
+                >
                   <CustomNumberInput
+                    ref={customWpmInputRef}
                     id="input-custom-ghost-wpm"
                     size="sm"
                     min={20}
@@ -1567,6 +1624,17 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                     }}
                     onBlur={() => {
                       setCustomWpmInputVal(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const finalVal = customWpmInputVal !== null ? Number(customWpmInputVal) : outplayCustomWpm;
+                        handleCustomWpmChange(finalVal);
+                        setCustomWpmInputVal(null);
+                        inputRef.current?.focus();
+                        setIsFocused(true);
+                      }
                     }}
                     className="w-24"
                     focusBorderColor="focus-within:border-cyan-400"
@@ -1639,6 +1707,56 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         </div>
       )}
 
+      {/* Banner thông báo đã về đích & đang quan sát trực tiếp các đối thủ còn lại */}
+      {isUserFinished && isMultiplayer && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900/90 to-emerald-950/70 border-2 border-emerald-500/50 shadow-xl shadow-emerald-950/50 space-y-2 animate-fadeIn">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xl shrink-0">
+                🏁
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <span>BẠN ĐÃ VỀ ĐÍCH THÀNH CÔNG!</span>
+                  {myPlacement > 0 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40">
+                      Hạng #{myPlacement}
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-300">
+                  {remainingActiveCount > 0
+                    ? `Đang trực tiếp theo dõi ${remainingActiveCount} đối thủ còn lại hoàn thành chặng đua.`
+                    : 'Tất cả đối thủ đã hoàn thành chặng đua! Đang chuyển sang bảng tổng kết...'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {remainingActiveCount > 0 ? (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-bold animate-pulse">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500" />
+                  </span>
+                  <span>Chế độ quan sát (Spectating) • Đang đua: {remainingActiveCount}</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+                  <span>🎉 Đang tổng kết ván đấu...</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="text-[11px] text-slate-400 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <span>💡 Hệ thống sẽ tự động tổng kết kết quả toàn bộ phòng cùng một lúc khi người cuối cùng về đích!</span>
+            <span className="font-mono text-emerald-400 font-bold ml-2 shrink-0">
+              Tốc độ của bạn: {liveWpm} WPM
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 2. STANDARD RACE TRACK & PROGRESS LANES (Hidden strictly in Outplay Yourself mode) */}
       {!isOutplay && (
         <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3">
@@ -1667,23 +1785,29 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             {players.map((p) => {
               const isMe = p.id === currentPlayerId;
               const isSurrendered = !!p.isSurrendered;
+              const isFinished = !!p.isFinished;
               return (
                 <div 
                   key={p.id} 
                   className={`relative flex items-center gap-3 transition-all duration-300 ${
-                    isSurrendered ? 'opacity-40 grayscale' : ''
+                    isSurrendered ? 'opacity-40 grayscale' : isFinished ? 'opacity-100' : ''
                   }`}
                 >
-                  <div className="w-24 text-[11px] font-bold truncate text-right flex items-center justify-end gap-1">
+                  <div className="w-28 text-[11px] font-bold truncate text-right flex items-center justify-end gap-1">
                     {isSurrendered && <span title="Đã đầu hàng">🏳️</span>}
-                    <span className={isSurrendered ? 'line-through text-slate-500' : 'text-slate-300'}>
+                    {isFinished && <span title="Đã về đích" className="text-emerald-400 font-bold">🏁</span>}
+                    <span className={isSurrendered ? 'line-through text-slate-500' : isFinished ? 'text-emerald-400 font-bold' : 'text-slate-300'}>
                       {p.username}
                     </span>
                     {isMe && <span className="text-amber-400 font-bold">*</span>}
                   </div>
                   <div 
                     className={`flex-1 h-7 bg-slate-950/80 rounded-lg border relative overflow-hidden flex items-center px-1 transition-colors ${
-                      isSurrendered ? 'border-slate-800 bg-slate-900/40' : 'border-slate-800/80'
+                      isSurrendered 
+                        ? 'border-slate-800 bg-slate-900/40' 
+                        : isFinished 
+                        ? 'border-emerald-500/50 bg-emerald-950/20' 
+                        : 'border-slate-800/80'
                     }`}
                   >
                     {/* Track Progress Fill */}
@@ -1691,11 +1815,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                       className={`h-full rounded-md transition-all duration-300 ${
                         isSurrendered
                           ? 'bg-slate-700/50 border-r border-slate-600 opacity-50'
+                          : isFinished
+                          ? 'bg-gradient-to-r from-emerald-500/20 via-emerald-400/30 to-emerald-400/40 border-r-2 border-emerald-400'
                           : isMe
                           ? 'bg-gradient-to-r from-amber-500/20 via-amber-400/30 to-amber-400/40 border-r-2 border-amber-400'
                           : 'bg-slate-800/40 border-r border-slate-600/60'
                       }`}
-                      style={{ width: `${Math.min(100, Math.max(2, p.progress))}%` }}
+                      style={{ width: `${Math.min(100, Math.max(2, isFinished ? 100 : p.progress))}%` }}
                     />
 
                     {/* Player Avatar positioned on track */}
@@ -1704,7 +1830,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                         isSurrendered ? 'filter grayscale opacity-40' : ''
                       }`}
                       style={{
-                        left: `calc(${Math.min(95, Math.max(2, p.progress))}% - 14px)`,
+                        left: `calc(${Math.min(95, Math.max(2, isFinished ? 100 : p.progress))}% - 14px)`,
                       }}
                     >
                       <span>{p.icon}</span>
@@ -1714,11 +1840,20 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                     <div className="absolute right-2 text-xs opacity-60">🏁</div>
                   </div>
 
-                  <div className="w-20 text-right font-mono text-[11px]">
+                  <div className="w-24 text-right font-mono text-[11px]">
                     {isSurrendered ? (
                       <span className="text-[10px] font-bold text-rose-400/90 tracking-tight">
                         ĐẦU HÀNG
                       </span>
+                    ) : isFinished ? (
+                      <div className="flex flex-col items-end leading-tight">
+                        <span className="text-[10px] font-black text-emerald-400 tracking-tight flex items-center gap-0.5">
+                          VỀ ĐÍCH
+                        </span>
+                        <span className="text-[10px] text-slate-300 font-mono font-bold">
+                          {p.wpm} <span className="text-[9px] text-slate-500">WPM</span>
+                        </span>
+                      </div>
                     ) : (
                       <>
                         <span className={`font-bold ${isMe ? 'text-amber-400' : 'text-slate-300'}`}>
@@ -1960,7 +2095,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               ref={inputRef}
               type="text"
               value={currentInput}
-              disabled={isPlayerSurrendered || timeLeft <= 0 || inRoomCountdown !== null}
+              disabled={isUserFinished || isPlayerSurrendered || timeLeft <= 0 || inRoomCountdown !== null}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
               onCompositionStart={handleCompositionStart}
@@ -1977,7 +2112,9 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               }}
               onPaste={(e) => e.preventDefault()}
               placeholder={
-                isPlayerSurrendered
+                isUserFinished
+                  ? `🏁 Bạn đã về đích thành công! Đang trực tiếp theo dõi ${remainingActiveCount} đấu thủ còn lại...`
+                  : isPlayerSurrendered
                   ? "Bạn đã đầu hàng ván đấu này."
                   : inRoomCountdown !== null
                   ? `Trận đấu sẽ bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
@@ -1989,19 +2126,21 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck="false"
-              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-amber-500/50 text-white font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-2 focus:ring-amber-400/60 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full h-12 px-4 rounded-xl bg-slate-950 border border-amber-500/50 text-white font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-2 focus:ring-amber-400/60 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
 
-          {/* Action buttons */}
+          {/* Action buttons - Harmonized h-12 height */}
           <button
             id="btn-arena-restart"
             type="button"
+            disabled={isMultiplayer && isUserFinished}
             onMouseDown={(e) => {
               e.preventDefault();
             }}
             onClick={(e) => {
               e.stopPropagation();
+              if (isMultiplayer && isUserFinished) return;
               if (isOutplay) {
                 handleResetOutplay();
               } else {
@@ -2011,23 +2150,30 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               inputRef.current?.focus();
               setIsFocused(true);
             }}
-            title="Gõ lại từ đầu"
-            className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title={isMultiplayer && isUserFinished ? "Đang trực tiếp theo dõi các đối thủ còn lại" : "Gõ lại từ đầu"}
+            className="h-12 w-12 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RotateCcw className="w-5 h-5" />
           </button>
 
-          <button
-            id="btn-arena-surrender"
-            type="button"
-            onClick={openSurrenderModal}
-            disabled={isPlayerSurrendered || timeLeft <= 0}
-            title="Đầu hàng (Phím tắt: Esc)"
-            className="px-4 py-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Flag className="w-4 h-4" />
-            <span className="hidden sm:inline">Đầu Hàng (Esc)</span>
-          </button>
+          {isUserFinished ? (
+            <div className="h-12 px-3 sm:px-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 select-none">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline">Đã Về Đích</span>
+            </div>
+          ) : (
+            <button
+              id="btn-arena-surrender"
+              type="button"
+              onClick={openSurrenderModal}
+              disabled={isPlayerSurrendered || timeLeft <= 0}
+              title="Đầu hàng (Phím tắt: Esc)"
+              className="h-12 px-3 sm:px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Flag className="w-4 h-4" />
+              <span className="hidden sm:inline">Đầu Hàng (Esc)</span>
+            </button>
+          )}
         </div>
 
         {/* Engine indicators footer */}

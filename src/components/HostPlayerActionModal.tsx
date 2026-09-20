@@ -85,14 +85,14 @@ export const HostPlayerActionModal: React.FC<HostPlayerActionModalProps> = ({
             />
             {isBot ? (
               <div
-                className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-slate-700 text-slate-300 shadow-sm"
+                className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-slate-700 text-slate-300 shadow-md z-30 flex items-center justify-center"
                 title="Bot máy tính"
               >
                 <Bot className="w-3 h-3" />
               </div>
             ) : (
               <div
-                className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-emerald-500 text-black shadow-sm"
+                className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-emerald-500 text-black shadow-md z-30 flex items-center justify-center"
                 title="Người chơi thực"
               >
                 <Shield className="w-3 h-3 fill-black" />

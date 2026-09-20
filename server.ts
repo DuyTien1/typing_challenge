@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 
 interface Player {
@@ -10,6 +11,12 @@ interface Player {
   icon: string;
   frame?: string;
   bestWpm?: number;
+  bestWpmRecord?: {
+    wpm: number;
+    mode: string;
+    modeName: string;
+    timestamp: number;
+  };
   totalGames?: number;
   progress: number;
   wpm: number;
@@ -190,14 +197,214 @@ function saveLeaderboardToFile() {
   }
 }
 
+// User Account Storage (Persistent to users.json - no external database required)
+export interface ServerUserRecord {
+  id: string;
+  email: string;
+  username: string;
+  avatar: string;
+  frame: string;
+  isAdmin?: boolean;
+  showcaseAchievements?: string[];
+  unlockedAchievements?: string[];
+  authProvider: 'google' | 'email';
+  passwordHash?: string;
+  salt?: string;
+  verifyCode?: string;
+  verifyExpires?: number;
+  isVerified: boolean;
+  sessionTokens: string[];
+  cultivation?: any;
+  createdAt: number;
+  updatedAt: number;
+}
+
+const USERS_FILE = path.join(process.cwd(), 'users.json');
+
+function hashPassword(password: string, salt: string): string {
+  return crypto.pbkdf2Sync(password, salt, 1000, 32, 'sha256').toString('hex');
+}
+
+function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
+  let adminUser: ServerUserRecord | undefined;
+  for (const u of map.values()) {
+    if (u.username.toLowerCase() === 'admin' || u.id === 'usr_admin_default') {
+      adminUser = u;
+      break;
+    }
+  }
+
+  if (!adminUser) {
+    const salt = 'f8a7e4b2c1d3e5f60718293a4b5c6d7e';
+    const passwordHash = hashPassword('admin123', salt);
+    const newAdmin: ServerUserRecord = {
+      id: 'usr_admin_default',
+      email: 'admin@fasttyping.vn',
+      username: 'admin',
+      avatar: '👑',
+      frame: 'admin_gold',
+      isAdmin: true,
+      authProvider: 'email',
+      passwordHash,
+      salt,
+      isVerified: true,
+      sessionTokens: [],
+      showcaseAchievements: ['god_speed', 'boss_slayer', 'mythic_master'],
+      unlockedAchievements: ['first_win', 'streak_3', 'god_speed', 'boss_slayer', 'mythic_master'],
+      createdAt: 1700000000000,
+      updatedAt: Date.now(),
+    };
+    map.set(newAdmin.id, newAdmin);
+    return true;
+  } else {
+    // Ensure admin flags are set
+    adminUser.isAdmin = true;
+    if (!adminUser.frame || adminUser.frame === 'default') {
+      adminUser.frame = 'admin_gold';
+    }
+    return false;
+  }
+}
+
+function loadUsersFromFile(): Map<string, ServerUserRecord> {
+  const map = new Map<string, ServerUserRecord>();
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const content = fs.readFileSync(USERS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data)) {
+        for (const u of data) {
+          if (u && u.id) map.set(u.id, u);
+        }
+      } else if (data && typeof data === 'object') {
+        for (const [id, u] of Object.entries(data)) {
+          if (u && typeof u === 'object') map.set(id, u as ServerUserRecord);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error reading users.json:', err);
+  }
+
+  const added = ensureDefaultAdminUser(map);
+  if (added) {
+    try {
+      const obj: Record<string, ServerUserRecord> = {};
+      for (const [id, u] of map.entries()) {
+        obj[id] = u;
+      }
+      fs.writeFileSync(USERS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch {
+      // ignore
+    }
+  }
+
+  return map;
+}
+
+const serverUsers = loadUsersFromFile();
+
+function saveUsersToFile() {
+  try {
+    const obj: Record<string, ServerUserRecord> = {};
+    for (const [id, u] of serverUsers.entries()) {
+      obj[id] = u;
+    }
+    fs.writeFileSync(USERS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving users.json:', err);
+  }
+}
+
+function getUserByToken(rawToken?: string): ServerUserRecord | null {
+  if (!rawToken) return null;
+  const cleanToken = rawToken.replace(/^Bearer\s+/i, '').trim();
+  if (!cleanToken) return null;
+  for (const user of serverUsers.values()) {
+    if (user.sessionTokens && user.sessionTokens.includes(cleanToken)) {
+      return user;
+    }
+  }
+  return null;
+}
+
+function getUserByEmail(email?: string): ServerUserRecord | null {
+  if (!email) return null;
+  const lower = email.trim().toLowerCase();
+  for (const user of serverUsers.values()) {
+    if (user.email.toLowerCase() === lower) {
+      return user;
+    }
+  }
+  return null;
+}
+
+function getUserByUsername(username?: string): ServerUserRecord | null {
+  if (!username) return null;
+  const lower = username.trim().toLowerCase();
+  for (const user of serverUsers.values()) {
+    if (user.username && user.username.trim().toLowerCase() === lower) {
+      return user;
+    }
+  }
+  return null;
+}
+
+function getUserByUsernameOrEmail(identifier?: string): ServerUserRecord | null {
+  if (!identifier) return null;
+  const clean = identifier.trim().toLowerCase();
+  for (const user of serverUsers.values()) {
+    if (user.email.toLowerCase() === clean || user.username.toLowerCase() === clean) {
+      return user;
+    }
+  }
+  return null;
+}
+
+function sanitizeUser(u: ServerUserRecord) {
+  return {
+    id: u.id,
+    email: u.email,
+    username: u.username,
+    avatar: u.avatar,
+    frame: u.frame,
+    isAdmin: Boolean(u.isAdmin || u.username.toLowerCase() === 'admin'),
+    showcaseAchievements: u.showcaseAchievements || [],
+    unlockedAchievements: u.unlockedAchievements || [],
+    isVerified: u.isVerified,
+    authProvider: u.authProvider,
+    cultivation: u.cultivation,
+    createdAt: u.createdAt,
+  };
+}
+
+function decodeGoogleJwt(credential: string): { sub: string; email: string; email_verified?: boolean; name?: string; picture?: string } | null {
+  try {
+    const parts = credential.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const jsonStr = Buffer.from(base64, 'base64').toString('utf-8');
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
 // Presence and SSE Client Tracking with multi-layer heartbeat & session management
 export interface PresenceSession {
   tabId: string;
   userId: string;
+  deviceId?: string;
   username: string;
   avatar: string;
   frame?: string;
   bestWpm?: number;
+  bestWpmRecord?: {
+    wpm: number;
+    mode: string;
+    modeName: string;
+    timestamp: number;
+  };
   totalGames?: number;
   currentRoomId?: string | null;
   currentMode?: string | null;
@@ -253,9 +460,16 @@ function extractSessionMetaFromReq(req: express.Request) {
   const username = String(body.username || query.username || '').trim();
   const avatar = String(body.avatar || query.avatar || '').trim();
   const frame = String(body.frame || query.frame || '').trim();
+  const deviceId = String(body.deviceId || query.deviceId || '').trim();
   const rawBestWpm = body.bestWpm !== undefined ? body.bestWpm : query.bestWpm;
   const rawTotalGames = body.totalGames !== undefined ? body.totalGames : query.totalGames;
   const bestWpm = rawBestWpm !== undefined ? Number(rawBestWpm) : undefined;
+  let bestWpmRecord = body.bestWpmRecord;
+  if (!bestWpmRecord && query.bestWpmRecord) {
+    try {
+      bestWpmRecord = JSON.parse(String(query.bestWpmRecord));
+    } catch {}
+  }
   const totalGames = rawTotalGames !== undefined ? Number(rawTotalGames) : undefined;
   const currentRoomId = body.currentRoomId !== undefined ? String(body.currentRoomId).trim() : (query.currentRoomId !== undefined ? String(query.currentRoomId).trim() : undefined);
   const currentMode = body.currentMode !== undefined ? String(body.currentMode).trim() : (query.currentMode !== undefined ? String(query.currentMode).trim() : undefined);
@@ -270,7 +484,9 @@ function extractSessionMetaFromReq(req: express.Request) {
     username: username || undefined,
     avatar: avatar || undefined,
     frame: frame || undefined,
+    deviceId: deviceId || undefined,
     bestWpm: bestWpm !== undefined && !isNaN(bestWpm) ? bestWpm : undefined,
+    bestWpmRecord: bestWpmRecord && typeof bestWpmRecord === 'object' ? bestWpmRecord : undefined,
     totalGames: totalGames !== undefined && !isNaN(totalGames) ? totalGames : undefined,
     currentRoomId: currentRoomId !== undefined ? (currentRoomId || null) : undefined,
     currentMode: currentMode !== undefined ? (currentMode || null) : undefined,
@@ -288,9 +504,27 @@ function extractSessionMetaFromReq(req: express.Request) {
   };
 }
 
+// Get unique identifier for a human player across multiple tabs
+function getUniqueUserKey(session: PresenceSession): string {
+  // 1. Registered / Logged in username (not generic guest prefix)
+  if (session.username && session.username !== 'Khách' && !session.username.startsWith('Khách ')) {
+    return `user_${session.username.toLowerCase().trim()}`;
+  }
+  // 2. Persistent device ID across all tabs of the same browser
+  if (session.deviceId && session.deviceId.trim()) {
+    return `dev_${session.deviceId.trim()}`;
+  }
+  // 3. User ID if available and not random guest
+  if (session.userId && !session.userId.startsWith('guest_') && !session.userId.startsWith('p_')) {
+    return `id_${session.userId.trim()}`;
+  }
+  // 4. Session userId or fallback to tabId
+  return session.userId ? `id_${session.userId.trim()}` : `tab_${session.tabId}`;
+}
+
 function cleanStaleSessions(): boolean {
   const now = Date.now();
-  const TIMEOUT_MS = 10000; // Tab considered inactive after 10s without ping or stream
+  const TIMEOUT_MS = 7000; // Client sends ping every 3s, timeout after 7s of silence
   let removed = false;
   for (const [tabId, session] of activePresenceSessions.entries()) {
     if (now - session.lastSeen > TIMEOUT_MS) {
@@ -303,16 +537,11 @@ function cleanStaleSessions(): boolean {
 
 function getRealOnlineCount(): number {
   cleanStaleSessions();
-  const activeTabs = new Set<string>();
-  for (const [tabId] of activePresenceSessions.entries()) {
-    activeTabs.add(tabId);
+  const uniqueUsers = new Set<string>();
+  for (const session of activePresenceSessions.values()) {
+    uniqueUsers.add(getUniqueUserKey(session));
   }
-  for (const [, tabId] of sseGlobalClients.entries()) {
-    if (tabId) {
-      activeTabs.add(tabId);
-    }
-  }
-  return Math.max(1, activeTabs.size);
+  return uniqueUsers.size;
 }
 
 function registerPresence(
@@ -322,7 +551,9 @@ function registerPresence(
     username?: string;
     avatar?: string;
     frame?: string;
+    deviceId?: string;
     bestWpm?: number;
+    bestWpmRecord?: any;
     totalGames?: number;
     currentRoomId?: string | null;
     currentMode?: string | null;
@@ -341,10 +572,12 @@ function registerPresence(
   activePresenceSessions.set(tabId, {
     tabId,
     userId: userId || existing?.userId || tabId,
+    deviceId: meta?.deviceId || existing?.deviceId,
     username: meta?.username || existing?.username || 'Khách ' + tabId.slice(-4),
     avatar: meta?.avatar || existing?.avatar || '⚡',
     frame: meta?.frame !== undefined ? meta.frame : existing?.frame || 'default',
     bestWpm: typeof meta?.bestWpm === 'number' ? meta.bestWpm : existing?.bestWpm || 0,
+    bestWpmRecord: meta?.bestWpmRecord || existing?.bestWpmRecord,
     totalGames: typeof meta?.totalGames === 'number' ? meta.totalGames : existing?.totalGames || 0,
     currentRoomId: meta?.currentRoomId !== undefined ? meta.currentRoomId : existing?.currentRoomId || null,
     currentMode: meta?.currentMode !== undefined ? meta.currentMode : existing?.currentMode || null,
@@ -386,7 +619,7 @@ function broadcastOnlinePresence() {
   }
 }
 
-// Background cleanup check every 4 seconds
+// Background cleanup check every 2 seconds
 setInterval(() => {
   const countBefore = getRealOnlineCount();
   const removed = cleanStaleSessions();
@@ -394,7 +627,51 @@ setInterval(() => {
   if (removed && countBefore !== countAfter) {
     broadcastOnlinePresence();
   }
-}, 4000);
+}, 2000);
+
+// Xianxia realm max longevity table for server background calculation
+const REALM_MAX_THO_NGUYEN = [240, 480, 960, 1800, 3000, 4800, 7200, 10800, 15000, 30000, 60000, 999999];
+const REALM_START_LEVELS = [1, 31, 71, 131, 211, 311, 431, 571, 721, 871, 941, 981];
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+// Background cultivation lifespan (Thọ Nguyên) decay every 2 hours: -1 point every 2 hours
+setInterval(() => {
+  const now = Date.now();
+  let anyUserUpdated = false;
+
+  for (const user of serverUsers.values()) {
+    if (!user.cultivation) continue;
+
+    const realmIndex = typeof user.cultivation.realmIndex === 'number' ? user.cultivation.realmIndex : 0;
+    if (realmIndex >= 11) continue; // Thiên Tôn bất tử
+
+    const lastDecay = user.cultivation.lastThoNguyenDecay || now;
+    const elapsed = now - lastDecay;
+    const decayUnits = Math.floor(elapsed / TWO_HOURS_MS);
+
+    if (decayUnits > 0) {
+      anyUserUpdated = true;
+      user.cultivation.thoNguyen = Math.max(0, (user.cultivation.thoNguyen ?? REALM_MAX_THO_NGUYEN[realmIndex]) - decayUnits);
+      user.cultivation.lastThoNguyenDecay = lastDecay + decayUnits * TWO_HOURS_MS;
+
+      // Check Luân Hồi khi hết Thọ Nguyên: đưa về tầng 1 của 2 cảnh giới trước đó
+      if (user.cultivation.thoNguyen <= 0) {
+        const targetRealmIndex = Math.max(0, realmIndex - 2);
+        const targetLevel = REALM_START_LEVELS[targetRealmIndex];
+        user.cultivation.realmIndex = targetRealmIndex;
+        user.cultivation.tier = 1;
+        user.cultivation.level = targetLevel;
+        user.cultivation.exp = 0;
+        user.cultivation.thoNguyen = REALM_MAX_THO_NGUYEN[targetRealmIndex];
+        user.cultivation.maxThoNguyen = REALM_MAX_THO_NGUYEN[targetRealmIndex];
+      }
+    }
+  }
+
+  if (anyUserUpdated) {
+    saveUsersToFile();
+  }
+}, 60000);
 
 function broadcastLeaderboard() {
   const payload = `data: ${JSON.stringify({ type: 'leaderboard_updated', highScores: serverHighScores })}\n\n`;
@@ -446,14 +723,39 @@ function generateUniqueRoomCode(): string {
 function cleanupInactiveRooms() {
   const now = Date.now();
   for (const [id, room] of rooms.entries()) {
-    if (now - (room.lastActive || room.createdAt) > 30 * 60 * 1000) {
-      stopRoomBots(id);
+    const humanPlayers = room.players.filter((p) => !p.isBot);
+    // Phòng KHÔNG CÓ người chơi thực nào (chỉ còn bot hoặc 0 người) -> Xóa phòng ngay lập tức khỏi server
+    if (humanPlayers.length === 0) {
+      stopRoomBots(id, false);
       rooms.delete(id);
+      sseClientsByRoom.delete(id);
+      roomChatMessages.delete(id);
+      broadcastToRoom(id, { type: 'room_closed', roomId: id });
+      continue;
+    }
+
+    // Nếu không còn bất kỳ client SSE nào kết nối và phòng đã không có hoạt động trong 30 giây
+    const clients = sseClientsByRoom.get(id);
+    const hasActiveSse = clients && clients.size > 0;
+    if (!hasActiveSse && now - (room.lastActive || room.createdAt) > 30 * 1000) {
+      stopRoomBots(id, false);
+      rooms.delete(id);
+      sseClientsByRoom.delete(id);
+      roomChatMessages.delete(id);
+      broadcastToRoom(id, { type: 'room_closed', roomId: id });
+      continue;
+    }
+
+    if (now - (room.lastActive || room.createdAt) > 30 * 60 * 1000) {
+      stopRoomBots(id, false);
+      rooms.delete(id);
+      sseClientsByRoom.delete(id);
+      roomChatMessages.delete(id);
       broadcastToRoom(id, { type: 'room_closed', roomId: id });
     }
   }
 }
-setInterval(cleanupInactiveRooms, 60 * 1000);
+setInterval(cleanupInactiveRooms, 5 * 1000);
 
 function broadcastToRoom(roomId: string, event: any) {
   const normId = normalizeRoomCode(roomId);
@@ -473,18 +775,42 @@ function broadcastToRoom(roomId: string, event: any) {
 // Room Bot Simulation Engine for standard typing race modes (vi_dau, vi_nodau, en, numpad)
 const roomBotIntervals = new Map<string, NodeJS.Timeout>();
 
-function stopRoomBots(roomId: string) {
+function stopRoomBots(roomId: string, resetBotsToWaiting = true) {
   const norm = normalizeRoomCode(roomId);
   const existing = roomBotIntervals.get(norm);
   if (existing) {
     clearInterval(existing);
     roomBotIntervals.delete(norm);
   }
+
+  // Khi dừng bot, lập tức reset trạng thái của tất cả bot về trạng thái chờ (inMatch: false)
+  if (resetBotsToWaiting) {
+    const room = rooms.get(norm);
+    if (room) {
+      let updated = false;
+      room.players.forEach((p) => {
+        if (p.isBot) {
+          p.inMatch = false;
+          p.isSurrendered = false;
+          p.isFinished = false;
+          p.progress = 0;
+          p.wpm = 0;
+          p.correctChars = 0;
+          p.errors = 0;
+          updated = true;
+        }
+      });
+      if (updated) {
+        room.lastActive = Date.now();
+        rooms.set(norm, room);
+      }
+    }
+  }
 }
 
 function startRoomBots(roomId: string) {
   const norm = normalizeRoomCode(roomId);
-  stopRoomBots(norm);
+  stopRoomBots(norm, false);
 
   const room = rooms.get(norm);
   if (!room || room.status !== 'playing') return;
@@ -502,7 +828,18 @@ function startRoomBots(roomId: string) {
   const interval = setInterval(() => {
     const currentRoom = rooms.get(norm);
     if (!currentRoom || currentRoom.status !== 'playing') {
-      stopRoomBots(norm);
+      stopRoomBots(norm, true);
+      return;
+    }
+
+    // Kiểm tra nếu không còn người chơi thực nào đang thi đấu (đã về đích, đầu hàng hoặc rời phòng)
+    const activeHumans = currentRoom.players.filter(
+      (p) => !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+    );
+    if (activeHumans.length === 0) {
+      currentRoom.status = 'finished';
+      stopRoomBots(norm, true);
+      broadcastToRoom(norm, { type: 'room_updated', room: currentRoom });
       return;
     }
 
@@ -546,13 +883,13 @@ function startRoomBots(roomId: string) {
       });
     }
 
-    // Check if all bots are finished and all humans are finished
+    // Check if all players (both bots and humans) are finished or surrendered
     const activePlayers = currentRoom.players.filter(
       (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
     );
     if (activePlayers.length === 0) {
       currentRoom.status = 'finished';
-      stopRoomBots(norm);
+      stopRoomBots(norm, true);
       broadcastToRoom(norm, { type: 'room_updated', room: currentRoom });
     }
   }, 500);
@@ -566,15 +903,612 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Health check
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', activeRooms: rooms.size });
+  // === AUTHENTICATION API ROUTES (users.json persistence) ===
+
+  // POST /api/auth/google: Decommissioned (Google sign-in removed per user request)
+  app.post('/api/auth/google', (req, res) => {
+    res.status(410).json({
+      success: false,
+      error: 'Tính năng đăng nhập bằng Google đã được gỡ bỏ. Vui lòng đăng ký hoặc đăng nhập bằng tài khoản!',
+    });
   });
 
-  // Get all active rooms
+  // POST /api/auth/register and /api/auth/register-email: Quick 1-step account creation
+  const handleQuickRegister = (req: express.Request, res: express.Response) => {
+    const { email, password, username, avatar } = req.body || {};
+
+    const cleanUsername = String(username || '').trim();
+    if (!cleanUsername || cleanUsername.length < 2) {
+      res.status(400).json({ success: false, error: 'Tên người chơi / Biệt danh phải có ít nhất 2 ký tự.' });
+      return;
+    }
+    if (cleanUsername.length > 24) {
+      res.status(400).json({ success: false, error: 'Tên người chơi không được vượt quá 24 ký tự.' });
+      return;
+    }
+
+    const cleanPassword = String(password || '');
+    if (!cleanPassword || cleanPassword.length < 4) {
+      res.status(400).json({ success: false, error: 'Mật khẩu phải có ít nhất 4 ký tự.' });
+      return;
+    }
+
+    // Check if username / nickname is already taken (strictly unique across all players)
+    const existingByName = getUserByUsername(cleanUsername);
+    if (existingByName) {
+      res.status(400).json({
+        success: false,
+        error: `Tên người chơi / Biệt danh "${cleanUsername}" đã có người sử dụng. Vui lòng chọn tên khác!`,
+      });
+      return;
+    }
+
+    // Check optional email
+    let cleanEmail = '';
+    if (email && typeof email === 'string' && email.trim()) {
+      cleanEmail = email.trim().toLowerCase();
+      const existingByEmail = getUserByEmail(cleanEmail);
+      if (existingByEmail) {
+        res.status(400).json({
+          success: false,
+          error: `Email "${cleanEmail}" đã được liên kết với một tài khoản. Vui lòng đăng nhập!`,
+        });
+        return;
+      }
+    } else {
+      // Auto-generate clean fallback handle
+      const safeHandle = cleanUsername.toLowerCase().replace(/[^a-z0-9_]/g, '') || 'player';
+      cleanEmail = `${safeHandle}_${Date.now().toString().slice(-4)}@fasttyping.vn`;
+    }
+
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = hashPassword(cleanPassword, salt);
+    const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const sessionToken = `tok_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
+
+    // Account is instantly verified & active - zero OTP friction
+    const user: ServerUserRecord = {
+      id: userId,
+      email: cleanEmail,
+      username: cleanUsername,
+      avatar: avatar || '⚡',
+      frame: 'default',
+      authProvider: 'email',
+      passwordHash,
+      salt,
+      isVerified: true,
+      sessionTokens: [sessionToken],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    serverUsers.set(userId, user);
+    saveUsersToFile();
+
+    console.log(`[FastTyping Auth] Tạo tài khoản thành công: ${cleanUsername} (${cleanEmail})`);
+
+    res.json({
+      success: true,
+      token: sessionToken,
+      user: sanitizeUser(user),
+      message: 'Tạo tài khoản thành công! Bạn đã sẵn sàng tham gia Bảng Vàng.',
+    });
+  };
+
+  app.post('/api/auth/register', handleQuickRegister);
+  app.post('/api/auth/register-email', handleQuickRegister);
+
+  // POST /api/auth/login and /api/auth/login-email: Quick login by username OR email
+  const handleQuickLogin = (req: express.Request, res: express.Response) => {
+    const { email, username, account, password } = req.body || {};
+    const identifier = String(account || username || email || '').trim();
+
+    if (!identifier) {
+      res.status(400).json({ success: false, error: 'Vui lòng nhập tên người chơi hoặc email.' });
+      return;
+    }
+    if (!password) {
+      res.status(400).json({ success: false, error: 'Vui lòng nhập mật khẩu.' });
+      return;
+    }
+
+    const user = getUserByUsernameOrEmail(identifier);
+    if (!user) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản với thông tin này.' });
+      return;
+    }
+
+    if (!user.salt || !user.passwordHash) {
+      res.status(400).json({
+        success: false,
+        error: 'Tài khoản này chưa thiết lập mật khẩu. Vui lòng tạo tài khoản mới!',
+      });
+      return;
+    }
+
+    const checkHash = hashPassword(password, user.salt);
+    if (checkHash !== user.passwordHash) {
+      res.status(400).json({ success: false, error: 'Mật khẩu không chính xác.' });
+      return;
+    }
+
+    // Auto-verify if legacy unverified account
+    user.isVerified = true;
+    user.updatedAt = Date.now();
+
+    const sessionToken = `tok_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
+    if (!user.sessionTokens) user.sessionTokens = [];
+    user.sessionTokens.push(sessionToken);
+    if (user.sessionTokens.length > 20) user.sessionTokens.shift();
+
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+
+    res.json({
+      success: true,
+      token: sessionToken,
+      user: sanitizeUser(user),
+      message: 'Đăng nhập thành công!',
+    });
+  };
+
+  app.post('/api/auth/login', handleQuickLogin);
+  app.post('/api/auth/login-email', handleQuickLogin);
+
+  // GET /api/auth/me: Retrieve current authenticated profile
+  app.get('/api/auth/me', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+    if (!user) {
+      res.json({ success: false, isGuest: true, user: null });
+      return;
+    }
+
+    res.json({
+      success: true,
+      isGuest: false,
+      user: sanitizeUser(user),
+    });
+  });
+
+  // POST /api/auth/profile: Update name, avatar, frame (Restricted to verified accounts)
+  app.post('/api/auth/profile', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    // Người chơi không đăng nhập (Khách) không thể đổi tên, khung và avatar
+    if (!user || !user.isVerified) {
+      res.status(403).json({
+        success: false,
+        error: 'Chế độ Khách không thể đổi tên, khung và avatar. Vui lòng đăng nhập tài khoản!',
+      });
+      return;
+    }
+
+    const { username, avatar, frame, showcaseAchievements, unlockedAchievements } = req.body || {};
+    if (username && typeof username === 'string' && username.trim().length >= 2) {
+      const newName = username.trim().slice(0, 24);
+      const cleanNew = newName.toLowerCase();
+      // Enforce unique nicknames across all accounts
+      if (cleanNew !== user.username.trim().toLowerCase()) {
+        const existing = getUserByUsername(newName);
+        if (existing && existing.id !== user.id) {
+          res.status(400).json({
+            success: false,
+            error: `Tên người chơi / Biệt danh "${newName}" đã có người sử dụng. Vui lòng chọn tên khác!`,
+          });
+          return;
+        }
+      }
+      user.username = newName;
+    }
+    if (avatar && typeof avatar === 'string' && avatar.trim()) {
+      user.avatar = avatar.trim();
+    }
+    if (frame && typeof frame === 'string' && frame.trim()) {
+      user.frame = frame.trim();
+    }
+    if (Array.isArray(showcaseAchievements)) {
+      user.showcaseAchievements = showcaseAchievements.filter((x: any) => typeof x === 'string').slice(0, 3);
+    }
+    if (Array.isArray(unlockedAchievements)) {
+      user.unlockedAchievements = unlockedAchievements.filter((x: any) => typeof x === 'string');
+    }
+
+    user.updatedAt = Date.now();
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+
+    res.json({
+      success: true,
+      user: sanitizeUser(user),
+      message: 'Cập nhật hồ sơ thành công!',
+    });
+  });
+
+  // POST /api/auth/change-password: Change password for authenticated player
+  app.post('/api/auth/change-password', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user || !user.isVerified) {
+      res.status(401).json({
+        success: false,
+        error: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại!',
+      });
+      return;
+    }
+
+    const { oldPassword, newPassword } = req.body || {};
+
+    const cleanOld = String(oldPassword || '');
+    const cleanNew = String(newPassword || '');
+
+    if (!cleanOld) {
+      res.status(400).json({
+        success: false,
+        error: 'Vui lòng nhập mật khẩu hiện tại.',
+      });
+      return;
+    }
+
+    if (!cleanNew || cleanNew.length < 4) {
+      res.status(400).json({
+        success: false,
+        error: 'Mật khẩu mới phải có ít nhất 4 ký tự.',
+      });
+      return;
+    }
+
+    if (cleanOld === cleanNew) {
+      res.status(400).json({
+        success: false,
+        error: 'Mật khẩu mới không được trùng với mật khẩu cũ.',
+      });
+      return;
+    }
+
+    if (!user.salt || !user.passwordHash) {
+      res.status(400).json({
+        success: false,
+        error: 'Tài khoản chưa có mật khẩu gốc để đổi. Vui lòng thử lại!',
+      });
+      return;
+    }
+
+    const checkHash = hashPassword(cleanOld, user.salt);
+    if (checkHash !== user.passwordHash) {
+      res.status(400).json({
+        success: false,
+        error: 'Mật khẩu hiện tại không chính xác.',
+      });
+      return;
+    }
+
+    // Generate fresh salt and new hash
+    const newSalt = crypto.randomBytes(16).toString('hex');
+    const newPasswordHash = hashPassword(cleanNew, newSalt);
+
+    user.salt = newSalt;
+    user.passwordHash = newPasswordHash;
+    user.updatedAt = Date.now();
+
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+
+    console.log(`[FastTyping Auth] Đổi mật khẩu thành công cho tài khoản: ${user.username}`);
+
+    res.json({
+      success: true,
+      message: 'Đổi mật khẩu thành công! Mật khẩu mới đã có hiệu lực.',
+    });
+  });
+
+  // POST /api/auth/logout: Revoke current session token
+  app.post('/api/auth/logout', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const cleanToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+    if (cleanToken) {
+      for (const user of serverUsers.values()) {
+        if (user.sessionTokens && user.sessionTokens.includes(cleanToken)) {
+          user.sessionTokens = user.sessionTokens.filter((t) => t !== cleanToken);
+          serverUsers.set(user.id, user);
+          saveUsersToFile();
+          break;
+        }
+      }
+    }
+    res.json({ success: true, message: 'Đã đăng xuất.' });
+  });
+
+  // GET /api/cultivation: Retrieve user's cultivation data
+  app.get('/api/cultivation', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let user = getUserByToken(authHeader);
+
+    if (!user && req.query.userId) {
+      user = serverUsers.get(String(req.query.userId)) || null;
+    }
+    if (!user && req.query.username) {
+      user = getUserByUsername(String(req.query.username));
+    }
+
+    if (!user) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy thông tin tài khoản.' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      cultivation: user.cultivation || null,
+    });
+  });
+
+  // Cấu hình Bảng Vàng Top 50 Tu Vi cập nhật định kỳ cứ 1 giờ sẽ cập nhật 1 lần
+  const CULTIVATION_LEADERBOARD_INTERVAL_MS = 60 * 60 * 1000; // 1 giờ = 3.600.000 ms
+  let lastCultivationLeaderboardUpdate = 0;
+  let cachedCultivationTop50: any[] = [];
+  let cachedCultivationRankedList: any[] = [];
+  let cachedTotalCultivators = 0;
+
+  const XIANXIA_REALM_METAS = [
+    { name: 'Luyện Khí Kỳ', icon: '🌿', badge: 'Khí', frameId: 'frame_xianxia_luyenkhi', startLevel: 1, endLevel: 30 },
+    { name: 'Trúc Cơ Kỳ', icon: '🧱', badge: 'Cơ', frameId: 'frame_xianxia_trucco', startLevel: 31, endLevel: 70 },
+    { name: 'Kết Đan Kỳ', icon: '🔮', badge: 'Đan', frameId: 'frame_xianxia_ketdan', startLevel: 71, endLevel: 130 },
+    { name: 'Nguyên Anh Kỳ', icon: '👶', badge: 'Anh', frameId: 'frame_xianxia_nguyenanh', startLevel: 131, endLevel: 210 },
+    { name: 'Hóa Thần Kỳ', icon: '🌌', badge: 'Thần', frameId: 'frame_xianxia_hoathan', startLevel: 211, endLevel: 310 },
+    { name: 'Luyện Hư Kỳ', icon: '🌀', badge: 'Hư', frameId: 'frame_xianxia_luyenhu', startLevel: 311, endLevel: 430 },
+    { name: 'Hợp Thể Kỳ', icon: '⚡', badge: 'Thể', frameId: 'frame_xianxia_hopthe', startLevel: 431, endLevel: 570 },
+    { name: 'Đại Thừa Kỳ', icon: '☀️', badge: 'Thừa', frameId: 'frame_xianxia_daithua', startLevel: 571, endLevel: 720 },
+    { name: 'Độ Kiếp Kỳ', icon: '🌩️', badge: 'Kiếp', frameId: 'frame_xianxia_dokiep', startLevel: 721, endLevel: 870 },
+    { name: 'Kim Tiên', icon: '🌟', badge: 'Kim', frameId: 'frame_xianxia_kimtien', startLevel: 871, endLevel: 940 },
+    { name: 'Đại La Tiên', icon: '🌠', badge: 'La', frameId: 'frame_xianxia_daila', startLevel: 941, endLevel: 980 },
+    { name: 'Thiên Tôn', icon: '👑', badge: 'Tôn', frameId: 'frame_xianxia_thienton', startLevel: 981, endLevel: 1000 },
+  ];
+
+  function getSubStageName(tier: number): 'Sơ Kỳ' | 'Trung Kỳ' | 'Hậu Kỳ' | 'Đại Viên Mãn' {
+    if (tier <= 3) return 'Sơ Kỳ';
+    if (tier <= 6) return 'Trung Kỳ';
+    if (tier <= 9) return 'Hậu Kỳ';
+    return 'Đại Viên Mãn';
+  }
+
+  function buildCultivationLeaderboardSnapshot() {
+    const map = new Map<string, any>();
+
+    // Lấy dữ liệu từ tất cả tài khoản người chơi đã đăng ký trên hệ thống (serverUsers)
+    for (const user of serverUsers.values()) {
+      if (!user.username) continue;
+      const cult = user.cultivation || {};
+      const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+      const tier = Math.max(1, Math.min(10, Number(cult.tier) || 1));
+      const level = Math.max(1, Math.min(1000, Number(cult.level) || 1));
+      const exp = Math.max(0, Number(cult.exp) || 0);
+      const maxExp = Math.max(1, Number(cult.maxExp) || 500);
+      const rawTho = cult.thoNguyen !== undefined ? Number(cult.thoNguyen) : 240;
+      const thoNguyen = !isNaN(rawTho) && rawTho >= 0 ? rawTho : 240;
+      const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+
+      map.set(user.username.toLowerCase(), {
+        id: user.id,
+        username: user.username,
+        avatar: user.avatar || '⚡',
+        frame: user.frame || realmMeta.frameId,
+        realmIndex,
+        realmName: realmMeta.name,
+        realmIcon: realmMeta.icon,
+        badge: realmMeta.badge,
+        tier,
+        subStage: getSubStageName(tier),
+        level,
+        exp,
+        maxExp,
+        thoNguyen,
+        isRegistered: true,
+      });
+    }
+
+    // Sắp xếp theo thứ tự tiến độ tu vi thực tế
+    const all = Array.from(map.values()).map((c) => {
+      const score = (c.realmIndex * 1_000_000_000) + (c.tier * 10_000_000) + (c.level * 100_000) + c.exp;
+      return { ...c, score };
+    });
+
+    all.sort((a, b) => b.score - a.score);
+
+    // Gán thứ hạng
+    const rankedList = all.map((item, index) => {
+      const { score, ...rest } = item;
+      return {
+        ...rest,
+        rank: index + 1,
+      };
+    });
+
+    cachedCultivationRankedList = rankedList;
+    cachedCultivationTop50 = rankedList.slice(0, 50);
+    cachedTotalCultivators = rankedList.length;
+    lastCultivationLeaderboardUpdate = Date.now();
+
+    console.log(`[Leaderboard] Cập nhật Bảng Vàng Top 50 Tu Vi chu kỳ 1 giờ/lần: ${cachedCultivationTop50.length} vị đại năng`);
+  }
+
+  // Khởi tạo snapshot đầu tiên khi server khởi động
+  buildCultivationLeaderboardSnapshot();
+
+  // Đặt lịch cập nhật định kỳ cứ 1 giờ sẽ cập nhật 1 lần
+  setInterval(() => {
+    try {
+      buildCultivationLeaderboardSnapshot();
+    } catch (err) {
+      console.error('[Leaderboard] Lỗi khi cập nhật bảng vàng tu vi chu kỳ 1 giờ:', err);
+    }
+  }, CULTIVATION_LEADERBOARD_INTERVAL_MS);
+
+  // Helper đồng bộ tu vi thực tế của người chơi vào danh sách ngay khi có cập nhật
+  function syncUserCultivationToCache(user: ServerUserRecord) {
+    if (!user || !user.username || !user.cultivation) return;
+    const cult = user.cultivation;
+    const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+    const tier = Math.max(1, Math.min(10, Number(cult.tier) || 1));
+    const level = Math.max(1, Math.min(1000, Number(cult.level) || 1));
+    const exp = Math.max(0, Number(cult.exp) || 0);
+    const maxExp = Math.max(1, Number(cult.maxExp) || 500);
+    const rawTho = cult.thoNguyen !== undefined ? Number(cult.thoNguyen) : 240;
+    const thoNguyen = !isNaN(rawTho) && rawTho >= 0 ? rawTho : 240;
+    const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+
+    const uLower = user.username.toLowerCase();
+    const existingIndex = cachedCultivationRankedList.findIndex((item) => item.username.toLowerCase() === uLower);
+    if (existingIndex !== -1) {
+      cachedCultivationRankedList[existingIndex] = {
+        ...cachedCultivationRankedList[existingIndex],
+        realmIndex,
+        realmName: realmMeta.name,
+        realmIcon: realmMeta.icon,
+        badge: realmMeta.badge,
+        tier,
+        subStage: getSubStageName(tier),
+        level,
+        exp,
+        maxExp,
+        thoNguyen,
+      };
+    }
+
+    const topIndex = cachedCultivationTop50.findIndex((item) => item.username.toLowerCase() === uLower);
+    if (topIndex !== -1) {
+      cachedCultivationTop50[topIndex] = {
+        ...cachedCultivationTop50[topIndex],
+        realmIndex,
+        realmName: realmMeta.name,
+        realmIcon: realmMeta.icon,
+        badge: realmMeta.badge,
+        tier,
+        subStage: getSubStageName(tier),
+        level,
+        exp,
+        maxExp,
+        thoNguyen,
+      };
+    }
+  }
+
+  // POST /api/cultivation: Update user's cultivation state
+  app.post('/api/cultivation', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let user = getUserByToken(authHeader);
+
+    if (!user && req.body.userId) {
+      user = serverUsers.get(String(req.body.userId)) || null;
+    }
+    if (!user && req.body.username) {
+      user = getUserByUsername(String(req.body.username));
+    }
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập hoặc không tìm thấy tài khoản.' });
+      return;
+    }
+
+    if (req.body.cultivation && typeof req.body.cultivation === 'object') {
+      user.cultivation = req.body.cultivation;
+      user.updatedAt = Date.now();
+      serverUsers.set(user.id, user);
+      saveUsersToFile();
+      // Đồng bộ ngay tu vi thực tế vào cache để đảm bảo không bị lệch
+      syncUserCultivationToCache(user);
+    }
+
+    res.json({
+      success: true,
+      cultivation: user.cultivation,
+    });
+  });
+
+  // Server background task: Decay Thọ Nguyên (cứ 2 giờ -1) & Tâm Ma (sau 48h không tu luyện)
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  setInterval(() => {
+    const now = Date.now();
+    let hasChanges = false;
+
+    for (const [userId, user] of serverUsers.entries()) {
+      if (!user.cultivation) continue;
+      const cult = user.cultivation;
+      let userChanged = false;
+
+      // 1. Cứ 2 giờ trôi qua giảm 1 điểm Thọ Nguyên (trừ cảnh giới 11 Thiên Tôn)
+      if ((cult.realmIndex ?? 0) < 11) {
+        const lastDecay = cult.lastThoNguyenDecay || now;
+        const elapsed = now - lastDecay;
+        const units = Math.floor(elapsed / TWO_HOURS_MS);
+
+        if (units > 0) {
+          cult.thoNguyen = Math.max(0, (cult.thoNguyen ?? 240) - units);
+          cult.lastThoNguyenDecay = lastDecay + units * TWO_HOURS_MS;
+          userChanged = true;
+
+          // Luân hồi nếu hết Thọ Nguyên: rớt về tầng 1 của 2 cảnh giới trước
+          if (cult.thoNguyen <= 0) {
+            const oldRealmIdx = cult.realmIndex ?? 0;
+            const targetRealmIdx = Math.max(0, oldRealmIdx - 2);
+            cult.realmIndex = targetRealmIdx;
+            cult.tier = 1;
+            cult.exp = 0;
+            cult.thoNguyen = 240; // baseline
+            if (!cult.historyLog) cult.historyLog = [];
+            cult.historyLog.unshift(`⚠️ [TỌA HÓA LUÂN HỒI] Thọ nguyên cạn kiệt! Rơi vào luân hồi về cảnh giới thứ ${targetRealmIdx + 1} Tầng 1.`);
+            if (cult.historyLog.length > 20) cult.historyLog.pop();
+          }
+        }
+      }
+
+      // 2. Giảm Tu Vi nếu không hoạt động sau 48h (Tâm ma xâm lấn)
+      const lastActive = cult.lastCultivateTime || user.updatedAt || now;
+      const inactiveElapsed = now - lastActive;
+      if (inactiveElapsed > FORTY_EIGHT_HOURS_MS && (cult.exp ?? 0) > 0) {
+        const overdueDays = Math.floor((inactiveElapsed - FORTY_EIGHT_HOURS_MS) / ONE_DAY_MS) + 1;
+        const decayPercent = Math.min(30, overdueDays * 3);
+        const maxExp = cult.maxExp || 500;
+        const expLost = Math.round((maxExp * decayPercent) / 100);
+        if (expLost > 0 && cult.exp > 0) {
+          const oldExp = cult.exp;
+          cult.exp = Math.max(0, cult.exp - expLost);
+          if (oldExp !== cult.exp) {
+            userChanged = true;
+            if (!cult.historyLog) cult.historyLog = [];
+            cult.historyLog.unshift(`💀 [TÂM MA XÂM LẤN] Không tu luyện quá 48h, tổn thất ${oldExp - cult.exp} Tu Vi!`);
+            if (cult.historyLog.length > 20) cult.historyLog.pop();
+          }
+        }
+      }
+
+      if (userChanged) {
+        user.cultivation = cult;
+        serverUsers.set(userId, user);
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      saveUsersToFile();
+    }
+  }, 60000); // Check every 60 seconds
+
+  // Health check
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', activeRooms: rooms.size, registeredUsers: serverUsers.size });
+  });
+
+  // Get all active rooms (chỉ lấy các phòng có ít nhất 1 người chơi thực và chưa kết thúc)
   app.get('/api/rooms', (_req, res) => {
     cleanupInactiveRooms();
-    const list = Array.from(rooms.values()).filter((r) => r.status !== 'finished');
+    const list = Array.from(rooms.values()).filter(
+      (r) => r.status !== 'finished' && r.players.some((p) => !p.isBot)
+    );
     res.json({ success: true, rooms: list });
   });
 
@@ -584,6 +1518,15 @@ async function startServer() {
     const room = rooms.get(norm);
     if (!room) {
       res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+    const humanPlayers = room.players.filter((p) => !p.isBot);
+    if (humanPlayers.length === 0) {
+      stopRoomBots(norm, false);
+      rooms.delete(norm);
+      sseClientsByRoom.delete(norm);
+      roomChatMessages.delete(norm);
+      res.status(404).json({ success: false, error: 'Phòng không còn người chơi thực' });
       return;
     }
     res.json({ success: true, room });
@@ -688,6 +1631,18 @@ async function startServer() {
       res.json({
         success: false,
         error: `Phòng ${room.id} đã đủ số lượng (${room.players.length}/${room.maxSlots} người chơi). Không thể tham gia thêm!`,
+      });
+      return;
+    }
+
+    // 4. Không cho phép tên người chơi biệt danh trùng nhau trong cùng một phòng
+    const isDuplicateName = room.players.some(
+      (p) => p.id !== player.id && p.username.trim().toLowerCase() === String(player.username || '').trim().toLowerCase()
+    );
+    if (isDuplicateName) {
+      res.json({
+        success: false,
+        error: `Biệt danh "${player.username}" đã có người sử dụng trong phòng này. Vui lòng đổi biệt danh khác!`,
       });
       return;
     }
@@ -842,6 +1797,16 @@ async function startServer() {
 
     const { players } = req.body;
     if (Array.isArray(players)) {
+      const humanPlayers = players.filter((p) => !p.isBot);
+      if (humanPlayers.length === 0) {
+        stopRoomBots(norm, false);
+        rooms.delete(norm);
+        sseClientsByRoom.delete(norm);
+        roomChatMessages.delete(norm);
+        broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+        res.json({ success: true, message: 'Phòng đã tự động giải tán do không còn người chơi thực' });
+        return;
+      }
       room.players = players;
       room.lastActive = Date.now();
       rooms.set(norm, room);
@@ -941,6 +1906,17 @@ async function startServer() {
     }
 
     room.players = room.players.filter((p) => p.id !== targetPlayerId);
+    const humanPlayers = room.players.filter((p) => !p.isBot);
+    if (humanPlayers.length === 0) {
+      stopRoomBots(norm, false);
+      rooms.delete(norm);
+      sseClientsByRoom.delete(norm);
+      roomChatMessages.delete(norm);
+      broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      res.json({ success: true, roomClosed: true });
+      return;
+    }
+
     room.lastActive = Date.now();
     rooms.set(norm, room);
 
@@ -988,6 +1964,17 @@ async function startServer() {
       return;
     }
 
+    const humanPlayers = room.players.filter((p) => !p.isBot);
+    if (humanPlayers.length === 0) {
+      stopRoomBots(norm, false);
+      rooms.delete(norm);
+      sseClientsByRoom.delete(norm);
+      roomChatMessages.delete(norm);
+      broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      res.status(404).json({ success: false, error: 'Phòng không còn người chơi thực' });
+      return;
+    }
+
     const { status, mode, words, mysteryWords, matchId, difficulty } = req.body;
     room.status = status;
     room.lastActive = Date.now();
@@ -1011,8 +1998,8 @@ async function startServer() {
       });
       startRoomBots(norm);
     } else if (status === 'waiting') {
-      stopRoomBots(norm);
-      // Khi trở về phòng chờ: tắt inMatch (avatar sáng lên)
+      stopRoomBots(norm, true);
+      // Khi trở về phòng chờ: tắt inMatch (avatar sáng lên) cho tất cả người chơi và bot
       room.players.forEach((p) => {
         p.inMatch = false;
         p.isSurrendered = false;
@@ -1023,7 +2010,20 @@ async function startServer() {
         p.errors = 0;
       });
     } else if (status === 'finished') {
-      stopRoomBots(norm);
+      stopRoomBots(norm, true);
+      // Khi trận đấu kết thúc hoặc người chơi duy nhất đầu hàng kết thúc sớm:
+      // Toàn bộ bot ngay lập tức trở về trạng thái chờ trong phòng (inMatch: false)
+      room.players.forEach((p) => {
+        if (p.isBot) {
+          p.inMatch = false;
+          p.isSurrendered = false;
+          p.isFinished = false;
+          p.progress = 0;
+          p.wpm = 0;
+          p.correctChars = 0;
+          p.errors = 0;
+        }
+      });
     }
 
     rooms.set(norm, room);
@@ -1054,6 +2054,17 @@ async function startServer() {
       return;
     }
 
+    const humanPlayers = room.players.filter((p) => !p.isBot);
+    if (humanPlayers.length === 0) {
+      stopRoomBots(norm, false);
+      rooms.delete(norm);
+      sseClientsByRoom.delete(norm);
+      roomChatMessages.delete(norm);
+      broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      res.status(404).json({ success: false, error: 'Phòng không còn người chơi thực' });
+      return;
+    }
+
     const { playerId, inMatch, isSurrendered, isFinished } = req.body;
     const player = room.players.find((p) => p.id === playerId);
     if (player) {
@@ -1062,23 +2073,21 @@ async function startServer() {
       if (typeof isFinished === 'boolean') player.isFinished = isFinished;
 
       // Khi người chơi cuối cùng đầu hàng hoặc out trong phòng đang thi đấu (playing):
-      // Kết thúc phòng ngay lập tức và tổng kết mà không đợi hết thời gian
+      // Kết thúc phòng ngay lập tức và tổng kết mà không đợi hết thời gian, bot lập tức về phòng chờ
       if (room.status === 'playing') {
-        const humanPlayers = room.players.filter((p) => !p.isBot);
         const activeHumanPlayers = humanPlayers.filter(
           (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
         );
         if (activeHumanPlayers.length === 0) {
           room.status = 'finished';
-          stopRoomBots(norm);
+          stopRoomBots(norm, true);
         }
       }
 
       // Nếu tất cả người chơi thực đã trở về phòng chờ (không còn ai inMatch), phòng tự động chuyển về trạng thái 'waiting'
-      const humanPlayers = room.players.filter((p) => !p.isBot);
       if (humanPlayers.length > 0 && humanPlayers.every((p) => !p.inMatch)) {
         room.status = 'waiting';
-        stopRoomBots(norm);
+        stopRoomBots(norm, true);
       }
 
       room.lastActive = Date.now();
@@ -1114,7 +2123,8 @@ async function startServer() {
           );
           if (activeHumans.length === 0) {
             room.status = 'finished';
-            stopRoomBots(norm);
+            stopRoomBots(norm, true);
+            broadcastToRoom(norm, { type: 'room_updated', room });
           }
         }
       }
@@ -1128,6 +2138,7 @@ async function startServer() {
         errors,
         wpm,
         isFinished: player.isFinished,
+        status: room.status,
         players: room.players,
       });
     }
@@ -1150,8 +2161,10 @@ async function startServer() {
 
     const humanPlayers = room.players.filter((p) => !p.isBot);
     if (humanPlayers.length === 0) {
-      stopRoomBots(norm);
+      stopRoomBots(norm, false);
       rooms.delete(norm);
+      sseClientsByRoom.delete(norm);
+      roomChatMessages.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
     } else {
       if (wasHost) {
@@ -1161,19 +2174,19 @@ async function startServer() {
         room.hostName = nextHost.username;
       }
       // Nếu phòng đang thi đấu (status === 'playing') mà người chơi cuối cùng rời phòng (out):
-      // Kết thúc phòng ngay lập tức và tổng kết
+      // Kết thúc phòng ngay lập tức và tổng kết, bot lập tức về phòng
       if (room.status === 'playing') {
         const activeHumanPlayers = humanPlayers.filter(
           (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
         );
         if (activeHumanPlayers.length === 0) {
           room.status = 'finished';
-          stopRoomBots(norm);
+          stopRoomBots(norm, true);
         }
       }
       if (humanPlayers.length > 0 && humanPlayers.every((p) => !p.inMatch)) {
         room.status = 'waiting';
-        stopRoomBots(norm);
+        stopRoomBots(norm, true);
       }
       room.lastActive = Date.now();
       rooms.set(norm, room);
@@ -1320,7 +2333,7 @@ async function startServer() {
   app.get('/api/admin/online-users', (_req, res) => {
     cleanStaleSessions();
 
-    const usersByUserId = new Map<string, any>();
+    const usersByUniqueKey = new Map<string, any>();
 
     for (const session of activePresenceSessions.values()) {
       let roomInfo: any = null;
@@ -1345,14 +2358,17 @@ async function startServer() {
         }
       }
 
-      if (!usersByUserId.has(session.userId)) {
-        usersByUserId.set(session.userId, {
+      const userKey = getUniqueUserKey(session);
+
+      if (!usersByUniqueKey.has(userKey)) {
+        usersByUniqueKey.set(userKey, {
           userId: session.userId,
           tabId: session.tabId,
           username: session.username,
           avatar: session.avatar,
           frame: session.frame,
           bestWpm: session.bestWpm,
+          bestWpmRecord: session.bestWpmRecord,
           totalGames: session.totalGames,
           currentRoomId: session.currentRoomId,
           currentMode: session.currentMode,
@@ -1367,7 +2383,7 @@ async function startServer() {
           roomInfo,
         });
       } else {
-        const existing = usersByUserId.get(session.userId)!;
+        const existing = usersByUniqueKey.get(userKey)!;
         existing.tabCount += 1;
         if (session.currentRoomId && !existing.currentRoomId) {
           existing.currentRoomId = session.currentRoomId;
@@ -1376,14 +2392,17 @@ async function startServer() {
         if (session.lastSeen > existing.lastSeen) {
           existing.lastSeen = session.lastSeen;
           existing.status = session.status;
-          if (session.username && session.username !== 'Khách ' + session.tabId.slice(-4)) {
+          if (session.username && !session.username.startsWith('Khách ')) {
             existing.username = session.username;
+          }
+          if (session.isAdmin) {
+            existing.isAdmin = true;
           }
         }
       }
     }
 
-    const users = Array.from(usersByUserId.values()).sort((a, b) => {
+    const users = Array.from(usersByUniqueKey.values()).sort((a, b) => {
       if (a.isAdmin && !b.isAdmin) return -1;
       if (!a.isAdmin && b.isAdmin) return 1;
       return b.lastSeen - a.lastSeen;
@@ -1397,8 +2416,74 @@ async function startServer() {
     });
   });
 
+  // GET /api/leaderboard/cultivation: Top 50 tu vi cao nhất server (Cập nhật định kỳ 1 giờ/lần)
+  app.get('/api/leaderboard/cultivation', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+    const now = Date.now();
+    // Nếu quá 1 giờ hoặc có yêu cầu ép làm mới chu kỳ (?force=true)
+    if (
+      !lastCultivationLeaderboardUpdate ||
+      now - lastCultivationLeaderboardUpdate >= CULTIVATION_LEADERBOARD_INTERVAL_MS ||
+      req.query.force === 'true'
+    ) {
+      buildCultivationLeaderboardSnapshot();
+    }
+
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const targetUsername = String(req.query.username || (authUser ? authUser.username : '')).trim().toLowerCase();
+
+    // Đồng bộ nếu authUser có cultivation nhưng trong cache chưa khớp
+    if (authUser && authUser.cultivation) {
+      syncUserCultivationToCache(authUser);
+    }
+
+    // Xác định thứ hạng và thông tin tu vi thực tế của người chơi
+    let currentUserRank = null;
+    let currentUserActualCultivation = null;
+
+    if (authUser && authUser.cultivation) {
+      currentUserActualCultivation = authUser.cultivation;
+    }
+
+    if (targetUsername) {
+      const foundIdx = cachedCultivationRankedList.findIndex((x) => x.username.toLowerCase() === targetUsername);
+      if (foundIdx !== -1) {
+        const item = cachedCultivationRankedList[foundIdx];
+        currentUserRank = {
+          rank: item.rank,
+          username: item.username,
+          level: item.level,
+          realmIndex: item.realmIndex,
+          realmName: item.realmName,
+          realmIcon: item.realmIcon,
+          tier: item.tier,
+          subStage: item.subStage,
+          exp: item.exp,
+        };
+      }
+    }
+
+    const nextUpdate = lastCultivationLeaderboardUpdate + CULTIVATION_LEADERBOARD_INTERVAL_MS;
+    const remainingSeconds = Math.max(0, Math.floor((nextUpdate - Date.now()) / 1000));
+
+    res.json({
+      success: true,
+      top50: cachedCultivationTop50,
+      totalCount: cachedTotalCultivators,
+      currentUserRank,
+      currentUserActualCultivation,
+      lastUpdated: lastCultivationLeaderboardUpdate,
+      nextUpdate,
+      remainingSeconds,
+      updateInterval: CULTIVATION_LEADERBOARD_INTERVAL_MS,
+    });
+  });
+
   // GET /api/leaderboard: Get real server-wide high scores
   app.get('/api/leaderboard', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json({ success: true, highScores: serverHighScores });
   });
 
@@ -1425,7 +2510,21 @@ async function startServer() {
     }
 
     // QUY TẮC BẢNG VÀNG:
-    // Người chơi chỉ có thể lên Bảng Vàng khi và chỉ khi ván đấu diễn ra trọn vẹn, không đầu hàng và không out phòng.
+    // 1. NGƯỜI CHƠI CHƯA ĐĂNG NHẬP (KHÁCH) KHÔNG ĐƯỢC GHI KỶ LỤC BẢNG VÀNG
+    const authHeader = (req.headers.authorization || (req.body && req.body.authToken ? `Bearer ${req.body.authToken}` : '')) as string;
+    const authenticatedUser = getUserByToken(authHeader);
+    if (!authenticatedUser || !authenticatedUser.isVerified) {
+      res.json({
+        success: false,
+        isGuest: true,
+        isNewRecord: false,
+        error: 'Người chơi đang ở chế độ Khách (chưa đăng nhập hoặc chưa xác thực Gmail). Điểm số không được ghi nhận lên Bảng Vàng. Hãy đăng nhập tài khoản để xác lập kỷ lục!',
+        highScores: serverHighScores,
+      });
+      return;
+    }
+
+    // 2. Người chơi chỉ có thể lên Bảng Vàng khi và chỉ khi ván đấu diễn ra trọn vẹn, không đầu hàng và không out phòng.
     if (isSurrendered === true || isCompleted === false) {
       res.json({
         success: false,
@@ -1561,22 +2660,30 @@ async function startServer() {
     // Broadcast presence update to all connected users
     broadcastOnlinePresence();
 
-    const heartbeat = setInterval(() => {
-      try {
-        registerPresence(tabId, userId);
-        res.write(': heartbeat\n\n');
-      } catch {
-        clearInterval(heartbeat);
-      }
-    }, 6000);
-
-    req.on('close', () => {
+    let isCleanedUp = false;
+    const cleanup = () => {
+      if (isCleanedUp) return;
+      isCleanedUp = true;
       clearInterval(heartbeat);
       sseGlobalChatClients.delete(res);
       sseGlobalClients.delete(res);
       removePresence(tabId);
       broadcastOnlinePresence();
-    });
+    };
+
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(': heartbeat\n\n');
+      } catch {
+        cleanup();
+      }
+    }, 6000);
+
+    req.on('close', cleanup);
+    req.on('end', cleanup);
+    res.on('close', cleanup);
+    res.on('finish', cleanup);
+    res.on('error', cleanup);
   });
 
   // POST /api/chat/clear: Clear global chat (admin action)

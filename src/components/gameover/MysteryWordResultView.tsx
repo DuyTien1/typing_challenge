@@ -188,6 +188,133 @@ export const MysteryWordResultView: React.FC<MysteryWordResultViewProps> = ({
         </div>
       </div>
 
+      {/* Đánh Giá Khả Năng & Chỉ Số Năng Lực Trí Tuệ (Deductive Ability Matrix) */}
+      <div className="p-4 rounded-2xl bg-slate-950/80 border border-purple-500/25 space-y-3.5 shadow-inner">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>Chỉ Số Năng Lực Ngôn Ngữ & Suy Luận</span>
+          </h4>
+          <span className="text-[11px] text-slate-400 font-mono">Phân tích khả năng tư duy</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          {/* 1. Vốn từ vựng tiếng Việt */}
+          {(() => {
+            const vocabScore = Math.min(100, Math.round((correctGuesses / Math.max(1, totalRounds)) * 100));
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    🧠 Vốn Từ & Trực Giác
+                  </span>
+                  <span className="font-mono font-bold text-purple-400">{vocabScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full" style={{ width: `${vocabScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {vocabScore >= 70 ? 'Vốn từ phong phú, nhận diện cụm từ và dấu thanh xuất sắc' : vocabScore >= 40 ? 'Khả năng liên tưởng từ vựng tốt ở chủ đề quen thuộc' : 'Mở rộng thêm vốn từ vựng phong phú hơn'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 2. Trực giác phán đoán sớm (Bonus letters) */}
+          {(() => {
+            const intuitionScore = Math.min(100, Math.round((totalBonusLetters / Math.max(1, totalRounds * 2)) * 100));
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    🔍 Suy Luận Đón Đầu (Bonus)
+                  </span>
+                  <span className="font-mono font-bold text-amber-400">{intuitionScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full" style={{ width: `${intuitionScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {intuitionScore >= 60 ? 'Tài suy đoán thần sầu, giải mã trước khi gợi ý hiện hết' : intuitionScore >= 30 ? 'Biết nắm bắt thời cơ khi nhìn thấy các chữ cái chủ chốt' : 'Hãy mạo hiểm phán đoán sớm để ăn điểm thưởng'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 3. Tốc độ giải mã */}
+          {(() => {
+            const speedScore = Math.min(100, Math.max(20, fastestGuessSec !== null ? Math.round(100 - (fastestGuessSec - 2) * 8) : 40));
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    ⚡ Tốc Độ Giải Mã
+                  </span>
+                  <span className="font-mono font-bold text-cyan-400">{speedScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 rounded-full" style={{ width: `${speedScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {speedScore >= 75 ? 'Nhập đáp án chuẩn xác trong chớp mắt' : speedScore >= 45 ? 'Tốc độ phản ứng ổn định trước các câu đố' : 'Cần tăng tốc độ gõ khi đã mường tượng ra từ'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 4. Tỷ lệ chính xác & Độ sắc bén */}
+          {(() => {
+            const precisionScore = accuracyRate;
+            return (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    🎯 Độ Sắc Bén & Chuẩn Xác
+                  </span>
+                  <span className="font-mono font-bold text-emerald-400">{precisionScore}/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" style={{ width: `${precisionScore}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {precisionScore >= 70 ? 'Phán đoán đâu trúng đó, độ chuẩn xác ngôn ngữ cực cao' : precisionScore >= 40 ? 'Giải mã tốt các câu đố trung bình' : 'Hãy chú ý độ dài và chủ đề gợi ý'}
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Huy hiệu thám tử đạt được */}
+        <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold text-slate-400">Huy hiệu thám tử:</span>
+          {accuracyRate >= 60 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/40">
+              🕵️ Sherlock Ngôn Ngữ (&gt;60% trúng)
+            </span>
+          )}
+          {totalBonusLetters >= 4 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/40">
+              💡 Trực Giác Siêu Phàm (+{totalBonusLetters} chữ ẩn)
+            </span>
+          )}
+          {fastestGuessSec !== null && fastestGuessSec <= 6 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-bold border border-cyan-500/40">
+              ⚡ Tia Chớp Giải Mã (&le;6s)
+            </span>
+          )}
+          {myRank === 1 && sortedPlayers.length > 1 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300 text-[10px] font-bold border border-yellow-500/40">
+              👑 Vua Phán Đoán (Hạng #1)
+            </span>
+          )}
+          {accuracyRate < 60 && totalBonusLetters < 4 && (fastestGuessSec === null || fastestGuessSec > 6) && myRank > 1 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-semibold border border-slate-700">
+              🔍 Thám Tử Tập Sự
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Mystery Words Deduction History Table */}
       {roundHistory.length > 0 && (
         <div className="space-y-2">

@@ -10,6 +10,7 @@ export interface MatchRecord {
   result: MatchResult;
   score?: number;
   playType?: 'solo' | 'multiplayer';
+  isCompleted?: boolean;
 }
 
 const STORAGE_KEY = 'fasttyping_match_history';
@@ -43,8 +44,13 @@ export function addMatchRecord(record: {
   result: MatchResult;
   score?: number;
   playType?: 'solo' | 'multiplayer';
+  isCompleted?: boolean;
 }): MatchRecord {
   const current = getStoredMatchHistory();
+  const isCompleted = record.isCompleted !== undefined 
+    ? record.isCompleted 
+    : record.result !== 'Đầu hàng';
+
   const newRecord: MatchRecord = {
     id: `match_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     timestamp: Date.now(),
@@ -55,6 +61,7 @@ export function addMatchRecord(record: {
     result: record.result,
     score: record.score !== undefined ? Math.max(0, Math.round(record.score)) : undefined,
     playType: record.playType || 'solo',
+    isCompleted,
   };
 
   const updated = [newRecord, ...current].slice(0, MAX_HISTORY);

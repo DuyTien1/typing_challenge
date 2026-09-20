@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GameMode, DifficultyLevel, Player, HighScoreRecord } from '../types';
 import { soundFx } from '../utils/audio';
 import { AvatarTitleFrame, getPlayerTitle } from '../utils/titles';
+import { getAchievementById } from '../utils/achievements';
 import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 import { HostPlayerActionModal } from './HostPlayerActionModal';
 import { 
@@ -21,7 +22,8 @@ import {
   Info,
   Clock,
   Shield,
-  RotateCcw
+  RotateCcw,
+  Bot
 } from 'lucide-react';
 
 interface WaitingRoomViewProps {
@@ -399,7 +401,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
 
             {/* Quick Bot Controls & Start Match Button (Host only) */}
             {userIsHost ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
                 {isBotAllowed ? (
                   <>
                     <button
@@ -409,7 +411,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         onAddBot();
                       }}
                       disabled={players.length >= maxSlots}
-                      className="py-1.5 px-2.5 sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                      className="h-9 px-2.5 sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
                       title="Thêm Bot vào phòng chờ (tối đa 8 slot)"
                     >
                       <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
@@ -424,7 +426,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         onRemoveBot();
                       }}
                       disabled={players.filter((p) => p.isBot).length === 0}
-                      className="py-1.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                      className="h-9 w-9 p-0 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
                       title="Bớt 1 Bot"
                     >
                       <UserMinus className="w-3.5 h-3.5" />
@@ -438,7 +440,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                       onClick={() => {
                         onRemoveBot();
                       }}
-                      className="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                      className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
                       title="Xóa Bot khỏi phòng"
                     >
                       <UserMinus className="w-3.5 h-3.5" />
@@ -455,14 +457,14 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     soundFx.playCountdown(true);
                     onStartGame();
                   }}
-                  className="py-1.5 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all hover:scale-102 active:scale-98 cursor-pointer shrink-0"
+                  className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all hover:scale-102 active:scale-98 cursor-pointer shrink-0 whitespace-nowrap"
                 >
                   <Play className="w-3.5 h-3.5 fill-black" />
                   <span>BẮT ĐẦU TRẬN ĐẤU</span>
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-300 text-xs font-semibold select-none shadow-sm">
+              <div className="h-9 flex items-center gap-2 px-3 rounded-xl bg-slate-800/90 border border-slate-700 text-slate-300 text-xs font-semibold select-none shadow-sm shrink-0">
                 <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
                 <span>Chờ chủ phòng xuất phát...</span>
               </div>
@@ -501,7 +503,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                   <div
                     key={`slot-${slotIndex}-${p.id}`}
                     id={`player-slot-${slotIndex}`}
-                    className={`h-[78px] min-h-[78px] p-3.5 rounded-2xl border flex items-center justify-between gap-3 relative animate-slot-enter transition-colors duration-150 ${
+                    className={`h-[82px] min-h-[82px] p-3.5 rounded-2xl border flex items-center justify-between gap-3 relative animate-slot-enter transition-colors duration-150 ${
                       isPlayerInMatch
                         ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
                         : isSpeaking
@@ -555,60 +557,39 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                             e.stopPropagation();
                             handlePlayerAvatarClick(p);
                           }}
-                        >
-                          <div className="flex items-center justify-center">
-                            {p.icon}
-                          </div>
-                        </AvatarTitleFrame>
+                        />
 
-                        {/* Speaking badge indicator on avatar */}
+                        {/* Speaking badge indicator on avatar (always in front of avatar) */}
                         {isSpeaking ? (
-                          <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black p-0.5 rounded-full shadow-md animate-pulse z-20" title="Đang nói chuyện">
-                            <MessageSquare className="w-3 h-3 fill-black" />
+                          <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black p-1 rounded-full shadow-lg animate-pulse z-30 flex items-center justify-center pointer-events-none" title="Đang nói chuyện">
+                            <MessageSquare className="w-3 h-3 fill-black text-black" />
                           </div>
                         ) : isPlayerHost && !playerTitle ? (
-                          <div className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-amber-500 text-black shadow-sm z-20" title="Chủ phòng">
-                            <Crown className="w-3 h-3 fill-black" />
+                          <div
+                            className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-amber-500 text-black shadow-lg z-30 flex items-center justify-center pointer-events-none"
+                            title="Chủ phòng"
+                          >
+                            <Crown className="w-3 h-3 fill-black text-black" />
                           </div>
                         ) : null}
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Hàng 1: CHỈ ghi tên người chơi - Kích cỡ giảm 20% từ 24px -> 19.2px (text-[19px]) */}
+                        <div className="flex items-center min-w-0">
                           <span 
                             onClick={(e) => {
                               e.stopPropagation();
                               handlePlayerAvatarClick(p);
                             }}
-                            className="text-xs font-black text-white hover:text-amber-400 cursor-pointer transition-colors truncate max-w-[120px] sm:max-w-[140px]"
+                            className="text-[19px] font-black text-white hover:text-amber-400 cursor-pointer transition-colors truncate max-w-[150px] xs:max-w-[190px] sm:max-w-[250px] md:max-w-[300px] leading-tight tracking-tight"
                             title={userIsHost && !isMe ? `Tùy chọn cho ${p.username}` : `Xem hồ sơ ${p.username}`}
                           >
                             {p.username}
                           </span>
-                          {isMe && (
-                            <span className="text-[10px] bg-amber-400 text-black font-extrabold px-1.5 py-0.2 rounded shrink-0">
-                              Bạn
-                            </span>
-                          )}
-                          {playerTitle && (
-                            <span
-                              className={`text-[9px] font-black px-1.5 py-0.2 rounded border uppercase tracking-wider shrink-0 cursor-help ${
-                                playerTitle.type === 'admin'
-                                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.3)]'
-                                  : 'bg-rose-500/20 border-rose-400/60 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.3)]'
-                              }`}
-                              title={`Hover vào avatar để xem chi tiết danh hiệu ${playerTitle.name}`}
-                            >
-                              {playerTitle.tag}
-                            </span>
-                          )}
-                          {p.isBot && !playerTitle && (
-                            <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded border border-slate-700 shrink-0">
-                              Bot
-                            </span>
-                          )}
                         </div>
 
+                        {/* Hàng 2: Ghi các span danh hiệu như "admin hệ thống", "bot", v.v. (Đã xóa span Chủ phòng) */}
                         {isSpeaking ? (
                           <div className="text-[11px] text-amber-300 font-bold flex items-center gap-1 mt-0.5 animate-pulse">
                             <Volume2 className="w-3 h-3 text-amber-400 shrink-0" />
@@ -617,21 +598,62 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                             </span>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                            {isPlayerHost ? (
-                              <span className="text-amber-400 font-bold flex items-center gap-1">
-                                <Crown className="w-3 h-3 text-amber-400" /> Chủ phòng (Slot #{slotIndex + 1})
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap min-w-0">
+                            {/* Danh hiệu đặc biệt: "ADMIN HỆ THỐNG", "TOP 1 ...", Danh hiệu Tiên Hiệp */}
+                            {playerTitle && (
+                              <span
+                                className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider shrink-0 cursor-help leading-none flex items-center gap-1 ${
+                                  playerTitle.type === 'admin'
+                                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.3)]'
+                                    : playerTitle.type === 'xianxia'
+                                    ? 'bg-purple-500/20 border-purple-400/60 text-purple-300 shadow-[0_0_6px_rgba(192,132,252,0.3)]'
+                                    : 'bg-rose-500/20 border-rose-400/60 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.3)]'
+                                }`}
+                                title={`Danh hiệu: ${playerTitle.name}`}
+                              >
+                                {playerTitle.type === 'admin' && <Shield className="w-2.5 h-2.5 text-amber-400 shrink-0" />}
+                                {playerTitle.tag}
                               </span>
-                            ) : (
-                              <span>Slot #{slotIndex + 1}</span>
                             )}
+
+                            {/* Bot */}
                             {p.isBot && (
-                              <span className="text-cyan-400 font-medium">
-                                ~{p.botTargetWpm} WPM
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border border-cyan-500/40 bg-cyan-950/60 text-cyan-300 flex items-center gap-1 shrink-0 leading-none">
+                                <Bot className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
+                                Bot {p.botTargetWpm ? `• ~${p.botTargetWpm} WPM` : ''}
                               </span>
                             )}
-                            {!p.isBot && !isMe && !isPlayerHost && (
-                              <span className="text-slate-400 font-medium">Khách</span>
+
+                            {/* Người chơi thường nếu không có danh hiệu đặc biệt, không phải bot */}
+                            {!p.isBot && !playerTitle && (
+                              p.isLoggedIn ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-950/50 text-emerald-400 shrink-0 leading-none">
+                                  Thành viên
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded border border-slate-700/60 bg-slate-800/80 text-slate-400 shrink-0 leading-none">
+                                  Khách
+                                </span>
+                              )
+                            )}
+
+                            {/* Thành tựu Tiên Hiệp hiển thị */}
+                            {p.isLoggedIn && !p.isBot && p.showcaseAchievements && p.showcaseAchievements.length > 0 && (
+                              <div className="flex items-center gap-1 pl-1 border-l border-slate-800 shrink-0" title="Thành tựu Tiên Hiệp">
+                                {p.showcaseAchievements.slice(0, 3).map((achId) => {
+                                  const ach = getAchievementById(achId);
+                                  if (!ach) return null;
+                                  return (
+                                    <span
+                                      key={achId}
+                                      className="text-xs transition-transform hover:scale-125 cursor-help leading-none"
+                                      title={`${ach.name} - ${ach.title} (${ach.realm})`}
+                                    >
+                                      {ach.icon}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                         )}
@@ -657,7 +679,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                 );
               }
 
-              // Empty Slot Placeholder with exact same 78px height, padding, and layout
+              // Empty Slot Placeholder with exact same 82px height, padding, and layout
               const canClickToAddBot = userIsHost && isBotAllowed && players.length < maxSlots;
               return (
                 <div
@@ -668,7 +690,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                       onAddBot();
                     }
                   }}
-                  className={`h-[78px] min-h-[78px] p-3.5 rounded-2xl border-2 border-dashed flex items-center justify-between gap-3 select-none transition-colors duration-150 group/empty ${
+                  className={`h-[82px] min-h-[82px] p-3.5 rounded-2xl border-2 border-dashed flex items-center justify-between gap-3 select-none transition-colors duration-150 group/empty ${
                     canClickToAddBot
                       ? 'border-slate-800/80 bg-slate-950/30 hover:border-amber-500/50 hover:bg-amber-500/5 cursor-pointer'
                       : 'border-slate-800/40 bg-slate-950/20 cursor-default'

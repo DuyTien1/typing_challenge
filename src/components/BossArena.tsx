@@ -1041,7 +1041,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
         </div>
 
         {/* Input with Composition API */}
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex items-center gap-2 sm:gap-3">
           <input
             id="boss-typing-input"
             ref={inputRef}
@@ -1062,11 +1062,11 @@ export const BossArena: React.FC<BossArenaProps> = ({
                 ? `Trận chiến bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
                 : "Gõ từ trên và bấm Cách (Space) để xuất chiêu..."
             }
-            className={`flex-1 px-4 py-3 rounded-xl bg-slate-950 border ${
+            className={`flex-1 min-w-0 h-12 px-4 rounded-xl bg-slate-950 border ${
               isSurrendered
                 ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
                 : 'border-red-500/50 text-white'
-            } font-['JetBrains_Mono',monospace] text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner`}
+            } font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner`}
             autoComplete="off"
             autoCorrect="off"
             spellCheck="false"
@@ -1081,7 +1081,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
                 soundFx.playBossHit();
                 onSelfDestruct();
               }}
-              className="px-4 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              className="h-12 px-3 sm:px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg shadow-red-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
               title="Lao vào Boss tự bạo gây sát thương khổng lồ"
             >
               <Bomb className="w-4 h-4" />
@@ -1095,7 +1095,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
               id="btn-boss-surrender"
               type="button"
               onClick={openSurrenderModal}
-              className="px-4 py-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              className="h-12 px-3 sm:px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
               title="Đầu hàng ván đấu này (Esc + Enter)"
             >
               <Flag className="w-4 h-4" />

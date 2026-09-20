@@ -41,6 +41,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   const [solvedMessage, setSolvedMessage] = useState<string | null>(null);
   const [roundScore, setRoundScore] = useState(0);
   const [isSurrendered, setIsSurrendered] = useState(false);
+  const [hasFinishedGame, setHasFinishedGame] = useState(false);
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
   const [roundSolvers, setRoundSolvers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
@@ -219,6 +220,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       fastestGuessSec,
       roundHistory: [...history],
     };
+    setHasFinishedGame(true);
     onFinishGame(stats);
   }, [totalRounds, onFinishGame]);
 
@@ -517,6 +519,38 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         </div>
       )}
 
+      {/* Banner thông báo hoàn thành tất cả câu đố & đang quan sát trực tiếp */}
+      {hasFinishedGame && isMultiplayer && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900/90 to-emerald-950/70 border-2 border-emerald-500/50 shadow-xl shadow-emerald-950/50 space-y-2 animate-fadeIn mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xl shrink-0">
+                🏁
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <span>BẠN ĐÃ HOÀN THÀNH TẤT CẢ CÂU ĐỐ!</span>
+                </h3>
+                <p className="text-xs text-slate-300">
+                  Đang trực tiếp quan sát các đấu thủ còn lại giải ô chữ. Bảng tổng kết sẽ tự động mở ra khi người cuối cùng kết thúc!
+                </p>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-bold animate-pulse">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500" />
+              </span>
+              <span>Chế độ quan sát (Spectating)</span>
+            </div>
+          </div>
+          <div className="text-[11px] text-slate-400 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80">
+            💡 Hệ thống sẽ tự động tổng kết kết quả toàn bộ phòng cùng một lúc khi tất cả người chơi hoàn thành phần thi!
+          </div>
+        </div>
+      )}
+
       {/* Main Guess Box */}
       <div className="p-8 rounded-2xl bg-[#141824] border border-slate-800 shadow-2xl space-y-6 text-center">
         {/* Hint Banner */}
@@ -653,16 +687,18 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             }}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            disabled={isRoundSolved || isSurrendered}
-            readOnly={isSurrendered}
+            disabled={isRoundSolved || isSurrendered || hasFinishedGame}
+            readOnly={isSurrendered || hasFinishedGame}
             placeholder={
-              isSurrendered
+              hasFinishedGame
+                ? "🏁 Bạn đã hoàn thành tất cả câu đố! Đang theo dõi các đối thủ còn lại..."
+                : isSurrendered
                 ? "Bạn đã đầu hàng. Đang theo dõi các người chơi khác..."
                 : isRoundSolved
                 ? "Vòng này đã giải xong! Đang chuyển vòng..."
                 : "Nhập phán đoán của bạn và bấm Enter..."
             }
-            className={`flex-1 px-4 py-3 rounded-xl bg-slate-950 border ${
+            className={`flex-1 min-w-0 h-12 px-4 rounded-xl bg-slate-950 border ${
               isSurrendered
                 ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
                 : 'border-purple-500/50 text-white'
@@ -674,7 +710,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
             id="btn-submit-mystery-guess"
             type="submit"
             disabled={isRoundSolved || isSurrendered}
-            className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+            className="h-12 px-4 sm:px-5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
           >
             <span>ĐOÁN</span>
             <ArrowRight className="w-4 h-4" />

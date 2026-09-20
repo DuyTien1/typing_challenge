@@ -10,12 +10,33 @@ export type GameMode =
 
 export type DifficultyLevel = 'normal' | 'hard' | 'legendary' | 'hell' | 'custom' | 'number' | 'fullsize';
 
+export interface BestWpmRecord {
+  wpm: number;
+  mode: string;
+  modeName: string;
+  timestamp: number;
+}
+
+export interface PlayerCultivationInfo {
+  level: number;
+  realmIndex: number;
+  tier: number;
+  realmName: string;
+  subStage: string;
+  thoNguyen: number;
+  maxThoNguyen: number;
+}
+
 export interface Player {
   id: string;
   username: string;
   icon: string;
   frame?: string;
+  showcaseAchievements?: string[];
+  cultivation?: PlayerCultivationInfo;
+  isLoggedIn?: boolean;
   bestWpm?: number;
+  bestWpmRecord?: BestWpmRecord;
   totalGames?: number;
   progress: number;
   wpm: number;
@@ -60,7 +81,7 @@ export interface PlayerTitle {
   id: string;
   name: string;
   badge: string;
-  type: 'admin' | 'champion';
+  type: 'admin' | 'champion' | 'xianxia';
   mode?: string;
   modeName: string;
   colorClass: string;
@@ -254,6 +275,7 @@ export interface OnlineUserDetail {
   avatar: string;
   frame?: string;
   bestWpm?: number;
+  bestWpmRecord?: BestWpmRecord;
   totalGames?: number;
   currentRoomId?: string | null;
   currentMode?: string | null;
@@ -339,4 +361,54 @@ export interface BossBattleStats {
   shieldBreaks: number;
   totalErrors: number;
   chartData?: PerformanceChartPoint[];
+}
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  username: string;
+  avatar: string;
+  frame: string;
+  isAdmin?: boolean;
+  showcaseAchievements?: string[];
+  unlockedAchievements?: string[];
+  isVerified: boolean;
+  authProvider: 'google' | 'email';
+  createdAt: number;
+  cultivationLevel?: number;
+  cultivationRealmIndex?: number;
+  cultivationTier?: number;
+  cultivationThoNguyen?: number;
+  cultivationExp?: number;
+  cultivationState?: any;
+  cultivation?: any;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  user?: UserAccount;
+  token?: string;
+  error?: string;
+  needVerify?: boolean;
+  devCode?: string;
+  message?: string;
+}
+
+export interface CultivationLeaderboardEntry {
+  rank: number;
+  id: string;
+  username: string;
+  avatar: string;
+  frame: string;
+  level: number;
+  realmIndex: number;
+  realmName: string;
+  realmIcon: string;
+  badge: string;
+  tier: number;
+  subStage: string;
+  exp: number;
+  maxExp: number;
+  thoNguyen: number;
+  isRegistered?: boolean;
 }

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Player, HighScoreRecord, PlayerTitle } from '../types';
 import { Crown, Shield, Flame, Zap, Globe, Hash, Sparkles, Trophy, HelpCircle, Swords, Target } from 'lucide-react';
 import { AvatarWithFrame } from './frames';
+import { getAchievementById } from './achievements';
+import { XIANXIA_REALMS, loadStoredCultivationState, getSubStage } from './cultivation';
 
 export const ADMIN_TITLE: PlayerTitle = {
   id: 'admin',
@@ -162,6 +164,63 @@ export function getPlayerTitle(
     }
   }
 
+  // 3. Tiên Hiệp Achievement Title (from showcase achievements)
+  // CHỈ dành cho người chơi đã đăng nhập! Khách vãng lai và Bot không có danh hiệu thành tựu
+  if (player.isLoggedIn && player.showcaseAchievements && player.showcaseAchievements.length > 0 && !player.isBot) {
+    const primaryId = player.showcaseAchievements[0];
+    const ach = getAchievementById(primaryId);
+    if (ach) {
+      return {
+        id: `xianxia_${ach.id}`,
+        name: ach.title,
+        badge: ach.icon,
+        type: 'xianxia',
+        modeName: ach.realm,
+        colorClass: ach.colorClass,
+        borderClass: ach.borderClass,
+        glowClass: ach.glowClass,
+        description: `Thành tựu: ${ach.name} - ${ach.req}`,
+        statLabel: 'Cảnh Giới',
+        statValue: ach.realm,
+        tag: ach.title,
+      };
+    }
+  }
+
+  // 4. Danh Hiệu Cảnh Giới Tu Tiên (12 Cảnh Giới: Luyện Khí -> Thiên Tôn)
+  let cultInfo = player.cultivation;
+  if (!cultInfo && isCurrentPlayer) {
+    const cult = loadStoredCultivationState();
+    const realm = XIANXIA_REALMS[cult.realmIndex] || XIANXIA_REALMS[0];
+    cultInfo = {
+      level: cult.level,
+      realmIndex: cult.realmIndex,
+      tier: cult.tier,
+      realmName: realm.name,
+      subStage: getSubStage(cult.tier),
+      thoNguyen: cult.thoNguyen,
+      maxThoNguyen: cult.maxThoNguyen,
+    };
+  }
+
+  if (cultInfo && !player.isBot) {
+    const realm = XIANXIA_REALMS[cultInfo.realmIndex] || XIANXIA_REALMS[0];
+    return {
+      id: realm.titleId,
+      name: realm.titleName,
+      badge: realm.icon,
+      type: 'xianxia',
+      modeName: `${realm.name} • Tầng ${cultInfo.tier} [${cultInfo.subStage}]`,
+      colorClass: realm.colorClass,
+      borderClass: realm.borderClass,
+      glowClass: realm.glowClass,
+      description: `Cảnh giới: ${realm.name} Tầng ${cultInfo.tier} (${cultInfo.subStage}) - Lv.${cultInfo.level}/1000. ${realm.desc}`,
+      statLabel: 'Thọ Nguyên',
+      statValue: `${cultInfo.thoNguyen}/${cultInfo.maxThoNguyen} Điểm`,
+      tag: realm.titleName,
+    };
+  }
+
   return null;
 }
 
@@ -176,21 +235,23 @@ export const AvatarTitleFrame: React.FC<{
   size?: 'sm' | 'md' | 'lg';
   children?: React.ReactNode;
   onClick?: (e: React.MouseEvent) => void;
-}> = ({ player, highScores, isAdminUser, isCurrentPlayer, size = 'md', children, onClick }) => {
+}> = ({ player, highScores, isAdminUser, isCurrentPlayer, size = 'md', onClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const title = getPlayerTitle(player, highScores, isAdminUser, isCurrentPlayer);
 
-  // Effective frame: prioritize user-selected player.frame, fallback to admin_gold for admin, or default
+  // Effective frame: prioritize user-selected player.frame, fallback to champion frame for top players, admin_gold for admin, or default
   const effectiveFrame =
     player.frame && player.frame !== 'default'
       ? player.frame
-      : (title?.type === 'admin' ? 'admin_gold' : (player.frame || 'default'));
+      : title
+      ? (title.type === 'admin' ? 'admin_gold' : title.id)
+      : (player.frame || 'default');
 
   if (!title) {
     return (
       <div
         onClick={onClick}
-        className="cursor-pointer transition-transform hover:scale-105 select-none"
+        className="relative cursor-pointer transition-transform hover:scale-105 select-none"
       >
         <AvatarWithFrame icon={player.icon} frameId={effectiveFrame} size={size} />
       </div>
@@ -232,7 +293,7 @@ export const AvatarTitleFrame: React.FC<{
 
         {/* Top-Right Badge/Insignia */}
         <div
-          className={`absolute -top-2 -right-2 rounded-full flex items-center justify-center shadow-lg z-20 transition-transform group-hover:scale-110 ${
+          className={`absolute -top-2 -right-2 rounded-full flex items-center justify-center shadow-lg z-30 transition-transform group-hover:scale-110 ${
             isAdmin
               ? 'w-5 h-5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black ring-2 ring-white/90 shadow-[0_0_12px_rgba(251,191,36,0.9)] animate-pulse'
               : isBossChampion
@@ -250,7 +311,7 @@ export const AvatarTitleFrame: React.FC<{
 
         {/* Admin Crown Floating on top */}
         {isAdmin && (
-          <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center pointer-events-none animate-bounce">
+          <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center pointer-events-none animate-bounce">
             <span className="text-xs drop-shadow-[0_0_8px_rgba(251,191,36,1)]">👑</span>
           </div>
         )}
@@ -279,7 +340,7 @@ export const AvatarTitleFrame: React.FC<{
                 {title.tag}
               </span>
               <span className="text-xs font-bold text-slate-400 flex items-center gap-1">
-                {title.badge} {title.type === 'admin' ? 'Quản Trị Tối Cao' : 'Quán Quân'}
+                {title.badge} {title.type === 'admin' ? 'Quản Trị Tối Cao' : title.type === 'xianxia' ? 'Danh Hiệu Tiên Hiệp' : 'Quán Quân'}
               </span>
             </div>
 

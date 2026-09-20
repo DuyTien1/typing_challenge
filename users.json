@@ -1,0 +1,48 @@
+{
+  "usr_admin_default": {
+    "id": "usr_admin_default",
+    "email": "admin@fasttyping.vn",
+    "username": "admin",
+    "avatar": "👑",
+    "frame": "admin_gold",
+    "isAdmin": true,
+    "authProvider": "email",
+    "passwordHash": "c45ac5a87e2f6f1b9bc84b61cc3ff8e83711f0fabf808a4453016390b0991df1",
+    "salt": "23705fec8b44e1cebe4a29079deb6f30",
+    "isVerified": true,
+    "sessionTokens": [
+      "tok_1789829203716_8d7d528d6d7fc5af9cb2250cb7d357b5",
+      "tok_1789829219499_1f829c7d036979f51b9cce97c7b46de9"
+    ],
+    "showcaseAchievements": [
+      "god_speed",
+      "boss_slayer",
+      "mythic_master"
+    ],
+    "unlockedAchievements": [
+      "first_win",
+      "streak_3",
+      "god_speed",
+      "boss_slayer",
+      "mythic_master"
+    ],
+    "createdAt": 1700000000000,
+    "updatedAt": 1789923287382
+  },
+  "usr_1789923577102_iba8o": {
+    "id": "usr_1789923577102_iba8o",
+    "email": "nite_7101@fasttyping.vn",
+    "username": "nite",
+    "avatar": "⚡",
+    "frame": "default",
+    "authProvider": "email",
+    "passwordHash": "b4388b28a3a1e9c90080c305f4f03472b82e642b3c29025edc12af3379b7a6ee",
+    "salt": "875409363f31bdc2db6d08b175893d14",
+    "isVerified": true,
+    "sessionTokens": [
+      "tok_1789923577102_cf9eec391cf2cf81302566c16d1cd3a2"
+    ],
+    "createdAt": 1789923577102,
+    "updatedAt": 1789923577102
+  }
+}

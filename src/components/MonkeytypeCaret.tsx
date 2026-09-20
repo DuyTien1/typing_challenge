@@ -20,13 +20,19 @@ export const MonkeytypeCaret: React.FC<MonkeytypeCaretProps> = ({
   return (
     <div
       id="monkeytype-caret"
-      className={`monkeytype-caret ${!isTyping ? 'blinking' : ''} ${colorClass}`}
+      className="monkeytype-caret-wrapper"
       style={{
         transform: `translate3d(${caretPos.x}px, ${caretPos.y}px, 0)`,
         height: `${caretPos.height || 28}px`,
         opacity: isFocused ? 1 : 0.25,
-        boxShadow: `0 0 10px ${glowColor}`,
       }}
-    />
+    >
+      <div
+        className={`monkeytype-caret-bar ${!isTyping ? 'contracting' : ''} ${colorClass}`}
+        style={{
+          boxShadow: `0 0 10px ${glowColor}`,
+        }}
+      />
+    </div>
   );
 };

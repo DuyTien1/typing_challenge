@@ -2,8 +2,10 @@ import React from 'react';
 import { Player, HighScoreRecord } from '../types';
 import { getPlayerTitle } from '../utils/titles';
 import { AvatarWithFrame, getFrameConfig } from '../utils/frames';
+import { getAchievementById } from '../utils/achievements';
 import { soundFx } from '../utils/audio';
 import { X, Flame, Zap, Award, Crown, Bot, User, ShieldCheck } from 'lucide-react';
+import { WpmRecordBadge } from './WpmRecordBadge';
 
 interface PlayerSimpleProfileModalProps {
   isOpen: boolean;
@@ -27,7 +29,13 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
   if (!isOpen || !player) return null;
 
   const title = getPlayerTitle(player, highScores, isAdminUser, isMe);
-  const frame = getFrameConfig(player.frame);
+  const effectiveFrame =
+    player.frame && player.frame !== 'default'
+      ? player.frame
+      : title
+      ? (title.type === 'admin' ? 'admin_gold' : title.id)
+      : (player.frame || 'default');
+  const frame = getFrameConfig(effectiveFrame);
 
   // Stats fallback
   const bestWpmDisplay = player.bestWpm
@@ -85,12 +93,13 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
           <div className="relative mb-3">
             <AvatarWithFrame
               icon={player.icon}
-              frameId={player.frame || 'default'}
+              frameId={effectiveFrame}
               size="xl"
+              showBadge={!isHost}
             />
             {isHost && (
               <div
-                className="absolute -top-2 -right-2 p-1 rounded-full bg-amber-400 text-black shadow-md"
+                className="absolute -top-2 -right-2 p-1 rounded-full bg-amber-400 text-black shadow-lg z-30 flex items-center justify-center"
                 title="Chủ phòng"
               >
                 <Crown className="w-3.5 h-3.5 fill-black" />
@@ -98,7 +107,7 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
             )}
             {player.isBot && (
               <div
-                className="absolute -bottom-2 -right-2 p-1 rounded-full bg-sky-500 text-white shadow-md"
+                className="absolute -bottom-2 -right-2 p-1 rounded-full bg-sky-500 text-white shadow-lg z-30 flex items-center justify-center"
                 title="AI Bot"
               >
                 <Bot className="w-3.5 h-3.5" />
@@ -152,14 +161,17 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
         {/* 2 Main Stats Cards: Kỷ Lục WPM & Trận Đã Đấu */}
         <div className="grid grid-cols-2 gap-2.5 pt-1">
           {/* Kỷ lục */}
-          <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-center">
-            <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-center gap-1">
-              <Flame className="w-3.5 h-3.5 text-amber-400" /> Kỷ lục WPM
-            </div>
-            <div className="text-xl font-black text-amber-400 font-mono mt-0.5">
-              {bestWpmDisplay}
-            </div>
-          </div>
+          <WpmRecordBadge
+            bestWpm={player.bestWpm}
+            bestWpmDisplay={bestWpmDisplay}
+            bestWpmRecord={player.bestWpmRecord}
+            highScores={highScores}
+            username={player.username}
+            isBot={player.isBot}
+            isMe={isMe}
+            size="normal"
+            tooltipPosition="top"
+          />
 
           {/* Trận đã đấu */}
           <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-center">
@@ -187,6 +199,41 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
             <span className="font-semibold text-slate-200">{frame.name} ({frame.tag})</span>
           </div>
         </div>
+
+        {/* Thành Tựu Tiên Hiệp Trưng Bày (Tối đa 3 - Chỉ người chơi đã đăng nhập) */}
+        {player.isLoggedIn && !player.isBot && player.showcaseAchievements && player.showcaseAchievements.length > 0 && (
+          <div className="p-3 rounded-2xl bg-slate-950/90 border border-purple-500/30 space-y-2">
+            <div className="text-[10px] uppercase font-bold text-amber-400 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <span>✨</span> Thành Tựu Tiên Hiệp
+              </span>
+              <span className="text-[9px] font-mono text-slate-400 font-normal">
+                {player.showcaseAchievements.length}/3 Đang Trưng Bày
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {player.showcaseAchievements.slice(0, 3).map((achId) => {
+                const ach = getAchievementById(achId);
+                if (!ach) return null;
+                return (
+                  <div
+                    key={achId}
+                    className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center ${ach.badgeBg} ${ach.borderClass} shadow-sm transition-transform hover:scale-105`}
+                    title={`${ach.name}: ${ach.req} (${ach.realm})`}
+                  >
+                    <span className="text-base">{ach.icon}</span>
+                    <span className="text-[10px] font-black leading-tight truncate max-w-full mt-1">
+                      {ach.title}
+                    </span>
+                    <span className="text-[8px] text-amber-300 font-mono leading-none mt-0.5 truncate max-w-full">
+                      {ach.realm}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Close Button */}
         <button

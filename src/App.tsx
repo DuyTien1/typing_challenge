@@ -13,6 +13,8 @@ import {
   NgauHungGameStats,
   MysteryWordGameStats,
   BossBattleStats,
+  UserAccount,
+  BestWpmRecord,
 } from './types';
 import { Header } from './components/Header';
 import { LobbyView } from './components/LobbyView';
@@ -26,8 +28,13 @@ import { LeaderboardModal } from './components/LeaderboardModal';
 import { ChatDrawer } from './components/ChatDrawer';
 import { AdminModal } from './components/AdminModal';
 import { ProfileModal } from './components/ProfileModal';
+import { AppearanceModal } from './components/AppearanceModal';
 import { JoinRoomModal } from './components/JoinRoomModal';
 import { OnlineUsersModal } from './components/OnlineUsersModal';
+import { AuthModal } from './components/AuthModal';
+import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
+import { resolveBestWpmRecord } from './components/WpmRecordBadge';
+import { fetchCurrentUser, logoutUser, updateUserProfile } from './utils/auth';
 import {
   createNewRoom,
   joinExistingRoom,
@@ -60,6 +67,12 @@ import { generateWords, generateDoanChuWords } from './data/wordBanks';
 import { initThemeAndFont } from './utils/themeAndFont';
 import { getStoredFrame, setStoredFrame, checkIsAdmin, setAdminStatus } from './utils/frames';
 import { 
+  getShowcaseAchievements, 
+  setShowcaseAchievements, 
+  checkNewAchievementsOnMatchEnd, 
+  XianxiaAchievement 
+} from './utils/achievements';
+import { 
   MatchRecord, 
   MatchResult, 
   addMatchRecord, 
@@ -68,6 +81,16 @@ import {
 } from './utils/matchHistory';
 import { OutplayPaceMode } from './utils/outplayGhost';
 import { UserX, X } from 'lucide-react';
+import { CultivationModal } from './components/CultivationModal';
+import {
+  XIANXIA_REALMS,
+  CultivationState,
+  loadStoredCultivationState,
+  saveStoredCultivationState,
+  processCultivationDecay,
+  addTuViFromMatch,
+  getSubStage,
+} from './utils/cultivation';
 
 export const DEFAULT_CONFIG: GameConfig = {
   hardWordRate: 30,
@@ -286,6 +309,17 @@ export default function App() {
   const [bestWpm, setBestWpm] = useState<number>(() => {
     return Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
   });
+  const [bestWpmRecord, setBestWpmRecord] = useState<BestWpmRecord | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('fasttyping_best_wpm_record');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.wpm > 0) return parsed;
+      }
+    } catch {}
+    return null;
+  });
   const [totalGames, setTotalGames] = useState<number>(() => {
     return Number(localStorage.getItem('fasttyping_games_count')) || 0;
   });
@@ -326,6 +360,15 @@ export default function App() {
   // Match History state & tracking
   const [matchHistory, setMatchHistory] = useState<MatchRecord[]>(() => getStoredMatchHistory());
   const currentMatchRecordedRef = useRef<boolean>(false);
+  const [newlyUnlockedAchievements, setNewlyUnlockedAchievements] = useState<XianxiaAchievement[]>([]);
+
+  // Refs for fresh player stats during match conclusion
+  const currentUserRef = useRef<UserAccount | null>(null);
+  const highScoresRef = useRef<Record<string, HighScoreRecord | null>>({});
+  const userFrameRef = useRef<string>('default');
+  const usernameRef = useRef<string>('');
+  const bestWpmRef = useRef<number>(0);
+  const totalGamesRef = useRef<number>(0);
 
   const recordCurrentMatch = useCallback((data: {
     modeId: string;
@@ -334,9 +377,17 @@ export default function App() {
     accuracy: number;
     result: MatchResult;
     score?: number;
+    isCompleted?: boolean;
   }) => {
     if (currentMatchRecordedRef.current) return;
     currentMatchRecordedRef.current = true;
+
+    // LOGIC HOÀN THÀNH TRẬN ĐỂ ĐƯỢC THƯỞNG TU VI:
+    // Người chơi phải hoàn thành toàn bộ trận thi đấu mới được tính là hoàn thành và được thưởng tu vi.
+    // Đầu hàng, out phòng sớm ở chế độ multiplayer và đầu hàng cùng reset trong trận ở chế độ solo
+    // sẽ không được tính là hoàn thành trận đấu và KHÔNG được thưởng tu vi.
+    const isActuallyCompleted = data.isCompleted === true && data.result !== 'Đầu hàng';
+
     const newRecord = addMatchRecord({
       mode: data.mode || getFriendlyModeName(data.modeId),
       modeId: data.modeId,
@@ -345,9 +396,75 @@ export default function App() {
       result: data.result,
       score: data.score,
       playType,
+      isCompleted: isActuallyCompleted,
     });
     setMatchHistory((prev) => [newRecord, ...prev].slice(0, 50));
-  }, [playType]);
+
+    // Cập nhật Tu Vi và nhiệm vụ hàng ngày KHI VÀ CHỈ KHI hoàn thành toàn bộ trận đấu
+    if (isActuallyCompleted) {
+      setCultivationState((prev) => {
+        const cultRes = addTuViFromMatch(prev, {
+          wpm: data.wpm,
+          accuracy: data.accuracy,
+          mode: (data.modeId as GameMode) || 'vi_dau',
+          score: data.score,
+        });
+        saveStoredCultivationState(cultRes.updatedState);
+
+        const token = sessionStorage.getItem('fasttyping_token');
+        if (token) {
+          fetch('/api/cultivation', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ cultivation: cultRes.updatedState }),
+          }).catch(() => {});
+        }
+        return cultRes.updatedState;
+      });
+    }
+
+    // KIỂM TRA VÀ BẬT THÔNG BÁO THÀNH TỰU TIÊN HIỆP MỚI NGAY KHI VỪA KẾT THÚC TRẬN ĐẤU (CHỈ DÀNH CHO NGƯỜI ĐÃ ĐĂNG NHẬP)
+    const userNow = currentUserRef.current;
+    if (userNow) {
+      try {
+        const nextTotalGames = (totalGamesRef.current || 0) + 1;
+        const nextBestWpm = Math.max(bestWpmRef.current || 0, data.wpm || 0);
+        const newUnlocks = checkNewAchievementsOnMatchEnd({
+          bestWpm: nextBestWpm,
+          totalGames: nextTotalGames,
+          username: usernameRef.current || userNow.username,
+          frame: userFrameRef.current || userNow.frame || 'default',
+          isLoggedIn: true,
+          userId: userNow.id,
+          matchHistory: [newRecord, ...matchHistory],
+          highScores: highScoresRef.current || {},
+          roomPlayerCount: playersRef.current?.length || 1,
+          initialUnlocked: userNow.unlockedAchievements || [],
+        });
+
+        if (newUnlocks && newUnlocks.length > 0) {
+          setNewlyUnlockedAchievements(newUnlocks);
+
+          // Cập nhật và lưu lại danh sách thành tựu đã mở lên tài khoản người chơi
+          const allUnlockedIds = Array.from(
+            new Set([
+              ...(userNow.unlockedAchievements || []),
+              ...newUnlocks.map((a) => a.id),
+            ])
+          );
+          setCurrentUser((prev) =>
+            prev ? { ...prev, unlockedAchievements: allUnlockedIds } : prev
+          );
+          updateUserProfile({ unlockedAchievements: allUnlockedIds }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('Lỗi kiểm tra thành tựu sau trận:', err);
+      }
+    }
+  }, [playType, matchHistory]);
   const [gameState, setGameState] = useState<'lobby' | 'waiting_room' | 'countdown' | 'playing' | 'gameover'>('lobby');
   const [countdownNum, setCountdownNum] = useState<number>(3);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundFx.getMuted());
@@ -410,9 +527,71 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
+  const [profileInitialTab, setProfileInitialTab] = useState<'profile' | 'achievements'>('profile');
   const [isOnlineUsersOpen, setIsOnlineUsersOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalInitialTab, setAuthModalInitialTab] = useState<'login' | 'register'>('login');
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => checkIsAdmin());
   const [kickedNotice, setKickedNotice] = useState<string | null>(null);
+  const [isCultivationOpen, setIsCultivationOpen] = useState(false);
+  const [cultivationState, setCultivationState] = useState<CultivationState>(() => loadStoredCultivationState());
+
+  // Process cultivation lifespan and inactivity decay
+  useEffect(() => {
+    const res = processCultivationDecay(cultivationState);
+    if (
+      res.updatedState.thoNguyen !== cultivationState.thoNguyen ||
+      res.updatedState.exp !== cultivationState.exp ||
+      res.updatedState.realmIndex !== cultivationState.realmIndex
+    ) {
+      setCultivationState(res.updatedState);
+      saveStoredCultivationState(res.updatedState);
+    }
+
+    // Periodic check every 60s for 2-hour thọ nguyên decay
+    const interval = setInterval(() => {
+      setCultivationState((prev) => {
+        const checkRes = processCultivationDecay(prev);
+        if (
+          checkRes.updatedState.thoNguyen !== prev.thoNguyen ||
+          checkRes.updatedState.exp !== prev.exp
+        ) {
+          saveStoredCultivationState(checkRes.updatedState);
+          return checkRes.updatedState;
+        }
+        return prev;
+      });
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Restore authenticated session on startup
+  useEffect(() => {
+    fetchCurrentUser()
+      .then((user) => {
+        if (user) {
+          setCurrentUser(user);
+          setUsername(user.username);
+          setAvatar(user.avatar);
+          if (user.isAdmin || user.username.toLowerCase() === 'admin') {
+            setIsAdmin(true);
+            setAdminStatus(true);
+          }
+          if (user.cultivation) {
+            setCultivationState(user.cultivation);
+            saveStoredCultivationState(user.cultivation);
+          }
+          if (user.frame) {
+            setUserFrame(user.frame);
+            setStoredFrame(user.frame);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Auto-dismiss notification after 7s
   useEffect(() => {
@@ -437,6 +616,21 @@ export default function App() {
   // Unique Tab ID per page instance in memory (guaranteed unique for every tab even if cloned or incognito)
   const [currentTabId] = useState<string>(() => {
     return 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+  });
+
+  // Persistent device ID across all tabs of this browser to guarantee 1 human user = 1 online count
+  const [deviceId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'dev_default';
+    try {
+      let id = localStorage.getItem('fasttyping_device_id');
+      if (!id) {
+        id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        localStorage.setItem('fasttyping_device_id', id);
+      }
+      return id;
+    } catch {
+      return 'dev_fallback';
+    }
   });
 
   // Track the current active match ID to prevent auto-relaunching when returning to waiting room
@@ -471,6 +665,26 @@ export default function App() {
   });
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết (thời điểm & chế độ) nếu có bestWpm
+  useEffect(() => {
+    if (bestWpm > 0 && (!bestWpmRecord || bestWpmRecord.wpm < bestWpm)) {
+      const resolved = resolveBestWpmRecord({
+        bestWpm,
+        bestWpmRecord,
+        highScores,
+        matchHistory,
+        username,
+        isMe: true,
+      });
+      if (resolved) {
+        setBestWpmRecord(resolved);
+        try {
+          localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(resolved));
+        } catch {}
+      }
+    }
+  }, [bestWpm, bestWpmRecord, highScores, username, matchHistory]);
 
   // Deduplication helper to prevent double chat in all channels (Global & Room)
   const appendChatMessage = useCallback((newMsg: ChatMessage) => {
@@ -507,11 +721,13 @@ export default function App() {
     avatar,
     frame: userFrame,
     bestWpm,
+    bestWpmRecord: bestWpmRecord || undefined,
     totalGames,
     currentRoomId,
     currentMode: gameMode,
     status: (gameState === 'lobby' ? 'lobby' : (gameState === 'waiting_room' ? 'waiting_room' : (gameMode === 'outplay' ? 'outplay' : 'playing'))) as 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover',
     isAdmin,
+    deviceId,
   });
 
   useEffect(() => {
@@ -521,14 +737,16 @@ export default function App() {
       avatar,
       frame: userFrame,
       bestWpm,
+      bestWpmRecord: bestWpmRecord || undefined,
       totalGames,
       currentRoomId,
       currentMode: gameMode,
       status: newStatus,
       isAdmin,
+      deviceId,
     };
-    sendPresencePing(currentTabId, currentUserId, metaRef.current);
-  }, [username, avatar, userFrame, bestWpm, totalGames, currentRoomId, gameMode, gameState, isAdmin, currentTabId, currentUserId]);
+    sendPresencePing(currentTabId, currentUser?.id || currentUserId, metaRef.current);
+  }, [username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentRoomId, gameMode, gameState, isAdmin, currentTabId, currentUserId, currentUser, deviceId]);
 
   // Realtime Global Chat, Presence & Server Leaderboard Synchronization
   useEffect(() => {
@@ -543,24 +761,38 @@ export default function App() {
         setOnlineCount(count);
       },
       (serverRecords) => {
-        setHighScores(serverRecords);
-        localStorage.setItem('fasttyping_highscores', JSON.stringify(serverRecords));
+        if (!serverRecords) return;
+        setHighScores((prev) => {
+          const hasNew = Object.values(serverRecords).some((r) => r !== null && r !== undefined);
+          const hasPrev = Object.values(prev).some((r) => r !== null && r !== undefined);
+          if (!hasNew && hasPrev) {
+            return prev;
+          }
+          try {
+            localStorage.setItem('fasttyping_highscores', JSON.stringify(serverRecords));
+          } catch {
+            // ignore
+          }
+          return serverRecords;
+        });
       },
-      currentUserId,
+      currentUser?.id || currentUserId,
       currentTabId,
       () => metaRef.current
     );
     return () => {
       unsubscribeGlobalChat();
     };
-  }, [appendChatMessage, currentUserId, currentTabId]);
+  }, [appendChatMessage, currentUserId, currentUser, currentTabId]);
 
   const createMePlayer = useCallback((): Player => ({
     id: currentUserId,
     username: username,
     icon: avatar,
     frame: userFrame,
+    showcaseAchievements: currentUser?.showcaseAchievements || getShowcaseAchievements(),
     bestWpm: bestWpm,
+    bestWpmRecord: bestWpmRecord || undefined,
     totalGames: totalGames,
     progress: 0,
     wpm: 0,
@@ -570,7 +802,7 @@ export default function App() {
     isFinished: false,
     isSurrendered: false,
     isAFK: false,
-  }), [currentUserId, username, avatar, userFrame, bestWpm, totalGames]);
+  }), [currentUserId, username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUser]);
 
   // Initial players: ONLY current user, NO automatic bots!
   const [players, setPlayers] = useState<Player[]>([
@@ -579,7 +811,9 @@ export default function App() {
       username: username,
       icon: avatar,
       frame: getStoredFrame(),
+      showcaseAchievements: getShowcaseAchievements(),
       bestWpm: bestWpm,
+      bestWpmRecord: bestWpmRecord || undefined,
       totalGames: totalGames,
       progress: 0,
       wpm: 0,
@@ -599,6 +833,25 @@ export default function App() {
   }, [players]);
 
   useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+  useEffect(() => {
+    highScoresRef.current = highScores;
+  }, [highScores]);
+  useEffect(() => {
+    userFrameRef.current = userFrame;
+  }, [userFrame]);
+  useEffect(() => {
+    usernameRef.current = username;
+  }, [username]);
+  useEffect(() => {
+    bestWpmRef.current = bestWpm;
+  }, [bestWpm]);
+  useEffect(() => {
+    totalGamesRef.current = totalGames;
+  }, [totalGames]);
+
+  useEffect(() => {
     initThemeAndFont();
   }, []);
 
@@ -606,11 +859,11 @@ export default function App() {
     setPlayers((prev) =>
       prev.map((p) =>
         p.id === currentUserId
-          ? { ...p, username, icon: avatar, frame: userFrame, bestWpm, totalGames }
+          ? { ...p, username, icon: avatar, frame: userFrame, bestWpm, bestWpmRecord: bestWpmRecord || undefined, totalGames }
           : p
       )
     );
-  }, [username, avatar, userFrame, bestWpm, totalGames, currentUserId]);
+  }, [username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUserId]);
 
   // Realtime cross-device & cross-tab synchronization for Rooms
   useEffect(() => {
@@ -700,12 +953,35 @@ export default function App() {
         } else if (gameState === 'playing') {
           // Khi phòng được thông báo kết thúc (status: finished):
           if (updatedRoom.status === 'finished') {
-            setPlayers(updatedRoom.players);
+            setPlayers((prev) => {
+              const me = prev.find((p) => p.id === currentUserId);
+              return updatedRoom.players.map((remoteP) => {
+                if (remoteP.id === currentUserId) {
+                  return {
+                    ...remoteP,
+                    progress: me?.progress ?? remoteP.progress,
+                    wpm: me?.wpm ?? remoteP.wpm,
+                    correctChars: me?.correctChars ?? remoteP.correctChars,
+                    errors: me?.errors ?? remoteP.errors,
+                    isFinished: me?.isFinished ?? remoteP.isFinished,
+                    isSurrendered: me?.isSurrendered ?? remoteP.isSurrendered,
+                    score: me?.score ?? remoteP.score,
+                    chartData: me?.chartData ?? remoteP.chartData,
+                    ghostDiff: me?.ghostDiff ?? remoteP.ghostDiff,
+                    lastWpm: me?.lastWpm ?? remoteP.lastWpm,
+                    sessionBestWpm: me?.sessionBestWpm ?? remoteP.sessionBestWpm,
+                  };
+                }
+                return remoteP;
+              });
+            });
             if (gameMode === 'san_boss') {
               setIsBossVictory(false);
             }
             const meInUpdated = updatedRoom.players.find((p) => p.id === currentUserId);
             const isSurr = meInUpdated?.isSurrendered || false;
+            // Chỉ được tính là hoàn thành ván đấu nếu người chơi đã hoàn thành toàn bộ bài thi (isFinished === true) và không đầu hàng
+            const isFinishedMatch = !!meInUpdated?.isFinished && !isSurr;
             const rivals = updatedRoom.players.filter((p) => p.id !== currentUserId && !p.isSurrendered);
             const isTop = rivals.every((r) => (r.wpm || 0) <= (meInUpdated?.wpm || 0));
             const result: MatchResult = isSurr ? 'Đầu hàng' : (isTop ? 'Thắng' : 'Thua');
@@ -715,6 +991,7 @@ export default function App() {
               accuracy: meInUpdated?.accuracy ?? 100,
               result,
               score: meInUpdated?.score,
+              isCompleted: isFinishedMatch,
             });
             soundFx.playVictory();
             setGameState('gameover');
@@ -737,6 +1014,10 @@ export default function App() {
                   isFinished: me?.isFinished ?? remoteP.isFinished,
                   isSurrendered: me?.isSurrendered ?? remoteP.isSurrendered,
                   score: me?.score ?? remoteP.score,
+                  chartData: me?.chartData ?? remoteP.chartData,
+                  ghostDiff: me?.ghostDiff ?? remoteP.ghostDiff,
+                  lastWpm: me?.lastWpm ?? remoteP.lastWpm,
+                  sessionBestWpm: me?.sessionBestWpm ?? remoteP.sessionBestWpm,
                 };
               }
               return remoteP;
@@ -750,6 +1031,7 @@ export default function App() {
               shouldEndGame = true;
             }
 
+            playersRef.current = synced;
             return synced;
           });
 
@@ -1125,6 +1407,7 @@ export default function App() {
     // Loại bỏ hoàn toàn màn hình đếm ngược ngoài phòng. Cả Multiplayer và Solo vào thẳng phòng chơi ngay lập tức!
     // Đồng hồ 3s sẽ đếm ngược trực quan ngay trong bàn gõ của phòng chơi trước khi bắt đầu tính giờ thi đấu.
     currentMatchRecordedRef.current = false;
+    setNewlyUnlockedAchievements([]);
     soundFx.playKeyClick();
     setGameState('playing');
   };
@@ -1261,6 +1544,16 @@ export default function App() {
     if (verifiedWpm > bestWpm) {
       setBestWpm(verifiedWpm);
       localStorage.setItem('fasttyping_best_wpm', verifiedWpm.toString());
+      const newRec: BestWpmRecord = {
+        wpm: verifiedWpm,
+        mode: gameMode,
+        modeName: getFriendlyModeName(gameMode),
+        timestamp: Date.now(),
+      };
+      setBestWpmRecord(newRec);
+      try {
+        localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(newRec));
+      } catch {}
     }
     const nextGameCount = totalGames + 1;
     setTotalGames(nextGameCount);
@@ -1341,11 +1634,28 @@ export default function App() {
       accuracy,
       result: matchResult,
       score: 0,
+      isCompleted: !isPlayerSurrendered,
     });
 
-    soundFx.playVictory();
-    setGameState('gameover');
-  }, [bestWpm, totalGames, currentUserId, highScores, gameMode, username, lastGameWpm, sessionBestWpm, avatar, userFrame, players, playType, recordCurrentMatch]);
+    // Kiểm tra xem trong phòng multiplayer còn đối thủ thực nào đang tiếp tục thi đấu không:
+    const currentList = playersRef.current && playersRef.current.length > 0 ? playersRef.current : players;
+    const activeHumanCompetitors = currentList.filter(
+      (p) => p.id !== currentUserId && !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+    );
+
+    if (playType === 'multiplayer' && activeHumanCompetitors.length > 0) {
+      // Người chơi này về đích trước: phát âm thanh chúc mừng nhẹ và ở lại TypingArena để quan sát trực tiếp
+      // các đối thủ còn lại. Khi người cuối cùng kết thúc, hệ thống sẽ tự động tổng kết chung một lần cho tất cả!
+      soundFx.playVictory();
+    } else {
+      // Solo mode hoặc là người chơi cuối cùng về đích: kết thúc phòng và hiển thị bảng tổng kết chung
+      if (currentRoomId && playType === 'multiplayer') {
+        markRoomFinished(currentRoomId);
+      }
+      soundFx.playVictory();
+      setGameState('gameover');
+    }
+  }, [bestWpm, totalGames, currentUserId, highScores, gameMode, username, lastGameWpm, sessionBestWpm, avatar, userFrame, players, playType, recordCurrentMatch, currentRoomId]);
 
   // Boss Mode Damage & Victory Handlers
   const handleBossDamage = (dmg: number, errors: number, targetPlayerId?: string) => {
@@ -1381,6 +1691,7 @@ export default function App() {
       accuracy: 0,
       result: 'Đầu hàng',
       score: selfDestructDmg,
+      isCompleted: false,
     });
 
     soundFx.playShieldBreak();
@@ -1444,6 +1755,7 @@ export default function App() {
       accuracy: bossAcc,
       result: isVictory ? 'Thắng' : 'Thua',
       score: totalDmg,
+      isCompleted: isMatchCompleted,
     });
 
     soundFx.playVictory();
@@ -1464,6 +1776,7 @@ export default function App() {
         accuracy: me?.accuracy ?? 100,
         result: 'Đầu hàng',
         score: me?.score,
+        isCompleted: false,
       });
     }
 
@@ -1492,6 +1805,13 @@ export default function App() {
       if (activeHumanPlayers.length === 0) {
         // Người chơi cuối cùng đầu hàng: kết thúc phòng chơi và tổng kết ngay lập tức, không đợi hết giờ
         markRoomFinished(currentRoomId);
+        setPlayers((prev) =>
+          prev.map((p) =>
+            p.isBot
+              ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
+              : p
+          )
+        );
         if (gameMode === 'san_boss') {
           setIsBossVictory(false);
         }
@@ -1514,8 +1834,8 @@ export default function App() {
       });
       setPlayers((prev) =>
         prev.map((p) =>
-          p.id === currentUserId
-            ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0 }
+          p.id === currentUserId || p.isBot
+            ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
             : p
         )
       );
@@ -1535,6 +1855,7 @@ export default function App() {
         accuracy: me?.accuracy ?? 100,
         result: 'Đầu hàng',
         score: me?.score,
+        isCompleted: false,
       });
     }
     if (currentRoomId) {
@@ -1542,6 +1863,7 @@ export default function App() {
       setCurrentRoomId(null);
     }
     setIsRoomHost(true);
+    setNewlyUnlockedAchievements([]);
     setGameState('lobby');
     setConditionStats({});
     setLastGameWpm(0);
@@ -1554,6 +1876,7 @@ export default function App() {
 
   // Return to waiting room after match completion or rematch click
   const handleBackToWaitingRoom = () => {
+    setNewlyUnlockedAchievements([]);
     if (currentRoomId) {
       updatePlayerRoomStatus(currentRoomId, currentUserId, {
         inMatch: false,
@@ -1562,8 +1885,8 @@ export default function App() {
       });
       setPlayers((prev) =>
         prev.map((p) =>
-          p.id === currentUserId
-            ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0 }
+          p.id === currentUserId || p.isBot
+            ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
             : p
         )
       );
@@ -1571,14 +1894,15 @@ export default function App() {
     setGameState('waiting_room');
   };
 
-  // 10s auto-leave timeout when match ends: xóa người chơi khỏi phòng chờ, nếu là chủ phòng thì slot kế tiếp làm chủ phòng
+  // 15s auto-leave timeout when match ends: xóa người chơi khỏi phòng chờ, nếu là chủ phòng thì slot kế tiếp làm chủ phòng,
+  // nhưng vẫn giữ người chơi ở giao diện tổng kết để theo dõi kết quả, nếu bấm Chơi Lại sau khi đã quá giờ thì hiện thông báo
   const handleAutoTimeoutLeave = () => {
     if (currentRoomId) {
       leaveRoom(currentRoomId, currentUserId);
       setCurrentRoomId(null);
     }
     setIsRoomHost(true);
-    setGameState('lobby');
+    // Vẫn giữ người chơi ở giao diện tổng kết (gameState === 'gameover'), không tự ý đẩy về lobby
   };
 
   const handleUpdateConditionStats = (conditionKey: string, lastWpm: number, bestWpm: number) => {
@@ -1622,9 +1946,61 @@ export default function App() {
     }
   };
 
-  // Name & Avatar & Frame Change
+  // Auth Success & Logout Handlers
+  const handleAuthSuccess = (user: UserAccount) => {
+    setCurrentUser(user);
+    setUsername(user.username);
+    setAvatar(user.avatar);
+    if (user.isAdmin || user.username.toLowerCase() === 'admin') {
+      setIsAdmin(true);
+      setAdminStatus(true);
+    }
+    localStorage.setItem('fasttyping_user', user.username);
+    sessionStorage.setItem('fasttyping_user_session', user.username);
+    localStorage.setItem('fasttyping_avatar', user.avatar);
+    sessionStorage.setItem('fasttyping_avatar_session', user.avatar);
+    if (user.frame) {
+      setUserFrame(user.frame);
+      setStoredFrame(user.frame);
+    }
+    if (user.showcaseAchievements && user.showcaseAchievements.length > 0) {
+      setShowcaseAchievements(user.showcaseAchievements);
+    }
+    if (currentRoomId) {
+      setPlayers((prev) => {
+        const next = prev.map((p) =>
+          p.id === currentUserId
+            ? { 
+                ...p, 
+                username: user.username, 
+                icon: user.avatar, 
+                frame: user.frame || p.frame,
+                showcaseAchievements: user.showcaseAchievements || p.showcaseAchievements,
+              }
+            : p
+        );
+        updateRoomPlayers(currentRoomId, next);
+        return next;
+      });
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    setCurrentUser(null);
+    setIsAdmin(false);
+    setAdminStatus(false);
+    const defaultName = 'TayGõ_' + Math.floor(Math.random() * 900 + 100);
+    setUsername(defaultName);
+    sessionStorage.setItem('fasttyping_user_session', defaultName);
+    localStorage.setItem('fasttyping_user', defaultName);
+  };
+
+  // Name & Avatar & Frame Change (Restricted to logged-in users)
   const handleChangeUsername = (newName: string) => {
+    if (!currentUser) return;
     setUsername(newName);
+    updateUserProfile({ username: newName });
     localStorage.setItem('fasttyping_user', newName);
     sessionStorage.setItem('fasttyping_user_session', newName);
     if (currentRoomId) {
@@ -1637,7 +2013,9 @@ export default function App() {
   };
 
   const handleChangeAvatar = (newAvatar: string) => {
+    if (!currentUser) return;
     setAvatar(newAvatar);
+    updateUserProfile({ avatar: newAvatar });
     localStorage.setItem('fasttyping_avatar', newAvatar);
     sessionStorage.setItem('fasttyping_avatar_session', newAvatar);
     if (currentRoomId) {
@@ -1650,8 +2028,10 @@ export default function App() {
   };
 
   const handleChangeFrame = (newFrame: string) => {
+    if (!currentUser) return;
     setUserFrame(newFrame);
     setStoredFrame(newFrame);
+    updateUserProfile({ frame: newFrame });
     if (currentRoomId) {
       setPlayers((prev) => {
         const next = prev.map((p) => (p.id === currentUserId ? { ...p, frame: newFrame } : p));
@@ -1659,6 +2039,23 @@ export default function App() {
         return next;
       });
     }
+  };
+
+  const handleChangeShowcaseAchievements = (newShowcase: string[]) => {
+    setShowcaseAchievements(newShowcase);
+    if (currentUser) {
+      setCurrentUser((prev) => (prev ? { ...prev, showcaseAchievements: newShowcase } : prev));
+      updateUserProfile({ showcaseAchievements: newShowcase });
+    }
+    setPlayers((prev) => {
+      const next = prev.map((p) =>
+        p.id === currentUserId ? { ...p, showcaseAchievements: newShowcase } : p
+      );
+      if (currentRoomId) {
+        updateRoomPlayers(currentRoomId, next);
+      }
+      return next;
+    });
   };
 
   // Admin Actions
@@ -1732,6 +2129,18 @@ export default function App() {
     await adminUpdateLeaderboard(newScores);
   };
 
+  const handleRefreshLeaderboard = async () => {
+    try {
+      const res = await fetchLeaderboard();
+      if (res && res.success && res.highScores) {
+        setHighScores(res.highScores);
+        localStorage.setItem('fasttyping_highscores', JSON.stringify(res.highScores));
+      }
+    } catch (err) {
+      console.error('Error refreshing leaderboards:', err);
+    }
+  };
+
   // Mode display name helper
   const getModeTitle = () => {
     switch (gameMode) {
@@ -1765,12 +2174,31 @@ export default function App() {
         onlineCount={onlineCount}
         isMuted={isMuted}
         isAdmin={isAdmin}
+        isLoggedIn={!!currentUser}
         onToggleMute={() => setIsMuted(soundFx.toggleMute())}
         onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
         onOpenAdmin={() => setIsAdminOpen(true)}
-        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenProfile={() => {
+          setProfileInitialTab('profile');
+          setIsProfileOpen(true);
+        }}
+        onOpenAppearance={() => {
+          setIsAppearanceOpen(true);
+        }}
+        onOpenCultivation={() => setIsCultivationOpen(true)}
+        cultivationLevel={cultivationState.level}
+        cultivationRealmName={XIANXIA_REALMS[cultivationState.realmIndex]?.name}
+        cultivationTier={cultivationState.tier}
+        cultivationSubStage={getSubStage(cultivationState.tier)}
+        cultivationIcon={XIANXIA_REALMS[cultivationState.realmIndex]?.icon}
+        cultivationThoNguyen={cultivationState.thoNguyen}
+        cultivationMaxThoNguyen={cultivationState.maxThoNguyen}
         onOpenOnlineUsers={() => setIsOnlineUsersOpen(true)}
+        onOpenAuthModal={() => {
+          setAuthModalInitialTab('login');
+          setIsAuthModalOpen(true);
+        }}
         onGoHome={handleReturnToLobby}
         activeModeName={getModeTitle()}
       />
@@ -1965,7 +2393,21 @@ export default function App() {
                   if (stats) {
                     setMysteryWordStats(stats);
                   }
-                  const currentList = playersRef.current || players;
+                  let nextPlayers: Player[] = [];
+                  setPlayers((prev) => {
+                    nextPlayers = prev.map((p) =>
+                      p.id === currentUserId ? { ...p, isFinished: true, progress: 100 } : p
+                    );
+                    playersRef.current = nextPlayers;
+                    return nextPlayers;
+                  });
+
+                  if (playType === 'multiplayer' && currentRoomId) {
+                    sendPlayerProgress(currentRoomId, currentUserId, 100, 0, 0, 0, true);
+                    updateRoomPlayers(currentRoomId, nextPlayers);
+                  }
+
+                  const currentList = nextPlayers.length > 0 ? nextPlayers : (playersRef.current || players);
                   const me = currentList.find((p) => p.id === currentUserId);
                   const isPlayerSurrendered = me?.isSurrendered || false;
                   const finalScore = me ? me.score : 0;
@@ -2005,10 +2447,22 @@ export default function App() {
                     accuracy: me?.accuracy ?? 100,
                     result: matchResult,
                     score: finalScore,
+                    isCompleted: !isPlayerSurrendered,
                   });
 
-                  soundFx.playVictory();
-                  setGameState('gameover');
+                  const activeHumanCompetitors = currentList.filter(
+                    (p) => p.id !== currentUserId && !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+                  );
+
+                  if (playType === 'multiplayer' && activeHumanCompetitors.length > 0) {
+                    soundFx.playVictory();
+                  } else {
+                    if (currentRoomId && playType === 'multiplayer') {
+                      markRoomFinished(currentRoomId);
+                    }
+                    soundFx.playVictory();
+                    setGameState('gameover');
+                  }
                 }}
               />
             )}
@@ -2036,7 +2490,21 @@ export default function App() {
                   if (stats) {
                     setNgauHungStats(stats);
                   }
-                  const currentList = playersRef.current || players;
+                  let nextPlayers: Player[] = [];
+                  setPlayers((prev) => {
+                    nextPlayers = prev.map((p) =>
+                      p.id === currentUserId ? { ...p, isFinished: true, progress: 100 } : p
+                    );
+                    playersRef.current = nextPlayers;
+                    return nextPlayers;
+                  });
+
+                  if (playType === 'multiplayer' && currentRoomId) {
+                    sendPlayerProgress(currentRoomId, currentUserId, 100, 0, 0, 0, true);
+                    updateRoomPlayers(currentRoomId, nextPlayers);
+                  }
+
+                  const currentList = nextPlayers.length > 0 ? nextPlayers : (playersRef.current || players);
                   const me = currentList.find((p) => p.id === currentUserId);
                   const isPlayerSurrendered = me?.isSurrendered || false;
                   const finalScore = me ? me.score : 0;
@@ -2076,10 +2544,22 @@ export default function App() {
                     accuracy: me?.accuracy ?? 100,
                     result: matchResult,
                     score: finalScore,
+                    isCompleted: !isPlayerSurrendered,
                   });
 
-                  soundFx.playVictory();
-                  setGameState('gameover');
+                  const activeHumanCompetitors = currentList.filter(
+                    (p) => p.id !== currentUserId && !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+                  );
+
+                  if (playType === 'multiplayer' && activeHumanCompetitors.length > 0) {
+                    soundFx.playVictory();
+                  } else {
+                    if (currentRoomId && playType === 'multiplayer') {
+                      markRoomFinished(currentRoomId);
+                    }
+                    soundFx.playVictory();
+                    setGameState('gameover');
+                  }
                 }}
                 onUpdateScore={(pts, targetId) => {
                   const id = targetId || currentUserId;
@@ -2106,6 +2586,11 @@ export default function App() {
             gameMode={gameMode}
             isBossMode={gameMode === 'san_boss'}
             isBossVictory={isBossVictory}
+            isLoggedIn={!!currentUser}
+            onOpenAuthModal={() => {
+              setAuthModalInitialTab('login');
+              setIsAuthModalOpen(true);
+            }}
             onPlayAgain={playType === 'multiplayer' ? handleBackToWaitingRoom : handleStartGame}
             onBackToLobby={handleReturnToLobby}
             onBackToWaitingRoom={handleBackToWaitingRoom}
@@ -2116,6 +2601,13 @@ export default function App() {
             ngauHungStats={ngauHungStats}
             mysteryWordStats={mysteryWordStats}
             bossBattleStats={bossBattleStats}
+            cultivationState={cultivationState}
+            onOpenCultivation={() => setIsCultivationOpen(true)}
+            newlyUnlockedAchievements={newlyUnlockedAchievements}
+            onOpenProfileAchievements={() => {
+              setProfileInitialTab('achievements');
+              setIsProfileOpen(true);
+            }}
           />
         )}
       </main>
@@ -2140,6 +2632,15 @@ export default function App() {
         <LeaderboardModal
           highScores={highScores}
           onClose={() => setIsLeaderboardOpen(false)}
+          currentUsername={username}
+          currentUser={currentUser}
+          cultivationState={cultivationState}
+          isAdmin={isAdmin}
+          onRefreshLeaderboard={handleRefreshLeaderboard}
+          onOpenAuthModal={() => {
+            setAuthModalInitialTab('login');
+            setIsAuthModalOpen(true);
+          }}
         />
       )}
 
@@ -2172,15 +2673,67 @@ export default function App() {
           avatar={avatar}
           frame={userFrame}
           bestWpm={bestWpm}
+          bestWpmRecord={bestWpmRecord}
           totalGames={totalGames}
           isAdmin={isAdmin}
+          highScores={highScores}
           matchHistory={matchHistory}
+          isLoggedIn={!!currentUser}
+          currentUser={currentUser}
+          onOpenAuthModal={(mode) => {
+            setAuthModalInitialTab(mode || 'login');
+            setIsAuthModalOpen(true);
+          }}
           onChangeUsername={handleChangeUsername}
           onChangeAvatar={handleChangeAvatar}
           onChangeFrame={handleChangeFrame}
+          showcaseAchievements={currentUser?.showcaseAchievements || getShowcaseAchievements()}
+          onUpdateShowcaseAchievements={handleChangeShowcaseAchievements}
           onClose={() => setIsProfileOpen(false)}
+          initialTab={profileInitialTab}
         />
       )}
+
+      {/* Appearance Modal */}
+      <AppearanceModal
+        isOpen={isAppearanceOpen}
+        onClose={() => setIsAppearanceOpen(false)}
+      />
+
+      {/* Cultivation / Linh Đài Tu Tiên Modal */}
+      <CultivationModal
+        isOpen={isCultivationOpen}
+        onClose={() => setIsCultivationOpen(false)}
+        state={cultivationState}
+        userAvatar={avatar}
+        userFrame={userFrame}
+        onSelectFrame={handleChangeFrame}
+        onUpdateState={(next) => {
+          setCultivationState(next);
+          saveStoredCultivationState(next);
+          const token = sessionStorage.getItem('fasttyping_token');
+          if (token) {
+            fetch('/api/cultivation', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ cultivation: next }),
+            }).catch(() => {});
+          }
+        }}
+      />
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        initialTab={authModalInitialTab}
+      />
 
       {/* Join Room Selection Modal (Tạo phòng mới, Vào phòng đã có, Vào phòng nhanh) */}
       <JoinRoomModal
@@ -2209,6 +2762,18 @@ export default function App() {
           highScores={highScores}
         />
       )}
+
+      {/* Toast thông báo thành tựu mới dạng góc màn hình, hiển thị tuần tự từng thành tựu tránh giật lag */}
+      <NewAchievementBannerToast
+        achievements={newlyUnlockedAchievements}
+        onOpenProfileAchievements={() => {
+          setProfileInitialTab('achievements');
+          setIsProfileOpen(true);
+        }}
+        onDismiss={() => {
+          setNewlyUnlockedAchievements([]);
+        }}
+      />
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950/60 py-3 px-4 text-center text-xs text-slate-500">

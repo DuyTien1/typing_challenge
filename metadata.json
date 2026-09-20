@@ -1,6 +1,6 @@
 {
-  "name": "Remix Remix Typing Challenge",
-  "description": "giữ nguyên tất cả code của app cũ",
+  "name": "Remix Fasttyping Challenge",
+  "description": "giữ nguyên toàn bộ mã nguồn, cấu hình và tính năng của ứng dụng",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

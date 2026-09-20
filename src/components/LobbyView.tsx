@@ -122,11 +122,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const handleCardClick = (mode: typeof modes[0]) => {
     soundFx.playKeyClick();
     onSelectMode(mode.id);
-    if (mode.isSolo || mode.id === 'outplay') {
-      onStartSoloGame(mode.id);
-    } else {
-      onJoinWaitingRoom(mode.id);
-    }
   };
 
   return (
@@ -197,7 +192,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                       e.stopPropagation();
                       onSelectMode(mode.id);
                       soundFx.playCountdown(true);
-                      onStartSoloGame();
+                      onStartSoloGame(mode.id);
                     }}
                     className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all active:scale-98 cursor-pointer"
                   >

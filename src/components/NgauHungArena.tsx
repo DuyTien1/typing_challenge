@@ -42,6 +42,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   const [roundPlacement, setRoundPlacement] = useState<number | null>(null);
   const [roundFinishers, setRoundFinishers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
   const [isSurrendered, setIsSurrendered] = useState(false);
+  const [hasFinishedGame, setHasFinishedGame] = useState(false);
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
   const finishersRef = useRef<string[]>([]);
@@ -204,6 +205,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         perfectRounds,
         roundHistory: [...history],
       };
+      setHasFinishedGame(true);
       onFinishGame(stats);
     } else {
       setIsIntermission(true);
@@ -390,21 +392,21 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 select-none">
       {/* Round & Timer Header */}
-      <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 flex items-center justify-center font-black">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 flex items-center justify-center font-black shrink-0">
             <Zap className="w-5 h-5 fill-yellow-400" />
           </div>
-          <div>
-            <h3 className="font-bold text-sm text-white">
+          <div className="min-w-0">
+            <h3 className="font-bold text-sm text-white truncate">
               Vòng {currentRound} / {totalRounds}
             </h3>
-            <p className="text-xs text-slate-400">Ngẫu Hứng - Đua 1 Từ Nhanh Nhất</p>
+            <p className="text-xs text-slate-400 truncate">Ngẫu Hứng - Đua 1 Từ Nhanh Nhất</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 font-mono text-sm text-slate-300 bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="h-9 flex items-center gap-1.5 font-mono text-sm text-slate-300 bg-slate-950/60 px-3 rounded-xl border border-slate-800 shrink-0">
             <Clock className="w-4 h-4 text-amber-400" />
             <span>{isIntermission ? `Nghỉ: ${intermissionLeft}s` : `${roundTimeLeft}s`}</span>
           </div>
@@ -414,7 +416,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
               id="btn-ngauhung-surrender"
               type="button"
               onClick={openSurrenderModal}
-              className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+              className="h-9 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shrink-0"
               title="Đầu hàng ván đấu này (Esc + Enter)"
             >
               <Flag className="w-3.5 h-3.5" />
@@ -463,6 +465,38 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                 <span>Trang Chủ</span>
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Banner thông báo đã hoàn thành tất cả vòng đấu & đang quan sát trực tiếp */}
+      {hasFinishedGame && isMultiplayer && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900/90 to-emerald-950/70 border-2 border-emerald-500/50 shadow-xl shadow-emerald-950/50 space-y-2 animate-fadeIn mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xl shrink-0">
+                ⚡
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <span>BẠN ĐÃ HOÀN THÀNH TẤT CẢ VÒNG ĐUA!</span>
+                </h3>
+                <p className="text-xs text-slate-300">
+                  Đang trực tiếp theo dõi các đấu thủ còn lại hoàn thành phần thi. Bảng tổng kết sẽ tự động hiển thị khi người cuối cùng kết thúc!
+                </p>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-bold animate-pulse">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500" />
+              </span>
+              <span>Chế độ quan sát (Spectating)</span>
+            </div>
+          </div>
+          <div className="text-[11px] text-slate-400 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80">
+            💡 Hệ thống sẽ tự động tổng kết kết quả toàn bộ phòng cùng một lúc khi tất cả người chơi hoàn thành phần thi!
           </div>
         </div>
       )}
@@ -564,10 +598,12 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                 onChange={handleInputChange}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
-                disabled={inRoomCountdown !== null || userFinishedThisRound || isSurrendered}
-                readOnly={isSurrendered}
+                disabled={inRoomCountdown !== null || userFinishedThisRound || isSurrendered || hasFinishedGame}
+                readOnly={isSurrendered || hasFinishedGame}
                 placeholder={
-                  inRoomCountdown !== null
+                  hasFinishedGame
+                    ? "⚡ Bạn đã hoàn thành tất cả vòng đấu! Đang theo dõi các đối thủ còn lại..."
+                    : inRoomCountdown !== null
                     ? `Bắt đầu sau ${inRoomCountdown}s...`
                     : isSurrendered
                     ? "Bạn đã đầu hàng. Đang theo dõi trận đấu..."

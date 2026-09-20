@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
-import { soundFx, SwitchType } from '../utils/audio';
+import { soundFx } from '../utils/audio';
 import { 
   User, 
   X, 
   Check, 
   Flame, 
   Zap, 
-  Volume2, 
-  Palette, 
-  Type, 
   Sparkles, 
   ChevronDown,
   Edit3,
@@ -20,12 +17,7 @@ import {
   Target
 } from 'lucide-react';
 import { 
-  MONKEY_THEMES, 
-  TYPING_FONTS, 
   EXPANDED_AVATARS, 
-  applyThemeAndFont, 
-  getStoredTheme, 
-  getStoredFont 
 } from '../utils/themeAndFont';
 import { 
   AvatarWithFrame, 
@@ -37,27 +29,33 @@ import {
   checkIsAdmin
 } from '../utils/frames';
 import { MatchRecord, getStoredMatchHistory } from '../utils/matchHistory';
+import { HighScoreRecord, UserAccount, BestWpmRecord } from '../types';
+import { updateUserProfile } from '../utils/auth';
+import { AchievementsSection } from './AchievementsSection';
+import { getShowcaseAchievements, getAchievementById, setShowcaseAchievements } from '../utils/achievements';
+import { WpmRecordBadge } from './WpmRecordBadge';
 
 interface ProfileModalProps {
   username: string;
   avatar: string;
   frame?: string;
+  showcaseAchievements?: string[];
   bestWpm: number;
+  bestWpmRecord?: BestWpmRecord | null;
   totalGames: number;
   isAdmin?: boolean;
+  highScores?: Record<string, HighScoreRecord | null>;
   matchHistory?: MatchRecord[];
+  isLoggedIn?: boolean;
+  currentUser?: UserAccount | null;
+  onOpenAuthModal?: (mode?: 'login' | 'register') => void;
   onChangeUsername: (name: string) => void;
   onChangeAvatar: (emoji: string) => void;
   onChangeFrame?: (frameId: string) => void;
+  onUpdateShowcaseAchievements?: (newShowcase: string[]) => void;
   onClose: () => void;
+  initialTab?: 'profile' | 'achievements';
 }
-
-const SWITCHES: { id: SwitchType; name: string; desc: string; icon: string }[] = [
-  { id: 'cherry_blue', name: 'Cherry Blue', desc: 'Clicky, đanh giòn sắc bén (1800Hz)', icon: '🟦' },
-  { id: 'cherry_brown', name: 'Cherry Brown', desc: 'Tactile, khấc êm đầm ấm (850Hz)', icon: '🟫' },
-  { id: 'cherry_red', name: 'Cherry Red', desc: 'Linear, mượt mà lướt êm (480Hz)', icon: '🟥' },
-  { id: 'thock', name: 'Deep Thock', desc: 'Trầm ấm, âm trầm hộp phím sâu (340Hz)', icon: '⬛' },
-];
 
 function formatRelativeTime(ts: number): string {
   if (!ts) return '';
@@ -75,20 +73,72 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   username,
   avatar,
   frame,
+  showcaseAchievements: propShowcase,
   bestWpm,
+  bestWpmRecord,
   totalGames,
   isAdmin = false,
+  highScores,
   matchHistory,
+  isLoggedIn = false,
+  currentUser = null,
+  onOpenAuthModal,
   onChangeUsername,
   onChangeAvatar,
   onChangeFrame,
+  onUpdateShowcaseAchievements,
   onClose,
+  initialTab = 'profile',
 }) => {
+  const [activeTab, setActiveTab] = useState<'profile' | 'achievements'>(() => {
+    if (initialTab === 'achievements') return 'achievements';
+    return 'profile';
+  });
+
+  React.useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+  const [currentShowcase, setCurrentShowcase] = useState<string[]>(() => {
+    if (!isLoggedIn) return [];
+    if (propShowcase && propShowcase.length > 0) return propShowcase.slice(0, 3);
+    if (currentUser?.showcaseAchievements && currentUser.showcaseAchievements.length > 0) {
+      return currentUser.showcaseAchievements.slice(0, 3);
+    }
+    return getShowcaseAchievements(currentUser?.id);
+  });
+
+  // Đồng bộ showcase khi đăng nhập/đăng xuất
+  React.useEffect(() => {
+    if (!isLoggedIn) {
+      setCurrentShowcase([]);
+    } else {
+      const showcase = propShowcase && propShowcase.length > 0
+        ? propShowcase.slice(0, 3)
+        : (currentUser?.showcaseAchievements && currentUser.showcaseAchievements.length > 0
+          ? currentUser.showcaseAchievements.slice(0, 3)
+          : getShowcaseAchievements(currentUser?.id));
+      setCurrentShowcase(showcase);
+    }
+  }, [isLoggedIn, propShowcase, currentUser?.id, currentUser?.showcaseAchievements]);
+
   const [nameInput, setNameInput] = useState(username);
   const [selectedAvatar, setSelectedAvatar] = useState(avatar);
   const [selectedFrame, setSelectedFrame] = useState<string>(() => frame || getStoredFrame());
   const [history] = useState<MatchRecord[]>(() => matchHistory || getStoredMatchHistory());
+  const [guestNotice, setGuestNotice] = useState<string | null>(null);
   const recentMatches = history.slice(0, 5);
+
+  const handleShowcaseChange = (newShowcase: string[]) => {
+    if (!isLoggedIn) return;
+    setCurrentShowcase(newShowcase);
+    setShowcaseAchievements(newShowcase, currentUser?.id);
+    if (onUpdateShowcaseAchievements) {
+      onUpdateShowcaseAchievements(newShowcase);
+    }
+    updateUserProfile({ showcaseAchievements: newShowcase }).catch(() => {});
+  };
 
   // Popups state
   const [isAvatarFrameModalOpen, setIsAvatarFrameModalOpen] = useState(false);
@@ -98,6 +148,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [tempAvatar, setTempAvatar] = useState(selectedAvatar);
   const [tempFrame, setTempFrame] = useState(selectedFrame);
   const [avatarFrameTab, setAvatarFrameTab] = useState<'avatar' | 'frame'>('avatar');
+  const [frameCategoryFilter, setFrameCategoryFilter] = useState<'all' | 'champion' | 'progression'>('all');
   const [activeAvatarCategory, setActiveAvatarCategory] = useState(0);
   const [lockedFrameTip, setLockedFrameTip] = useState<string | null>(null);
 
@@ -105,55 +156,56 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [tempName, setTempName] = useState(nameInput);
   const [nameError, setNameError] = useState('');
 
-  const [currentSwitch, setCurrentSwitch] = useState<SwitchType>(() => soundFx.getSwitchType());
-
-  // Monkeytype Theme & Font State
-  const [selectedThemeId, setSelectedThemeId] = useState<string>(() => getStoredTheme());
-  const [selectedFontId, setSelectedFontId] = useState<string>(() => getStoredFont());
-  const [isThemeOpen, setIsThemeOpen] = useState(false);
-  const [isFontOpen, setIsFontOpen] = useState(false);
-
-  const selectedTheme = MONKEY_THEMES.find((t) => t.id === selectedThemeId) || MONKEY_THEMES[0];
-  const selectedFont = TYPING_FONTS.find((f) => f.id === selectedFontId) || TYPING_FONTS[0];
   const currentFrameConfig = getFrameConfig(selectedFrame);
   const tempFrameConfig = getFrameConfig(tempFrame);
 
-  const handleSelectSwitch = (sw: SwitchType) => {
-    setCurrentSwitch(sw);
-    soundFx.setSwitchType(sw);
-  };
-
-  const handleSelectTheme = (themeId: string) => {
-    soundFx.playKeyClick();
-    setSelectedThemeId(themeId);
-    applyThemeAndFont(themeId, selectedFontId);
-    setIsThemeOpen(false);
-  };
-
-  const handleSelectFont = (fontId: string) => {
-    soundFx.playKeyClick();
-    setSelectedFontId(fontId);
-    applyThemeAndFont(selectedThemeId, fontId);
-    setIsFontOpen(false);
-  };
-
   // Confirm Name Change from Popup
-  const handleSaveName = (e: React.FormEvent) => {
+  const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isLoggedIn) {
+      setNameError('Chế độ Khách không thể đổi tên. Vui lòng đăng nhập!');
+      return;
+    }
     const trimmed = tempName.trim();
     if (!trimmed) {
       setNameError('Vui lòng nhập biệt danh của bạn!');
       return;
     }
+    if (trimmed.length < 2) {
+      setNameError('Biệt danh phải có ít nhất 2 ký tự!');
+      return;
+    }
+    if (trimmed.length > 24) {
+      setNameError('Biệt danh tối đa 24 ký tự!');
+      return;
+    }
+    if (trimmed.toLowerCase() === username.trim().toLowerCase()) {
+      setIsEditNameOpen(false);
+      return;
+    }
     setNameError('');
-    setNameInput(trimmed);
-    onChangeUsername(trimmed);
-    soundFx.playKeyClick();
-    setIsEditNameOpen(false);
+    try {
+      const res = await updateUserProfile({ username: trimmed });
+      if (!res.success) {
+        setNameError(res.error || 'Biệt danh này đã có người sử dụng. Vui lòng chọn tên khác!');
+        return;
+      }
+      setNameInput(trimmed);
+      onChangeUsername(trimmed);
+      soundFx.playKeyClick();
+      setIsEditNameOpen(false);
+    } catch (err: any) {
+      setNameError(err.message || 'Lỗi khi cập nhật biệt danh');
+    }
   };
 
   // Confirm Avatar & Frame from Popup
   const handleSaveAvatarFrame = () => {
+    if (!isLoggedIn) {
+      setGuestNotice('Chế độ Khách không thể đổi avatar và khung. Vui lòng đăng nhập tài khoản!');
+      setIsAvatarFrameModalOpen(false);
+      return;
+    }
     setSelectedAvatar(tempAvatar);
     setSelectedFrame(tempFrame);
     onChangeAvatar(tempAvatar);
@@ -163,22 +215,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     setStoredFrame(tempFrame);
     soundFx.playVictory();
     setIsAvatarFrameModalOpen(false);
-  };
-
-  const handleSaveAll = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (nameInput.trim()) {
-      onChangeUsername(nameInput.trim());
-      onChangeAvatar(selectedAvatar);
-      if (onChangeFrame) {
-        onChangeFrame(selectedFrame);
-      }
-      setStoredFrame(selectedFrame);
-      soundFx.setSwitchType(currentSwitch);
-      applyThemeAndFont(selectedThemeId, selectedFontId);
-      soundFx.playVictory();
-      onClose();
-    }
   };
 
   return (
@@ -191,8 +227,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-white">HỒ SƠ CÁ NHÂN & THIẾT LẬP HỆ THỐNG</h3>
-              <p className="text-xs text-slate-400">Tùy biến avatar, khung hào quang, giao diện Monkeytype và âm thanh</p>
+              <h3 className="text-base font-black text-white">HỒ SƠ CÁ NHÂN & THÀNH TỰU</h3>
+              <p className="text-xs text-slate-400">Tùy biến avatar, khung hào quang, thành tựu vinh danh và lịch sử thi đấu</p>
             </div>
           </div>
           <button
@@ -208,6 +244,137 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </button>
         </div>
 
+        {/* TOP NAVIGATION TABS */}
+        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner">
+          <button
+            id="tab-profile-identity"
+            type="button"
+            onClick={() => {
+              soundFx.playKeyClick();
+              setActiveTab('profile');
+            }}
+            className={`flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
+              activeTab === 'profile'
+                ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20 ring-1 ring-amber-300'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span className="whitespace-nowrap">Hồ Sơ Cá Nhân</span>
+          </button>
+
+          <button
+            id="tab-profile-achievements"
+            type="button"
+            onClick={() => {
+              soundFx.playKeyClick();
+              setActiveTab('achievements');
+            }}
+            className={`flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
+              activeTab === 'achievements'
+                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-purple-600/30 ring-1 ring-purple-400'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span className="hidden xs:inline whitespace-nowrap">Thành Tựu</span>
+            <span className="xs:hidden whitespace-nowrap">Thành Tựu</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-950/80 text-purple-200 border border-purple-400/40 font-mono">
+              {currentShowcase.length}/3
+            </span>
+          </button>
+        </div>
+
+        {activeTab === 'achievements' ? (
+          <AchievementsSection
+            bestWpm={bestWpm}
+            totalGames={totalGames}
+            username={username}
+            frame={selectedFrame}
+            isLoggedIn={isLoggedIn}
+            userId={currentUser?.id}
+            matchHistory={history}
+            highScores={highScores}
+            showcaseAchievements={isLoggedIn ? currentShowcase : []}
+            onShowcaseChange={handleShowcaseChange}
+            onOpenAuthModal={onOpenAuthModal}
+          />
+        ) : (
+          <div className="space-y-4">
+        {/* GUEST BANNER / NOTICE IF NOT LOGGED IN */}
+        {!isLoggedIn ? (
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left animate-fadeIn">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                <Lock className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>Chế độ Khách (Chưa đăng nhập)</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Tạo tài khoản hoặc đăng nhập để lưu kỷ lục chính thức, đổi tên, avatar & khung hào quang!
+                </p>
+              </div>
+            </div>
+            <button
+              id="btn-profile-login-cta"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                if (onOpenAuthModal) onOpenAuthModal();
+              }}
+              className="w-full sm:w-auto h-9 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-black text-xs shrink-0 shadow-md shadow-amber-400/20 transition-transform active:scale-95 cursor-pointer whitespace-nowrap flex items-center justify-center"
+            >
+              Tạo Tài Khoản / Đăng Nhập
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-left">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+              <span className="text-xs text-emerald-300 font-semibold truncate flex items-center gap-1.5">
+                <span>Tài khoản: <strong className="text-white">{currentUser?.email || currentUser?.username}</strong></span>
+                {currentUser?.isAdmin && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                    Quản Trị Viên
+                  </span>
+                )}
+              </span>
+            </div>
+            <button
+              id="btn-profile-manage-account"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                if (onOpenAuthModal) onOpenAuthModal('login');
+              }}
+              className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline shrink-0 cursor-pointer"
+            >
+              Quản lý tài khoản
+            </button>
+          </div>
+        )}
+
+        {guestNotice && (
+          <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2 animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{guestNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                if (onOpenAuthModal) onOpenAuthModal('login');
+              }}
+              className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+            >
+              Đăng nhập
+            </button>
+          </div>
+        )}
+
         {/* 1. TOP IDENTITY CARD: AVATAR + KHUNG NGANG HÀNG VỚI TÊN NGƯỜI CHƠI */}
         <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-800 flex items-center justify-between gap-4 shadow-inner">
           <div className="flex items-center gap-4 min-w-0">
@@ -217,6 +384,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               type="button"
               onClick={() => {
                 soundFx.playKeyClick();
+                if (!isLoggedIn) {
+                  setGuestNotice('Chế độ Khách không thể đổi avatar và khung. Vui lòng đăng nhập để mở khóa!');
+                  return;
+                }
                 setTempAvatar(selectedAvatar);
                 setTempFrame(selectedFrame);
                 setAvatarFrameTab('avatar');
@@ -224,13 +395,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 setIsAvatarFrameModalOpen(true);
               }}
               className="relative group p-1 rounded-2xl cursor-pointer transition-transform hover:scale-105 active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
-              title="Nhấn vào avatar để tùy chỉnh Avatar và Khung đại diện"
+              title={isLoggedIn ? "Nhấn vào avatar để tùy chỉnh Avatar và Khung đại diện" : "Đăng nhập để đổi avatar"}
             >
               <AvatarWithFrame
                 icon={selectedAvatar}
                 frameId={selectedFrame}
                 size="xl"
               />
+              {!isLoggedIn && (
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-800 border border-amber-400/60 text-amber-400 flex items-center justify-center shadow-md z-30">
+                  <Lock className="w-2.5 h-2.5" />
+                </div>
+              )}
             </button>
 
             {/* Username with Edit Icon & Frame Info */}
@@ -239,20 +415,35 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate max-w-[200px] sm:max-w-[260px]">
                   {nameInput}
                 </span>
-                <button
-                  id="btn-open-edit-name"
-                  type="button"
-                  onClick={() => {
-                    soundFx.playKeyClick();
-                    setTempName(nameInput);
-                    setNameError('');
-                    setIsEditNameOpen(true);
-                  }}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 hover:border-amber-400/60 transition-all cursor-pointer shadow-sm shrink-0"
-                  title="Nhấn để đổi tên người chơi"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
+                {isLoggedIn ? (
+                  <button
+                    id="btn-open-edit-name"
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setTempName(nameInput);
+                      setNameError('');
+                      setIsEditNameOpen(true);
+                    }}
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 hover:border-amber-400/60 transition-all cursor-pointer shadow-sm shrink-0"
+                    title="Nhấn để đổi tên người chơi"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    id="btn-open-edit-name-locked"
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setGuestNotice('Chế độ Khách không thể đổi tên người chơi. Vui lòng đăng nhập để mở khóa!');
+                    }}
+                    className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-500 hover:text-amber-400 border border-slate-700/80 transition-all cursor-pointer shadow-sm shrink-0"
+                    title="Đăng nhập để đổi tên"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Current Frame Details & Quick Hint */}
@@ -264,8 +455,50 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   {currentFrameConfig.tag}
                 </span>
                 <span className="text-[11px] text-slate-500 italic">
-                  (Nhấn avatar để đổi)
+                  {isLoggedIn ? '(Nhấn avatar để đổi)' : '(Khóa ở chế độ Khách)'}
                 </span>
+              </div>
+
+              {/* Showcase Achievements Badges in Profile Header */}
+              <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 font-mono flex items-center gap-1">
+                    <span>✨</span> Danh Hiệu:
+                  </span>
+                  {!isLoggedIn ? (
+                    <span className="text-[11px] text-amber-400/80 italic flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-amber-400" /> Khóa ở chế độ Khách (Đăng nhập để mở)
+                    </span>
+                  ) : currentShowcase.length > 0 ? (
+                    currentShowcase.map((achId) => {
+                      const ach = getAchievementById(achId);
+                      if (!ach) return null;
+                      return (
+                        <span
+                          key={achId}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1 shadow-sm ${ach.badgeBg} ${ach.borderClass}`}
+                          title={`${ach.name}: ${ach.req} (${ach.realm})`}
+                        >
+                          <span>{ach.icon}</span>
+                          <span className="text-white truncate max-w-[110px]">{ach.title}</span>
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span className="text-[11px] text-slate-500 italic">Chưa chọn thành tựu</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setActiveTab('achievements');
+                  }}
+                  className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <span>{isLoggedIn ? `Lĩnh Ngộ (${currentShowcase.length}/3)` : 'Xem Thành Tựu'}</span>
+                  <Sparkles className="w-3 h-3" />
+                </button>
               </div>
             </div>
           </div>
@@ -273,14 +506,16 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
         {/* Career Stats Overview */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-center">
-            <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-center gap-1">
-              <Flame className="w-3.5 h-3.5 text-amber-400" /> Kỷ lục WPM
-            </div>
-            <div className="text-2xl font-black text-amber-400 font-mono mt-0.5">
-              {bestWpm} <span className="text-xs text-slate-400 font-normal">WPM</span>
-            </div>
-          </div>
+          <WpmRecordBadge
+            bestWpm={bestWpm}
+            bestWpmRecord={bestWpmRecord}
+            highScores={highScores}
+            matchHistory={history}
+            username={username}
+            isMe={true}
+            size="large"
+            tooltipPosition="top"
+          />
           <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-center">
             <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-center gap-1">
               <Zap className="w-3.5 h-3.5 text-sky-400" /> Trận Đã Đấu
@@ -391,180 +626,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </div>
           )}
         </div>
-
-        {/* Form */}
-        <form onSubmit={handleSaveAll} className="space-y-4">
-          {/* MONKEYTYPE THEME & FONT DROPDOWNS (EQUAL HEIGHT: h-[54px]) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            {/* 1. Theme Dropdown (20 Themes) */}
-            <div className="space-y-1.5 relative">
-              <label className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                <Palette className="w-3.5 h-3.5" /> Giao Diện Màu (20 Themes)
-              </label>
-
-              <button
-                id="dropdown-theme-toggle"
-                type="button"
-                onClick={() => {
-                  setIsThemeOpen(!isThemeOpen);
-                  setIsFontOpen(false);
-                  soundFx.playKeyClick();
-                }}
-                className="w-full h-[54px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-amber-400/70 text-left flex items-center justify-between transition-all cursor-pointer shadow-sm"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex items-center gap-1 shrink-0 p-1 rounded bg-slate-900 border border-slate-800">
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTheme.bg }} />
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTheme.main }} />
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTheme.sub }} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-white truncate">{selectedTheme.name}</div>
-                    <div className="text-[10px] text-slate-400 truncate font-mono">Bảng màu Monkeytype</div>
-                  </div>
-                </div>
-                <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isThemeOpen ? 'rotate-180 text-amber-400' : ''}`} />
-              </button>
-
-              {/* Theme Menu Options */}
-              {isThemeOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 p-2 rounded-2xl bg-slate-950 border border-slate-700 shadow-2xl max-h-64 overflow-y-auto space-y-1 ring-1 ring-white/10">
-                  {MONKEY_THEMES.map((theme) => {
-                    const isCurrent = theme.id === selectedThemeId;
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        onClick={() => handleSelectTheme(theme.id)}
-                        className={`w-full p-2 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
-                          isCurrent
-                            ? 'bg-amber-500/20 border border-amber-400/80 text-amber-300'
-                            : 'hover:bg-slate-900 text-slate-300 border border-transparent'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="flex items-center gap-0.5 p-0.5 rounded bg-slate-900 shrink-0">
-                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: theme.bg }} />
-                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: theme.main }} />
-                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: theme.sub }} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold truncate">{theme.name}</div>
-                            <div className="text-[10px] text-slate-500 truncate">{theme.desc}</div>
-                          </div>
-                        </div>
-                        {isCurrent && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* 2. Font Dropdown (20 Fonts) */}
-            <div className="space-y-1.5 relative">
-              <label className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-                <Type className="w-3.5 h-3.5" /> Font Chữ Gõ (20 Fonts)
-              </label>
-
-              <button
-                id="dropdown-font-toggle"
-                type="button"
-                onClick={() => {
-                  setIsFontOpen(!isFontOpen);
-                  setIsThemeOpen(false);
-                  soundFx.playKeyClick();
-                }}
-                className="w-full h-[54px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-sky-400/70 text-left flex items-center justify-between transition-all cursor-pointer shadow-sm"
-              >
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-white truncate" style={{ fontFamily: selectedFont.family }}>
-                    {selectedFont.name}
-                  </div>
-                  <div className="text-[10px] text-slate-400 truncate font-mono">
-                    {selectedFont.type === 'monospace' ? 'Monospace (Chuẩn)' : 'Sans-Serif'}
-                  </div>
-                </div>
-                <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isFontOpen ? 'rotate-180 text-sky-400' : ''}`} />
-              </button>
-
-              {/* Font Menu Options */}
-              {isFontOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 p-2 rounded-2xl bg-slate-950 border border-slate-700 shadow-2xl max-h-64 overflow-y-auto space-y-1 ring-1 ring-white/10">
-                  {TYPING_FONTS.map((font) => {
-                    const isCurrent = font.id === selectedFontId;
-                    return (
-                      <button
-                        key={font.id}
-                        type="button"
-                        onClick={() => handleSelectFont(font.id)}
-                        className={`w-full p-2 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
-                          isCurrent
-                            ? 'bg-sky-500/20 border border-sky-400/80 text-sky-300'
-                            : 'hover:bg-slate-900 text-slate-300 border border-transparent'
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold truncate" style={{ fontFamily: font.family }}>
-                            {font.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate opacity-80" style={{ fontFamily: font.family }}>
-                            {font.sample}
-                          </div>
-                        </div>
-                        {isCurrent && <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Switch Sound Selection (Mechanical Keyboard Audio Synth) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-amber-400">
-                <Volume2 className="w-3.5 h-3.5" /> Âm Thanh Phím Cơ (Web Audio Synth)
-              </span>
-              <span className="text-[10px] text-slate-500 font-normal">Bấm thử để nghe âm</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {SWITCHES.map((sw) => {
-                const isSelected = currentSwitch === sw.id;
-                return (
-                  <button
-                    id={`btn-switch-${sw.id}`}
-                    key={sw.id}
-                    type="button"
-                    onClick={() => handleSelectSwitch(sw.id)}
-                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-amber-500/20 border-amber-400 ring-1 ring-amber-400'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>{sw.icon}</span> {sw.name}
-                      </span>
-                      {isSelected && <span className="w-2 h-2 rounded-full bg-amber-400"></span>}
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-1">{sw.desc}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button
-            id="btn-save-profile"
-            type="submit"
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/25 hover:scale-101 active:scale-98 transition-all cursor-pointer"
-          >
-            Lưu Thiết Lập & Đóng
-          </button>
-        </form>
+        </div>
+        )}
       </div>
 
       {/* POPUP 1: TÙY CHỌN AVATAR & KHUNG ĐẠI DIỆN */}
@@ -655,7 +718,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 }`}
               >
                 <Award className="w-3.5 h-3.5" />
-                <span>Khung Hào Quang (8 Khung)</span>
+                <span>Khung Hào Quang ({AVATAR_FRAMES.length} Khung)</span>
               </button>
             </div>
 
@@ -713,6 +776,52 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             {/* TAB CONTENT: 2. FRAMES */}
             {avatarFrameTab === 'frame' && (
               <div className="space-y-2.5">
+                {/* Category Filter Pills for Frames */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setFrameCategoryFilter('all');
+                    }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      frameCategoryFilter === 'all'
+                        ? 'bg-amber-400 text-black shadow-sm'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Tất Cả ({AVATAR_FRAMES.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setFrameCategoryFilter('champion');
+                    }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
+                      frameCategoryFilter === 'champion'
+                        ? 'bg-rose-500 text-white shadow-sm'
+                        : 'bg-slate-950 text-rose-300/80 hover:text-rose-200 border border-slate-800'
+                    }`}
+                  >
+                    <span>👑 Quán Quân Top 1 ({AVATAR_FRAMES.filter((f) => f.category === 'champion').length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setFrameCategoryFilter('progression');
+                    }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      frameCategoryFilter === 'progression'
+                        ? 'bg-amber-400 text-black shadow-sm'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    ⚡ Tiến Trình & VIP ({AVATAR_FRAMES.filter((f) => f.category !== 'champion').length})
+                  </button>
+                </div>
+
                 {/* Locked Frame Feedback Alert */}
                 {lockedFrameTip && (
                   <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2 animate-fadeIn">
@@ -731,9 +840,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 sm:max-h-80 overflow-y-auto p-1">
-                  {AVATAR_FRAMES.map((f) => {
-                    const isOwned = isFrameOwned(f.id, { bestWpm, totalGames, isAdmin: Boolean(isAdmin || checkIsAdmin()) });
+                  {AVATAR_FRAMES.filter((f) => {
+                    if (frameCategoryFilter === 'champion') return f.category === 'champion';
+                    if (frameCategoryFilter === 'progression') return f.category !== 'champion';
+                    return true;
+                  }).map((f) => {
+                    const isOwned = isFrameOwned(f.id, {
+                      username,
+                      bestWpm,
+                      totalGames,
+                      isAdmin: Boolean(isAdmin || checkIsAdmin()),
+                      highScores,
+                    });
                     const isSelected = tempFrame === f.id;
+                    const isChampionFrame = f.category === 'champion' || Boolean(f.topMode);
+                    const currentHolder = f.topMode && highScores ? highScores[f.topMode] : null;
 
                     if (isOwned) {
                       return (
@@ -749,6 +870,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           className={`p-2.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
                             isSelected
                               ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/60 shadow-lg'
+                              : isChampionFrame
+                              ? 'bg-slate-950 border-rose-500/40 hover:border-rose-400 hover:bg-slate-900/70 shadow-sm'
                               : 'bg-slate-950 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
                           }`}
                         >
@@ -762,16 +885,28 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">
                               <span className="text-xs font-bold text-white truncate flex items-center gap-1">
+                                {f.badge && <span>{f.badge}</span>}
                                 {f.name}
                               </span>
-                              <span className="text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-amber-300 shrink-0">
+                              <span
+                                className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                  isChampionFrame
+                                    ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300'
+                                    : 'bg-slate-900 border border-slate-800 text-amber-300'
+                                }`}
+                              >
                                 {f.tag}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-1 mt-0.5">
                               <p className="text-[10px] text-slate-400 truncate">{f.desc}</p>
-                              <span className="text-[9px] font-bold text-emerald-400 shrink-0 flex items-center gap-0.5">
-                                <Check className="w-2.5 h-2.5" /> Sở hữu
+                              <span
+                                className={`text-[9px] font-bold shrink-0 flex items-center gap-0.5 ${
+                                  isChampionFrame ? 'text-amber-300' : 'text-emerald-400'
+                                }`}
+                              >
+                                <Check className="w-2.5 h-2.5" />
+                                {isChampionFrame ? 'Quán quân' : 'Sở hữu'}
                               </span>
                             </div>
                           </div>
@@ -779,14 +914,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       );
                     }
 
-                    // Locked Frame: Grayed out, unselectable
+                    // Locked Frame: Grayed out, unselectable, clear requirement info
                     return (
                       <div
                         key={f.id}
                         id={`btn-frame-locked-${f.id}`}
                         onClick={() => {
                           soundFx.playError();
-                          setLockedFrameTip(`Khung "${f.name}" chưa mở khóa: ${f.unlockReq}`);
+                          const holderInfo = currentHolder?.username
+                            ? ` (Kỷ lục hiện tại: ${currentHolder.username} - ${currentHolder.wpm || currentHolder.score || 0} WPM)`
+                            : isChampionFrame
+                            ? ' (Chưa có ai xác lập, cơ hội mở khóa của bạn!)'
+                            : '';
+                          setLockedFrameTip(`Khung "${f.name}" chưa mở khóa: ${f.unlockReq}${holderInfo}`);
                         }}
                         className="p-2.5 rounded-2xl border border-slate-800/60 bg-slate-950/40 text-left flex items-center gap-3 opacity-40 grayscale hover:opacity-60 transition-all cursor-not-allowed select-none group"
                         title={`Chưa sở hữu. Yêu cầu: ${f.unlockReq}`}
@@ -799,7 +939,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                             size="sm"
                             isLocked={true}
                           />
-                          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 rounded-2xl">
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 rounded-2xl z-30">
                             <Lock className="w-3.5 h-3.5 text-slate-400" />
                           </div>
                         </div>
@@ -807,6 +947,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1">
                             <span className="text-xs font-medium text-slate-400 truncate flex items-center gap-1">
+                              {f.badge && <span className="opacity-70">{f.badge}</span>}
                               {f.name}
                             </span>
                             <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5 shrink-0">
@@ -816,6 +957,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           <p className="text-[10px] text-amber-400/80 font-medium truncate mt-0.5">
                             Khóa: {f.unlockReq}
                           </p>
+                          {currentHolder?.username && (
+                            <p className="text-[9px] text-slate-500 truncate mt-0.2">
+                              Đang giữ: {currentHolder.username} ({currentHolder.wpm || currentHolder.score || 0} WPM)
+                            </p>
+                          )}
                         </div>
                       </div>
                     );
