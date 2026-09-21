@@ -20,6 +20,7 @@ interface AchievementsSectionProps {
   username: string;
   frame?: string;
   isLoggedIn?: boolean;
+  isAdmin?: boolean;
   userId?: string;
   matchHistory?: MatchRecord[];
   highScores?: Record<string, HighScoreRecord | null>;
@@ -42,6 +43,7 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
   username,
   frame = 'default',
   isLoggedIn = false,
+  isAdmin = false,
   userId,
   matchHistory = [],
   highScores = {},
@@ -49,38 +51,40 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
   onShowcaseChange,
   onOpenAuthModal,
 }) => {
+  const effectiveIsLoggedIn = isLoggedIn || isAdmin;
   const [selectedBranch, setSelectedBranch] = useState<AchievementBranch | 'all'>('all');
   const [showcase, setShowcase] = useState<string[]>(() => {
-    if (!isLoggedIn) return []; // Khách vãng lai không có thành tựu
+    if (!effectiveIsLoggedIn) return []; // Khách vãng lai không có thành tựu
     if (propShowcase && propShowcase.length > 0) return propShowcase.slice(0, 3);
-    return getShowcaseAchievements(userId);
+    return getShowcaseAchievements(userId || (isAdmin ? 'Admin' : undefined));
   });
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   // Đồng bộ showcase khi trạng thái đăng nhập hoặc props thay đổi
   React.useEffect(() => {
-    if (!isLoggedIn) {
+    if (!effectiveIsLoggedIn) {
       setShowcase([]);
     } else if (propShowcase && propShowcase.length > 0) {
       setShowcase(propShowcase.slice(0, 3));
     } else {
-      setShowcase(getShowcaseAchievements(userId));
+      setShowcase(getShowcaseAchievements(userId || (isAdmin ? 'Admin' : undefined)));
     }
-  }, [isLoggedIn, propShowcase, userId]);
+  }, [effectiveIsLoggedIn, propShowcase, userId, isAdmin]);
 
-  // Tính toán trạng thái mở khóa của toàn bộ thành tựu (CHỈ khi đã đăng nhập)
+  // Tính toán trạng thái mở khóa của toàn bộ thành tựu (CHỈ khi đã đăng nhập hoặc có quyền Admin)
   const { unlockedMap, unlockedCount, totalCount, isLockedDueToGuest } = useMemo(() => {
     return calculatePlayerAchievements({
       bestWpm,
       totalGames,
       username,
       frame,
-      isLoggedIn,
+      isLoggedIn: effectiveIsLoggedIn,
+      isAdmin,
       userId,
       matchHistory,
       highScores,
     });
-  }, [bestWpm, totalGames, username, frame, isLoggedIn, userId, matchHistory, highScores]);
+  }, [bestWpm, totalGames, username, frame, effectiveIsLoggedIn, isAdmin, userId, matchHistory, highScores]);
 
   // Gợi ý thành tựu khả dĩ tiếp theo
   const nextSuggestions = useMemo(() => {

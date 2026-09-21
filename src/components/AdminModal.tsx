@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { GameConfig, HighScoreRecord, BossDifficultyConfig, ModeWordCountsConfig, WordPoolType } from '../types';
 import { soundFx } from '../utils/audio';
 import { CHAMPION_TITLES, ADMIN_TITLE } from '../utils/titles';
+import { CultivationState } from '../utils/cultivation';
+import { AdminCultivationTab } from './AdminCultivationTab';
 import { CustomNumberInput } from './CustomNumberInput';
 import { CustomCheckbox } from './CustomCheckbox';
 import { 
@@ -23,9 +25,7 @@ import {
   Check,
   Keyboard,
   HelpCircle,
-  LogOut,
-  Hash,
-  KeyRound
+  Hash
 } from 'lucide-react';
 
 export const POOL_OPTIONS: {
@@ -70,7 +70,7 @@ interface AdminModalProps {
   isAdmin: boolean;
   onLogin: (password: string) => boolean;
   onChangePassword?: (newPassword: string, oldPassword: string) => boolean;
-  onLogout: () => void;
+  onLogout?: () => void;
   config: GameConfig;
   onUpdateConfig: (newCfg: GameConfig) => void;
   onClearChat?: () => void;
@@ -79,10 +79,14 @@ interface AdminModalProps {
   highScores?: Record<string, HighScoreRecord | null>;
   onUpdateHighScores?: (newScores: Record<string, HighScoreRecord | null>) => void;
   currentUsername?: string;
+  currentUser?: { id?: string; username?: string } | null;
   defaultConfig: GameConfig;
+  cultivationState?: CultivationState;
+  onUpdateCultivationState?: (nextState: CultivationState) => void;
+  onSyncAchievements?: (unlockedIds: string[]) => void;
 }
 
-type AdminTab = 'basic' | 'ngau_hung' | 'doan_chu' | 'san_boss' | 'titles';
+type AdminTab = 'basic' | 'ngau_hung' | 'doan_chu' | 'san_boss' | 'titles' | 'tu_tien';
 type BasicSubTab = 'all' | 'vi_dau' | 'vi_nodau' | 'en' | 'numpad';
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -97,19 +101,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   highScores = {},
   onUpdateHighScores,
   currentUsername = 'Bạn',
+  currentUser,
   defaultConfig,
+  cultivationState,
+  onUpdateCultivationState,
+  onSyncAchievements,
 }) => {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Change Password State
-  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [oldPasswordInput, setOldPasswordInput] = useState('');
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
-  const [changePasswordError, setChangePasswordError] = useState('');
   
   const [activeTab, setActiveTab] = useState<AdminTab>('basic');
   const [basicSubTab, setBasicSubTab] = useState<BasicSubTab>('all');
@@ -254,39 +255,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }
   };
 
-  const handleChangePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setChangePasswordError('');
-
-    if (!newPasswordInput || newPasswordInput.trim().length < 4) {
-      setChangePasswordError('Mật khẩu mới phải có tối thiểu 4 ký tự!');
-      soundFx.playError();
-      return;
-    }
-
-    if (newPasswordInput !== confirmPasswordInput) {
-      setChangePasswordError('Mật khẩu mới và xác nhận mật khẩu không khớp!');
-      soundFx.playError();
-      return;
-    }
-
-    if (onChangePassword) {
-      const ok = onChangePassword(newPasswordInput.trim(), oldPasswordInput);
-      if (!ok) {
-        setChangePasswordError('Mật khẩu hiện tại không chính xác!');
-        soundFx.playError();
-        return;
-      }
-    }
-
-    soundFx.playVictory();
-    showToast('Đã đổi mật khẩu Admin thành công! Hãy ghi nhớ mật khẩu mới.');
-    setIsChangePasswordOpen(false);
-    setOldPasswordInput('');
-    setNewPasswordInput('');
-    setConfirmPasswordInput('');
-  };
-
   const handleSaveConfig = () => {
     onUpdateConfig(editableConfig);
     if (onUpdateHighScores) {
@@ -348,6 +316,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }));
   };
 
+  const handleClose = () => {
+    onUpdateConfig(editableConfig);
+    onClose();
+  };
+
   const togglePool = (
     mode: 'ngauHung' | 'doanChu' | 'sanBoss',
     diffKey: string,
@@ -378,8 +351,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         nextPools = [...currentPools, poolId];
       }
 
+      let updated: GameConfig;
       if (mode === 'ngauHung') {
-        return {
+        updated = {
           ...prev,
           ngauHung: {
             ...prev.ngauHung,
@@ -393,7 +367,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           },
         };
       } else if (mode === 'doanChu') {
-        return {
+        updated = {
           ...prev,
           doanChu: {
             ...prev.doanChu,
@@ -407,7 +381,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           },
         };
       } else {
-        return {
+        updated = {
           ...prev,
           sanBoss: {
             ...prev.sanBoss,
@@ -421,6 +395,62 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           },
         };
       }
+      onUpdateConfig(updated);
+      return updated;
+    });
+  };
+
+  const applyPoolsToAllDifficulties = (
+    mode: 'ngauHung' | 'doanChu' | 'sanBoss',
+    sourceDiffKey: string
+  ) => {
+    setEditableConfig((prev) => {
+      let targetPools: WordPoolType[] = [];
+      let updated: GameConfig;
+      if (mode === 'ngauHung') {
+        targetPools = prev.ngauHung.difficulties[sourceDiffKey]?.allowedPools || ['vi_dau', 'vi_nodau', 'en', 'numbers'];
+        const updatedDiffs: Record<string, any> = {};
+        Object.keys(prev.ngauHung.difficulties).forEach((k) => {
+          updatedDiffs[k] = { ...prev.ngauHung.difficulties[k], allowedPools: [...targetPools] };
+        });
+        updated = {
+          ...prev,
+          ngauHung: {
+            ...prev.ngauHung,
+            difficulties: updatedDiffs as typeof prev.ngauHung.difficulties,
+          },
+        };
+      } else if (mode === 'doanChu') {
+        targetPools = prev.doanChu.difficulties[sourceDiffKey]?.allowedPools || ['vi_dau', 'vi_nodau'];
+        const updatedDiffs: Record<string, any> = {};
+        Object.keys(prev.doanChu.difficulties).forEach((k) => {
+          updatedDiffs[k] = { ...prev.doanChu.difficulties[k], allowedPools: [...targetPools] };
+        });
+        updated = {
+          ...prev,
+          doanChu: {
+            ...prev.doanChu,
+            difficulties: updatedDiffs as typeof prev.doanChu.difficulties,
+          },
+        };
+      } else {
+        targetPools = prev.sanBoss.difficulties[sourceDiffKey]?.allowedPools || ['vi_dau', 'vi_nodau', 'en', 'numbers'];
+        const updatedDiffs: Record<string, any> = {};
+        Object.keys(prev.sanBoss.difficulties).forEach((k) => {
+          updatedDiffs[k] = { ...prev.sanBoss.difficulties[k], allowedPools: [...targetPools] };
+        });
+        updated = {
+          ...prev,
+          sanBoss: {
+            ...prev.sanBoss,
+            difficulties: updatedDiffs as typeof prev.sanBoss.difficulties,
+          },
+        };
+      }
+      onUpdateConfig(updated);
+      showToast('Đã áp dụng cài đặt ngôn ngữ cho TẤT CẢ các cấp độ của chế độ này!');
+      soundFx.playKeyClick();
+      return updated;
     });
   };
 
@@ -458,7 +488,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             id="btn-close-admin-modal"
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -601,6 +631,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               >
                 <Award className="w-3.5 h-3.5" />
                 <span>Bảng Vàng & Danh Hiệu</span>
+              </button>
+
+              {/* Tab 6: Tu Tiên (Cảnh Giới & Thành Tựu) */}
+              <button
+                id="tab-admin-tutien"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('tu_tien');
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'tu_tien'
+                    ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-emerald-400 text-black shadow-lg shadow-amber-500/30 ring-1 ring-amber-300'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Tu Tiên & Cảnh Giới</span>
               </button>
             </div>
 
@@ -1140,11 +1188,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                               difficulties: {
                                 ...editableConfig.ngauHung.difficulties,
                                 [selectedNgauHungDiff]: {
-                                  ...editableConfig.ngauHung.difficulties,
-                                  [selectedNgauHungDiff]: {
-                                    ...editableConfig.ngauHung.difficulties[selectedNgauHungDiff],
-                                    roundDuration: val,
-                                  },
+                                  ...editableConfig.ngauHung.difficulties[selectedNgauHungDiff],
+                                  roundDuration: val,
                                 },
                               },
                             },
@@ -1269,9 +1314,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           Đang cấu hình cấp độ: <span className="text-white font-bold">{editableConfig.ngauHung.difficulties[selectedNgauHungDiff]?.name}</span>. Tích chọn các loại ngôn ngữ / nội dung được phép xuất hiện trong chế độ này.
                         </p>
                       </div>
-                      <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-orange-950/40 border border-orange-800/50 text-orange-300">
-                        Đã chọn: {editableConfig.ngauHung.difficulties[selectedNgauHungDiff]?.allowedPools?.length || 4}/5 loại
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => applyPoolsToAllDifficulties('ngauHung', selectedNgauHungDiff)}
+                          className="px-2.5 py-1 rounded-lg bg-orange-950/60 hover:bg-orange-900/80 border border-orange-700/50 text-orange-300 text-[11px] font-bold cursor-pointer transition-all hover:scale-102 flex items-center gap-1"
+                          title="Áp dụng bộ ngôn ngữ đã chọn này cho TẤT CẢ các cấp độ của Ngẫu Hứng"
+                        >
+                          <span>⚡ Áp dụng cho mọi cấp độ</span>
+                        </button>
+                        <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-orange-950/40 border border-orange-800/50 text-orange-300">
+                          Đã chọn: {editableConfig.ngauHung.difficulties[selectedNgauHungDiff]?.allowedPools?.length || 4}/5 loại
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1475,9 +1530,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           Đang cấu hình cấp độ: <span className="text-white font-bold">{editableConfig.doanChu.difficulties[selectedDoanChuDiff]?.name}</span>. Tích chọn các loại ngôn ngữ / nội dung được phép xuất hiện trong câu đố.
                         </p>
                       </div>
-                      <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-purple-950/40 border border-purple-800/50 text-purple-300">
-                        Đã chọn: {editableConfig.doanChu.difficulties[selectedDoanChuDiff]?.allowedPools?.length || 2}/5 loại
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => applyPoolsToAllDifficulties('doanChu', selectedDoanChuDiff)}
+                          className="px-2.5 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/80 border border-purple-700/50 text-purple-300 text-[11px] font-bold cursor-pointer transition-all hover:scale-102 flex items-center gap-1"
+                          title="Áp dụng bộ ngôn ngữ đã chọn này cho TẤT CẢ các cấp độ của Đoán Chữ"
+                        >
+                          <span>⚡ Áp dụng cho mọi cấp độ</span>
+                        </button>
+                        <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-purple-950/40 border border-purple-800/50 text-purple-300">
+                          Đã chọn: {editableConfig.doanChu.difficulties[selectedDoanChuDiff]?.allowedPools?.length || 2}/5 loại
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1762,9 +1827,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           Đang cấu hình cấp độ Boss: <span className="text-white font-bold">{currentBossDiffConfig.name}</span>. Tích chọn các loại ngôn ngữ / nội dung được phép xuất hiện khi giao chiến với Boss.
                         </p>
                       </div>
-                      <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-950/40 border border-amber-800/50 text-amber-300">
-                        Đã chọn: {currentBossDiffConfig.allowedPools?.length || 4}/5 loại
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => applyPoolsToAllDifficulties('sanBoss', selectedBossDiff)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-950/60 hover:bg-amber-900/80 border border-amber-700/50 text-amber-300 text-[11px] font-bold cursor-pointer transition-all hover:scale-102 flex items-center gap-1"
+                          title="Áp dụng bộ ngôn ngữ đã chọn này cho TẤT CẢ các cấp độ Boss"
+                        >
+                          <span>⚡ Áp dụng cho mọi cấp độ</span>
+                        </button>
+                        <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-950/40 border border-amber-800/50 text-amber-300">
+                          Đã chọn: {currentBossDiffConfig.allowedPools?.length || 4}/5 loại
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1937,6 +2012,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               )}
 
+              {/* ========================================================================= */}
+              {/* TAB 6: TU TIÊN (CẢNH GIỚI & THÀNH TỰU) */}
+              {/* ========================================================================= */}
+              {activeTab === 'tu_tien' && (
+                <AdminCultivationTab
+                  cultivationState={cultivationState}
+                  onUpdateCultivationState={onUpdateCultivationState}
+                  onSyncAchievements={onSyncAchievements}
+                  currentUsername={currentUsername}
+                  currentUser={currentUser}
+                  showToast={showToast}
+                />
+              )}
+
             </div>
 
             {/* ========================================================================= */}
@@ -1944,7 +2033,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             {/* ========================================================================= */}
             <div className="p-4 sm:p-5 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
               
-              {/* Left Side: Nút Khôi Phục Mặc Định NẰM CẠNH Nút Đăng Xuất Admin (yêu cầu người dùng) */}
+              {/* Left Side: Nút Khôi Phục Mặc Định */}
               <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                 <button
                   id="btn-admin-reset-default"
@@ -1956,37 +2045,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
                   <span>Khôi Phục Cài Đặt Gốc</span>
                 </button>
-
-                <button
-                  id="btn-admin-change-password"
-                  type="button"
-                  onClick={() => {
-                    soundFx.playKeyClick();
-                    setIsChangePasswordOpen(true);
-                    setChangePasswordError('');
-                    setOldPasswordInput('');
-                    setNewPasswordInput('');
-                    setConfirmPasswordInput('');
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-                  title="Thay đổi mật khẩu đăng nhập quyền Quản Trị Viên"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Đổi Mật Khẩu Admin</span>
-                </button>
-
-                <button
-                  id="btn-admin-logout"
-                  type="button"
-                  onClick={() => {
-                    soundFx.playKeyClick();
-                    onLogout();
-                  }}
-                  className="px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:underline cursor-pointer flex items-center gap-1.5 transition-colors font-medium"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Đăng Xuất Quyền Admin</span>
-                </button>
               </div>
 
               {/* Right Side: Nút Đóng & Lưu Cấu Hình */}
@@ -1994,7 +2052,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <button
                   id="btn-admin-cancel"
                   type="button"
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer transition-colors"
                 >
                   Đóng
@@ -2012,92 +2070,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </div>
 
             </div>
-
-            {/* Change Password Dialog Modal */}
-            {isChangePasswordOpen && (
-              <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-                <div className="w-full max-w-md bg-slate-900 border-2 border-cyan-500/50 rounded-2xl shadow-2xl p-6 text-slate-200">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                        <KeyRound className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-black text-white text-sm uppercase tracking-wide">
-                        Đổi Mật Khẩu Quản Trị Viên
-                      </h4>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsChangePasswordOpen(false)}
-                      className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleChangePasswordSubmit} className="space-y-3.5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1">Mật khẩu hiện tại:</label>
-                      <input
-                        type="password"
-                        value={oldPasswordInput}
-                        onChange={(e) => setOldPasswordInput(e.target.value)}
-                        placeholder="Nhập mật khẩu admin hiện tại..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm outline-none focus:border-cyan-400"
-                        required
-                        autoFocus
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1">Mật khẩu mới (tối thiểu 4 ký tự):</label>
-                      <input
-                        type="password"
-                        value={newPasswordInput}
-                        onChange={(e) => setNewPasswordInput(e.target.value)}
-                        placeholder="Nhập mật khẩu mới..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm outline-none focus:border-cyan-400"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1">Xác nhận mật khẩu mới:</label>
-                      <input
-                        type="password"
-                        value={confirmPasswordInput}
-                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
-                        placeholder="Nhập lại mật khẩu mới..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm outline-none focus:border-cyan-400"
-                        required
-                      />
-                    </div>
-
-                    {changePasswordError && (
-                      <div className="text-xs text-rose-400 font-semibold p-2.5 bg-rose-950/40 rounded-xl border border-rose-800/60">
-                        {changePasswordError}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-end gap-2.5 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsChangePasswordOpen(false)}
-                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
-                      >
-                        Hủy
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 cursor-pointer"
-                      >
-                        Lưu Mật Khẩu Mới
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
 
           </div>
         )}

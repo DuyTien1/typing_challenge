@@ -810,6 +810,113 @@ export function getAchievementById(id: string): XianxiaAchievement | undefined {
 }
 
 /**
+ * Bảng liên kết giữa Thành Tựu và Cảnh Giới Tu Tiên (0: Luyện Khí -> 11: Thiên Tôn)
+ * Giúp tự động mở khóa toàn bộ thành tựu thuộc các cảnh giới tương ứng khi thăng cấp
+ */
+export const REALM_ACHIEVEMENT_MAPPING: Record<string, number> = {
+  // Realm 0: Luyện Khí Kỳ (Lv 1 - 30)
+  speed_40: 0,
+  acc_95: 0,
+  matches_10: 0,
+  numpad_intro: 0,
+  pvp_first_win: 0,
+  hidden_midnight: 0,
+  hidden_verified_dao: 0,
+
+  // Realm 1: Trúc Cơ Kỳ (Lv 31 - 70)
+  speed_60: 1,
+  acc_98: 1,
+  pve_mystery_word: 1,
+  numpad_50: 1,
+  pvp_streak_3: 1,
+  hidden_unyielding: 1,
+
+  // Realm 2: Kết Đan Kỳ / Kim Đan (Lv 71 - 130)
+  speed_80: 2,
+  acc_100_once: 2,
+  matches_30: 2,
+  pve_boss_win: 2,
+  pve_rush_high: 2,
+  numpad_75: 2,
+  hidden_flawless_fast: 2,
+
+  // Realm 3: Nguyên Anh Kỳ (Lv 131 - 210)
+  speed_100: 3,
+  acc_100_3x: 3,
+  matches_75: 3,
+  pve_outplay_beat: 3,
+  pvp_streak_5: 3,
+  hidden_all_modes: 3,
+
+  // Realm 4: Hóa Thần Kỳ (Lv 211 - 310)
+  speed_120: 4,
+  matches_150: 4,
+  hidden_room_full: 4,
+  hidden_steady_heart: 4,
+
+  // Realm 5: Luyện Hư Kỳ (Lv 311 - 430)
+  hidden_comeback: 5,
+
+  // Realm 6: Hợp Thể Kỳ (Lv 431 - 570)
+  acc_100_10x: 6,
+
+  // Realm 7: Đại Thừa Kỳ (Lv 571 - 720)
+  speed_160: 7,
+  pve_boss_hell: 7,
+  numpad_100: 7,
+
+  // Realm 8: Độ Kiếp Kỳ (Lv 721 - 870)
+  speed_140: 8,
+  matches_300: 8,
+  hidden_top_glory: 8,
+
+  // Realm 9: Kim Tiên (Lv 871 - 940)
+  matches_500: 9,
+  hidden_aura_frame: 9,
+
+  // Realm 10: Đại La Tiên (Lv 941 - 980)
+  // Realm 11: Thiên Tôn (Lv 981 - 1000)
+  pvp_streak_8: 11,
+};
+
+/**
+ * Lấy danh sách ID thành tựu tương ứng với cảnh giới (<= realmIndex)
+ */
+export function getAchievementsUpToRealm(realmIndex: number): string[] {
+  return Object.entries(REALM_ACHIEVEMENT_MAPPING)
+    .filter(([_, rIdx]) => rIdx <= realmIndex)
+    .map(([id]) => id);
+}
+
+/**
+ * Mở khóa hàng loạt thành tựu cho người chơi (Admin tool hoặc sự kiện)
+ */
+export function unlockAchievementsForUser(achievementIds: string[], userId?: string | null): string[] {
+  const accountKey = userId || 'Admin';
+  const existing = new Set(getStoredUnlockedAchievements(accountKey));
+  for (const id of achievementIds) {
+    existing.add(id);
+  }
+  const updated = Array.from(existing);
+  setStoredUnlockedAchievements(updated, accountKey);
+  return updated;
+}
+
+/**
+ * Đặt lại (Reset) toàn bộ thành tựu của tài khoản về trạng thái ban đầu
+ */
+export function resetAchievementsForUser(userId?: string | null): void {
+  const accountKey = userId || 'Admin';
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(`${UNLOCKED_KEY_PREFIX}${accountKey}`);
+    localStorage.removeItem(`${SHOWCASE_KEY_PREFIX}${accountKey}`);
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Tính toán trạng thái mở khóa thành tựu của người chơi dựa trên toàn bộ chỉ số thực tế
  * ĐẢM BẢO QUY ĐỊNH: CHỈ NGƯỜI CHƠI ĐÃ ĐĂNG NHẬP MỚI CÓ THỂ HOÀN THÀNH THÀNH TỰU!
  */
@@ -819,11 +926,14 @@ export function calculatePlayerAchievements(params: {
   username: string;
   frame?: string;
   isLoggedIn?: boolean;
+  isAdmin?: boolean;
   userId?: string | null;
   matchHistory?: MatchRecord[];
   highScores?: Record<string, HighScoreRecord | null>;
   roomPlayerCount?: number;
   initialUnlocked?: string[];
+  cultivationLevel?: number;
+  cultivationRealmIndex?: number;
 }): {
   unlockedMap: Record<string, boolean>;
   unlockedList: XianxiaAchievement[];
@@ -838,16 +948,19 @@ export function calculatePlayerAchievements(params: {
     username,
     frame = 'default',
     isLoggedIn = false,
+    isAdmin = false,
     userId = null,
     matchHistory = [],
     highScores = {},
     roomPlayerCount = 1,
     initialUnlocked = [],
+    cultivationLevel,
+    cultivationRealmIndex,
   } = params;
 
-  // QUY ĐỊNH CỐT LÕI: CHỈ NGƯỜI CHƠI ĐÃ ĐĂNG NHẬP MỚI CÓ THỂ HOÀN THÀNH THÀNH TỰU
-  // Nếu chưa đăng nhập (Khách / Guest), toàn bộ thành tựu đều ở trạng thái KHÓA (0/35)
-  if (!isLoggedIn) {
+  // QUY ĐỊNH CỐT LÕI: CHỈ NGƯỜI CHƠI ĐÃ ĐĂNG NHẬP HOẶC CÓ QUYỀN ADMIN MỚI CÓ THỂ HOÀN THÀNH THÀNH TỰU
+  // Nếu chưa đăng nhập (Khách / Guest) và không phải Admin, toàn bộ thành tựu đều ở trạng thái KHÓA (0/35)
+  if (!isLoggedIn && !isAdmin) {
     const lockedMap: Record<string, boolean> = {};
     for (const ach of XIANXIA_ACHIEVEMENTS) {
       lockedMap[ach.id] = false;
@@ -860,6 +973,22 @@ export function calculatePlayerAchievements(params: {
       isLockedDueToGuest: true,
       newlyUnlockedList: [],
     };
+  }
+
+  // Tự động kiểm tra cảnh giới tu tiên từ bộ nhớ nếu không được truyền vào
+  let effectiveRealmIndex = cultivationRealmIndex;
+  if (effectiveRealmIndex === undefined && typeof window !== 'undefined') {
+    try {
+      const rawCult = localStorage.getItem('fasttyping_cultivation_state_v1');
+      if (rawCult) {
+        const parsed = JSON.parse(rawCult);
+        if (typeof parsed?.realmIndex === 'number') {
+          effectiveRealmIndex = parsed.realmIndex;
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
   // Cache đã mở trước đó của riêng tài khoản người chơi này
@@ -929,7 +1058,15 @@ export function calculatePlayerAchievements(params: {
 
     let isMet = false;
 
-    switch (ach.id) {
+    // 1. Tự động hoàn thành thành tựu nếu Cảnh Giới Tu Tiên đạt mức tương ứng
+    if (effectiveRealmIndex !== undefined && REALM_ACHIEVEMENT_MAPPING[ach.id] !== undefined) {
+      if (effectiveRealmIndex >= REALM_ACHIEVEMENT_MAPPING[ach.id]) {
+        isMet = true;
+      }
+    }
+
+    if (!isMet) {
+      switch (ach.id) {
       // Tật Phong Kiếm Quyết
       case 'speed_40':
         isMet = maxMatchWpm >= 40;
@@ -1068,6 +1205,7 @@ export function calculatePlayerAchievements(params: {
       case 'hidden_steady_heart':
         isMet = maxSteadyAccStreak >= 5;
         break;
+      }
     }
 
     if (isMet) {
@@ -1109,13 +1247,16 @@ export function checkNewAchievementsOnMatchEnd(params: {
   username: string;
   frame?: string;
   isLoggedIn?: boolean;
+  isAdmin?: boolean;
   userId?: string | null;
   matchHistory?: MatchRecord[];
   highScores?: Record<string, HighScoreRecord | null>;
   roomPlayerCount?: number;
   initialUnlocked?: string[];
+  cultivationLevel?: number;
+  cultivationRealmIndex?: number;
 }): XianxiaAchievement[] {
-  if (!params.isLoggedIn) return [];
+  if (!params.isLoggedIn && !params.isAdmin) return [];
   const res = calculatePlayerAchievements(params);
   return res.newlyUnlockedList || [];
 }

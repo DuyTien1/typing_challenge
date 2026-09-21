@@ -193,13 +193,14 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   }, [guessInput, isRoundSolved]);
 
   useEffect(() => {
-    updateCaret();
-    const rafId = requestAnimationFrame(updateCaret);
     window.addEventListener('resize', updateCaret);
     return () => {
-      cancelAnimationFrame(rafId);
       window.removeEventListener('resize', updateCaret);
     };
+  }, [updateCaret]);
+
+  useEffect(() => {
+    updateCaret();
   }, [guessInput, isRoundSolved, updateCaret]);
 
   const finishEntireGame = useCallback(() => {

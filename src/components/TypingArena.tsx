@@ -95,6 +95,104 @@ const GHOST_OPTIONS: { id: OutplayPaceMode; label: string }[] = [
   { id: 'off', label: 'Tắt Ghost' },
 ];
 
+interface WordItemProps {
+  word: string;
+  absIdx: number;
+  status: 'pending' | 'correct' | 'incorrect';
+  isCurrent: boolean;
+  isPast: boolean;
+  currentInput: string;
+  pastTypedWord?: string;
+}
+
+const WordItem = React.memo<WordItemProps>(
+  ({
+    word,
+    absIdx,
+    status,
+    isCurrent,
+    isPast,
+    currentInput,
+    pastTypedWord,
+  }) => {
+    return (
+      <div
+        data-word-idx={absIdx}
+        className={`relative h-[48px] flex items-center whitespace-nowrap select-none ${
+          isCurrent ? 'z-10' : ''
+        }`}
+      >
+        {word.split('').map((char, charIdx) => {
+          let charColor = 'text-slate-500';
+          let decoration = '';
+
+          if (isPast) {
+            if (status === 'correct') {
+              charColor = 'text-slate-500 opacity-60';
+            } else {
+              charColor = 'text-rose-400/80';
+              decoration = 'line-through opacity-70';
+            }
+          } else if (isCurrent) {
+            const typedChar = currentInput[charIdx];
+            const isTyped = charIdx < currentInput.length;
+            if (isTyped) {
+              if (typedChar === char) {
+                charColor = 'text-white font-bold drop-shadow-[0_0_4px_rgba(255,255,255,0.7)]';
+              } else {
+                charColor = 'text-rose-400 font-bold';
+                decoration = 'underline decoration-rose-500 decoration-2';
+              }
+            } else if (charIdx === currentInput.length) {
+              charColor = 'text-slate-200 font-medium';
+            } else {
+              charColor = 'text-slate-400';
+            }
+          }
+
+          return (
+            <span
+              key={charIdx}
+              data-char-idx={charIdx}
+              className={`relative font-normal tracking-wide transition-colors duration-75 ${charColor} ${decoration}`}
+            >
+              {char}
+            </span>
+          );
+        })}
+
+        {/* Ký tự thừa của từ đã gõ sai trước đó */}
+        {isPast && status === 'incorrect' && pastTypedWord && pastTypedWord.length > word.length && (
+          <span className="text-rose-400/70 bg-rose-500/20 px-0.5 rounded text-sm line-through opacity-70 ml-0.5">
+            {pastTypedWord.slice(word.length)}
+          </span>
+        )}
+
+        {/* Extra excess characters typed - placed inline so caret correctly follows */}
+        {isCurrent && currentInput.length > word.length && (
+          <span
+            data-char-extra-last="true"
+            className="text-rose-400 bg-rose-500/25 px-0.5 rounded text-lg underline decoration-rose-500 font-bold ml-0.5"
+          >
+            {currentInput.slice(word.length)}
+          </span>
+        )}
+      </div>
+    );
+  },
+  (prev, next) => {
+    if (prev.isCurrent !== next.isCurrent) return false;
+    if (prev.status !== next.status) return false;
+    if (prev.word !== next.word) return false;
+    if (prev.isPast !== next.isPast) return false;
+    if (prev.pastTypedWord !== next.pastTypedWord) return false;
+    if (next.isCurrent) {
+      return prev.currentInput === next.currentInput;
+    }
+    return true;
+  }
+);
+
 export const TypingArena: React.FC<TypingArenaProps> = ({
   words,
   duration,
@@ -357,6 +455,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const wordsContainerRef = useRef<HTMLDivElement>(null);
   const wordsStreamRef = useRef<HTMLDivElement>(null);
+  const lastProgressUpdateRef = useRef<number>(0);
   const wordHistoryRef = useRef<
     {
       typedWord: string;
@@ -862,25 +961,31 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }
   }, [currentWordIndex, currentInput, effectiveWords]);
 
+  // Setup ResizeObserver and window resize ONCE on mount / container change
   useEffect(() => {
-    updateCaretAndLines();
-    const rafId = requestAnimationFrame(updateCaretAndLines);
-    window.addEventListener('resize', updateCaretAndLines);
+    const handleResize = () => {
+      updateCaretAndLines();
+    };
+    window.addEventListener('resize', handleResize);
 
     let ro: ResizeObserver | null = null;
     if (wordsContainerRef.current) {
-      ro = new ResizeObserver(() => updateCaretAndLines());
+      ro = new ResizeObserver(handleResize);
       ro.observe(wordsContainerRef.current);
     }
 
     return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', updateCaretAndLines);
+      window.removeEventListener('resize', handleResize);
       ro?.disconnect();
     };
+  }, [updateCaretAndLines]);
+
+  // Update caret & line scroll whenever active word or input changes
+  useEffect(() => {
+    updateCaretAndLines();
   }, [currentWordIndex, currentInput, updateCaretAndLines]);
 
-  // Outplay Ghost / Pace Caret Realtime Simulation Loop
+  // Outplay Ghost / Pace Caret Realtime Simulation Loop (Optimized for Virtual Environments & Citrix)
   useEffect(() => {
     if (!isOutplay || !hasStartedTyping || isPlayerSurrendered) {
       setGhostCaretPos(null);
@@ -888,65 +993,90 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }
 
     let animId: number;
+    let lastTickTime = 0;
+    let lastLeadCalcTime = 0;
+    let lastGhostWordIdx = -1;
+    let lastGhostCharIdx = -1;
+    let lastRefWpm = -1;
+    let lastIsAvail: boolean | null = null;
 
-    const updateGhost = () => {
-      if (!wordsStreamRef.current) return;
+    const updateGhost = (timestamp: number) => {
+      // Throttle ghost tick to ~25fps (every 40ms) to avoid saturating virtualized CPU & display encoders
+      if (timestamp - lastTickTime >= 40) {
+        lastTickTime = timestamp;
 
-      const elapsedMs = performance.now() - startTimePerfRef.current;
-      const ghostRes = calculateGhostCharIndex(
-        outplayPaceMode,
-        outplayCustomWpm,
-        elapsedMs,
-        activeGhostRecord
-      );
+        if (wordsStreamRef.current) {
+          const elapsedMs = performance.now() - startTimePerfRef.current;
+          const ghostRes = calculateGhostCharIndex(
+            outplayPaceMode,
+            outplayCustomWpm,
+            elapsedMs,
+            activeGhostRecord
+          );
 
-      setGhostInfo({ refWpm: ghostRes.referenceWpm, isAvailable: ghostRes.isAvailable });
-
-      if (!ghostRes.isAvailable) {
-        setGhostCaretPos(null);
-      } else {
-        const streamEl = wordsStreamRef.current;
-        const streamRect = streamEl.getBoundingClientRect();
-        const mapped = mapLinearCharToWord(effectiveWords, ghostRes.charIdx);
-        const gWordEl = streamEl.querySelector(`[data-word-idx="${mapped.wordIdx}"]`) as HTMLElement | null;
-
-        if (gWordEl) {
-          let gRect: DOMRect | null = null;
-          let isAfter = false;
-
-          if (mapped.isSpaceOrEnd) {
-            const lastCharEl = gWordEl.querySelector(
-              `[data-char-idx="${effectiveWords[mapped.wordIdx]?.length ? effectiveWords[mapped.wordIdx].length - 1 : 0}"]`
-            );
-            if (lastCharEl) {
-              gRect = lastCharEl.getBoundingClientRect();
-              isAfter = true;
-            } else {
-              gRect = gWordEl.getBoundingClientRect();
-              isAfter = true;
-            }
-          } else {
-            const charEl = gWordEl.querySelector(`[data-char-idx="${mapped.charIdx}"]`);
-            if (charEl) {
-              gRect = charEl.getBoundingClientRect();
-            } else {
-              gRect = gWordEl.getBoundingClientRect();
-            }
+          if (lastRefWpm !== ghostRes.referenceWpm || lastIsAvail !== ghostRes.isAvailable) {
+            lastRefWpm = ghostRes.referenceWpm;
+            lastIsAvail = ghostRes.isAvailable;
+            setGhostInfo({ refWpm: ghostRes.referenceWpm, isAvailable: ghostRes.isAvailable });
           }
 
-          if (gRect) {
-            const gx = isAfter ? gRect.right - streamRect.left : gRect.left - streamRect.left;
-            const gy = gRect.top - streamRect.top;
-            const gHeight = Math.max(24, Math.min(36, gRect.height || 28));
-            setGhostCaretPos({ x: gx, y: gy, height: gHeight });
+          if (!ghostRes.isAvailable) {
+            setGhostCaretPos(null);
+          } else {
+            const mapped = mapLinearCharToWord(effectiveWords, ghostRes.charIdx);
+
+            // Only query DOM when ghost character advances
+            if (mapped.wordIdx !== lastGhostWordIdx || mapped.charIdx !== lastGhostCharIdx) {
+              lastGhostWordIdx = mapped.wordIdx;
+              lastGhostCharIdx = mapped.charIdx;
+
+              const streamEl = wordsStreamRef.current;
+              const streamRect = streamEl.getBoundingClientRect();
+              const gWordEl = streamEl.querySelector(`[data-word-idx="${mapped.wordIdx}"]`) as HTMLElement | null;
+
+              if (gWordEl) {
+                let gRect: DOMRect | null = null;
+                let isAfter = false;
+
+                if (mapped.isSpaceOrEnd) {
+                  const lastCharEl = gWordEl.querySelector(
+                    `[data-char-idx="${effectiveWords[mapped.wordIdx]?.length ? effectiveWords[mapped.wordIdx].length - 1 : 0}"]`
+                  );
+                  if (lastCharEl) {
+                    gRect = lastCharEl.getBoundingClientRect();
+                    isAfter = true;
+                  } else {
+                    gRect = gWordEl.getBoundingClientRect();
+                    isAfter = true;
+                  }
+                } else {
+                  const charEl = gWordEl.querySelector(`[data-char-idx="${mapped.charIdx}"]`);
+                  if (charEl) {
+                    gRect = charEl.getBoundingClientRect();
+                  } else {
+                    gRect = gWordEl.getBoundingClientRect();
+                  }
+                }
+
+                if (gRect) {
+                  const gx = isAfter ? gRect.right - streamRect.left : gRect.left - streamRect.left;
+                  const gy = gRect.top - streamRect.top;
+                  const gHeight = Math.max(24, Math.min(36, gRect.height || 28));
+                  setGhostCaretPos({ x: gx, y: gy, height: gHeight });
+                }
+              }
+            }
+
+            // Calculate lead delta (Player chars - Ghost chars) throttled every 250ms
+            if (timestamp - lastLeadCalcTime >= 250) {
+              lastLeadCalcTime = timestamp;
+              const playerLinear =
+                effectiveWords.slice(0, currentWordIndex).reduce((sum, w) => sum + w.length + 1, 0) +
+                currentInput.length;
+              setGhostLeadDelta(Math.round(playerLinear - ghostRes.charIdx));
+            }
           }
         }
-
-        // Calculate lead delta (Player chars - Ghost chars)
-        const playerLinear =
-          effectiveWords.slice(0, currentWordIndex).reduce((sum, w) => sum + w.length + 1, 0) +
-          currentInput.length;
-        setGhostLeadDelta(Math.round(playerLinear - ghostRes.charIdx));
       }
 
       animId = requestAnimationFrame(updateGhost);
@@ -1053,6 +1183,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     );
     const progress = Math.min(100, Math.round((nextIndex / targetWordCount) * 100));
 
+    lastProgressUpdateRef.current = now;
     onUpdateProgress(progress, newCorrectChars, newErrors, liveWpm);
 
     // Completed all target words
@@ -1238,7 +1369,11 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     // Stable monotonic progress based on completed words, advancing smoothly when space is pressed
     const stableProg = Math.min(100, Math.round((currentWordIndex / targetWordCount) * 100));
 
-    onUpdateProgress(stableProg, currentLiveCorrect, totalErrors, charLiveWpm);
+    // Throttle progress notification to parent (App.tsx) during typing to avoid root re-renders
+    if (now - lastProgressUpdateRef.current >= 150) {
+      lastProgressUpdateRef.current = now;
+      onUpdateProgress(stableProg, currentLiveCorrect, totalErrors, charLiveWpm);
+    }
   };
 
   // Backspace key handler
@@ -1313,6 +1448,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             const progress = Math.min(100, Math.round((prevIndex / targetWordCount) * 100));
             const elapsed = Math.max(0.003, (performance.now() - startTimePerfRef.current) / 60000);
             const liveWpmVal = Math.round(correctChars / 5 / elapsed);
+            lastProgressUpdateRef.current = performance.now();
             onUpdateProgress(progress, correctChars, newErrors, liveWpmVal);
           }
         }
@@ -2012,78 +2148,18 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               />
             )}
 
-            {effectiveWords.map((word, absIdx) => {
-              const status = wordStatuses[absIdx];
-              const isCurrent = absIdx === currentWordIndex;
-              const isPast = absIdx < currentWordIndex;
-              const pastHist = wordHistoryRef.current[absIdx];
-
-              return (
-                <div
-                  key={absIdx}
-                  data-word-idx={absIdx}
-                  className={`relative h-[48px] flex items-center whitespace-nowrap select-none ${
-                    isCurrent ? 'z-10' : ''
-                  }`}
-                >
-                  {word.split('').map((char, charIdx) => {
-                    let charColor = 'text-slate-500';
-                    let decoration = '';
-
-                    if (isPast) {
-                      if (status === 'correct') {
-                        charColor = 'text-slate-500 opacity-60';
-                      } else {
-                        charColor = 'text-rose-400/80';
-                        decoration = 'line-through opacity-70';
-                      }
-                    } else if (isCurrent) {
-                      const typedChar = currentInput[charIdx];
-                      const isTyped = charIdx < currentInput.length;
-                      if (isTyped) {
-                        if (typedChar === char) {
-                          charColor = 'text-white font-bold drop-shadow-[0_0_4px_rgba(255,255,255,0.7)]';
-                        } else {
-                          charColor = 'text-rose-400 font-bold';
-                          decoration = 'underline decoration-rose-500 decoration-2';
-                        }
-                      } else if (charIdx === currentInput.length) {
-                        charColor = 'text-slate-200 font-medium';
-                      } else {
-                        charColor = 'text-slate-400';
-                      }
-                    }
-
-                    return (
-                      <span
-                        key={charIdx}
-                        data-char-idx={charIdx}
-                        className={`relative font-normal tracking-wide transition-colors duration-75 ${charColor} ${decoration}`}
-                      >
-                        {char}
-                      </span>
-                    );
-                  })}
-
-                  {/* Ký tự thừa của từ đã gõ sai trước đó */}
-                  {isPast && status === 'incorrect' && pastHist?.typedWord && pastHist.typedWord.length > word.length && (
-                    <span className="text-rose-400/70 bg-rose-500/20 px-0.5 rounded text-sm line-through opacity-70 ml-0.5">
-                      {pastHist.typedWord.slice(word.length)}
-                    </span>
-                  )}
-
-                  {/* Extra excess characters typed - placed inline so caret correctly follows */}
-                  {isCurrent && currentInput.length > word.length && (
-                    <span
-                      data-char-extra-last="true"
-                      className="text-rose-400 bg-rose-500/25 px-0.5 rounded text-lg underline decoration-rose-500 font-bold ml-0.5"
-                    >
-                      {currentInput.slice(word.length)}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {effectiveWords.map((word, absIdx) => (
+              <WordItem
+                key={absIdx}
+                word={word}
+                absIdx={absIdx}
+                status={wordStatuses[absIdx]}
+                isCurrent={absIdx === currentWordIndex}
+                isPast={absIdx < currentWordIndex}
+                currentInput={absIdx === currentWordIndex ? currentInput : ''}
+                pastTypedWord={wordHistoryRef.current[absIdx]?.typedWord}
+              />
+            ))}
           </div>
         </div>
 

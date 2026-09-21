@@ -30,6 +30,8 @@
   z-index: 30;
   transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1), height 0.08s ease-out, opacity 0.15s ease;
   will-change: transform;
+  transform: translateZ(0);
+  contain: layout paint;
 }
 
 .monkeytype-caret-bar {
@@ -41,6 +43,7 @@
   transform-origin: center center;
   transition: transform 0.08s ease-out;
   will-change: transform;
+  transform: translateZ(0);
 }
 
 .monkeytype-caret-bar.contracting {
@@ -59,6 +62,8 @@
   z-index: 30;
   transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1), height 0.08s ease-out, opacity 0.15s ease;
   will-change: transform;
+  transform: translateZ(0);
+  contain: layout paint;
 }
 
 .monkeytype-caret.blinking {
@@ -156,6 +161,8 @@
   filter: blur(4px);
   z-index: 0;
   opacity: 0.95;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .admin-conic-sharp {
@@ -165,34 +172,49 @@
   background: conic-gradient(from 0deg, #f59e0b, #ef4444, #fbbf24, #f59e0b, #fbbf24, #ffffff, #f59e0b);
   animation: adminConicRotate 3.2s linear infinite;
   z-index: 1;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .frame-admin-box {
   box-shadow: 0 0 20px rgba(245, 158, 11, 0.8), 0 0 40px rgba(239, 68, 68, 0.5), inset 0 0 15px rgba(251, 191, 36, 0.4);
+  transform: translateZ(0);
 }
 
 .frame-flame-box {
   animation: championFlameAura 2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
 .frame-lightning-box {
   animation: lightningStormAura 1.8s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
 .frame-dragon-box {
   animation: dragonDarkBloodAura 2.2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
 .frame-cosmic-box {
   animation: cosmicCyanAura 2.4s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
 .frame-matrix-box {
   animation: matrixEmeraldAura 2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
 .frame-arcane-box {
   animation: arcanePurpleAura 2.2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
 /* === CHAMPION TOP MULTIPLAYER AURA ANIMATIONS === */

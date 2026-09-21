@@ -200,8 +200,9 @@ function saveLeaderboardToFile() {
 // User Account Storage (Persistent to users.json - no external database required)
 export interface ServerUserRecord {
   id: string;
-  email: string;
-  username: string;
+  email?: string;
+  username: string; // Tên đăng nhập cố định (không thể thay đổi)
+  displayName?: string; // Tên người chơi hiển thị trong game (có thể thay đổi)
   avatar: string;
   frame: string;
   isAdmin?: boolean;
@@ -215,6 +216,10 @@ export interface ServerUserRecord {
   isVerified: boolean;
   sessionTokens: string[];
   cultivation?: any;
+  bestWpm?: number;
+  bestWpmRecord?: any;
+  totalGames?: number;
+  matchHistory?: any[];
   createdAt: number;
   updatedAt: number;
 }
@@ -239,8 +244,9 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
     const passwordHash = hashPassword('admin123', salt);
     const newAdmin: ServerUserRecord = {
       id: 'usr_admin_default',
-      email: 'admin@fasttyping.vn',
+      email: '',
       username: 'admin',
+      displayName: 'Admin',
       avatar: '👑',
       frame: 'admin_gold',
       isAdmin: true,
@@ -259,6 +265,9 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
   } else {
     // Ensure admin flags are set
     adminUser.isAdmin = true;
+    if (!adminUser.displayName) {
+      adminUser.displayName = 'Admin';
+    }
     if (!adminUser.frame || adminUser.frame === 'default') {
       adminUser.frame = 'admin_gold';
     }
@@ -268,17 +277,31 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
 
 function loadUsersFromFile(): Map<string, ServerUserRecord> {
   const map = new Map<string, ServerUserRecord>();
+  let needsSave = false;
   try {
     if (fs.existsSync(USERS_FILE)) {
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
       const data = JSON.parse(content);
       if (Array.isArray(data)) {
         for (const u of data) {
-          if (u && u.id) map.set(u.id, u);
+          if (u && u.id) {
+            if (!u.displayName) {
+              u.displayName = u.username;
+              needsSave = true;
+            }
+            map.set(u.id, u);
+          }
         }
       } else if (data && typeof data === 'object') {
         for (const [id, u] of Object.entries(data)) {
-          if (u && typeof u === 'object') map.set(id, u as ServerUserRecord);
+          if (u && typeof u === 'object') {
+            const rec = u as ServerUserRecord;
+            if (!rec.displayName) {
+              rec.displayName = rec.username;
+              needsSave = true;
+            }
+            map.set(id, rec);
+          }
         }
       }
     }
@@ -287,7 +310,7 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
   }
 
   const added = ensureDefaultAdminUser(map);
-  if (added) {
+  if (added || needsSave) {
     try {
       const obj: Record<string, ServerUserRecord> = {};
       for (const [id, u] of map.entries()) {
@@ -354,7 +377,10 @@ function getUserByUsernameOrEmail(identifier?: string): ServerUserRecord | null 
   if (!identifier) return null;
   const clean = identifier.trim().toLowerCase();
   for (const user of serverUsers.values()) {
-    if (user.email.toLowerCase() === clean || user.username.toLowerCase() === clean) {
+    if (
+      (user.username && user.username.toLowerCase() === clean) ||
+      (user.email && user.email.toLowerCase() === clean)
+    ) {
       return user;
     }
   }
@@ -364,8 +390,9 @@ function getUserByUsernameOrEmail(identifier?: string): ServerUserRecord | null 
 function sanitizeUser(u: ServerUserRecord) {
   return {
     id: u.id,
-    email: u.email,
-    username: u.username,
+    email: u.email || '',
+    username: u.username, // Tên đăng nhập cố định (dùng để đăng nhập)
+    displayName: u.displayName || u.username, // Tên người chơi hiển thị trong game
     avatar: u.avatar,
     frame: u.frame,
     isAdmin: Boolean(u.isAdmin || u.username.toLowerCase() === 'admin'),
@@ -373,7 +400,11 @@ function sanitizeUser(u: ServerUserRecord) {
     unlockedAchievements: u.unlockedAchievements || [],
     isVerified: u.isVerified,
     authProvider: u.authProvider,
-    cultivation: u.cultivation,
+    cultivation: u.cultivation || null,
+    bestWpm: u.bestWpm || 0,
+    bestWpmRecord: u.bestWpmRecord || null,
+    totalGames: u.totalGames || 0,
+    matchHistory: u.matchHistory || [],
     createdAt: u.createdAt,
   };
 }
@@ -915,15 +946,19 @@ async function startServer() {
 
   // POST /api/auth/register and /api/auth/register-email: Quick 1-step account creation
   const handleQuickRegister = (req: express.Request, res: express.Response) => {
-    const { email, password, username, avatar } = req.body || {};
+    const { password, username, displayName, avatar } = req.body || {};
 
     const cleanUsername = String(username || '').trim();
-    if (!cleanUsername || cleanUsername.length < 2) {
-      res.status(400).json({ success: false, error: 'Tên người chơi / Biệt danh phải có ít nhất 2 ký tự.' });
+    if (!cleanUsername || cleanUsername.length < 3) {
+      res.status(400).json({ success: false, error: 'Tên đăng nhập phải có ít nhất 3 ký tự.' });
       return;
     }
     if (cleanUsername.length > 24) {
-      res.status(400).json({ success: false, error: 'Tên người chơi không được vượt quá 24 ký tự.' });
+      res.status(400).json({ success: false, error: 'Tên đăng nhập không được vượt quá 24 ký tự.' });
+      return;
+    }
+    if (/\s/.test(cleanUsername)) {
+      res.status(400).json({ success: false, error: 'Tên đăng nhập không được chứa khoảng trắng (dấu cách).' });
       return;
     }
 
@@ -933,44 +968,30 @@ async function startServer() {
       return;
     }
 
-    // Check if username / nickname is already taken (strictly unique across all players)
+    // Check if login username is already taken (strictly unique across all accounts)
     const existingByName = getUserByUsername(cleanUsername);
     if (existingByName) {
       res.status(400).json({
         success: false,
-        error: `Tên người chơi / Biệt danh "${cleanUsername}" đã có người sử dụng. Vui lòng chọn tên khác!`,
+        error: `Tên đăng nhập "${cleanUsername}" đã có người sử dụng. Vui lòng chọn tên đăng nhập khác!`,
       });
       return;
     }
 
-    // Check optional email
-    let cleanEmail = '';
-    if (email && typeof email === 'string' && email.trim()) {
-      cleanEmail = email.trim().toLowerCase();
-      const existingByEmail = getUserByEmail(cleanEmail);
-      if (existingByEmail) {
-        res.status(400).json({
-          success: false,
-          error: `Email "${cleanEmail}" đã được liên kết với một tài khoản. Vui lòng đăng nhập!`,
-        });
-        return;
-      }
-    } else {
-      // Auto-generate clean fallback handle
-      const safeHandle = cleanUsername.toLowerCase().replace(/[^a-z0-9_]/g, '') || 'player';
-      cleanEmail = `${safeHandle}_${Date.now().toString().slice(-4)}@fasttyping.vn`;
-    }
+    // Player in-game display name (defaults to username if not explicitly set)
+    const cleanDisplayName = String(displayName || cleanUsername).trim().slice(0, 24) || cleanUsername;
 
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = hashPassword(cleanPassword, salt);
     const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const sessionToken = `tok_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
 
-    // Account is instantly verified & active - zero OTP friction
+    // Account created without email requirement or auto-generated fake email
     const user: ServerUserRecord = {
       id: userId,
-      email: cleanEmail,
-      username: cleanUsername,
+      email: '',
+      username: cleanUsername, // Tên đăng nhập cố định (không thể thay đổi)
+      displayName: cleanDisplayName, // Tên người chơi hiển thị trong game
       avatar: avatar || '⚡',
       frame: 'default',
       authProvider: 'email',
@@ -985,7 +1006,7 @@ async function startServer() {
     serverUsers.set(userId, user);
     saveUsersToFile();
 
-    console.log(`[FastTyping Auth] Tạo tài khoản thành công: ${cleanUsername} (${cleanEmail})`);
+    console.log(`[FastTyping Auth] Đăng ký thành công: Username="${cleanUsername}", DisplayName="${cleanDisplayName}"`);
 
     res.json({
       success: true,
@@ -1000,11 +1021,11 @@ async function startServer() {
 
   // POST /api/auth/login and /api/auth/login-email: Quick login by username OR email
   const handleQuickLogin = (req: express.Request, res: express.Response) => {
-    const { email, username, account, password } = req.body || {};
-    const identifier = String(account || username || email || '').trim();
+    const { email, username, account, identifier: reqIdentifier, password } = req.body || {};
+    const identifier = String(reqIdentifier || account || username || email || '').trim();
 
     if (!identifier) {
-      res.status(400).json({ success: false, error: 'Vui lòng nhập tên người chơi hoặc email.' });
+      res.status(400).json({ success: false, error: 'Vui lòng nhập tên đăng nhập.' });
       return;
     }
     if (!password) {
@@ -1014,7 +1035,7 @@ async function startServer() {
 
     const user = getUserByUsernameOrEmail(identifier);
     if (!user) {
-      res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản với thông tin này.' });
+      res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản với tên đăng nhập này.' });
       return;
     }
 
@@ -1085,23 +1106,46 @@ async function startServer() {
       return;
     }
 
-    const { username, avatar, frame, showcaseAchievements, unlockedAchievements } = req.body || {};
-    if (username && typeof username === 'string' && username.trim().length >= 2) {
-      const newName = username.trim().slice(0, 24);
-      const cleanNew = newName.toLowerCase();
-      // Enforce unique nicknames across all accounts
-      if (cleanNew !== user.username.trim().toLowerCase()) {
-        const existing = getUserByUsername(newName);
-        if (existing && existing.id !== user.id) {
+    const { 
+      displayName, 
+      username, 
+      avatar, 
+      frame, 
+      showcaseAchievements, 
+      unlockedAchievements,
+      bestWpm,
+      bestWpmRecord,
+      totalGames,
+      matchHistory,
+      cultivation
+    } = req.body || {};
+    
+    // Đổi tên người chơi (displayName): Tên đăng nhập (user.username) CỐ ĐỊNH, KHÔNG THAY ĐỔI
+    const newPlayerName = String(displayName || username || '').trim();
+    if (newPlayerName && newPlayerName.length >= 2) {
+      const slicedName = newPlayerName.slice(0, 24);
+      const cleanNew = slicedName.toLowerCase();
+      const currentDisplayName = (user.displayName || user.username).trim().toLowerCase();
+      
+      if (cleanNew !== currentDisplayName) {
+        const existing = Array.from(serverUsers.values()).find(
+          (u) =>
+            u.id !== user.id &&
+            (((u.displayName && u.displayName.trim().toLowerCase() === cleanNew) ||
+              (!u.displayName && u.username.trim().toLowerCase() === cleanNew)))
+        );
+        if (existing) {
           res.status(400).json({
             success: false,
-            error: `Tên người chơi / Biệt danh "${newName}" đã có người sử dụng. Vui lòng chọn tên khác!`,
+            error: `Tên người chơi / Biệt danh "${slicedName}" đã có người sử dụng. Vui lòng chọn tên khác!`,
           });
           return;
         }
       }
-      user.username = newName;
+      user.displayName = slicedName;
+      // QUAN TRỌNG: user.username (Tên đăng nhập) TUYỆT ĐỐI GIỮ NGUYÊN
     }
+
     if (avatar && typeof avatar === 'string' && avatar.trim()) {
       user.avatar = avatar.trim();
     }
@@ -1113,6 +1157,21 @@ async function startServer() {
     }
     if (Array.isArray(unlockedAchievements)) {
       user.unlockedAchievements = unlockedAchievements.filter((x: any) => typeof x === 'string');
+    }
+    if (typeof bestWpm === 'number' && !isNaN(bestWpm)) {
+      user.bestWpm = Math.max(user.bestWpm || 0, Math.round(bestWpm));
+    }
+    if (bestWpmRecord && typeof bestWpmRecord === 'object') {
+      user.bestWpmRecord = bestWpmRecord;
+    }
+    if (typeof totalGames === 'number' && !isNaN(totalGames)) {
+      user.totalGames = Math.max(user.totalGames || 0, Math.round(totalGames));
+    }
+    if (Array.isArray(matchHistory)) {
+      user.matchHistory = matchHistory.slice(0, 50);
+    }
+    if (cultivation && typeof cultivation === 'object') {
+      user.cultivation = cultivation;
     }
 
     user.updatedAt = Date.now();
@@ -1252,18 +1311,18 @@ async function startServer() {
   let cachedTotalCultivators = 0;
 
   const XIANXIA_REALM_METAS = [
-    { name: 'Luyện Khí Kỳ', icon: '🌿', badge: 'Khí', frameId: 'frame_xianxia_luyenkhi', startLevel: 1, endLevel: 30 },
-    { name: 'Trúc Cơ Kỳ', icon: '🧱', badge: 'Cơ', frameId: 'frame_xianxia_trucco', startLevel: 31, endLevel: 70 },
-    { name: 'Kết Đan Kỳ', icon: '🔮', badge: 'Đan', frameId: 'frame_xianxia_ketdan', startLevel: 71, endLevel: 130 },
-    { name: 'Nguyên Anh Kỳ', icon: '👶', badge: 'Anh', frameId: 'frame_xianxia_nguyenanh', startLevel: 131, endLevel: 210 },
-    { name: 'Hóa Thần Kỳ', icon: '🌌', badge: 'Thần', frameId: 'frame_xianxia_hoathan', startLevel: 211, endLevel: 310 },
-    { name: 'Luyện Hư Kỳ', icon: '🌀', badge: 'Hư', frameId: 'frame_xianxia_luyenhu', startLevel: 311, endLevel: 430 },
-    { name: 'Hợp Thể Kỳ', icon: '⚡', badge: 'Thể', frameId: 'frame_xianxia_hopthe', startLevel: 431, endLevel: 570 },
-    { name: 'Đại Thừa Kỳ', icon: '☀️', badge: 'Thừa', frameId: 'frame_xianxia_daithua', startLevel: 571, endLevel: 720 },
-    { name: 'Độ Kiếp Kỳ', icon: '🌩️', badge: 'Kiếp', frameId: 'frame_xianxia_dokiep', startLevel: 721, endLevel: 870 },
-    { name: 'Kim Tiên', icon: '🌟', badge: 'Kim', frameId: 'frame_xianxia_kimtien', startLevel: 871, endLevel: 940 },
-    { name: 'Đại La Tiên', icon: '🌠', badge: 'La', frameId: 'frame_xianxia_daila', startLevel: 941, endLevel: 980 },
-    { name: 'Thiên Tôn', icon: '👑', badge: 'Tôn', frameId: 'frame_xianxia_thienton', startLevel: 981, endLevel: 1000 },
+    { name: 'Luyện Khí Kỳ', titleName: 'Luyện Khí Tu Sĩ', icon: '🌿', badge: 'Khí', frameId: 'frame_xianxia_luyenkhi', startLevel: 1, endLevel: 30 },
+    { name: 'Trúc Cơ Kỳ', titleName: 'Trúc Cơ Chân Nhân', icon: '🧱', badge: 'Cơ', frameId: 'frame_xianxia_trucco', startLevel: 31, endLevel: 70 },
+    { name: 'Kết Đan Kỳ', titleName: 'Kim Đan Tông Sư', icon: '🔮', badge: 'Đan', frameId: 'frame_xianxia_ketdan', startLevel: 71, endLevel: 130 },
+    { name: 'Nguyên Anh Kỳ', titleName: 'Nguyên Anh Lão Quái', icon: '👶', badge: 'Anh', frameId: 'frame_xianxia_nguyenanh', startLevel: 131, endLevel: 210 },
+    { name: 'Hóa Thần Kỳ', titleName: 'Hóa Thần Tôn Giả', icon: '🌌', badge: 'Thần', frameId: 'frame_xianxia_hoathan', startLevel: 211, endLevel: 310 },
+    { name: 'Luyện Hư Kỳ', titleName: 'Luyện Hư Thần Quân', icon: '🌀', badge: 'Hư', frameId: 'frame_xianxia_luyenhu', startLevel: 311, endLevel: 430 },
+    { name: 'Hợp Thể Kỳ', titleName: 'Hợp Thể Thánh Quân', icon: '⚡', badge: 'Thể', frameId: 'frame_xianxia_hopthe', startLevel: 431, endLevel: 570 },
+    { name: 'Đại Thừa Kỳ', titleName: 'Đại Thừa Chí Tôn', icon: '☀️', badge: 'Thừa', frameId: 'frame_xianxia_daithua', startLevel: 571, endLevel: 720 },
+    { name: 'Độ Kiếp Kỳ', titleName: 'Độ Kiếp Tiên Tôn', icon: '🌩️', badge: 'Kiếp', frameId: 'frame_xianxia_dokiep', startLevel: 721, endLevel: 870 },
+    { name: 'Kim Tiên', titleName: 'Bất Hủ Kim Tiên', icon: '🌟', badge: 'Kim', frameId: 'frame_xianxia_kimtien', startLevel: 871, endLevel: 940 },
+    { name: 'Đại La Tiên', titleName: 'Đại La Kim Tiên', icon: '🌠', badge: 'La', frameId: 'frame_xianxia_daila', startLevel: 941, endLevel: 980 },
+    { name: 'Thiên Tôn', titleName: 'Hỗn Độn Thiên Tôn', icon: '👑', badge: 'Tôn', frameId: 'frame_xianxia_thienton', startLevel: 981, endLevel: 1000 },
   ];
 
   function getSubStageName(tier: number): 'Sơ Kỳ' | 'Trung Kỳ' | 'Hậu Kỳ' | 'Đại Viên Mãn' {
@@ -1297,6 +1356,7 @@ async function startServer() {
         realmIndex,
         realmName: realmMeta.name,
         realmIcon: realmMeta.icon,
+        titleName: realmMeta.titleName,
         badge: realmMeta.badge,
         tier,
         subStage: getSubStageName(tier),
@@ -1366,6 +1426,7 @@ async function startServer() {
         realmIndex,
         realmName: realmMeta.name,
         realmIcon: realmMeta.icon,
+        titleName: realmMeta.titleName,
         badge: realmMeta.badge,
         tier,
         subStage: getSubStageName(tier),
@@ -1383,6 +1444,7 @@ async function startServer() {
         realmIndex,
         realmName: realmMeta.name,
         realmIcon: realmMeta.icon,
+        titleName: realmMeta.titleName,
         badge: realmMeta.badge,
         tier,
         subStage: getSubStageName(tier),

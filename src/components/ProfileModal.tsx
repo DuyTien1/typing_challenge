@@ -14,7 +14,8 @@ import {
   History,
   Trophy,
   Flag,
-  Target
+  Target,
+  LogOut
 } from 'lucide-react';
 import { 
   EXPANDED_AVATARS, 
@@ -49,6 +50,7 @@ interface ProfileModalProps {
   isLoggedIn?: boolean;
   currentUser?: UserAccount | null;
   onOpenAuthModal?: (mode?: 'login' | 'register') => void;
+  onLogout?: () => void;
   onChangeUsername: (name: string) => void;
   onChangeAvatar: (emoji: string) => void;
   onChangeFrame?: (frameId: string) => void;
@@ -83,6 +85,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   isLoggedIn = false,
   currentUser = null,
   onOpenAuthModal,
+  onLogout,
   onChangeUsername,
   onChangeAvatar,
   onChangeFrame,
@@ -126,8 +129,25 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [nameInput, setNameInput] = useState(username);
   const [selectedAvatar, setSelectedAvatar] = useState(avatar);
   const [selectedFrame, setSelectedFrame] = useState<string>(() => frame || getStoredFrame());
-  const [history] = useState<MatchRecord[]>(() => matchHistory || getStoredMatchHistory());
+  const [history, setHistory] = useState<MatchRecord[]>(() => matchHistory || getStoredMatchHistory());
   const [guestNotice, setGuestNotice] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setNameInput(username);
+  }, [username]);
+
+  React.useEffect(() => {
+    setSelectedAvatar(avatar);
+  }, [avatar]);
+
+  React.useEffect(() => {
+    setSelectedFrame(frame || getStoredFrame());
+  }, [frame]);
+
+  React.useEffect(() => {
+    setHistory(matchHistory || []);
+  }, [matchHistory]);
+
   const recentMatches = history.slice(0, 5);
 
   const handleShowcaseChange = (newShowcase: string[]) => {
@@ -185,9 +205,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     }
     setNameError('');
     try {
-      const res = await updateUserProfile({ username: trimmed });
+      const res = await updateUserProfile({ displayName: trimmed });
       if (!res.success) {
-        setNameError(res.error || 'Biệt danh này đã có người sử dụng. Vui lòng chọn tên khác!');
+        setNameError(res.error || 'Không thể cập nhật tên người chơi. Vui lòng thử lại!');
         return;
       }
       setNameInput(trimmed);
@@ -292,10 +312,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             username={username}
             frame={selectedFrame}
             isLoggedIn={isLoggedIn}
+            isAdmin={isAdmin}
             userId={currentUser?.id}
             matchHistory={history}
             highScores={highScores}
-            showcaseAchievements={isLoggedIn ? currentShowcase : []}
+            showcaseAchievements={(isLoggedIn || isAdmin) ? currentShowcase : []}
             onShowcaseChange={handleShowcaseChange}
             onOpenAuthModal={onOpenAuthModal}
           />
@@ -342,17 +363,34 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 )}
               </span>
             </div>
-            <button
-              id="btn-profile-manage-account"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                if (onOpenAuthModal) onOpenAuthModal('login');
-              }}
-              className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline shrink-0 cursor-pointer"
-            >
-              Quản lý tài khoản
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                id="btn-profile-manage-account"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  if (onOpenAuthModal) onOpenAuthModal('login');
+                }}
+                className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline cursor-pointer"
+              >
+                Đổi mật khẩu
+              </button>
+              {onLogout && (
+                <button
+                  id="btn-profile-logout"
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    onLogout();
+                  }}
+                  className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors"
+                  title="Đăng xuất tài khoản"
+                >
+                  <LogOut className="w-3 h-3" />
+                  Đăng xuất
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -458,6 +496,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   {isLoggedIn ? '(Nhấn avatar để đổi)' : '(Khóa ở chế độ Khách)'}
                 </span>
               </div>
+
+              {/* Login username (fixed) */}
+              {currentUser?.username && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                  <span className="text-slate-400">Tên đăng nhập:</span>
+                  <span className="font-mono text-amber-300 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+                    {currentUser.username}
+                  </span>
+                  <span className="text-[10px] text-slate-500 italic">(Cố định)</span>
+                </div>
+              )}
 
               {/* Showcase Achievements Badges in Profile Header */}
               <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
@@ -1060,8 +1109,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 )}
               </div>
 
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Biệt danh giúp bạn bè và đối thủ nhận diện bạn trong các trận đua phím nhiều người chơi.
+              <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
+                💡 Tên người chơi xuất hiện trên bảng xếp hạng và các phòng đua. Đổi tên người chơi sẽ <b>không làm thay đổi tên đăng nhập</b> ({currentUser?.username}).
               </p>
 
               {/* Action buttons */}

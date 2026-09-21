@@ -760,13 +760,14 @@ export const BossArena: React.FC<BossArenaProps> = ({
   }, [currentInput, currentTargetWord]);
 
   useEffect(() => {
-    updateCaret();
-    const rafId = requestAnimationFrame(updateCaret);
     window.addEventListener('resize', updateCaret);
     return () => {
-      cancelAnimationFrame(rafId);
       window.removeEventListener('resize', updateCaret);
     };
+  }, [updateCaret]);
+
+  useEffect(() => {
+    updateCaret();
   }, [currentInput, currentTargetWord, updateCaret]);
 
   return (

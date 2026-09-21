@@ -240,7 +240,7 @@ export function generateWords(
       ? allowedPools
       : ['vi_dau', 'vi_nodau', 'en', 'numbers'];
 
-    return Array.from({ length: count }, () => {
+    const words = Array.from({ length: count }, () => {
       const chosenPool = activePools[Math.floor(Math.random() * activePools.length)];
       switch (chosenPool) {
         case 'vi_dau':
@@ -254,9 +254,24 @@ export function generateWords(
         case 'fullsize':
           return generate58008Word('fullsize');
         default:
-          return getRandomWordFromBank(BIG_WORD_BANKS.vi_dau.easy, BIG_WORD_BANKS.vi_dau.hard, hardRate);
+          if (activePools.includes('vi_nodau')) {
+            return getRandomWordFromBank(BIG_WORD_BANKS_VI_NODAU.easy, BIG_WORD_BANKS_VI_NODAU.hard, hardRate);
+          } else if (activePools.includes('en')) {
+            return getRandomWordFromBank(BIG_WORD_BANKS.en.easy, BIG_WORD_BANKS.en.hard, hardRate);
+          } else if (activePools.includes('numbers')) {
+            return generate58008Word('number');
+          } else if (activePools.includes('fullsize')) {
+            return generate58008Word('fullsize');
+          }
+          return getRandomWordFromBank(BIG_WORD_BANKS_VI_NODAU.easy, BIG_WORD_BANKS_VI_NODAU.hard, hardRate);
       }
     });
+
+    // Nếu không cho phép vi_dau thì tuyệt đối không xuất hiện ký tự tiếng Việt có dấu
+    if (!activePools.includes('vi_dau')) {
+      return words.map((w) => removeVietnameseTones(w));
+    }
+    return words;
   }
 
   if (mode === 'vi_nodau') {
@@ -303,7 +318,15 @@ export function generateDoanChuWords(
     }
   });
 
-  const sourceBank = combinedBank.length > 0 ? combinedBank : MYSTERY_WORD_BANKS.vi_dau;
+  const fallbackBank = activePools.includes('vi_dau')
+    ? MYSTERY_WORD_BANKS.vi_dau
+    : activePools.includes('vi_nodau')
+    ? MYSTERY_WORD_BANKS.vi_nodau
+    : activePools.includes('en')
+    ? MYSTERY_WORD_BANKS.en
+    : MYSTERY_WORD_BANKS.numbers;
+
+  const sourceBank = combinedBank.length > 0 ? combinedBank : fallbackBank;
   const shuffled = [...sourceBank].sort(() => 0.5 - Math.random());
   
   const result: MysteryWordItem[] = [];
@@ -312,6 +335,16 @@ export function generateDoanChuWords(
     result.push(shuffled[index % shuffled.length]);
     index++;
   }
+
+  // Nếu không cho phép vi_dau thì loại bỏ tuyệt đối tất cả dấu tiếng Việt
+  if (!activePools.includes('vi_dau')) {
+    return result.map((item) => ({
+      ...item,
+      word: removeVietnameseTones(item.word),
+      hint: item.hint.replace(/có dấu/gi, 'không dấu'),
+    }));
+  }
+
   return result;
 }
 

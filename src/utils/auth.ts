@@ -97,13 +97,14 @@ export async function loginWithGoogle(credential: string, profileHint?: { email?
 }
 
 /**
- * Register account quickly (1-step, simple & concise)
+ * Register account quickly (1-step, simple & concise: username + password)
  */
 export async function registerWithEmail(data: {
-  email?: string;
-  password?: string;
   username: string;
+  password?: string;
+  displayName?: string;
   avatar?: string;
+  email?: string;
 }): Promise<AuthResponse> {
   try {
     const res = await fetch('/api/auth/register', {
@@ -188,11 +189,17 @@ export const loginAccount = loginWithEmail;
  * Update authenticated user's profile (name, avatar, frame)
  */
 export async function updateUserProfile(updates: {
+  displayName?: string;
   username?: string;
   avatar?: string;
   frame?: string;
   showcaseAchievements?: string[];
   unlockedAchievements?: string[];
+  bestWpm?: number;
+  bestWpmRecord?: any;
+  totalGames?: number;
+  matchHistory?: any[];
+  cultivation?: any;
 }): Promise<AuthResponse> {
   const token = getStoredAuthToken();
   if (!token) {

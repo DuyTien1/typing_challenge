@@ -10,7 +10,9 @@ import {
   ChevronDown,
   User,
   Palette,
-  Users
+  Users,
+  LogIn,
+  LogOut
 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 
@@ -37,6 +39,7 @@ interface HeaderProps {
   cultivationMaxThoNguyen?: number;
   onOpenOnlineUsers?: () => void;
   onOpenAuthModal?: () => void;
+  onLogout?: () => void;
   onGoHome?: () => void;
   chatUnreadCount?: number;
   activeModeName?: string;
@@ -63,6 +66,8 @@ export const Header: React.FC<HeaderProps> = ({
   cultivationThoNguyen,
   cultivationMaxThoNguyen,
   onOpenOnlineUsers,
+  onOpenAuthModal,
+  onLogout,
   onGoHome,
   chatUnreadCount = 0,
 }) => {
@@ -387,6 +392,43 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   </div>
                 )}
+
+                {/* Account Actions: Logout if logged in, or Login/Register if guest */}
+                <div className="pt-1.5 border-t border-slate-800/80">
+                  {isLoggedIn ? (
+                    <button
+                      id="menu-item-logout"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setIsMoreMenuOpen(false);
+                        if (onLogout) onLogout();
+                      }}
+                      className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-left text-rose-400 hover:text-rose-300 font-semibold transition-all cursor-pointer border border-rose-500/30"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-rose-300">Đăng Xuất Tài Khoản</div>
+                        <div className="text-[10px] text-rose-400/70 font-normal">Xóa sạch dữ liệu tạm, chuyển về khách</div>
+                      </div>
+                    </button>
+                  ) : (
+                    <button
+                      id="menu-item-login"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setIsMoreMenuOpen(false);
+                        if (onOpenAuthModal) onOpenAuthModal();
+                      }}
+                      className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left text-amber-300 hover:text-amber-200 font-semibold transition-all cursor-pointer border border-amber-500/30"
+                    >
+                      <LogIn className="w-4 h-4 text-amber-400 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-amber-300">Đăng Nhập / Đăng Ký</div>
+                        <div className="text-[10px] text-amber-400/70 font-normal">Lưu kỷ lục, đổi tên & khung avatar</div>
+                      </div>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

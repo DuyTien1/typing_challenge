@@ -281,6 +281,9 @@ export interface CultivationState {
   level: number; // 1 to 1000
   realmIndex: number; // 0 to 11
   tier: number; // 1 to 10
+  realmName?: string;
+  subStage?: 'Sơ Kỳ' | 'Trung Kỳ' | 'Hậu Kỳ' | 'Đại Viên Mãn';
+  titleName?: string;
   exp: number; // Current Tu Vi in tier
   maxExp: number; // Required Tu Vi for this tier
   thoNguyen: number; // Current lifespan (decreases by 1 every 2 hours)
@@ -422,6 +425,9 @@ export function createInitialCultivationState(): CultivationState {
     level: 1,
     realmIndex: 0,
     tier: 1,
+    realmName: initialRealm.name,
+    subStage: 'Sơ Kỳ',
+    titleName: initialRealm.titleName,
     exp: 0,
     maxExp,
     thoNguyen: initialRealm.maxThoNguyen,
@@ -470,6 +476,9 @@ export function loadStoredCultivationState(): CultivationState {
       level,
       realmIndex,
       tier,
+      realmName: currentRealm.name,
+      subStage: getSubStage(tier),
+      titleName: currentRealm.titleName,
       exp: Math.max(0, parsed.exp ?? 0),
       maxExp,
       thoNguyen: typeof parsed.thoNguyen === 'number' ? parsed.thoNguyen : currentRealm.maxThoNguyen,
@@ -544,6 +553,65 @@ export function saveStoredCultivationState(state: CultivationState): void {
 
   // Tự động đồng bộ ngầm tiến độ tu vi mới nhất lên máy chủ nếu người chơi đã đăng nhập
   syncCultivationToServer(state).catch(() => {});
+}
+
+/**
+ * Hàm quản trị viên: Thiết lập trực tiếp cấp độ tu tiên (1 - 1000) hoặc Cảnh Giới & Tầng cho bản thân
+ * Đảm bảo: Cảnh giới, tầng, thọ nguyên, EXP, danh hiệu sẽ cập nhật tương ứng chính xác tuyệt đối
+ */
+export function setCultivationLevelByAdmin(
+  currentState: CultivationState,
+  targetLevel: number,
+  options?: {
+    refillThoNguyen?: boolean;
+    fillPills?: boolean;
+    customTier?: number;
+    addExp?: number;
+  }
+): CultivationState {
+  const clampedLevel = Math.max(1, Math.min(1000, Math.round(targetLevel)));
+  const { realmIndex, tier } = getRealmAndTierFromLevel(clampedLevel);
+  const effectiveTier = options?.customTier ? Math.max(1, Math.min(10, Math.round(options.customTier))) : tier;
+  const realm = XIANXIA_REALMS[realmIndex];
+  const maxExp = getRequiredExpForTier(clampedLevel, realmIndex);
+
+  const updatedPills = options?.fillPills
+    ? {
+        thoNguyen: Math.max(currentState.pillCount.thoNguyen, 99),
+        hoTam: Math.max(currentState.pillCount.hoTam, 99),
+        phaCanh: Math.max(currentState.pillCount.phaCanh, 99),
+        tuViDan: Math.max(currentState.pillCount.tuViDan || 0, 99),
+        sieuCapTuViDan: Math.max(currentState.pillCount.sieuCapTuViDan || 0, 99),
+      }
+    : currentState.pillCount;
+
+  const newThoNguyen = options?.refillThoNguyen !== false
+    ? realm.maxThoNguyen
+    : Math.min(currentState.thoNguyen, realm.maxThoNguyen);
+
+  const subStage = getSubStage(effectiveTier);
+  const newLog = `⚡ [Admin Can Thiệp] Thiết lập cảnh giới: ${realm.name} Tầng ${effectiveTier} (${subStage}) - Cấp ${clampedLevel}/1000`;
+
+  const updatedState: CultivationState = {
+    ...currentState,
+    level: clampedLevel,
+    realmIndex,
+    tier: effectiveTier,
+    realmName: realm.name,
+    subStage,
+    titleName: realm.titleName,
+    exp: options?.addExp !== undefined ? Math.min(maxExp - 1, Math.max(0, options.addExp)) : 0,
+    maxExp,
+    thoNguyen: newThoNguyen,
+    maxThoNguyen: realm.maxThoNguyen,
+    lastThoNguyenDecay: Date.now(),
+    lastCultivateTime: Date.now(),
+    pillCount: updatedPills,
+    historyLog: [newLog, ...currentState.historyLog].slice(0, 30),
+  };
+
+  saveStoredCultivationState(updatedState);
+  return updatedState;
 }
 
 /**
@@ -815,6 +883,9 @@ export function attemptRealmBreakthrough(
     updated.realmIndex = nextRealmIndex;
     updated.tier = 1;
     updated.level = newLevel;
+    updated.realmName = nextRealm.name;
+    updated.subStage = 'Sơ Kỳ';
+    updated.titleName = nextRealm.titleName;
     updated.exp = 0;
     updated.maxExp = getRequiredExpForTier(newLevel, nextRealmIndex);
     // Reset Thọ Nguyên to 100% for the new higher realm!

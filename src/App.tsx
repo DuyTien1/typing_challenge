@@ -61,6 +61,13 @@ import {
   adminUpdateLeaderboard,
   adminResetLeaderboard,
 } from './utils/roomManager';
+import {
+  getLeaderboardSync,
+  getLeaderboardFromIndexedDB,
+  saveLeaderboardToIndexedDB,
+  clearLeaderboardFromIndexedDB,
+  migrateLegacyLocalStorageToIndexedDB,
+} from './utils/leaderboardStorage';
 import { soundFx } from './utils/audio';
 import { validateKeystrokes } from './utils/antiCheat';
 import { generateWords, generateDoanChuWords } from './data/wordBanks';
@@ -70,7 +77,9 @@ import {
   getShowcaseAchievements, 
   setShowcaseAchievements, 
   checkNewAchievementsOnMatchEnd, 
-  XianxiaAchievement 
+  setStoredUnlockedAchievements,
+  XianxiaAchievement,
+  XIANXIA_ACHIEVEMENTS,
 } from './utils/achievements';
 import { 
   MatchRecord, 
@@ -87,6 +96,7 @@ import {
   CultivationState,
   loadStoredCultivationState,
   saveStoredCultivationState,
+  createInitialCultivationState,
   processCultivationDecay,
   addTuViFromMatch,
   getSubStage,
@@ -460,6 +470,24 @@ export default function App() {
           );
           updateUserProfile({ unlockedAchievements: allUnlockedIds }).catch(() => {});
         }
+
+        // Tự động đồng bộ số trận, kỷ lục WPM và lịch sử đấu lên tài khoản máy chủ
+        const updatedHistory = [newRecord, ...matchHistory].slice(0, 50);
+        let bestRecordToSave: any = undefined;
+        if (data.wpm > (bestWpmRef.current || 0)) {
+          bestRecordToSave = {
+            wpm: data.wpm,
+            mode: data.mode || getFriendlyModeName(data.modeId),
+            modeName: getFriendlyModeName(data.modeId),
+            timestamp: Date.now(),
+          };
+        }
+        updateUserProfile({
+          bestWpm: nextBestWpm,
+          ...(bestRecordToSave ? { bestWpmRecord: bestRecordToSave } : {}),
+          totalGames: nextTotalGames,
+          matchHistory: updatedHistory,
+        }).catch(() => {});
       } catch (err) {
         console.error('Lỗi kiểm tra thành tựu sau trận:', err);
       }
@@ -568,31 +596,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Restore authenticated session on startup
-  useEffect(() => {
-    fetchCurrentUser()
-      .then((user) => {
-        if (user) {
-          setCurrentUser(user);
-          setUsername(user.username);
-          setAvatar(user.avatar);
-          if (user.isAdmin || user.username.toLowerCase() === 'admin') {
-            setIsAdmin(true);
-            setAdminStatus(true);
-          }
-          if (user.cultivation) {
-            setCultivationState(user.cultivation);
-            saveStoredCultivationState(user.cultivation);
-          }
-          if (user.frame) {
-            setUserFrame(user.frame);
-            setStoredFrame(user.frame);
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
-
   // Auto-dismiss notification after 7s
   useEffect(() => {
     if (!kickedNotice) return;
@@ -636,33 +639,27 @@ export default function App() {
   // Track the current active match ID to prevent auto-relaunching when returning to waiting room
   const currentMatchIdRef = useRef<string | null>(null);
 
-  // Real Online Presence & Server-wide Leaderboard (Zero mock data)
+  // Real Online Presence & Server-wide Leaderboard (Zero mock data, backed by IndexedDB)
   const [onlineCount, setOnlineCount] = useState<number>(1);
   const [highScores, setHighScores] = useState<Record<string, HighScoreRecord | null>>(() => {
-    const saved = localStorage.getItem('fasttyping_highscores');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const mockNames = new Set(['GiaCátGõ', 'LướtGió', 'QuickFox', 'KếToánViên', 'ChớpNhoáng', 'ThámTửPhím', 'DũngSĩRồng', 'PhímThần_VN']);
-        const hasMock = Object.values(parsed).some((r: any) => r && mockNames.has(r.username));
-        if (!hasMock) {
-          return parsed;
-        }
-      } catch {
-        // ignore
-      }
-      localStorage.removeItem('fasttyping_highscores');
-    }
-    return {
-      vi_dau: null,
-      vi_nodau: null,
-      en: null,
-      numpad: null,
-      ngau_hung: null,
-      doan_chu: null,
-      san_boss: null,
-    };
+    return getLeaderboardSync();
   });
+
+  // Background migration from localStorage to IndexedDB and fetch latest data
+  useEffect(() => {
+    migrateLegacyLocalStorageToIndexedDB().then(() => {
+      getLeaderboardFromIndexedDB().then((idbScores) => {
+        if (idbScores) {
+          setHighScores((prev) => {
+            const hasPrev = Object.values(prev).some((r) => r !== null && r !== undefined);
+            const hasIdb = Object.values(idbScores).some((r) => r !== null && r !== undefined);
+            if (!hasIdb && hasPrev) return prev;
+            return idbScores;
+          });
+        }
+      });
+    });
+  }, []);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
@@ -768,11 +765,7 @@ export default function App() {
           if (!hasNew && hasPrev) {
             return prev;
           }
-          try {
-            localStorage.setItem('fasttyping_highscores', JSON.stringify(serverRecords));
-          } catch {
-            // ignore
-          }
+          saveLeaderboardToIndexedDB(serverRecords).catch(() => {});
           return serverRecords;
         });
       },
@@ -1300,10 +1293,11 @@ export default function App() {
     // Generate words based on mode if not already shared by host
     if (targetMode === 'doan_chu') {
       if (!targetMystery || targetMystery.length === 0) {
-        const doanChuDiff = config.doanChu?.difficulties[difficulty] || config.doanChu?.difficulties.normal;
+        const validDiff = (difficulty === 'hard' || difficulty === 'legendary') ? difficulty : 'normal';
+        const doanChuDiff = config.doanChu?.difficulties?.[validDiff] || config.doanChu?.difficulties?.normal;
         const totalRounds = doanChuDiff?.totalRounds || 10;
-        const allowedPools = doanChuDiff?.allowedPools;
-        targetMystery = generateDoanChuWords(difficulty, totalRounds, allowedPools);
+        const allowedPools = doanChuDiff?.allowedPools || config.doanChu?.difficulties?.normal?.allowedPools;
+        targetMystery = generateDoanChuWords(validDiff, totalRounds, allowedPools);
       }
       setMysteryWords(targetMystery);
     } else {
@@ -1323,13 +1317,16 @@ export default function App() {
           config.hardWordRate;
 
         let allowedPools: import('./types').WordPoolType[] | undefined;
+        let effectiveDiff = difficulty;
         if (targetMode === 'ngau_hung') {
-          allowedPools = config.ngauHung?.difficulties[difficulty]?.allowedPools;
+          effectiveDiff = difficulty === 'legendary' ? 'legendary' : 'normal';
+          allowedPools = config.ngauHung?.difficulties?.[effectiveDiff]?.allowedPools || config.ngauHung?.difficulties?.normal?.allowedPools;
         } else if (targetMode === 'san_boss') {
-          allowedPools = config.sanBoss?.difficulties[difficulty]?.allowedPools;
+          effectiveDiff = (difficulty === 'hard' || difficulty === 'hell') ? difficulty : 'normal';
+          allowedPools = config.sanBoss?.difficulties?.[effectiveDiff]?.allowedPools || config.sanBoss?.difficulties?.normal?.allowedPools;
         }
 
-        targetWords = generateWords(targetMode, count, difficulty, modeHardRate, allowedPools);
+        targetWords = generateWords(targetMode, count, effectiveDiff, modeHardRate, allowedPools);
       }
       setWords(targetWords);
     }
@@ -1478,25 +1475,39 @@ export default function App() {
     return () => clearInterval(botInterval);
   }, [gameState, gameMode, playType, currentRoomId]);
 
-  // Player Progress Update Handler
-  const handleUpdatePlayerProgress = (
+  // Player Progress Update Handler (Throttled & Memoized to avoid root App re-renders in Citrix VDI)
+  const handleUpdatePlayerProgress = useCallback((
     progress: number,
     correctChars: number,
     errors: number,
     wpm: number
   ) => {
-    setPlayers((prev) =>
-      prev.map((p) =>
-        p.id === currentUserId
-          ? { ...p, progress, correctChars, errors, wpm }
-          : p
-      )
-    );
+    if (playType === 'multiplayer') {
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === currentUserId
+            ? { ...p, progress, correctChars, errors, wpm }
+            : p
+        )
+      );
 
-    if (playType === 'multiplayer' && currentRoomId) {
-      sendPlayerProgress(currentRoomId, currentUserId, progress, correctChars, errors, wpm, progress >= 100);
+      if (currentRoomId) {
+        sendPlayerProgress(currentRoomId, currentUserId, progress, correctChars, errors, wpm, progress >= 100);
+      }
+    } else {
+      setPlayers((prev) => {
+        const me = prev.find((p) => p.id === currentUserId);
+        if (me && me.progress === progress && me.errors === errors && (progress < 100 && !me.isFinished)) {
+          return prev;
+        }
+        return prev.map((p) =>
+          p.id === currentUserId
+            ? { ...p, progress, correctChars, errors, wpm, isFinished: progress >= 100 }
+            : p
+        );
+      });
     }
-  };
+  }, [playType, currentRoomId, currentUserId]);
 
   // Finish Match Handler
   const handleFinishMatch = useCallback((
@@ -1611,7 +1622,7 @@ export default function App() {
       }).then((res) => {
         if (res && res.success && res.highScores) {
           setHighScores(res.highScores);
-          localStorage.setItem('fasttyping_highscores', JSON.stringify(res.highScores));
+          saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
         }
       });
     }
@@ -1743,7 +1754,7 @@ export default function App() {
       }).then((res) => {
         if (res && res.success && res.highScores) {
           setHighScores(res.highScores);
-          localStorage.setItem('fasttyping_highscores', JSON.stringify(res.highScores));
+          saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
         }
       });
     }
@@ -1947,35 +1958,177 @@ export default function App() {
   };
 
   // Auth Success & Logout Handlers
-  const handleAuthSuccess = (user: UserAccount) => {
+  const applyAuthenticatedUser = useCallback((user: UserAccount) => {
     setCurrentUser(user);
-    setUsername(user.username);
-    setAvatar(user.avatar);
-    if (user.isAdmin || user.username.toLowerCase() === 'admin') {
-      setIsAdmin(true);
-      setAdminStatus(true);
+    const activeName = user.displayName || user.username;
+    setUsername(activeName);
+    const userAvatarChoice = user.avatar || '🤖';
+    setAvatar(userAvatarChoice);
+    const userFrameChoice = user.frame || 'default';
+    setUserFrame(userFrameChoice);
+    setStoredFrame(userFrameChoice);
+
+    const isUserAdmin = Boolean(user.isAdmin || user.username.toLowerCase() === 'admin');
+    setIsAdmin(isUserAdmin);
+    setAdminStatus(isUserAdmin);
+
+    // Dữ liệu kỷ lục, số trận và lịch sử đấu từ server
+    const serverBestWpm = typeof user.bestWpm === 'number' ? user.bestWpm : 0;
+    setBestWpm(serverBestWpm);
+    if (serverBestWpm > 0) {
+      localStorage.setItem('fasttyping_best_wpm', serverBestWpm.toString());
+    } else {
+      localStorage.removeItem('fasttyping_best_wpm');
     }
-    localStorage.setItem('fasttyping_user', user.username);
-    sessionStorage.setItem('fasttyping_user_session', user.username);
-    localStorage.setItem('fasttyping_avatar', user.avatar);
-    sessionStorage.setItem('fasttyping_avatar_session', user.avatar);
-    if (user.frame) {
-      setUserFrame(user.frame);
-      setStoredFrame(user.frame);
+
+    if (user.bestWpmRecord && typeof user.bestWpmRecord === 'object' && user.bestWpmRecord.wpm > 0) {
+      setBestWpmRecord(user.bestWpmRecord);
+      try {
+        localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(user.bestWpmRecord));
+      } catch {}
+    } else {
+      setBestWpmRecord(null);
+      localStorage.removeItem('fasttyping_best_wpm_record');
     }
-    if (user.showcaseAchievements && user.showcaseAchievements.length > 0) {
-      setShowcaseAchievements(user.showcaseAchievements);
+
+    const serverTotalGames = typeof user.totalGames === 'number' ? user.totalGames : 0;
+    setTotalGames(serverTotalGames);
+    if (serverTotalGames > 0) {
+      localStorage.setItem('fasttyping_games_count', serverTotalGames.toString());
+    } else {
+      localStorage.removeItem('fasttyping_games_count');
     }
+
+    if (Array.isArray(user.matchHistory)) {
+      setMatchHistory(user.matchHistory);
+      try {
+        localStorage.setItem('fasttyping_match_history', JSON.stringify(user.matchHistory));
+      } catch {}
+    } else {
+      setMatchHistory([]);
+      localStorage.removeItem('fasttyping_match_history');
+    }
+
+    // Tiến độ tu vi tiên hiệp
+    if (user.cultivation) {
+      setCultivationState(user.cultivation);
+      saveStoredCultivationState(user.cultivation);
+    }
+
+    // Danh hiệu & thành tựu
+    if (Array.isArray(user.showcaseAchievements)) {
+      setShowcaseAchievements(user.showcaseAchievements, user.id);
+    }
+    if (Array.isArray(user.unlockedAchievements)) {
+      setStoredUnlockedAchievements(user.unlockedAchievements, user.id);
+    }
+
+    localStorage.setItem('fasttyping_user', activeName);
+    sessionStorage.setItem('fasttyping_user_session', activeName);
+    localStorage.setItem('fasttyping_avatar', userAvatarChoice);
+    sessionStorage.setItem('fasttyping_avatar_session', userAvatarChoice);
+
     if (currentRoomId) {
       setPlayers((prev) => {
         const next = prev.map((p) =>
           p.id === currentUserId
             ? { 
                 ...p, 
-                username: user.username, 
-                icon: user.avatar, 
-                frame: user.frame || p.frame,
+                username: activeName, 
+                icon: userAvatarChoice, 
+                frame: userFrameChoice,
                 showcaseAchievements: user.showcaseAchievements || p.showcaseAchievements,
+              }
+            : p
+        );
+        updateRoomPlayers(currentRoomId, next);
+        return next;
+      });
+    }
+  }, [currentRoomId, currentUserId]);
+
+  // Khôi phục phiên đăng nhập và toàn bộ dữ liệu từ server khi tải trang
+  useEffect(() => {
+    fetchCurrentUser()
+      .then((user) => {
+        if (user) {
+          applyAuthenticatedUser(user);
+        }
+      })
+      .catch(() => {});
+  }, [applyAuthenticatedUser]);
+
+  const handleAuthSuccess = (user: UserAccount) => {
+    applyAuthenticatedUser(user);
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+
+    // 1. Xóa sạch toàn bộ dữ liệu người chơi và kỷ lục cá nhân khỏi localStorage & sessionStorage
+    try {
+      localStorage.removeItem('fasttyping_user');
+      sessionStorage.removeItem('fasttyping_user_session');
+      localStorage.removeItem('fasttyping_avatar');
+      sessionStorage.removeItem('fasttyping_avatar_session');
+      localStorage.removeItem('fasttyping_user_frame');
+      localStorage.removeItem('fasttyping_best_wpm');
+      localStorage.removeItem('fasttyping_best_wpm_record');
+      localStorage.removeItem('fasttyping_games_count');
+      localStorage.removeItem('fasttyping_match_history');
+      localStorage.removeItem('fasttyping_cultivation_state_v1');
+      localStorage.removeItem('fasttyping_is_admin');
+      localStorage.removeItem('fasttyping_unlocked_achievements');
+      localStorage.removeItem('fasttyping_showcase_achievements');
+
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith('fasttyping_unlocked_achievements_') ||
+            key.startsWith('fasttyping_showcase_achievements_'))
+        ) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch {}
+
+    // 2. Reset trạng thái xác thực và quyền Admin
+    setCurrentUser(null);
+    setIsAdmin(false);
+    setAdminStatus(false);
+
+    // 3. Đưa thông tin người chơi về trạng thái Khách mặc định mới hoàn toàn
+    const defaultName = 'Khách_' + Math.floor(Math.random() * 9000 + 1000);
+    const defaultAvatar = '🤖';
+    const defaultFrame = 'default';
+
+    setUsername(defaultName);
+    setAvatar(defaultAvatar);
+    setUserFrame(defaultFrame);
+    setStoredFrame(defaultFrame);
+
+    setBestWpm(0);
+    setBestWpmRecord(null);
+    setTotalGames(0);
+    setMatchHistory([]);
+    setCultivationState(createInitialCultivationState());
+    setNewlyUnlockedAchievements([]);
+
+    sessionStorage.setItem('fasttyping_user_session', defaultName);
+    sessionStorage.setItem('fasttyping_avatar_session', defaultAvatar);
+
+    // 4. Cập nhật phòng chơi nếu đang tham gia phòng
+    if (currentRoomId) {
+      setPlayers((prev) => {
+        const next = prev.map((p) =>
+          p.id === currentUserId
+            ? {
+                ...p,
+                username: defaultName,
+                icon: defaultAvatar,
+                frame: defaultFrame,
+                showcaseAchievements: [],
               }
             : p
         );
@@ -1985,22 +2138,12 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    await logoutUser();
-    setCurrentUser(null);
-    setIsAdmin(false);
-    setAdminStatus(false);
-    const defaultName = 'TayGõ_' + Math.floor(Math.random() * 900 + 100);
-    setUsername(defaultName);
-    sessionStorage.setItem('fasttyping_user_session', defaultName);
-    localStorage.setItem('fasttyping_user', defaultName);
-  };
-
   // Name & Avatar & Frame Change (Restricted to logged-in users)
   const handleChangeUsername = (newName: string) => {
     if (!currentUser) return;
     setUsername(newName);
-    updateUserProfile({ username: newName });
+    setCurrentUser((prev) => (prev ? { ...prev, displayName: newName } : null));
+    updateUserProfile({ displayName: newName, username: newName });
     localStorage.setItem('fasttyping_user', newName);
     sessionStorage.setItem('fasttyping_user_session', newName);
     if (currentRoomId) {
@@ -2102,7 +2245,7 @@ export default function App() {
     if (modeKey) {
       setHighScores((prev) => {
         const next = { ...prev, [modeKey]: null };
-        localStorage.setItem('fasttyping_highscores', JSON.stringify(next));
+        saveLeaderboardToIndexedDB(next).catch(() => {});
         return next;
       });
       await adminResetLeaderboard(modeKey);
@@ -2118,23 +2261,24 @@ export default function App() {
         san_boss: null,
       };
       setHighScores(cleanScores);
-      localStorage.removeItem('fasttyping_highscores');
+      clearLeaderboardFromIndexedDB().catch(() => {});
       await adminResetLeaderboard();
     }
   };
 
   const handleUpdateHighScores = async (newScores: Record<string, HighScoreRecord | null>) => {
     setHighScores(newScores);
-    localStorage.setItem('fasttyping_highscores', JSON.stringify(newScores));
+    saveLeaderboardToIndexedDB(newScores).catch(() => {});
     await adminUpdateLeaderboard(newScores);
   };
 
   const handleRefreshLeaderboard = async () => {
     try {
       const res = await fetchLeaderboard();
-      if (res && res.success && res.highScores) {
-        setHighScores(res.highScores);
-        localStorage.setItem('fasttyping_highscores', JSON.stringify(res.highScores));
+      if (res) {
+        const scores = (res as any).highScores || res;
+        setHighScores(scores);
+        saveLeaderboardToIndexedDB(scores).catch(() => {});
       }
     } catch (err) {
       console.error('Error refreshing leaderboards:', err);
@@ -2199,6 +2343,7 @@ export default function App() {
           setAuthModalInitialTab('login');
           setIsAuthModalOpen(true);
         }}
+        onLogout={handleLogout}
         onGoHome={handleReturnToLobby}
         activeModeName={getModeTitle()}
       />
@@ -2428,7 +2573,7 @@ export default function App() {
                     }).then((res) => {
                       if (res && res.success && res.highScores) {
                         setHighScores(res.highScores);
-                        localStorage.setItem('fasttyping_highscores', JSON.stringify(res.highScores));
+                        saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
                       }
                     });
                   }
@@ -2525,7 +2670,7 @@ export default function App() {
                     }).then((res) => {
                       if (res && res.success && res.highScores) {
                         setHighScores(res.highScores);
-                        localStorage.setItem('fasttyping_highscores', JSON.stringify(res.highScores));
+                        saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
                       }
                     });
                   }
@@ -2662,7 +2807,30 @@ export default function App() {
           highScores={highScores}
           onUpdateHighScores={handleUpdateHighScores}
           currentUsername={username}
+          currentUser={currentUser}
           defaultConfig={DEFAULT_CONFIG}
+          cultivationState={cultivationState}
+          onUpdateCultivationState={(next) => {
+            setCultivationState(next);
+            saveStoredCultivationState(next);
+            if (currentUser) {
+              setCurrentUser((prev) => (prev ? { ...prev, cultivation: next } : prev));
+              fetch('/api/cultivation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cultivation: next }),
+              }).catch(() => {});
+            }
+          }}
+          onSyncAchievements={(unlockedIds) => {
+            const list = XIANXIA_ACHIEVEMENTS.filter((a) => unlockedIds.includes(a.id));
+            setNewlyUnlockedAchievements(list);
+            if (currentUser) {
+              const allUnlocked = Array.from(new Set([...(currentUser.unlockedAchievements || []), ...unlockedIds]));
+              setCurrentUser((prev) => (prev ? { ...prev, unlockedAchievements: allUnlocked } : prev));
+              updateUserProfile({ unlockedAchievements: allUnlocked }).catch(() => {});
+            }
+          }}
         />
       )}
 
@@ -2684,6 +2852,7 @@ export default function App() {
             setAuthModalInitialTab(mode || 'login');
             setIsAuthModalOpen(true);
           }}
+          onLogout={handleLogout}
           onChangeUsername={handleChangeUsername}
           onChangeAvatar={handleChangeAvatar}
           onChangeFrame={handleChangeFrame}

@@ -56,12 +56,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     effectiveInitial === 'password' ? 'change_pwd' : 'info'
   );
 
-  // Form states for Registration (Simple & Concise)
+  // Form states for Registration (Username + Password, DisplayName optional)
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regEmail, setRegEmail] = useState('');
+  const [regDisplayName, setRegDisplayName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('⚡');
-  const [showOptionalEmail, setShowOptionalEmail] = useState(false);
 
   // Form states for Login
   const [loginAccount, setLoginAccount] = useState('');
@@ -83,7 +82,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const resetAllFormInputs = () => {
     setRegUsername('');
     setRegPassword('');
-    setRegEmail('');
+    setRegDisplayName('');
     setLoginAccount('');
     setLoginPassword('');
     setChangeOldPwd('');
@@ -188,19 +187,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Handle Simple Quick Registration (1-Step, Instant)
+  // Handle Simple Quick Registration (1-Step: Username + Password, DisplayName optional)
   const handleSimpleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const cleanName = regUsername.trim();
-    if (!cleanName || cleanName.length < 2) {
-      setErrorMsg('Vui lòng nhập tên người chơi / biệt danh (ít nhất 2 ký tự).');
+    const cleanUsername = regUsername.trim();
+    if (!cleanUsername || cleanUsername.length < 3) {
+      setErrorMsg('Tên đăng nhập phải có ít nhất 3 ký tự.');
       return;
     }
-    if (cleanName.length > 24) {
-      setErrorMsg('Tên người chơi tối đa 24 ký tự.');
+    if (cleanUsername.length > 24) {
+      setErrorMsg('Tên đăng nhập tối đa 24 ký tự.');
+      return;
+    }
+    if (/\s/.test(cleanUsername)) {
+      setErrorMsg('Tên đăng nhập không được chứa khoảng trắng (dấu cách).');
       return;
     }
 
@@ -209,12 +212,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    const cleanDisplayName = regDisplayName.trim() || cleanUsername;
+    if (cleanDisplayName.length > 24) {
+      setErrorMsg('Tên người chơi tối đa 24 ký tự.');
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await registerWithEmail({
-        username: cleanName,
+        username: cleanUsername,
         password: regPassword,
-        email: regEmail.trim() || undefined,
+        displayName: cleanDisplayName,
         avatar: selectedAvatar,
       });
 
@@ -236,7 +245,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Handle Quick Login by Username or Email
+  // Handle Quick Login by Username (or legacy account)
   const handleQuickLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -244,7 +253,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const identifier = loginAccount.trim();
     if (!identifier) {
-      setErrorMsg('Vui lòng nhập tên người chơi hoặc email.');
+      setErrorMsg('Vui lòng nhập tên đăng nhập.');
       return;
     }
     if (!loginPassword) {
@@ -388,7 +397,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-base truncate">{currentUser.username}</span>
+                        <span className="font-bold text-white text-base truncate">{currentUser.displayName || currentUser.username}</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                           Đã kích hoạt
                         </span>
@@ -398,8 +407,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 truncate mt-0.5">{currentUser.email}</p>
-                      <p className="text-[11px] text-amber-400 font-medium mt-1 flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 mt-1 text-xs">
+                        <span className="text-slate-400">Tên đăng nhập:</span>
+                        <span className="font-mono text-amber-300 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+                          {currentUser.username}
+                        </span>
+                        <span className="text-[10px] text-slate-500">(Cố định)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-400 font-medium mt-1.5 flex items-center gap-1">
                         <Sparkles className="w-3 h-3" />
                         Đủ điều kiện ghi danh Bảng Vàng
                       </p>
@@ -592,11 +607,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* TAB: TẠO TÀI KHOẢN (ĐƠN GIẢN & NGẮN GỌN) */}
               {activeTab === 'register' && (
                 <form onSubmit={handleSimpleRegister} className="space-y-3.5 pt-1 animate-fadeIn">
-                  {/* Field 1: Tên người chơi */}
+                  {/* Field 1: Tên đăng nhập */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Tên người chơi / Biệt danh
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-300">
+                        Tên đăng nhập
+                      </label>
+                      <span className="text-[10px] text-amber-400 font-semibold bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
+                        Cố định - Không thể thay đổi
+                      </span>
+                    </div>
                     <div className="relative">
                       <User className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -604,14 +624,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         type="text"
                         required
                         autoFocus
-                        autoComplete="off"
+                        autoComplete="username"
                         value={regUsername}
-                        onChange={(e) => setRegUsername(e.target.value)}
-                        placeholder="VD: PhímThầnVN, TayLướtGió..."
+                        onChange={(e) => setRegUsername(e.target.value.replace(/\s+/g, ''))}
+                        placeholder="Nhập tên đăng nhập (viết liền, không dấu cách)"
                         maxLength={24}
-                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors font-mono"
                       />
                     </div>
+                    <p className="text-[10px] text-slate-500 mt-1">Dùng để đăng nhập vào tài khoản, tối thiểu 3 ký tự.</p>
                   </div>
 
                   {/* Field 2: Mật khẩu */}
@@ -630,6 +651,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         onChange={(e) => setRegPassword(e.target.value)}
                         placeholder="Tối thiểu 4 ký tự"
                         minLength={4}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Field 3: Tên người chơi trong game (Tùy chọn) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-300">
+                        Tên người chơi / Biệt danh
+                      </label>
+                      <span className="text-[10px] text-slate-500">Có thể đổi trong Hồ sơ</span>
+                    </div>
+                    <div className="relative">
+                      <Sparkles className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        id="register_displayname_input"
+                        type="text"
+                        autoComplete="off"
+                        value={regDisplayName}
+                        onChange={(e) => setRegDisplayName(e.target.value)}
+                        placeholder={regUsername ? regUsername : 'Tên hiển thị khi đua phím (mặc định theo tên đăng nhập)'}
+                        maxLength={24}
                         className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
                       />
                     </div>
@@ -656,37 +700,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         </button>
                       ))}
                     </div>
-                  </div>
-
-                  {/* Tùy chọn Email mở rộng */}
-                  <div>
-                    {!showOptionalEmail ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowOptionalEmail(true)}
-                        className="text-[11px] text-slate-400 hover:text-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>+ Thêm Email (không bắt buộc)</span>
-                      </button>
-                    ) : (
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                          Email (Tùy chọn)
-                        </label>
-                        <div className="relative">
-                          <Mail className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                          <input
-                            id="register_optional_email_input"
-                            type="email"
-                            autoComplete="off"
-                            value={regEmail}
-                            onChange={(e) => setRegEmail(e.target.value)}
-                            placeholder="yourname@domain.com (tùy chọn)"
-                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-950/80 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   {/* Nút Tạo Tài Khoản Ngay */}
@@ -729,7 +742,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <form onSubmit={handleQuickLogin} className="space-y-3.5 pt-1 animate-fadeIn">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Tên người chơi hoặc Email
+                      Tên đăng nhập
                     </label>
                     <div className="relative">
                       <User className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -741,7 +754,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         autoComplete="username"
                         value={loginAccount}
                         onChange={(e) => setLoginAccount(e.target.value)}
-                        placeholder="Nhập tên người chơi hoặc email"
+                        placeholder="Nhập tên đăng nhập của bạn"
                         className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
                       />
                     </div>

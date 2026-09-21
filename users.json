@@ -27,12 +27,13 @@
       "mythic_master"
     ],
     "createdAt": 1700000000000,
-    "updatedAt": 1789923287382
+    "updatedAt": 1789923287382,
+    "displayName": "admin"
   },
   "usr_1789923577102_iba8o": {
     "id": "usr_1789923577102_iba8o",
     "email": "nite_7101@fasttyping.vn",
-    "username": "nite",
+    "username": "nite222",
     "avatar": "⚡",
     "frame": "default",
     "authProvider": "email",
@@ -43,6 +44,7 @@
       "tok_1789923577102_cf9eec391cf2cf81302566c16d1cd3a2"
     ],
     "createdAt": 1789923577102,
-    "updatedAt": 1789923577102
+    "updatedAt": 1789995093306,
+    "displayName": "nite222"
   }
 }

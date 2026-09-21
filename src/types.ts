@@ -365,8 +365,9 @@ export interface BossBattleStats {
 
 export interface UserAccount {
   id: string;
-  email: string;
-  username: string;
+  email?: string;
+  username: string; // Tên đăng nhập cố định (không thể thay đổi)
+  displayName?: string; // Tên người chơi hiển thị trong game
   avatar: string;
   frame: string;
   isAdmin?: boolean;
@@ -382,6 +383,10 @@ export interface UserAccount {
   cultivationExp?: number;
   cultivationState?: any;
   cultivation?: any;
+  bestWpm?: number;
+  bestWpmRecord?: any;
+  totalGames?: number;
+  matchHistory?: any[];
 }
 
 export interface AuthResponse {
@@ -404,6 +409,7 @@ export interface CultivationLeaderboardEntry {
   realmIndex: number;
   realmName: string;
   realmIcon: string;
+  titleName?: string;
   badge: string;
   tier: number;
   subStage: string;

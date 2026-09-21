@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AvatarWithFrame, checkIsAdmin } from '../utils/frames';
 import { fetchCultivationLeaderboard } from '../utils/roomManager';
-import { XIANXIA_REALMS, CultivationState } from '../utils/cultivation';
+import { XIANXIA_REALMS, CultivationState, getSubStage } from '../utils/cultivation';
 
 interface LeaderboardModalProps {
   highScores: Record<string, HighScoreRecord | null>;
@@ -162,6 +162,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     return {
       name: realm.name,
       icon: realm.icon,
+      titleName: realm.titleName,
       color: realm.colorClass || 'text-amber-400',
       border: realm.borderClass || 'border-amber-500/40',
       bg: 'bg-slate-950/80',
@@ -397,13 +398,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     cultivator.username.toLowerCase() === currentUsername.toLowerCase();
 
                   // Đảm bảo tu vi của người chơi trong danh sách luôn đồng bộ tuyệt đối với thực tế
-                  const displayRealmIndex = isMe && cultivationState ? cultivationState.realmIndex : cultivator.realmIndex;
-                  const displayRealmName = isMe && cultivationState ? cultivationState.realmName : cultivator.realmName;
-                  const displayTier = isMe && cultivationState ? cultivationState.tier : cultivator.tier;
-                  const displaySubStage = isMe && cultivationState ? cultivationState.subStage : cultivator.subStage;
-                  const displayLevel = isMe && cultivationState ? cultivationState.level : cultivator.level;
-                  const displayExp = isMe && cultivationState ? cultivationState.exp : cultivator.exp;
-                  const displayThoNguyen = isMe && cultivationState ? cultivationState.thoNguyen : cultivator.thoNguyen;
+                  const displayRealmIndex = isMe && cultivationState ? cultivationState.realmIndex : (typeof cultivator.realmIndex === 'number' ? cultivator.realmIndex : 0);
+                  const displayRealmMeta = XIANXIA_REALMS[displayRealmIndex] || XIANXIA_REALMS[0];
+                  const displayRealmName = displayRealmMeta.name;
+                  const displayTier = isMe && cultivationState ? cultivationState.tier : (cultivator.tier || 1);
+                  const displaySubStage = getSubStage(displayTier);
+                  const displayLevel = isMe && cultivationState ? cultivationState.level : (cultivator.level || displayRealmMeta.startLevel);
+                  const displayExp = isMe && cultivationState ? cultivationState.exp : (cultivator.exp || 0);
+                  const displayThoNguyen = isMe && cultivationState ? cultivationState.thoNguyen : (cultivator.thoNguyen || displayRealmMeta.maxThoNguyen);
 
                   const realmStyle = getRealmBadgeStyle(displayRealmIndex);
 
@@ -474,6 +476,20 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                               Bạn
                             </span>
                           )}
+                          {(cultivator.username.toLowerCase() === 'admin' || cultivator.username.toLowerCase() === 'quantrivien' || (isMe && checkIsAdmin())) && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black uppercase tracking-wider flex items-center gap-0.5">
+                              <Shield className="w-2.5 h-2.5 text-amber-400" />
+                              Admin
+                            </span>
+                          )}
+                          {/* Danh Hiệu Tiên Đạo (ví dụ: Nguyên Anh Lão Quái) */}
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border border-amber-500/40 text-amber-300 font-black text-[10px] shadow-sm tracking-wide"
+                            title={`Danh hiệu Tiên Đạo: ${realmStyle.titleName}`}
+                          >
+                            <Sparkles className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                            <span>{realmStyle.titleName}</span>
+                          </span>
                         </div>
 
                         {/* Realm & Sub-stage Badges */}
@@ -551,7 +567,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                       <div className="text-[11px] text-slate-400 font-mono">
                         Cảnh giới: {cultivationState ? (
                           <>
-                            {cultivationState.realmName} Tầng {cultivationState.tier} • Cấp {cultivationState.level}/1000 • {cultivationState.exp.toLocaleString()} Tu Vi
+                            {XIANXIA_REALMS[cultivationState.realmIndex]?.name || 'Luyện Khí Kỳ'} Tầng {cultivationState.tier} • Danh hiệu: <strong className="text-amber-300">{XIANXIA_REALMS[cultivationState.realmIndex]?.titleName}</strong> • Cấp {cultivationState.level}/1000 • {cultivationState.exp.toLocaleString()} Tu Vi
                           </>
                         ) : (
                           'Chưa nhập môn'
@@ -565,7 +581,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono">
                         {cultivationState ? (
-                          <>Cảnh giới hiện tại: {cultivationState.realmName} Tầng {cultivationState.tier} (Cấp {cultivationState.level})</>
+                          <>Cảnh giới hiện tại: {XIANXIA_REALMS[cultivationState.realmIndex]?.name || 'Luyện Khí Kỳ'} Tầng {cultivationState.tier} • Danh hiệu: <strong className="text-amber-300">{XIANXIA_REALMS[cultivationState.realmIndex]?.titleName}</strong> (Cấp {cultivationState.level})</>
                         ) : (
                           'Đăng nhập tài khoản để vinh danh và bảo lưu thứ hạng Tu Tiên!'
                         )}

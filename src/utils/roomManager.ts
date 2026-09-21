@@ -1,4 +1,5 @@
 import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord, OnlineUserDetail, BestWpmRecord, CultivationLeaderboardEntry } from '../types';
+import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken } from './auth';
 
 export interface PresenceUserMeta {
@@ -832,31 +833,10 @@ export function sendPresenceLeave(tabId: string) {
 }
 
 /**
- * Get stored local high scores cache as fallback
+ * Get stored local high scores cache as fallback (Non-blocking from memory/IndexedDB cache)
  */
 export function getStoredHighScores(): Record<string, HighScoreRecord | null> {
-  const fallback: Record<string, HighScoreRecord | null> = {
-    vi_dau: null,
-    vi_nodau: null,
-    en: null,
-    numpad: null,
-    ngau_hung: null,
-    doan_chu: null,
-    san_boss: null,
-  };
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const saved = localStorage.getItem('fasttyping_highscores');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object') {
-        return { ...fallback, ...parsed };
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return fallback;
+  return getLeaderboardSync();
 }
 
 /**
@@ -879,9 +859,8 @@ export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord
       if (res.ok) {
         const data = await res.json();
         if (data && data.success && data.highScores) {
-          try {
-            localStorage.setItem('fasttyping_highscores', JSON.stringify(data.highScores));
-          } catch {}
+          // Asynchronous non-blocking save to IndexedDB (does not freeze main thread on Citrix VDI)
+          saveLeaderboardToIndexedDB(data.highScores).catch(() => {});
           return data.highScores;
         }
       }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { XIANXIA_REALMS, loadStoredCultivationState } from './cultivation';
+import { getLeaderboardSync } from './leaderboardStorage';
 
 export type FrameRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
@@ -530,18 +531,8 @@ export function isFrameOwned(frameId: string, stats?: PlayerFrameStats): boolean
   if (frame.category === 'champion' || frame.topMode || frameId.startsWith('top_')) {
     const targetMode = frame.topMode || frameId.replace('top_', '');
 
-    // 1. Resolve current high scores: from stats or localStorage cache
-    let currentHighScores = stats?.highScores;
-    if (!currentHighScores) {
-      try {
-        const raw = localStorage.getItem('fasttyping_highscores');
-        if (raw) {
-          currentHighScores = JSON.parse(raw);
-        }
-      } catch {
-        // ignore
-      }
-    }
+    // 1. Resolve current high scores: from stats or IndexedDB/memory cache (Non-blocking)
+    const currentHighScores = stats?.highScores || getLeaderboardSync();
 
     // 2. Resolve current player username: from stats or localStorage
     const currentUsername = (

@@ -70,6 +70,12 @@ class SoundEffects {
 
         osc.connect(gain);
         gain.connect(this.ctx.destination);
+        osc.onended = () => {
+          try {
+            osc.disconnect();
+            gain.disconnect();
+          } catch {}
+        };
         osc.start(now);
         osc.stop(now + 0.06);
         return;
@@ -128,6 +134,13 @@ class SoundEffects {
       osc.connect(gain);
       gain.connect(this.ctx.destination);
 
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
+
       osc.start(now);
       osc.stop(now + 0.055);
     } catch {
@@ -164,6 +177,13 @@ class SoundEffects {
       osc.connect(gain);
       gain.connect(this.ctx.destination);
 
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
+
       osc.start();
       osc.stop(this.ctx.currentTime + 0.08);
     } catch {}
@@ -188,6 +208,13 @@ class SoundEffects {
       osc.connect(gain);
       gain.connect(this.ctx.destination);
 
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
+
       osc.start();
       osc.stop(this.ctx.currentTime + 0.12);
     } catch {}
@@ -211,6 +238,13 @@ class SoundEffects {
 
       osc.connect(gain);
       gain.connect(this.ctx.destination);
+
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
 
       osc.start();
       osc.stop(this.ctx.currentTime + (isGo ? 0.3 : 0.15));
