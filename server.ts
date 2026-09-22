@@ -5,120 +5,19 @@ import http from 'http';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 
-interface Player {
-  id: string;
-  username: string;
-  icon: string;
-  frame?: string;
-  bestWpm?: number;
-  bestWpmRecord?: {
-    wpm: number;
-    mode: string;
-    modeName: string;
-    timestamp: number;
-  };
-  totalGames?: number;
-  progress: number;
-  wpm: number;
-  score: number;
-  errors: number;
-  correctChars: number;
-  isFinished: boolean;
-  isSurrendered: boolean;
-  isAFK: boolean;
-  isBot?: boolean;
-  botTargetWpm?: number;
-  inMatch?: boolean;
-}
-
-interface GameRoom {
-  id: string; // e.g. "VN-5111"
-  mode: string;
-  hostId: string;
-  hostName: string;
-  isQuickRoom: boolean;
-  status: 'waiting' | 'playing' | 'finished';
-  matchId?: string;
-  createdAt: number;
-  lastActive: number;
-  players: Player[];
-  difficulty?: string;
-  maxSlots: number;
-  words?: string[];
-  mysteryWords?: any[];
-}
-
-function normalizeRoomCode(input: string): string {
-  if (!input) return '';
-  let cleaned = input.trim().toUpperCase();
-
-  cleaned = cleaned.replace(/^(MÃ\s*PHÒNG|MA\s*PHONG|PHÒNG|PHONG|ROOM|CODE|MÃ|MA)[:\s]*/i, '').trim();
-  cleaned = cleaned.replace(/^#+/, '').trim();
-  cleaned = cleaned.replace(/#/g, '').trim();
-
-  if (!cleaned) return '';
-
-  const matchVn = cleaned.match(/^VN[-_\s]*(\d+)/i);
-  if (matchVn) {
-    return `VN-${matchVn[1]}`;
-  }
-
-  const matchDigits = cleaned.match(/^(\d+)$/);
-  if (matchDigits) {
-    return `VN-${matchDigits[1]}`;
-  }
-
-  if (cleaned.startsWith('VN-')) {
-    return cleaned;
-  }
-
-  if (cleaned.startsWith('VN')) {
-    const rest = cleaned.slice(2).replace(/^[-_\s]+/, '');
-    return `VN-${rest}`;
-  }
-
-  return `VN-${cleaned}`;
-}
-
-function getModeDisplayName(mode: string): string {
-  switch (mode) {
-    case 'vi_dau':
-      return 'Tiếng Việt Có Dấu';
-    case 'vi_nodau':
-      return 'Tiếng Việt Không Dấu';
-    case 'en':
-      return 'Tiếng Anh (English)';
-    case 'numpad':
-      return 'Bàn Phím Số (Numpad)';
-    case 'ngau_hung':
-      return 'Ngẫu Hứng (Rush)';
-    case 'doan_chu':
-      return 'Đoán Chữ (Mystery)';
-    case 'san_boss':
-      return 'Săn Boss (Raid)';
-    case 'outplay':
-      return 'Outplay Yourself (Solo)';
-    default:
-      return mode;
-  }
-}
+import {
+  Player,
+  GameRoom,
+  ServerChatMessage,
+  ServerHighScoreRecord,
+  ServerUserRecord,
+  ActivePresenceSession,
+} from './server/types';
+import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
 
 // In-memory rooms store
 const rooms = new Map<string, GameRoom>();
 const sseClientsByRoom = new Map<string, Set<express.Response>>();
-
-interface ServerChatMessage {
-  id: string;
-  username: string;
-  avatar?: string;
-  frame?: string;
-  message: string;
-  timestamp: number;
-  isSystem?: boolean;
-  channel: 'global' | 'room';
-  roomId?: string;
-  isAdmin?: boolean;
-}
 
 const globalChatMessages: ServerChatMessage[] = [
   {
@@ -136,16 +35,6 @@ const globalChatMessages: ServerChatMessage[] = [
 const roomChatMessages = new Map<string, ServerChatMessage[]>();
 
 // Real Leaderboard Storage (Persistent to leaderboard.json)
-export interface ServerHighScoreRecord {
-  username: string;
-  wpm: number;
-  score: number;
-  errors: number;
-  timestamp: number;
-  avatar?: string;
-  frame?: string;
-}
-
 const LEADERBOARD_FILE = path.join(process.cwd(), 'leaderboard.json');
 
 function loadLeaderboardFromFile(): Record<string, ServerHighScoreRecord | null> {
@@ -167,7 +56,10 @@ function loadLeaderboardFromFile(): Record<string, ServerHighScoreRecord | null>
         for (const [key, value] of Object.entries(data)) {
           const rec = value as ServerHighScoreRecord | null;
           if (rec && typeof rec === 'object' && rec.username && !mockNames.has(rec.username.trim())) {
-            clean[key] = rec;
+            clean[key] = {
+              ...rec,
+              displayName: rec.displayName || rec.username,
+            };
           }
         }
         return clean;
@@ -198,37 +90,7 @@ function saveLeaderboardToFile() {
 }
 
 // User Account Storage (Persistent to users.json - no external database required)
-export interface ServerUserRecord {
-  id: string;
-  email?: string;
-  username: string; // Tên đăng nhập cố định (không thể thay đổi)
-  displayName?: string; // Tên người chơi hiển thị trong game (có thể thay đổi)
-  avatar: string;
-  frame: string;
-  isAdmin?: boolean;
-  showcaseAchievements?: string[];
-  unlockedAchievements?: string[];
-  authProvider: 'google' | 'email';
-  passwordHash?: string;
-  salt?: string;
-  verifyCode?: string;
-  verifyExpires?: number;
-  isVerified: boolean;
-  sessionTokens: string[];
-  cultivation?: any;
-  bestWpm?: number;
-  bestWpmRecord?: any;
-  totalGames?: number;
-  matchHistory?: any[];
-  createdAt: number;
-  updatedAt: number;
-}
-
 const USERS_FILE = path.join(process.cwd(), 'users.json');
-
-function hashPassword(password: string, salt: string): string {
-  return crypto.pbkdf2Sync(password, salt, 1000, 32, 'sha256').toString('hex');
-}
 
 function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
   let adminUser: ServerUserRecord | undefined;
@@ -255,8 +117,16 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
       salt,
       isVerified: true,
       sessionTokens: [],
-      showcaseAchievements: ['god_speed', 'boss_slayer', 'mythic_master'],
-      unlockedAchievements: ['first_win', 'streak_3', 'god_speed', 'boss_slayer', 'mythic_master'],
+      showcaseAchievements: ['speed_100', 'pve_boss_win', 'pvp_first_win', 'hidden_top1'],
+      unlockedAchievements: [
+        'speed_40', 'speed_60', 'speed_80', 'speed_100', 'speed_120', 'speed_140', 'speed_160',
+        'acc_95', 'acc_98', 'acc_100_once', 'acc_100_3x', 'acc_100_10x',
+        'matches_10', 'matches_30', 'matches_75', 'matches_150', 'matches_300', 'matches_500',
+        'pve_boss_win', 'pve_boss_hell', 'pve_mystery_word', 'pve_rush_high', 'pve_outplay_beat',
+        'numpad_intro', 'numpad_50', 'numpad_75', 'numpad_100',
+        'pvp_first_win', 'pvp_streak_3', 'pvp_streak_5', 'pvp_streak_10',
+        'hidden_night', 'hidden_midnight', 'hidden_verified_dao', 'hidden_top1'
+      ],
       createdAt: 1700000000000,
       updatedAt: Date.now(),
     };
@@ -270,6 +140,28 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
     }
     if (!adminUser.frame || adminUser.frame === 'default') {
       adminUser.frame = 'admin_gold';
+    }
+    // Clean up legacy invalid achievement IDs from existing admin record
+    const legacyInvalid = new Set(['god_speed', 'boss_slayer', 'mythic_master', 'first_win', 'streak_3']);
+    if (Array.isArray(adminUser.showcaseAchievements)) {
+      adminUser.showcaseAchievements = adminUser.showcaseAchievements.filter((id) => !legacyInvalid.has(id));
+      if (adminUser.showcaseAchievements.length === 0) {
+        adminUser.showcaseAchievements = ['speed_100', 'pve_boss_win', 'pvp_first_win', 'hidden_top1'];
+      }
+    }
+    if (Array.isArray(adminUser.unlockedAchievements)) {
+      adminUser.unlockedAchievements = adminUser.unlockedAchievements.filter((id) => !legacyInvalid.has(id));
+      if (adminUser.unlockedAchievements.length < 5) {
+        adminUser.unlockedAchievements = [
+          'speed_40', 'speed_60', 'speed_80', 'speed_100', 'speed_120', 'speed_140', 'speed_160',
+          'acc_95', 'acc_98', 'acc_100_once', 'acc_100_3x', 'acc_100_10x',
+          'matches_10', 'matches_30', 'matches_75', 'matches_150', 'matches_300', 'matches_500',
+          'pve_boss_win', 'pve_boss_hell', 'pve_mystery_word', 'pve_rush_high', 'pve_outplay_beat',
+          'numpad_intro', 'numpad_50', 'numpad_75', 'numpad_100',
+          'pvp_first_win', 'pvp_streak_3', 'pvp_streak_5', 'pvp_streak_10',
+          'hidden_night', 'hidden_midnight', 'hidden_verified_dao', 'hidden_top1'
+        ];
+      }
     }
     return false;
   }
@@ -1153,13 +1045,13 @@ async function startServer() {
       user.frame = frame.trim();
     }
     if (Array.isArray(showcaseAchievements)) {
-      user.showcaseAchievements = showcaseAchievements.filter((x: any) => typeof x === 'string').slice(0, 3);
+      user.showcaseAchievements = showcaseAchievements.filter((x: any) => typeof x === 'string').slice(0, 4);
     }
     if (Array.isArray(unlockedAchievements)) {
       user.unlockedAchievements = unlockedAchievements.filter((x: any) => typeof x === 'string');
     }
     if (typeof bestWpm === 'number' && !isNaN(bestWpm)) {
-      user.bestWpm = Math.max(user.bestWpm || 0, Math.round(bestWpm));
+      user.bestWpm = Math.round(bestWpm);
     }
     if (bestWpmRecord && typeof bestWpmRecord === 'object') {
       user.bestWpmRecord = bestWpmRecord;
@@ -1177,6 +1069,23 @@ async function startServer() {
     user.updatedAt = Date.now();
     serverUsers.set(user.id, user);
     saveUsersToFile();
+
+    // Cập nhật tên hiển thị trên Bảng Vàng nếu người chơi đang nắm giữ kỷ lục
+    let updatedHighScores = false;
+    for (const modeKey of Object.keys(serverHighScores)) {
+      const rec = serverHighScores[modeKey];
+      if (rec && (rec.userId === user.id || rec.username.toLowerCase() === user.username.toLowerCase())) {
+        rec.displayName = user.displayName || user.username;
+        if (user.avatar) rec.avatar = user.avatar;
+        if (user.frame) rec.frame = user.frame;
+        updatedHighScores = true;
+      }
+    }
+    if (updatedHighScores) {
+      saveLeaderboardToFile();
+      broadcastLeaderboard();
+    }
+    syncUserCultivationToCache(user);
 
     res.json({
       success: true,
@@ -1351,6 +1260,7 @@ async function startServer() {
       map.set(user.username.toLowerCase(), {
         id: user.id,
         username: user.username,
+        displayName: user.displayName || user.username,
         avatar: user.avatar || '⚡',
         frame: user.frame || realmMeta.frameId,
         realmIndex,
@@ -1423,6 +1333,7 @@ async function startServer() {
     if (existingIndex !== -1) {
       cachedCultivationRankedList[existingIndex] = {
         ...cachedCultivationRankedList[existingIndex],
+        displayName: user.displayName || user.username,
         realmIndex,
         realmName: realmMeta.name,
         realmIcon: realmMeta.icon,
@@ -1441,6 +1352,7 @@ async function startServer() {
     if (topIndex !== -1) {
       cachedCultivationTop50[topIndex] = {
         ...cachedCultivationTop50[topIndex],
+        displayName: user.displayName || user.username,
         realmIndex,
         realmName: realmMeta.name,
         realmIcon: realmMeta.icon,
@@ -2516,6 +2428,7 @@ async function startServer() {
         currentUserRank = {
           rank: item.rank,
           username: item.username,
+          displayName: item.displayName || item.username,
           level: item.level,
           realmIndex: item.realmIndex,
           realmName: item.realmName,
@@ -2546,7 +2459,24 @@ async function startServer() {
   // GET /api/leaderboard: Get real server-wide high scores
   app.get('/api/leaderboard', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.json({ success: true, highScores: serverHighScores });
+    const enrichedScores: Record<string, ServerHighScoreRecord | null> = {};
+    for (const [key, val] of Object.entries(serverHighScores)) {
+      if (val) {
+        let user: ServerUserRecord | null = null;
+        if (val.userId && serverUsers.has(val.userId)) {
+          user = serverUsers.get(val.userId) || null;
+        } else if (val.username) {
+          user = getUserByUsername(val.username);
+        }
+        enrichedScores[key] = {
+          ...val,
+          displayName: user?.displayName || val.displayName || val.username,
+        };
+      } else {
+        enrichedScores[key] = null;
+      }
+    }
+    res.json({ success: true, highScores: enrichedScores });
   });
 
   // POST /api/leaderboard: Submit real score achieved by player
@@ -2554,6 +2484,7 @@ async function startServer() {
     const {
       mode,
       username,
+      displayName,
       wpm = 0,
       score = 0,
       errors = 0,
@@ -2616,7 +2547,8 @@ async function startServer() {
       }
     }
 
-    const cleanUsername = String(username).trim().slice(0, 30);
+    const cleanUsername = authenticatedUser.username || String(username).trim().slice(0, 30);
+    const cleanDisplayName = (authenticatedUser.displayName || displayName || cleanUsername).trim().slice(0, 30);
     const numWpm = Math.max(0, Math.round(Number(wpm) || 0));
     const numScore = Math.max(0, Math.round(Number(score) || 0));
     const numErrors = Math.max(0, Math.round(Number(errors) || 0));
@@ -2642,13 +2574,15 @@ async function startServer() {
 
     if (isBetter) {
       serverHighScores[mode] = {
-        username: cleanUsername,
+        username: authenticatedUser.username || cleanUsername,
+        displayName: cleanDisplayName,
+        userId: authenticatedUser.id,
         wpm: numWpm,
         score: numScore,
         errors: numErrors,
         timestamp: Date.now(),
-        avatar: avatar || '⚡',
-        frame: frame || 'default',
+        avatar: avatar || authenticatedUser.avatar || '⚡',
+        frame: frame || authenticatedUser.frame || 'default',
       };
       saveLeaderboardToFile();
       broadcastLeaderboard();
@@ -2663,7 +2597,19 @@ async function startServer() {
   app.post('/api/leaderboard/admin-update', (req, res) => {
     const { highScores } = req.body;
     if (highScores && typeof highScores === 'object') {
-      serverHighScores = { ...serverHighScores, ...highScores };
+      const sanitized: Record<string, any> = {};
+      for (const [k, v] of Object.entries(highScores)) {
+        if (v && typeof v === 'object') {
+          const rec = v as any;
+          sanitized[k] = {
+            ...rec,
+            displayName: rec.displayName || rec.username,
+          };
+        } else {
+          sanitized[k] = null;
+        }
+      }
+      serverHighScores = { ...serverHighScores, ...sanitized };
       saveLeaderboardToFile();
       broadcastLeaderboard();
       res.json({ success: true, highScores: serverHighScores });

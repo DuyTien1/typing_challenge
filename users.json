@@ -4,7 +4,7 @@
     "email": "admin@fasttyping.vn",
     "username": "admin",
     "avatar": "👑",
-    "frame": "admin_gold",
+    "frame": "frame_xianxia_luyenkhi",
     "isAdmin": true,
     "authProvider": "email",
     "passwordHash": "c45ac5a87e2f6f1b9bc84b61cc3ff8e83711f0fabf808a4453016390b0991df1",
@@ -15,19 +15,50 @@
       "tok_1789829219499_1f829c7d036979f51b9cce97c7b46de9"
     ],
     "showcaseAchievements": [
-      "god_speed",
-      "boss_slayer",
-      "mythic_master"
+      "speed_100",
+      "pve_boss_win",
+      "pvp_first_win",
+      "hidden_top1"
     ],
     "unlockedAchievements": [
-      "first_win",
-      "streak_3",
-      "god_speed",
-      "boss_slayer",
-      "mythic_master"
+      "speed_40",
+      "speed_60",
+      "speed_80",
+      "speed_100",
+      "speed_120",
+      "speed_140",
+      "speed_160",
+      "acc_95",
+      "acc_98",
+      "acc_100_once",
+      "acc_100_3x",
+      "acc_100_10x",
+      "matches_10",
+      "matches_30",
+      "matches_75",
+      "matches_150",
+      "matches_300",
+      "matches_500",
+      "pve_boss_win",
+      "pve_boss_hell",
+      "pve_mystery_word",
+      "pve_rush_high",
+      "pve_outplay_beat",
+      "numpad_intro",
+      "numpad_50",
+      "numpad_75",
+      "numpad_100",
+      "pvp_first_win",
+      "pvp_streak_3",
+      "pvp_streak_5",
+      "pvp_streak_10",
+      "hidden_night",
+      "hidden_midnight",
+      "hidden_verified_dao",
+      "hidden_top1"
     ],
     "createdAt": 1700000000000,
-    "updatedAt": 1789923287382,
+    "updatedAt": 1790092870567,
     "displayName": "admin"
   },
   "usr_1789923577102_iba8o": {
@@ -46,5 +77,142 @@
     "createdAt": 1789923577102,
     "updatedAt": 1789995093306,
     "displayName": "nite222"
+  },
+  "usr_1790093190112_vdpw8": {
+    "id": "usr_1790093190112_vdpw8",
+    "email": "",
+    "username": "nite",
+    "displayName": "nite",
+    "avatar": "⚡",
+    "frame": "default",
+    "authProvider": "email",
+    "passwordHash": "67067daef785e685f6abee954e93e390d451f07a0e920de223c07ed8385d90f2",
+    "salt": "1a91fd50c876b218f215687dba90af93",
+    "isVerified": true,
+    "sessionTokens": [
+      "tok_1790093190112_ef2714fa2b5fe00e659d5d5a96cb67e0"
+    ],
+    "createdAt": 1790093190112,
+    "updatedAt": 1790093241131,
+    "bestWpm": 71,
+    "bestWpmRecord": {
+      "wpm": 71,
+      "mode": "Outplay",
+      "modeName": "Outplay",
+      "timestamp": 1790093231407
+    },
+    "totalGames": 2,
+    "matchHistory": [
+      {
+        "id": "match_1790093231406_89m4p",
+        "timestamp": 1790093231406,
+        "mode": "Outplay",
+        "modeId": "outplay",
+        "wpm": 71,
+        "accuracy": 100,
+        "result": "Thắng",
+        "score": 0,
+        "playType": "solo",
+        "isCompleted": true
+      },
+      {
+        "id": "match_1790093218502_n1psn",
+        "timestamp": 1790093218502,
+        "mode": "Outplay",
+        "modeId": "outplay",
+        "wpm": 57,
+        "accuracy": 90,
+        "result": "Thắng",
+        "score": 0,
+        "playType": "solo",
+        "isCompleted": true
+      }
+    ],
+    "unlockedAchievements": [
+      "speed_40",
+      "pve_outplay_beat",
+      "speed_60",
+      "acc_95",
+      "acc_98",
+      "acc_100_once"
+    ],
+    "cultivation": {
+      "level": 7,
+      "realmIndex": 0,
+      "tier": 3,
+      "realmName": "Luyện Khí Kỳ",
+      "subStage": "Sơ Kỳ",
+      "titleName": "Luyện Khí Tu Sĩ",
+      "exp": 38,
+      "maxExp": 250,
+      "thoNguyen": 240,
+      "maxThoNguyen": 240,
+      "lastThoNguyenDecay": 1790093175301,
+      "lastCultivateTime": 1790093231407,
+      "dailyExpEarned": 369,
+      "dailyExpDate": "2026-09-22",
+      "pillCount": {
+        "thoNguyen": 2,
+        "hoTam": 1,
+        "phaCanh": 1
+      },
+      "dailyQuests": [
+        {
+          "id": "quest_meditation",
+          "name": "Tọa Thiền Nhập Định",
+          "desc": "Hoàn thành 1 bài thi đấu bất kỳ để ngưng tụ khí huyết",
+          "rewardExp": 300,
+          "rewardPill": "thoNguyen",
+          "progress": 1,
+          "target": 1,
+          "isCompleted": true,
+          "isClaimed": false
+        },
+        {
+          "id": "quest_accuracy",
+          "name": "Bách Phát Bách Trúng",
+          "desc": "Đạt độ chính xác ≥ 96% trong 1 trận đấu để rèn luyện tâm kiếm",
+          "rewardExp": 450,
+          "rewardPill": "thoNguyen",
+          "progress": 1,
+          "target": 1,
+          "isCompleted": true,
+          "isClaimed": false
+        },
+        {
+          "id": "quest_speed",
+          "name": "Lôi Đình Xuất Kích",
+          "desc": "Đạt WPM ≥ 50 trong 1 trận đấu để bứt phá tốc độ",
+          "rewardExp": 350,
+          "rewardPill": "hoTam",
+          "progress": 1,
+          "target": 1,
+          "isCompleted": true,
+          "isClaimed": false
+        },
+        {
+          "id": "quest_arena",
+          "name": "Trảm Yêu Phục Ma",
+          "desc": "Tham gia 1 trận Săn Boss, Đoán Chữ hoặc Ngẫu Hứng",
+          "rewardExp": 500,
+          "rewardPill": "phaCanh",
+          "progress": 0,
+          "target": 1,
+          "isCompleted": false,
+          "isClaimed": false
+        }
+      ],
+      "dailyQuestsDate": "2026-09-22",
+      "historyLog": [
+        "🎉 Chúc mừng tu sĩ thăng cấp lên Luyện Khí Kỳ Tầng 3 (Sơ Kỳ)!",
+        "🎉 Chúc mừng tu sĩ thăng cấp lên Luyện Khí Kỳ Tầng 2 (Sơ Kỳ)!",
+        "Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)"
+      ]
+    },
+    "showcaseAchievements": [
+      "speed_60",
+      "speed_40",
+      "acc_100_once"
+    ]
   }
 }
