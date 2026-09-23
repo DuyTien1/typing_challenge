@@ -55,6 +55,7 @@ interface ProfileModalProps {
   onChangeAvatar: (emoji: string) => void;
   onChangeFrame?: (frameId: string) => void;
   onUpdateShowcaseAchievements?: (newShowcase: string[]) => void;
+  onOpenMatchHistory?: () => void;
   onClose: () => void;
   initialTab?: 'profile' | 'achievements';
 }
@@ -90,6 +91,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onChangeAvatar,
   onChangeFrame,
   onUpdateShowcaseAchievements,
+  onOpenMatchHistory,
   onClose,
   initialTab = 'profile',
 }) => {
@@ -271,9 +273,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-      <div className="w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-5 relative max-h-[92vh] overflow-y-auto">
+      <div className="w-full max-w-xl h-[88vh] max-h-[780px] min-h-[580px] flex flex-col bg-slate-900 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
               <User className="w-5 h-5" />
@@ -301,7 +303,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         </div>
 
         {/* TOP NAVIGATION TABS */}
-        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner">
+        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner shrink-0">
           <button
             id="tab-profile-identity"
             type="button"
@@ -341,6 +343,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </button>
         </div>
 
+        {/* Tab Body - Fixed height with smooth internal scrolling */}
+        <div className="flex-1 overflow-y-auto min-h-0 pr-1 mt-2 space-y-4">
         {activeTab === 'achievements' ? (
           <AchievementsSection
             bestWpm={bestWpm}
@@ -626,9 +630,26 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <p className="text-[10px] text-slate-400">Hiển thị 5 trận đấu gần nhất</p>
               </div>
             </div>
-            <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-amber-300">
-              {recentMatches.length}/5 trận
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-amber-300">
+                {recentMatches.length}/5 trận
+              </span>
+              {onOpenMatchHistory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    onClose();
+                    onOpenMatchHistory();
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Mở 20 ván gần nhất, replay và phân tích chuyên sâu"
+                >
+                  <History className="w-3 h-3 text-emerald-400" />
+                  <span>Xem 20 Trận & Replay</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {recentMatches.length === 0 ? (
@@ -714,6 +735,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         </div>
         </div>
         )}
+        </div>
       </div>
 
       {/* POPUP 1: TÙY CHỌN AVATAR & KHUNG ĐẠI DIỆN */}

@@ -13,7 +13,8 @@ import {
   Users,
   LogIn,
   LogOut,
-  Lock
+  Lock,
+  History
 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 
@@ -26,6 +27,7 @@ interface HeaderProps {
   isLoggedIn?: boolean;
   onToggleMute: () => void;
   onOpenLeaderboard: () => void;
+  onOpenMatchHistory?: () => void;
   onToggleChat: () => void;
   onOpenAdmin: () => void;
   onOpenProfile: () => void;
@@ -55,6 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
   isLoggedIn = false,
   onToggleMute,
   onOpenLeaderboard,
+  onOpenMatchHistory,
   onToggleChat,
   onOpenAdmin,
   onOpenProfile,
@@ -325,6 +328,36 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                     </div>
                   </button>
+
+                  {/* Mục 3: Lịch Sử Đấu */}
+                  {onOpenMatchHistory && (
+                    <button
+                      id="menu-item-match-history"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setIsMoreMenuOpen(false);
+                        onOpenMatchHistory();
+                      }}
+                      className={`w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all cursor-pointer group ${
+                        isAdmin 
+                          ? 'border border-amber-500/40 hover:border-amber-400/80 bg-slate-900/40 shadow-xs' 
+                          : 'border border-transparent hover:border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <History className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                            <span>Lịch Sử Đấu</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">20 ván</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400">Replay, phân tích lỗi sai & lời khuyên</div>
+                        </div>
+                      </div>
+                    </button>
+                  )}
                 </div>
 
                 {/* Secondary Actions: Linh Đài & Bảng Vàng */}

@@ -313,6 +313,20 @@ export async function updateRoomDifficulty(roomId: string, difficulty: Difficult
   }
 }
 
+// Cập nhật chế độ thi đấu của phòng (Chủ phòng)
+export async function updateRoomMode(roomId: string, mode: GameMode, difficulty?: DifficultyLevel): Promise<void> {
+  const normId = normalizeRoomCode(roomId);
+  try {
+    await fetch(`/api/rooms/${encodeURIComponent(normId)}/mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, difficulty }),
+    });
+  } catch (err) {
+    console.error('updateRoomMode error:', err);
+  }
+}
+
 // Bắt đầu trận đấu (Chủ phòng kích hoạt, đồng bộ danh sách từ thi đấu và mã phiên đấu)
 export async function markRoomPlaying(
   roomId: string,

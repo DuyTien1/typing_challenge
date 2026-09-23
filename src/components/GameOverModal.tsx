@@ -103,11 +103,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         return;
       }
 
-      if (e.key === 'Escape' || e.key === 'h' || e.key === 'H') {
+      if (e.key === 'Escape' || e.key === 'h' || e.key === 'H' || e.key === 'Backspace') {
         e.preventDefault();
         soundFx.playKeyClick();
         onBackToLobby();
-      } else if (e.key === 'Enter' || e.key === ' ') {
+      } else if (e.key === 'Enter' || e.key === ' ' || e.key === 'r' || e.key === 'R') {
         const isPlayAgainDisabled = !isSolo && (countdown === 0 || hasTimedOut);
         if (!isPlayAgainDisabled) {
           e.preventDefault();

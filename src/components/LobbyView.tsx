@@ -168,6 +168,51 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         return;
       }
 
+      // Arrow keys navigation between 8 modes
+      const modeList: GameMode[] = [
+        'vi_dau',
+        'vi_nodau',
+        'en',
+        'numpad',
+        'ngau_hung',
+        'doan_chu',
+        'san_boss',
+        'outplay',
+      ];
+      const currentIdx = modeList.indexOf(currentMode);
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const nextIdx = (currentIdx + 1) % modeList.length;
+        soundFx.playKeyClick();
+        onSelectMode(modeList[nextIdx]);
+        return;
+      }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prevIdx = (currentIdx - 1 + modeList.length) % modeList.length;
+        soundFx.playKeyClick();
+        onSelectMode(modeList[prevIdx]);
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextRowIdx = (currentIdx + 4) % modeList.length;
+        soundFx.playKeyClick();
+        onSelectMode(modeList[nextRowIdx]);
+        return;
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prevRowIdx = (currentIdx - 4 + modeList.length) % modeList.length;
+        soundFx.playKeyClick();
+        onSelectMode(modeList[prevRowIdx]);
+        return;
+      }
+
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         soundFx.playKeyClick();
@@ -205,9 +250,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
           <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-[11px]">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">1-8</kbd> Chọn chế độ
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">1-8</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">&larr;&rarr;&uarr;&darr;</kbd> Chọn
             <span className="text-slate-600">&bull;</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">Enter</kbd> Vào nhanh
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">Enter</kbd> Vào chơi
           </span>
           <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 8 Chế độ hỗ trợ Telex / VNI

@@ -24,6 +24,7 @@ import { BossArena } from './components/BossArena';
 import { MysteryWordArena } from './components/MysteryWordArena';
 import { NgauHungArena } from './components/NgauHungArena';
 import { GameOverModal } from './components/GameOverModal';
+import { MatchHistoryModal } from './components/MatchHistoryModal';
 import { ChatDrawer } from './components/ChatDrawer';
 import { ModalContainer } from './components/ModalContainer';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
@@ -36,6 +37,7 @@ import {
   subscribeToRoom,
   updateRoomPlayers,
   updateRoomDifficulty,
+  updateRoomMode,
   transferRoomHost,
   kickRoomPlayer,
   markRoomPlaying,
@@ -80,7 +82,8 @@ import {
   MatchResult, 
   addMatchRecord, 
   getFriendlyModeName, 
-  getStoredMatchHistory 
+  getStoredMatchHistory,
+  clearMatchHistory,
 } from './utils/matchHistory';
 import { OutplayPaceMode } from './utils/outplayGhost';
 import { UserX, X } from 'lucide-react';
@@ -376,6 +379,10 @@ export default function App() {
 
   // Game Settings & State
   const [gameMode, setGameMode] = useState<GameMode>('vi_dau');
+  const gameModeRef = useRef<GameMode>(gameMode);
+  useEffect(() => {
+    gameModeRef.current = gameMode;
+  }, [gameMode]);
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('normal');
   const difficultyRef = useRef<DifficultyLevel>(difficulty);
   useEffect(() => {
@@ -404,6 +411,15 @@ export default function App() {
     result: MatchResult;
     score?: number;
     isCompleted?: boolean;
+    durationSeconds?: number;
+    totalWords?: number;
+    correctChars?: number;
+    totalErrors?: number;
+    consistency?: number;
+    promptWords?: string[];
+    wordLogs?: import('./utils/matchHistory').MatchWordLog[];
+    keystrokes?: import('./utils/matchHistory').MatchReplayEvent[];
+    chartData?: PerformanceChartPoint[];
   }) => {
     if (currentMatchRecordedRef.current) return;
     currentMatchRecordedRef.current = true;
@@ -417,14 +433,30 @@ export default function App() {
     const newRecord = addMatchRecord({
       mode: data.mode || getFriendlyModeName(data.modeId),
       modeId: data.modeId,
+      difficulty,
       wpm: data.wpm,
       accuracy: data.accuracy,
       result: data.result,
       score: data.score,
       playType,
       isCompleted: isActuallyCompleted,
+      durationSeconds: data.durationSeconds,
+      totalWords: data.totalWords,
+      correctChars: data.correctChars,
+      totalErrors: data.totalErrors,
+      consistency: data.consistency,
+      promptWords: data.promptWords,
+      wordLogs: data.wordLogs,
+      keystrokes: data.keystrokes,
+      chartData: data.chartData
+        ? data.chartData.map((p) => ({
+            second: p.second,
+            wpm: (p as any).wpm ?? (p as any).playerWpm ?? 0,
+            errors: p.errors,
+          }))
+        : undefined,
     });
-    setMatchHistory((prev) => [newRecord, ...prev].slice(0, 50));
+    setMatchHistory((prev) => [newRecord, ...prev.filter((m) => m.id !== newRecord.id)].slice(0, 20));
 
     // Cập nhật Tu Vi và nhiệm vụ hàng ngày KHI VÀ CHỈ KHI hoàn thành toàn bộ trận đấu VÀ người chơi ĐÃ ĐĂNG NHẬP
     // QUY TẮC: Chế độ Khách (chưa đăng nhập) TUYỆT ĐỐI KHÔNG ĐƯỢC THƯỞNG TU VI
@@ -660,6 +692,7 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isMatchHistoryOpen, setIsMatchHistoryOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<'profile' | 'achievements'>('profile');
   const [isOnlineUsersOpen, setIsOnlineUsersOpen] = useState(false);
@@ -1032,6 +1065,10 @@ export default function App() {
             return updatedRoom.players;
           });
           setIsRoomHost(updatedRoom.hostId === currentUserId);
+          if (updatedRoom.mode && updatedRoom.mode !== gameModeRef.current) {
+            setGameMode(updatedRoom.mode);
+            gameModeRef.current = updatedRoom.mode;
+          }
           if (updatedRoom.difficulty && updatedRoom.difficulty !== difficultyRef.current) {
             setDifficulty(updatedRoom.difficulty);
             difficultyRef.current = updatedRoom.difficulty;
@@ -1280,6 +1317,7 @@ export default function App() {
   const handleSelectMode = (newMode: GameMode) => {
     soundFx.playKeyClick();
     setGameMode(newMode);
+    gameModeRef.current = newMode;
     const defaultDiff = newMode === 'numpad' ? 'number' : 'normal';
     setDifficulty(defaultDiff);
     difficultyRef.current = defaultDiff;
@@ -1287,6 +1325,19 @@ export default function App() {
       setPlayType('solo');
     } else {
       setPlayType('multiplayer');
+    }
+    // Clean bots if new mode does not support bots
+    if (newMode === 'ngau_hung' || newMode === 'doan_chu' || newMode === 'san_boss') {
+      setPlayers((prev) => {
+        const humanOnly = prev.filter((p) => !p.isBot);
+        if (currentRoomId && humanOnly.length !== prev.length) {
+          updateRoomPlayers(currentRoomId, humanOnly);
+        }
+        return humanOnly;
+      });
+    }
+    if (currentRoomId && isRoomHost) {
+      updateRoomMode(currentRoomId, newMode, defaultDiff);
     }
   };
 
@@ -1646,6 +1697,62 @@ export default function App() {
     }
   };
 
+  // Match History Actions: Practice Mistakes & Challenge Retry
+  const handlePracticeMistakes = (mistakeWords: string[]) => {
+    if (!mistakeWords || mistakeWords.length === 0) return;
+    let practiceList: string[] = [];
+    while (practiceList.length < 25) {
+      practiceList.push(...mistakeWords);
+    }
+    practiceList = practiceList.slice(0, 30);
+    setGameMode('vi_dau');
+    setPlayType('solo');
+    setPlayers([
+      {
+        id: currentUserId,
+        username: username,
+        icon: avatar,
+        progress: 0,
+        wpm: 0,
+        score: 0,
+        errors: 0,
+        correctChars: 0,
+        isFinished: false,
+        isSurrendered: false,
+        isAFK: false,
+      },
+    ]);
+    handleLaunchGame(true, 'vi_dau', practiceList);
+  };
+
+  const handleRetryMatch = (record: MatchRecord) => {
+    const retryWords = record.promptWords || record.wordLogs?.map((w) => w.word);
+    const targetMode = (record.modeId as GameMode) || 'vi_dau';
+    setGameMode(targetMode);
+    setPlayType('solo');
+    setPlayers([
+      {
+        id: currentUserId,
+        username: username,
+        icon: avatar,
+        progress: 0,
+        wpm: 0,
+        score: 0,
+        errors: 0,
+        correctChars: 0,
+        isFinished: false,
+        isSurrendered: false,
+        isAFK: false,
+      },
+    ]);
+    handleLaunchGame(true, targetMode, retryWords);
+  };
+
+  const handleClearMatchHistory = () => {
+    clearMatchHistory();
+    setMatchHistory([]);
+  };
+
   // Bot Simulation in Playing state (for standard typing modes)
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -1732,6 +1839,12 @@ export default function App() {
       finalWpm?: number;
       elapsedSeconds?: number;
       chartData?: PerformanceChartPoint[];
+      wordResults?: {
+        word: string;
+        typed: string;
+        isCorrect: boolean;
+      }[];
+      promptWords?: string[];
     }
   ) => {
     // Validate anti-cheat with true elapsed duration
@@ -1854,6 +1967,12 @@ export default function App() {
       matchResult = 'Thắng';
     }
 
+    const replayKeystrokes = keystrokes.map((k) => ({
+      key: k.key,
+      timeMs: Math.round(k.time),
+      isCorrect: k.isCorrect,
+    }));
+
     recordCurrentMatch({
       modeId: gameMode,
       wpm: verifiedWpm,
@@ -1861,6 +1980,15 @@ export default function App() {
       result: matchResult,
       score: 0,
       isCompleted: !isPlayerSurrendered,
+      durationSeconds: Math.round(effectiveDuration),
+      totalWords: extraStats?.wordResults?.length || words.length,
+      correctChars,
+      totalErrors: errors,
+      consistency,
+      promptWords: extraStats?.promptWords || words,
+      wordLogs: extraStats?.wordResults,
+      keystrokes: replayKeystrokes,
+      chartData: extraStats?.chartData,
     });
 
     // Kiểm tra xem trong phòng multiplayer còn đối thủ thực nào đang tiếp tục thi đấu không:
@@ -2569,6 +2697,7 @@ export default function App() {
         isLoggedIn={!!currentUser}
         onToggleMute={() => setIsMuted(soundFx.toggleMute())}
         onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
+        onOpenMatchHistory={() => setIsMatchHistoryOpen(true)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenProfile={() => {
@@ -3108,8 +3237,19 @@ export default function App() {
         onModalCreateNewRoom={handleModalCreateNewRoom}
         onModalJoinExistingRoom={handleModalJoinExistingRoom}
         onModalQuickJoinRoom={handleModalQuickJoinRoom}
+        onOpenMatchHistory={() => setIsMatchHistoryOpen(true)}
         onOpenChat={() => setIsChatOpen(true)}
         setNewlyUnlockedAchievements={setNewlyUnlockedAchievements}
+      />
+
+      {/* Dedicated Match History, Replay & Skill Diagnostics Modal */}
+      <MatchHistoryModal
+        isOpen={isMatchHistoryOpen}
+        history={matchHistory}
+        onClose={() => setIsMatchHistoryOpen(false)}
+        onClearHistory={handleClearMatchHistory}
+        onPracticeMistakes={handlePracticeMistakes}
+        onRetryMatch={handleRetryMatch}
       />
 
       {/* Toast thông báo thành tựu mới dạng góc màn hình, hiển thị tuần tự từng thành tựu tránh giật lag */}

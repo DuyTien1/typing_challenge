@@ -253,24 +253,147 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   const maxSlots = 8;
   const emptySlotsCount = Math.max(0, maxSlots - players.length);
 
-  // Esc key listener to quickly close inspected player or action menu modals
+  // Comprehensive Keyboard Shortcuts in Waiting Room:
+  // - Enter / Space: Start Match (Host only)
+  // - Esc / Backspace / H: Return to Lobby / Leave Room
+  // - 1 - 7: Switch Game Mode (Host only)
+  // - Arrow Left / Right / Up / Down / D / Tab: Switch Difficulty (Host only)
+  // - B / +: Add Bot (Host only, when allowed)
+  // - Del / - / Shift+B: Remove Bot (Host only, when allowed)
+  // - C: Copy Room Code
+  // - Alt + 1..8: Cheer reaction
   useEffect(() => {
-    if (!inspectedPlayer && !actionMenuPlayer) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        soundFx.playKeyClick();
-        if (actionMenuPlayer) {
-          setActionMenuPlayer(null);
-        } else if (inspectedPlayer) {
-          setInspectedPlayer(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. If user is currently typing in an input, textarea, or contentEditable
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        if (e.key === 'Escape') {
+          target.blur();
+        }
+        return;
+      }
+
+      // 2. If a popup modal is open (inspect player or host action menu)
+      if (actionMenuPlayer || inspectedPlayer) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          soundFx.playKeyClick();
+          if (actionMenuPlayer) {
+            setActionMenuPlayer(null);
+          } else if (inspectedPlayer) {
+            setInspectedPlayer(null);
+          }
+        }
+        return;
+      }
+
+      // 3. START MATCH: Enter or Space (Host only)
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (userIsHost) {
+          e.preventDefault();
+          soundFx.playCountdown(true);
+          onStartGame();
+          return;
         }
       }
+
+      // 4. LEAVE ROOM / RETURN TO LOBBY: Escape, Backspace, or 'h' / 'H'
+      if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        soundFx.playKeyClick();
+        onLeaveWaitingRoom();
+        return;
+      }
+
+      // 5. CYCLE DIFFICULTY: Arrow keys / 'd' / 'D' / Tab (Host only)
+      if (
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'd' ||
+        e.key === 'D' ||
+        (e.key === 'Tab' && !e.shiftKey)
+      ) {
+        if (userIsHost && difficulties.length > 1) {
+          e.preventDefault();
+          const currentIdx = difficulties.findIndex((d) => d.id === difficulty);
+          const nextIdx = (currentIdx + 1) % difficulties.length;
+          soundFx.playKeyClick();
+          onSelectDifficulty(difficulties[nextIdx].id);
+          return;
+        }
+      }
+
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
+        if (userIsHost && difficulties.length > 1) {
+          e.preventDefault();
+          const currentIdx = difficulties.findIndex((d) => d.id === difficulty);
+          const prevIdx = (currentIdx - 1 + difficulties.length) % difficulties.length;
+          soundFx.playKeyClick();
+          onSelectDifficulty(difficulties[prevIdx].id);
+          return;
+        }
+      }
+
+      // 6. BOT CONTROLS: 'b' or '+' to add bot; 'Delete' or '-' to remove bot (Host only)
+      if (userIsHost && isBotAllowed) {
+        if ((e.key === 'b' || e.key === 'B' || e.key === '=' || e.key === '+') && !e.shiftKey) {
+          if (players.length < maxSlots) {
+            e.preventDefault();
+            onAddBot();
+            return;
+          }
+        }
+
+        if (e.key === 'Delete' || e.key === '-' || e.key === '_' || ((e.key === 'b' || e.key === 'B') && e.shiftKey)) {
+          if (players.some((p) => p.isBot)) {
+            e.preventDefault();
+            onRemoveBot();
+            return;
+          }
+        }
+      }
+
+      // 8. COPY ROOM CODE: 'c' or 'C'
+      if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        handleCopyRoomId();
+        return;
+      }
+
+      // 9. CHEER REACTIONS: Alt + 1..8
+      if (e.altKey && !isNaN(Number(e.key)) && Number(e.key) >= 1 && Number(e.key) <= CHEER_EMOJIS.length) {
+        e.preventDefault();
+        const cheerIdx = Number(e.key) - 1;
+        const cheer = CHEER_EMOJIS[cheerIdx];
+        if (cheer) {
+          handleReaction(cheer.emoji, cheer.text);
+        }
+        return;
+      }
     };
-    window.addEventListener('keydown', handleEsc, true);
-    return () => window.removeEventListener('keydown', handleEsc, true);
-  }, [inspectedPlayer, actionMenuPlayer]);
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    userIsHost,
+    actionMenuPlayer,
+    inspectedPlayer,
+    onStartGame,
+    onLeaveWaitingRoom,
+    mode,
+    difficulties,
+    difficulty,
+    onSelectDifficulty,
+    isBotAllowed,
+    players,
+    maxSlots,
+    onAddBot,
+    onRemoveBot,
+    activeRoomId,
+    lastCheerTime,
+    currentPlayerId,
+  ]);
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-5 animate-fadeIn">
@@ -284,11 +407,14 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
               soundFx.playKeyClick();
               onLeaveWaitingRoom();
             }}
-            className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/70 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-            title="Rời phòng chờ về trang chủ"
+            className="p-2 sm:px-3 sm:py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/70 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-sm active:scale-95"
+            title="Rời phòng chờ về trang chủ (Phím tắt: Esc hoặc H)"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">Rời Phòng</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px] font-mono font-bold">
+              Esc
+            </kbd>
           </button>
 
           <div>
@@ -313,7 +439,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                 type="button"
                 onClick={handleCopyRoomId}
                 className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer transition-colors"
-                title="Sao chép mã phòng"
+                title="Sao chép mã phòng (Phím tắt: C)"
               >
                 {copied ? (
                   <>
@@ -324,6 +450,9 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                   <>
                     <Copy className="w-3.5 h-3.5" />
                     <span>Sao chép</span>
+                    <kbd className="px-1 py-0.2 rounded bg-slate-800 border border-slate-700 text-slate-400 text-[9px] font-mono">
+                      C
+                    </kbd>
                   </>
                 )}
               </button>
@@ -356,9 +485,16 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
               <Crown className="w-3.5 h-3.5 text-amber-400" />
               <span>Cấu hình độ khó phòng (Chủ phòng):</span>
             </label>
-            <span className="text-[11px] text-slate-500">
-              {userIsHost ? 'Áp dụng cho mọi người chơi trong phòng' : 'Chỉ chủ phòng mới có quyền đổi độ khó'}
-            </span>
+            <div className="flex items-center gap-2">
+              {userIsHost && (
+                <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                  Phím: <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 font-bold">&larr; &rarr; / D</kbd>
+                </span>
+              )}
+              <span className="text-[11px] text-slate-500">
+                {userIsHost ? 'Áp dụng cho mọi người chơi trong phòng' : 'Chỉ chủ phòng mới có quyền đổi độ khó'}
+              </span>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
             {difficulties.map((diff) => {
@@ -374,9 +510,9 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     soundFx.playKeyClick();
                     onSelectDifficulty(diff.id);
                   }}
-                  title={userIsHost ? diff.name : 'Chỉ chủ phòng mới có quyền đổi độ khó'}
+                  title={userIsHost ? `${diff.name} (Phím: ← →)` : 'Chỉ chủ phòng mới có quyền đổi độ khó'}
                   className={`p-3 rounded-xl border text-left flex items-center gap-3 transition-all ${
-                    userIsHost ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'
+                    userIsHost ? 'cursor-pointer active:scale-98' : 'cursor-not-allowed opacity-80'
                   } ${
                     active
                       ? `bg-slate-800/90 ${diff.color} ring-2 ring-amber-400/50 shadow-md`
@@ -430,12 +566,15 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         onAddBot();
                       }}
                       disabled={players.length >= maxSlots}
-                      className="h-9 px-2.5 sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
-                      title="Thêm Bot vào phòng chờ (tối đa 8 slot)"
+                      className="h-9 px-2.5 sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
+                      title="Thêm Bot vào phòng chờ (Phím tắt: B hoặc +)"
                     >
                       <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
                       <span className="hidden sm:inline">+ Thêm Bot</span>
                       <span className="sm:hidden">+ Bot</span>
+                      <kbd className="hidden sm:inline-block px-1.5 py-0.2 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px] font-mono">
+                        B
+                      </kbd>
                     </button>
 
                     <button
@@ -445,10 +584,13 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         onRemoveBot();
                       }}
                       disabled={players.filter((p) => p.isBot).length === 0}
-                      className="h-9 w-9 p-0 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
-                      title="Bớt 1 Bot"
+                      className="h-9 px-2 sm:px-2.5 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0 gap-1"
+                      title="Bớt 1 Bot (Phím tắt: Del hoặc -)"
                     >
                       <UserMinus className="w-3.5 h-3.5" />
+                      <kbd className="hidden sm:inline-block px-1 py-0.2 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px] font-mono">
+                        Del
+                      </kbd>
                     </button>
                   </>
                 ) : (
@@ -460,10 +602,13 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         onRemoveBot();
                       }}
                       className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
-                      title="Xóa Bot khỏi phòng"
+                      title="Xóa Bot khỏi phòng (Phím tắt: Del)"
                     >
                       <UserMinus className="w-3.5 h-3.5" />
                       <span>Xóa Bot</span>
+                      <kbd className="px-1 py-0.2 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px] font-mono">
+                        Del
+                      </kbd>
                     </button>
                   )
                 )}
@@ -476,10 +621,14 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     soundFx.playCountdown(true);
                     onStartGame();
                   }}
-                  className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all hover:scale-102 active:scale-98 cursor-pointer shrink-0 whitespace-nowrap"
+                  className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all hover:scale-102 active:scale-98 cursor-pointer shrink-0 whitespace-nowrap"
+                  title="Bắt đầu trận đấu ngay (Phím tắt: Enter hoặc Space)"
                 >
                   <Play className="w-3.5 h-3.5 fill-black" />
                   <span>BẮT ĐẦU TRẬN ĐẤU</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-amber-600/30 border border-amber-600/40 text-black text-[10px] font-mono font-bold">
+                    Enter
+                  </kbd>
                 </button>
               </div>
             ) : (
@@ -828,6 +977,48 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                   : 'Chế độ này yêu cầu người chơi thực tham gia tranh tài/hợp tác, không áp dụng tính năng thêm Bot vào phòng.'}
               </span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* KEYBOARD SHORTCUTS GUIDE BAR (Thanh chỉ dẫn phím tắt phòng chờ) */}
+      <div className="p-3 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-xs text-slate-400 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-slate-300 font-bold uppercase tracking-wider text-[11px] shrink-0">
+          <span className="p-1 rounded bg-amber-500/20 text-amber-400 font-mono text-[10px] border border-amber-500/30">⌨️ Phím Tắt</span>
+          <span>Phòng Chờ:</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3.5 gap-y-2 text-[11px]">
+          {userIsHost && (
+            <div className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded bg-amber-500 text-black font-bold font-mono text-[10px]">Enter</kbd>
+              <span className="text-slate-300">Bắt đầu trận</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold font-mono text-[10px]">Esc / H</kbd>
+            <span className="text-slate-300">Rời phòng</span>
+          </div>
+          {userIsHost && difficulties.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold font-mono text-[10px]">&larr; &rarr; / D</kbd>
+              <span className="text-slate-300">Đổi độ khó</span>
+            </div>
+          )}
+          {userIsHost && isBotAllowed && (
+            <>
+              <div className="flex items-center gap-1.5">
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold font-mono text-[10px]">B</kbd>
+                <span className="text-slate-300">+ Bot</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold font-mono text-[10px]">Del</kbd>
+                <span className="text-slate-300">- Bot</span>
+              </div>
+            </>
+          )}
+          <div className="flex items-center gap-1.5">
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold font-mono text-[10px]">C</kbd>
+            <span className="text-slate-300">Chép mã</span>
           </div>
         </div>
       </div>

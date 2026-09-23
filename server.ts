@@ -1929,6 +1929,31 @@ async function startServer() {
     res.json({ success: true, room });
   });
 
+  // Update room mode (Host configuration)
+  app.post('/api/rooms/:id/mode', (req, res) => {
+    const norm = normalizeRoomCode(req.params.id);
+    const room = rooms.get(norm);
+    if (!room) {
+      res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+
+    const { mode, difficulty } = req.body;
+    if (mode) {
+      room.mode = mode;
+      if (difficulty) {
+        room.difficulty = difficulty;
+      } else {
+        room.difficulty = mode === 'numpad' ? 'number' : 'normal';
+      }
+      room.lastActive = Date.now();
+      rooms.set(norm, room);
+      broadcastToRoom(norm, { type: 'room_updated', room });
+    }
+
+    res.json({ success: true, room });
+  });
+
   // Update room status (waiting / playing / finished + synchronize words)
   app.post('/api/rooms/:id/status', (req, res) => {
     const norm = normalizeRoomCode(req.params.id);

@@ -60,6 +60,7 @@ export interface ModalContainerProps {
   targetJoinMode: GameMode;
   isOnlineUsersOpen: boolean;
   setIsOnlineUsersOpen: (open: boolean) => void;
+  onOpenMatchHistory?: () => void;
 
   // Data & State
   highScores: Record<string, HighScoreRecord | null>;
@@ -126,6 +127,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   targetJoinMode,
   isOnlineUsersOpen,
   setIsOnlineUsersOpen,
+  onOpenMatchHistory,
   highScores,
   username,
   avatar,
@@ -317,6 +319,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           onChangeFrame={onChangeFrame}
           showcaseAchievements={showcaseAchievements}
           onUpdateShowcaseAchievements={onChangeShowcaseAchievements}
+          onOpenMatchHistory={onOpenMatchHistory}
           onClose={() => setIsProfileOpen(false)}
           initialTab={profileInitialTab}
         />

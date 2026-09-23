@@ -61,6 +61,12 @@ interface TypingArenaProps {
       finalWpm?: number;
       elapsedSeconds?: number;
       chartData?: PerformanceChartPoint[];
+      wordResults?: {
+        word: string;
+        typed: string;
+        isCorrect: boolean;
+      }[];
+      promptWords?: string[];
     }
   ) => void;
   onSurrender: () => void;
@@ -884,6 +890,12 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         ghostWpm > 0 ? ghostWpm : undefined
       );
 
+      const wordResults = effectiveWords.slice(0, currentWordIndex + (currentInput.trim() ? 1 : 0)).map((w, idx) => ({
+        word: w,
+        typed: wordHistoryRef.current[idx]?.typedWord ?? (idx === currentWordIndex ? currentInput.trim() : ''),
+        isCorrect: wordHistoryRef.current[idx]?.isCorrect ?? false,
+      }));
+
       onFinishRef.current(
         correctCharsRef.current,
         totalErrorsRef.current,
@@ -895,6 +907,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           finalWpm,
           elapsedSeconds,
           chartData: normalizedChart,
+          wordResults,
+          promptWords: effectiveWords.slice(0, Math.max(10, currentWordIndex + 1)),
           ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
             ghostWpm,
             wpmDiff: finalWpm - ghostWpm,
@@ -1260,12 +1274,20 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         ghostWpm > 0 ? ghostWpm : undefined
       );
 
+      const wordResults = effectiveWords.slice(0, nextIndex).map((w, idx) => ({
+        word: w,
+        typed: wordHistoryRef.current[idx]?.typedWord ?? '',
+        isCorrect: wordHistoryRef.current[idx]?.isCorrect ?? false,
+      }));
+
       onFinish(newCorrectChars, newErrors, keystrokesRef.current, finalConsistency, {
         lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
         sessionBestWpm: isOutplay ? nextSessionBest : undefined,
         finalWpm: liveWpm,
         elapsedSeconds,
         chartData: normalizedChart,
+        wordResults,
+        promptWords: effectiveWords.slice(0, Math.max(10, nextIndex)),
         ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
           ghostWpm,
           wpmDiff: liveWpm - ghostWpm,

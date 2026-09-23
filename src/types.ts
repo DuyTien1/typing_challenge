@@ -160,6 +160,7 @@ export interface MysteryWordItem {
 export interface KeystrokeEvent {
   key: string;
   time: number;
+  isCorrect?: boolean;
 }
 
 export type WordPoolType = 'vi_dau' | 'vi_nodau' | 'en' | 'numbers' | 'fullsize';
