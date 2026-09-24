@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { HighScoreRecord, CultivationLeaderboardEntry, UserAccount } from '../types';
+import { HighScoreRecord, CultivationLeaderboardEntry, UserAccount, HeavenlyDaoDecree } from '../types';
 import { soundFx } from '../utils/audio';
 import {
   Trophy,
@@ -15,10 +15,13 @@ import {
   Award,
   User,
   ChevronRight,
+  Scroll,
 } from 'lucide-react';
 import { AvatarWithFrame, checkIsAdmin } from '../utils/frames';
 import { fetchCultivationLeaderboard } from '../utils/roomManager';
 import { XIANXIA_REALMS, CultivationState, getSubStage } from '../utils/cultivation';
+import { getStoredDaoDecrees, subscribeToDaoDecrees } from '../utils/heavenlyDaoBot';
+import { DaoDecreeModal } from './DaoDecreeModal';
 
 interface LeaderboardModalProps {
   highScores: Record<string, HighScoreRecord | null>;
@@ -59,6 +62,19 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const [remainingSeconds, setRemainingSeconds] = useState<number>(3600);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<number>(0);
 
+  // Cáo Thị Vạn Giới state
+  const [daoDecrees, setDaoDecrees] = useState<HeavenlyDaoDecree[]>([]);
+  const [caoThiFilter, setCaoThiFilter] = useState<string>('all');
+  const [selectedDecreeForModal, setSelectedDecreeForModal] = useState<HeavenlyDaoDecree | null>(null);
+
+  useEffect(() => {
+    setDaoDecrees(getStoredDaoDecrees());
+    const unsub = subscribeToDaoDecrees((newDecree) => {
+      setDaoDecrees((prev) => [newDecree, ...prev.filter((d) => d.id !== newDecree.id)]);
+    });
+    return () => unsub();
+  }, []);
+
   // Kiểm tra quyền Quản trị viên (chỉ Admin mới nhìn thấy nút làm mới bảng xếp hạng)
   const isUserAdmin = Boolean(
     isAdmin ||
@@ -69,6 +85,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
   const tabs = [
     { id: 'tu_vi', name: 'Top 50 Tu Vi', unit: 'Tu Vi', isSpecial: true },
+    { id: 'cao_thi', name: 'Cáo Thị Vạn Giới', unit: '', isSpecial: true },
     { id: 'vi_dau', name: 'Tiếng Việt Có Dấu', unit: 'WPM' },
     { id: 'vi_nodau', name: 'Tiếng Việt Không Dấu', unit: 'WPM' },
     { id: 'en', name: 'Tiếng Anh', unit: 'WPM' },
@@ -629,6 +646,155 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
               )}
             </div>
           </div>
+        ) : selectedTab === 'cao_thi' ? (
+          /* TAB 2: BẢNG CÁO THỊ VẠN GIỚI (BIÊN NIÊN SỬ THIÊN ĐẠO) */
+          <div className="flex-1 min-h-0 flex flex-col space-y-3">
+            {/* Header intro & Filters */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/40 via-purple-950/40 to-slate-950 border border-amber-500/30 shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400/30 to-purple-600/30 border border-amber-400/50 flex items-center justify-center text-base shadow-sm shrink-0">
+                  <span className="animate-[spin_12s_linear_infinite]">☯️</span>
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs font-black text-amber-300 uppercase tracking-wide flex items-center gap-1.5 truncate">
+                    <span>Bảng Cáo Thị Vạn Giới</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      {daoDecrees.length} sự kiện
+                    </span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Biên niên sử lưu giữ toàn bộ đại sự, chiếu thư và sấm truyền toàn cõi Tiên Giới
+                  </p>
+                </div>
+              </div>
+
+              {/* Event Type Filter Buttons */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 sm:pb-0 shrink-0 text-[10px]">
+                {[
+                  { id: 'all', label: 'Tất Cả' },
+                  { id: 'record', label: 'Kim Bảng', icon: '👑' },
+                  { id: 'breakthrough', label: 'Dị Tượng', icon: '🌟' },
+                  { id: 'boss_kill', label: 'Ma Thần', icon: '🐉' },
+                  { id: 'penalty', label: 'Thiên Lôi', icon: '⚡' },
+                  { id: 'guidance', label: 'Chỉ Điểm', icon: '🍵' },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setCaoThiFilter(f.id);
+                    }}
+                    className={`px-2 py-1 rounded-lg font-bold transition-all shrink-0 cursor-pointer ${
+                      caoThiFilter === f.id
+                        ? 'bg-amber-500 text-black shadow-sm'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    {f.icon && <span className="mr-0.5">{f.icon}</span>}
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Decree Cards List */}
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pr-1">
+              {daoDecrees
+                .filter((d) => caoThiFilter === 'all' || d.eventType === caoThiFilter)
+                .map((decree) => {
+                  const isBreakthrough = decree.eventType === 'breakthrough';
+                  const isRecord = decree.eventType === 'record';
+                  const isBossKill = decree.eventType === 'boss_kill';
+                  const isPenalty = decree.eventType === 'penalty';
+
+                  const badgeClass = isBreakthrough
+                    ? 'bg-purple-950/80 text-purple-200 border-purple-500/50'
+                    : isRecord
+                    ? 'bg-amber-950/80 text-amber-200 border-amber-500/50'
+                    : isBossKill
+                    ? 'bg-red-950/80 text-red-200 border-red-500/50'
+                    : isPenalty
+                    ? 'bg-rose-950/80 text-rose-200 border-rose-500/50'
+                    : 'bg-cyan-950/80 text-cyan-200 border-cyan-500/50';
+
+                  const badgeIcon = isBreakthrough
+                    ? '🌟'
+                    : isRecord
+                    ? '👑'
+                    : isBossKill
+                    ? '🐉'
+                    : isPenalty
+                    ? '⚡'
+                    : '🍵';
+
+                  return (
+                    <div
+                      key={decree.id}
+                      className="p-3.5 rounded-2xl bg-slate-950/70 hover:bg-slate-900/80 border border-slate-800/80 hover:border-amber-500/40 transition-all space-y-2 group shadow-sm"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`px-2 py-0.5 rounded-md border text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${badgeClass}`}>
+                            <span>{badgeIcon}</span>
+                            <span>{decree.title}</span>
+                          </span>
+
+                          {decree.targetUser && (
+                            <span className="text-xs font-bold text-amber-300 truncate">
+                              @{decree.targetUser}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {new Date(decree.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} • {new Date(decree.timestamp).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playKeyClick();
+                              setSelectedDecreeForModal(decree);
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Mở toàn văn Thiên Đạo Chiếu Thư"
+                          >
+                            <Scroll className="w-3 h-3 text-amber-400" />
+                            <span>Chiếu Thư</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-200 font-sans leading-relaxed">
+                        {decree.content}
+                      </p>
+
+                      {(decree.wpm || decree.realmName) && (
+                        <div className="flex items-center gap-3 pt-1 text-[11px] text-slate-400 font-mono">
+                          {decree.wpm && (
+                            <span className="text-emerald-400 font-bold">
+                              ⚡ Tốc độ: {decree.wpm} WPM
+                            </span>
+                          )}
+                          {decree.accuracy && (
+                            <span className="text-cyan-400">
+                              🎯 Chuẩn xác: {decree.accuracy}%
+                            </span>
+                          )}
+                          {decree.realmName && (
+                            <span className="text-purple-300 font-semibold">
+                              🪷 Cảnh giới: {decree.realmName}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
         ) : (
           /* TAB 2: STANDARD GAME MODES HIGH SCORE */
           <div className="flex-1 min-h-0 flex flex-col justify-between space-y-3">
@@ -709,6 +875,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Standalone Dao Decree Popup Modal when clicked */}
+      <DaoDecreeModal
+        decree={selectedDecreeForModal}
+        isOpen={Boolean(selectedDecreeForModal)}
+        onClose={() => setSelectedDecreeForModal(null)}
+      />
     </div>
   );
 };

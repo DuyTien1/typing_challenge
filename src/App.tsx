@@ -15,6 +15,7 @@ import {
   BossBattleStats,
   UserAccount,
   BestWpmRecord,
+  HeavenlyDaoDecree,
 } from './types';
 import { Header } from './components/Header';
 import { LobbyView } from './components/LobbyView';
@@ -27,6 +28,10 @@ import { GameOverModal } from './components/GameOverModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
 import { ChatDrawer } from './components/ChatDrawer';
 import { ModalContainer } from './components/ModalContainer';
+import { HeavenlyTickerBanner } from './components/HeavenlyTickerBanner';
+import { HeavenlyChronicleModal } from './components/HeavenlyChronicleModal';
+import { DaoDecreeModal } from './components/DaoDecreeModal';
+import { announcePenalty, announceRecord, announceBossKill, announceBreakthrough, subscribeToDaoDecrees } from './utils/heavenlyDaoBot';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
 import { resolveBestWpmRecord, isOutplayMode } from './components/WpmRecordBadge';
 import { fetchCurrentUser, logoutUser, updateUserProfile } from './utils/auth';
@@ -471,6 +476,19 @@ export default function App() {
         });
         saveStoredCultivationState(cultRes.updatedState);
 
+        // Đột phá cảnh giới hoặc thăng tầng Tu Vi: Huyền Thiên Khí Linh phát chiếu thư dị tượng
+        if (cultRes.leveledUp) {
+          const currentRealm = XIANXIA_REALMS[cultRes.updatedState.realmIndex];
+          announceBreakthrough(
+            userNow.displayName || userNow.username,
+            currentRealm?.name || 'Tu Chân',
+            getSubStage(cultRes.updatedState.tier),
+            cultRes.updatedState.tier
+          ).then((dec) => {
+            setActiveDaoDecreePopup(dec);
+          }).catch(() => {});
+        }
+
         const token = sessionStorage.getItem('fasttyping_token');
         if (token) {
           fetch('/api/cultivation', {
@@ -702,7 +720,28 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState<boolean>(() => checkIsAdmin());
   const [kickedNotice, setKickedNotice] = useState<string | null>(null);
   const [isCultivationOpen, setIsCultivationOpen] = useState(false);
+  const [isHeavenlyChronicleOpen, setIsHeavenlyChronicleOpen] = useState(false);
+  const [activeDaoDecreePopup, setActiveDaoDecreePopup] = useState<HeavenlyDaoDecree | null>(null);
   const [cultivationState, setCultivationState] = useState<CultivationState>(() => loadStoredCultivationState());
+
+  // Lắng nghe Thiên Đạo Chiếu Thư theo thời gian thực:
+  // Nếu chiếu thư sắc phong người chơi hiện tại (đột phá, kỷ lục, săn boss), bật Popup Chúc Mừng Độc Bản
+  useEffect(() => {
+    const unsub = subscribeToDaoDecrees((decree) => {
+      const myUsername = currentUserRef.current?.username || usernameRef.current;
+      const myDisplayName = currentUserRef.current?.displayName || myUsername;
+      if (
+        decree.targetUser &&
+        myUsername &&
+        (decree.targetUser.toLowerCase() === myUsername.toLowerCase() ||
+          decree.targetUser.toLowerCase() === myDisplayName.toLowerCase()) &&
+        (decree.eventType === 'breakthrough' || decree.eventType === 'record' || decree.eventType === 'boss_kill')
+      ) {
+        setActiveDaoDecreePopup(decree);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Process cultivation lifespan and inactivity decay
   useEffect(() => {
@@ -1698,14 +1737,15 @@ export default function App() {
   };
 
   // Match History Actions: Practice Mistakes & Challenge Retry
-  const handlePracticeMistakes = (mistakeWords: string[]) => {
+  const handlePracticeMistakes = (mistakeWords: string[], modeOverride?: GameMode) => {
     if (!mistakeWords || mistakeWords.length === 0) return;
     let practiceList: string[] = [];
     while (practiceList.length < 25) {
       practiceList.push(...mistakeWords);
     }
     practiceList = practiceList.slice(0, 30);
-    setGameMode('vi_dau');
+    const targetMode = modeOverride || 'vi_dau';
+    setGameMode(targetMode);
     setPlayType('solo');
     setPlayers([
       {
@@ -1722,7 +1762,7 @@ export default function App() {
         isAFK: false,
       },
     ]);
-    handleLaunchGame(true, 'vi_dau', practiceList);
+    handleLaunchGame(true, targetMode, practiceList);
   };
 
   const handleRetryMatch = (record: MatchRecord) => {
@@ -1858,6 +1898,14 @@ export default function App() {
       : 0;
     const accuracy = Math.max(0, Math.min(100, Math.round((correctChars / Math.max(1, correctChars + errors * 5)) * 100)));
 
+    // Huyền Thiên Khí Linh trừng phạt gian lận nếu phát hiện can thiệp tà pháp / macro
+    if (!validation.isValid) {
+      announcePenalty(
+        currentUser?.username || username,
+        validation.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro'
+      ).catch(() => {});
+    }
+
     // Update Session stats
     const prevLast = lastGameWpm;
     setLastGameWpm(verifiedWpm);
@@ -1894,6 +1942,17 @@ export default function App() {
             localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(newRec));
             localStorage.setItem('fasttyping_outplay_best_record', JSON.stringify(newRec));
           } catch {}
+
+          // Huyền Thiên Khí Linh ban chiếu thư Kim Bảng Đề Danh
+          announceRecord(
+            currentUser?.username || username,
+            verifiedWpm,
+            accuracy,
+            'Outplay Yourself (Solo)',
+            verifiedWpm >= 120
+          ).then((dec) => {
+            setActiveDaoDecreePopup(dec);
+          }).catch(() => {});
         }
       }
       const nextGameCount = totalGames + 1;
@@ -2081,6 +2140,15 @@ export default function App() {
     const isMatchCompleted = isVictory && !isPlayerSurrendered && totalDmg > 0;
 
     if (!isPlayerSurrendered && isMatchCompleted) {
+      // Huyền Thiên Khí Linh ban chiếu thư Ma Thần Quỵ Phục
+      announceBossKill(
+        currentUser?.username || username,
+        'Hắc Long Ma Vương',
+        totalDmg
+      ).then((dec) => {
+        setActiveDaoDecreePopup(dec);
+      }).catch(() => {});
+
       // Save Boss High Score to server
       submitScoreToLeaderboard({
         mode: 'san_boss',
@@ -2731,7 +2799,11 @@ export default function App() {
         onLogout={handleLogout}
         onGoHome={handleReturnToLobby}
         activeModeName={getModeTitle()}
+        onOpenHeavenlyChronicle={() => setIsHeavenlyChronicleOpen(true)}
       />
+
+      {/* Heavenly Ticker Banner (Chiếu Thư Thiên Đạo & Sấm Truyền Khí Linh) */}
+      <HeavenlyTickerBanner onOpenChronicle={() => setIsHeavenlyChronicleOpen(true)} />
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-start gap-6">
@@ -3159,6 +3231,9 @@ export default function App() {
               setProfileInitialTab('achievements');
               setIsProfileOpen(true);
             }}
+            onOpenMatchHistory={() => {
+              setIsMatchHistoryOpen(true);
+            }}
           />
         )}
       </main>
@@ -3250,6 +3325,24 @@ export default function App() {
         onClearHistory={handleClearMatchHistory}
         onPracticeMistakes={handlePracticeMistakes}
         onRetryMatch={handleRetryMatch}
+      />
+
+      {/* Huyền Thiên Khí Linh - Thiên Đạo Chiếu Thư & Biên Niên Sử Modal */}
+      <HeavenlyChronicleModal
+        isOpen={isHeavenlyChronicleOpen}
+        onClose={() => setIsHeavenlyChronicleOpen(false)}
+        currentUsername={currentUser?.username || username}
+      />
+
+      {/* Popup Chúc Mừng Độc Bản (Dao Decree Modal) khi đột phá hoặc đạt kỷ lục cao */}
+      <DaoDecreeModal
+        decree={activeDaoDecreePopup}
+        isOpen={Boolean(activeDaoDecreePopup)}
+        onClose={() => setActiveDaoDecreePopup(null)}
+        onOpenChronicle={() => {
+          setActiveDaoDecreePopup(null);
+          setIsHeavenlyChronicleOpen(true);
+        }}
       />
 
       {/* Toast thông báo thành tựu mới dạng góc màn hình, hiển thị tuần tự từng thành tựu tránh giật lag */}

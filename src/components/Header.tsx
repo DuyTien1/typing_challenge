@@ -46,6 +46,7 @@ interface HeaderProps {
   onGoHome?: () => void;
   chatUnreadCount?: number;
   activeModeName?: string;
+  onOpenHeavenlyChronicle?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -74,6 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onGoHome,
   chatUnreadCount = 0,
+  onOpenHeavenlyChronicle,
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -213,6 +215,23 @@ export const Header: React.FC<HeaderProps> = ({
             <Trophy className="w-4 h-4" />
             <span className="hidden lg:inline whitespace-nowrap">Bảng Vàng</span>
           </button>
+
+          {/* Huyền Thiên Khí Linh / Thiên Đạo Chiếu Thư Button */}
+          {onOpenHeavenlyChronicle && (
+            <button
+              id="btn-header-dao-chronicle"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                onOpenHeavenlyChronicle();
+              }}
+              title="Huyền Thiên Khí Linh - Thiên Đạo Chấp Pháp Sứ (Chiếu thư, kỷ lục & xử phạt)"
+              className="hidden md:flex h-8.5 px-2.5 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-950/80 to-amber-950/80 hover:from-purple-900/90 hover:to-amber-900/90 border border-amber-400/50 hover:border-amber-300 text-amber-300 hover:text-amber-200 text-xs font-bold transition-all cursor-pointer shrink-0 shadow-sm active:scale-95 group"
+            >
+              <span className="text-sm group-hover:rotate-180 transition-transform duration-500">☯️</span>
+              <span className="hidden xl:inline whitespace-nowrap">Khí Linh</span>
+            </button>
+          )}
 
           {/* Eye-catching More Menu / Control Hub */}
           <div className="relative" ref={moreMenuRef}>
@@ -360,8 +379,38 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
 
-                {/* Secondary Actions: Linh Đài & Bảng Vàng */}
+                {/* Secondary Actions: Linh Đài, Khí Linh & Bảng Vàng */}
                 <div className="py-1.5 space-y-1">
+                  {/* Huyền Thiên Khí Linh */}
+                  {onOpenHeavenlyChronicle && (
+                    <button
+                      id="menu-item-dao-chronicle"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setIsMoreMenuOpen(false);
+                        onOpenHeavenlyChronicle();
+                      }}
+                      className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left transition-all cursor-pointer group border border-purple-500/30 hover:border-amber-400/60 bg-gradient-to-r from-purple-950/40 to-amber-950/30 text-amber-300 hover:text-amber-200"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center text-sm shrink-0 group-hover:scale-110 transition-transform">
+                          ☯️
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+                            <span>Huyền Thiên Khí Linh</span>
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">
+                              BOT
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            Thiên Đạo Chấp Pháp Sứ & Chiếu Thư
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
                   {/* Cultivation / Linh Đài Tu Tiên */}
                   {onOpenCultivation && (
                     <button

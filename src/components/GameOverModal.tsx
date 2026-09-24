@@ -31,6 +31,7 @@ interface GameOverModalProps {
   onOpenCultivation?: () => void;
   newlyUnlockedAchievements?: XianxiaAchievement[];
   onOpenProfileAchievements?: () => void;
+  onOpenMatchHistory?: () => void;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
@@ -55,6 +56,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onOpenCultivation,
   newlyUnlockedAchievements = [],
   onOpenProfileAchievements,
+  onOpenMatchHistory,
 }) => {
   const isSpecialArenaMode =
     isBossMode ||
@@ -385,7 +387,21 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         </div>
 
         {/* Frozen Action Buttons Footer - Always visible across all game modes */}
-        <div className="p-3.5 sm:p-4 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 shrink-0 z-20 shadow-[0_-12px_24px_-4px_rgba(0,0,0,0.6)]">
+        <div className="p-3.5 sm:p-4 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 shrink-0 z-20 shadow-[0_-12px_24px_-4px_rgba(0,0,0,0.6)] space-y-2.5">
+          {onOpenMatchHistory && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                onOpenMatchHistory();
+              }}
+              className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-950/60 via-slate-900 to-emerald-950/60 hover:from-cyan-900/60 hover:to-emerald-900/60 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
+            >
+              <Sparkles className="w-4 h-4 text-cyan-400" />
+              <span>Xem Phân Tích AI Chi Tiết & Tạo Bài Luyện Cá Nhân Hóa</span>
+            </button>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <button
               id="btn-modal-back-lobby"

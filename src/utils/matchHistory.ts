@@ -447,3 +447,86 @@ export function getModeIcon(modeId: string): string {
       return '⌨️';
   }
 }
+
+export interface AiPersonalizedAnalysis {
+  title: string;
+  overview: string;
+  dominantErrorPattern: string;
+  keyWeaknesses: string[];
+  targetClusters: string[];
+  coachAdvice: string;
+}
+
+export interface AiPersonalizedPracticeResult {
+  success: boolean;
+  analysis: AiPersonalizedAnalysis;
+  practiceWords: string[];
+  isAiPowered: boolean;
+}
+
+/**
+ * Tổng hợp toàn bộ các lỗi sai, phím sai và thời gian khựng từ toàn bộ 20 ván đấu
+ */
+export function aggregateHistoryMistakes(historyList: MatchRecord[]): {
+  allMistakes: MistakeDetail[];
+  allErrorKeys: { key: string; count: number }[];
+  slowestWords: { word: string; pauseMs: number }[];
+  avgWpm: number;
+  avgAccuracy: number;
+  avgConsistency: number;
+} {
+  const completed = historyList.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng');
+  const mistakeMap: Record<string, MistakeDetail> = {};
+  const errorKeyMap: Record<string, number> = {};
+  const slowestWords: { word: string; pauseMs: number }[] = [];
+
+  let totalWpm = 0;
+  let totalAcc = 0;
+  let totalConsistency = 0;
+
+  completed.forEach((m) => {
+    totalWpm += m.wpm || 0;
+    totalAcc += m.accuracy || 100;
+    totalConsistency += m.consistency || 80;
+
+    if (m.slowestWord) {
+      slowestWords.push(m.slowestWord);
+    }
+
+    if (m.mistakes && m.mistakes.length > 0) {
+      m.mistakes.forEach((item) => {
+        const key = `${item.original}__${item.typed}`;
+        if (!mistakeMap[key]) {
+          mistakeMap[key] = { ...item };
+        } else {
+          mistakeMap[key].count += item.count;
+        }
+      });
+    }
+
+    if (m.commonErrorKeys && m.commonErrorKeys.length > 0) {
+      m.commonErrorKeys.forEach((k) => {
+        errorKeyMap[k.key] = (errorKeyMap[k.key] || 0) + k.count;
+      });
+    }
+  });
+
+  const allMistakes = Object.values(mistakeMap).sort((a, b) => b.count - a.count);
+  const allErrorKeys = Object.entries(errorKeyMap)
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  slowestWords.sort((a, b) => b.pauseMs - a.pauseMs);
+
+  const count = Math.max(1, completed.length);
+  return {
+    allMistakes,
+    allErrorKeys,
+    slowestWords: slowestWords.slice(0, 5),
+    avgWpm: Math.round(totalWpm / count),
+    avgAccuracy: Math.round(totalAcc / count),
+    avgConsistency: Math.round(totalConsistency / count),
+  };
+}
+

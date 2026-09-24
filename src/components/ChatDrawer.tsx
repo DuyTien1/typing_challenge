@@ -208,8 +208,30 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   msg.isSystem ? 'justify-center my-2' : ''
                 }`}
               >
-                {/* System Message Special Display */}
-                {msg.isSystem ? (
+                {/* Dao Bot (Huyền Thiên Khí Linh / Tam Đại Khí Linh) Special Celestial Display */}
+                {msg.isDaoBot || msg.username === 'Huyền Thiên Khí Linh' || msg.username === 'Linh Lung Tiên Đồng' || msg.username === 'Bàn Cổ Thần Thức' ? (
+                  <div className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/70 via-purple-950/70 to-slate-950 border border-amber-400/60 shadow-lg shadow-purple-950/40 space-y-2 my-1">
+                    <div className="flex items-center justify-between gap-2 border-b border-purple-500/25 pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-amber-400/40 to-purple-600/40 border border-amber-400/60 flex items-center justify-center text-sm shadow-sm shrink-0">
+                          <span className={msg.avatar === '☯️' ? "animate-[spin_10s_linear_infinite]" : ""}>{msg.avatar || '☯️'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-amber-300">{msg.username || 'Huyền Thiên Khí Linh'}</span>
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                            THIÊN ĐẠO
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {new Date(msg.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-slate-100 text-xs leading-relaxed font-sans pl-0.5">
+                      {msg.message}
+                    </p>
+                  </div>
+                ) : msg.isSystem ? (
                   <div className="w-full p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2 shadow-sm">
                     <div className="shrink-0">
                       <AvatarWithFrame icon={msg.avatar || '🤖'} frameId={msg.frame || 'admin_gold'} size="sm" />

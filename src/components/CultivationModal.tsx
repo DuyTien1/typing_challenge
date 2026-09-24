@@ -15,6 +15,7 @@ import {
 } from '../utils/cultivation';
 import { soundFx } from '../utils/audio';
 import { AvatarWithFrame, setStoredFrame } from '../utils/frames';
+import { announceBreakthrough } from '../utils/heavenlyDaoBot';
 import {
   X,
   Sparkles,
@@ -40,6 +41,7 @@ interface CultivationModalProps {
   onClose: () => void;
   state: CultivationState;
   onUpdateState: (newState: CultivationState) => void;
+  username?: string;
   userAvatar?: string;
   userFrame?: string;
   onSelectFrame?: (frameId: string) => void;
@@ -52,6 +54,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   onClose,
   state,
   onUpdateState,
+  username,
   userAvatar = '⚡',
   userFrame = 'default',
   onSelectFrame,
@@ -188,6 +191,13 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     if (result.success) {
       soundFx.playVictory();
       setBreakthroughNotice({ success: true, message: result.message });
+      const realmObj = XIANXIA_REALMS[result.updatedState.realmIndex] || currentRealm;
+      announceBreakthrough(
+        username || 'Đạo Hữu',
+        realmObj.name,
+        getSubStage(result.updatedState.tier),
+        result.updatedState.tier
+      ).catch(() => {});
       if (result.unlockedFrameId) {
         onSelectFrame?.(result.unlockedFrameId);
         setStoredFrame(result.unlockedFrameId);

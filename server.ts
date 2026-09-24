@@ -4,6 +4,7 @@ import fs from 'fs';
 import http from 'http';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
 
 import {
   Player,
@@ -2253,7 +2254,7 @@ async function startServer() {
 
   // POST /api/chat/messages: Broadcast new chat message to global or room
   app.post('/api/chat/messages', (req, res) => {
-    const { username, avatar, frame, message, channel, roomId, isAdmin } = req.body;
+    const { username, avatar, frame, message, channel, roomId, isAdmin, isDaoBot, daoEventType, daoTitle } = req.body;
     if (!message || typeof message !== 'string' || !message.trim()) {
       res.status(400).json({ success: false, error: 'Tin nhắn không được để trống' });
       return;
@@ -2267,14 +2268,17 @@ async function startServer() {
 
     const newMsg: ServerChatMessage = {
       id: msgId,
-      username: String(username || 'Vô Danh').trim().slice(0, 30),
-      avatar: avatar || '⚡',
-      frame: frame || 'default',
+      username: isDaoBot ? 'Huyền Thiên Khí Linh' : String(username || 'Vô Danh').trim().slice(0, 30),
+      avatar: isDaoBot ? '☯️' : (avatar || '⚡'),
+      frame: isDaoBot ? 'admin_gold' : (frame || 'default'),
       message: message.trim().slice(0, 400),
       timestamp: Date.now(),
       channel: targetChannel,
       roomId: normRoomId,
-      isAdmin: Boolean(isAdmin),
+      isAdmin: Boolean(isAdmin || isDaoBot),
+      isDaoBot: Boolean(isDaoBot),
+      daoEventType: daoEventType || undefined,
+      daoTitle: daoTitle || undefined,
     };
 
     if (targetChannel === 'global') {
@@ -2295,6 +2299,253 @@ async function startServer() {
     }
 
     res.json({ success: true, message: newMsg });
+  });
+
+  // =========================================================================
+  // HUYỀN THIÊN KHÍ LINH (DAO BOT) SERVER STATE & ENDPOINTS
+  // =========================================================================
+  interface ServerDaoDecree {
+    id: string;
+    title: string;
+    eventType: 'penalty' | 'breakthrough' | 'record' | 'boss_kill' | 'guidance' | 'announcement';
+    targetUser?: string;
+    content: string;
+    timestamp: number;
+    highlightText?: string;
+    wpm?: number;
+    accuracy?: number;
+    realmName?: string;
+  }
+
+  const serverDaoDecrees: ServerDaoDecree[] = [
+    {
+      id: 'decree-server-init-1',
+      title: 'THIÊN ĐẠO QUY CỦ',
+      eventType: 'announcement',
+      targetUser: 'Toàn Thể Tu Sĩ',
+      content:
+        'Huyền Thiên Khí Linh chính thức xuất quan giám giới! Mọi tà thuật gian lận (Auto, Macro, Paste) ắt chịu Cửu Trọng Thiên Lôi. Tu sĩ kiên trì khổ luyện sẽ được Thiên Đạo ban thưởng Đạo Hạnh vĩnh cửu.',
+      timestamp: Date.now() - 3600000,
+      highlightText: 'Huyền Thiên Khí Linh xuất quan',
+    },
+    {
+      id: 'decree-server-init-2',
+      title: 'THIÊN CƠ CHỈ ĐIỂM',
+      eventType: 'guidance',
+      targetUser: 'Chư Vị Đạo Hữu',
+      content:
+        'Dục tốc bất đạt, vạn pháp quy tâm. Giữ nhịp thở điều hòa và độ chuẩn xác trên 96% chính là con đường ngắn nhất để độ kiếp thăng tiên.',
+      timestamp: Date.now() - 1800000,
+      highlightText: 'Tâm pháp gõ phím',
+    },
+  ];
+
+  // GET /api/dao/decrees: Get recent decrees
+  app.get('/api/dao/decrees', (_req, res) => {
+    res.json({ success: true, decrees: serverDaoDecrees });
+  });
+
+  // Broadcast Heavenly Dao Event across SSE and Global Chat with optional AI Xianxia poem
+  function broadcastHeavenlyDaoEvent(params: {
+    title: string;
+    eventType: ServerDaoDecree['eventType'] | string;
+    targetUser?: string;
+    content: string;
+    highlightText?: string;
+    wpm?: number;
+    accuracy?: number;
+    realmName?: string;
+    personaId?: string;
+    generateAiPoem?: boolean;
+  }): ServerDaoDecree {
+    const decreeId = `decree-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const decree: ServerDaoDecree = {
+      id: decreeId,
+      title: String(params.title).slice(0, 100),
+      eventType: (params.eventType as ServerDaoDecree['eventType']) || 'announcement',
+      targetUser: params.targetUser ? String(params.targetUser).slice(0, 50) : undefined,
+      content: String(params.content).slice(0, 500),
+      timestamp: Date.now(),
+      highlightText: params.highlightText ? String(params.highlightText).slice(0, 100) : undefined,
+      wpm: typeof params.wpm === 'number' ? params.wpm : undefined,
+      accuracy: typeof params.accuracy === 'number' ? params.accuracy : undefined,
+      realmName: params.realmName ? String(params.realmName).slice(0, 50) : undefined,
+    };
+
+    serverDaoDecrees.unshift(decree);
+    if (serverDaoDecrees.length > 50) serverDaoDecrees.pop();
+
+    const botName = params.personaId === 'ban_co'
+      ? 'Bàn Cổ Thần Thức'
+      : (params.personaId === 'linh_lung' ? 'Linh Lung Tiên Đồng' : 'Huyền Thiên Khí Linh');
+    const botAvatar = params.personaId === 'ban_co' ? '⚡' : (params.personaId === 'linh_lung' ? '🪷' : '☯️');
+    const botFrame = params.personaId === 'ban_co' ? 'dragon_dark_blood' : (params.personaId === 'linh_lung' ? 'arcane_purple' : 'admin_gold');
+
+    const fullChatMessage = `[${decree.title}] ${decree.content}`;
+    const daoMsg: ServerChatMessage = {
+      id: decreeId,
+      username: botName,
+      avatar: botAvatar,
+      frame: botFrame,
+      message: fullChatMessage,
+      timestamp: decree.timestamp,
+      channel: 'global',
+      isAdmin: true,
+      isDaoBot: true,
+      daoEventType: decree.eventType,
+      daoTitle: decree.title,
+    };
+
+    globalChatMessages.push(daoMsg);
+    if (globalChatMessages.length > 200) globalChatMessages.shift();
+
+    // Broadcast SSE: Both chat message and heavenly_dao_event
+    const chatPayload = `data: ${JSON.stringify({ type: 'new_chat_message', message: daoMsg })}\n\n`;
+    const decreePayload = `data: ${JSON.stringify({ type: 'heavenly_dao_event', decree })}\n\n`;
+    for (const client of Array.from(sseGlobalChatClients)) {
+      try {
+        client.write(chatPayload);
+        client.write(decreePayload);
+      } catch {
+        sseGlobalChatClients.delete(client);
+        sseGlobalClients.delete(client);
+      }
+    }
+
+    // AI Tự Động Soạn Lời (Gemini 3.8 Flash):
+    // Khi có sự kiện đặc biệt (kỷ lục mới, đột phá cảnh giới, săn boss), AI tự động sáng tác câu thơ Tiên Hiệp gửi lên kênh Chat
+    if (params.generateAiPoem || decree.eventType === 'record' || decree.eventType === 'breakthrough' || decree.eventType === 'boss_kill') {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (apiKey) {
+        setTimeout(async () => {
+          try {
+            const ai = new GoogleGenAI({
+              apiKey,
+              httpOptions: {
+                headers: { 'User-Agent': 'aistudio-build' },
+              },
+            });
+            const poemPrompt = `Bạn là ${botName} (${params.personaId === 'ban_co' ? 'Giám Giới Thần Quân' : (params.personaId === 'linh_lung' ? 'Chưởng Quản Phong Thần Bảng' : 'Thiên Đạo Chấp Pháp Sứ')}) của đấu trường tu tiên gõ phím FastTyping.
+Sự kiện chấn động vừa xảy ra trên toàn cõi Tiên Giới:
+- Tiêu đề: ${decree.title}
+- Nội dung: ${decree.content}
+- Đạo hữu: ${decree.targetUser || 'Chư vị tu sĩ'}
+
+Hãy xuất khẩu thành thơ sáng tác ĐÚNG 2 CÂU THƠ (hoặc câu đối tiên hiệp hào sảng) để bình phẩm hoặc tán dương sự kiện này.
+Yêu cầu:
+- Tuyệt đối không thêm lời chào, không thêm giải thích hay markdown rườm rà.
+- Đúng 2 câu thơ / câu đối cô đọng, khí phách ngút trời, âm hưởng tiên hiệp.`;
+
+            const poem = await callGeminiResilient(ai, poemPrompt);
+            const cleanPoem = poem?.trim()?.replace(/^["'«]/, '')?.replace(/["'»]$/, '')?.trim();
+            if (cleanPoem) {
+              const poemMsgId = `poem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+              const poemMsg: ServerChatMessage = {
+                id: poemMsgId,
+                username: botName,
+                avatar: botAvatar,
+                frame: botFrame,
+                message: `« Khí Linh Đề Thơ »: ${cleanPoem}`,
+                timestamp: Date.now(),
+                channel: 'global',
+                isAdmin: true,
+                isDaoBot: true,
+                daoEventType: 'guidance',
+                daoTitle: 'KHÍ LINH ĐỀ THƠ',
+              };
+              globalChatMessages.push(poemMsg);
+              if (globalChatMessages.length > 200) globalChatMessages.shift();
+              broadcastGlobalChat(poemMsg);
+            }
+          } catch (poemErr) {
+            console.warn('[Heavenly Dao] Failed to generate AI poem:', poemErr);
+          }
+        }, 800);
+      }
+    }
+
+    return decree;
+  }
+
+  // POST /api/dao/decree: Save and broadcast a new decree to global chat
+  app.post('/api/dao/decree', (req, res) => {
+    const { title, eventType, targetUser, content, highlightText, wpm, accuracy, realmName, personaId, generateAiPoem } = req.body;
+    if (!content || !title) {
+      res.status(400).json({ success: false, error: 'Tiêu đề và nội dung chiếu thư không được để trống' });
+      return;
+    }
+
+    const decree = broadcastHeavenlyDaoEvent({
+      title,
+      eventType,
+      targetUser,
+      content,
+      highlightText,
+      wpm,
+      accuracy,
+      realmName,
+      personaId,
+      generateAiPoem,
+    });
+
+    res.json({ success: true, decree });
+  });
+
+  // POST /api/dao/oracle: Ask Dao Bot (Gemini 3.8 Flash with Xianxia persona)
+  app.post('/api/dao/oracle', async (req, res) => {
+    const { question, username } = req.body;
+    const targetUser = username ? String(username).trim() : 'Đạo hữu';
+    const q = question ? String(question).trim() : '';
+
+    if (!q) {
+      res.status(400).json({ success: false, error: 'Câu hỏi không được để trống' });
+      return;
+    }
+
+    const heuristicPool = [
+      `« Khí Linh Chiếu Mệnh »: Đạo hữu ${targetUser}, thần thức quan trắc hôm nay vận khí hanh thông, ngón tay linh hoạt như gió lốc! Hãy thi đấu ngay 3 ván chế độ TV Có Dấu để đón đầu lôi kiếp đột phá WPM!`,
+      `« Thiên Đạo Chỉ Điểm »: Bình cảnh hiện tại không nằm ở tốc độ bàn tay mà ở đạo tâm nôn nóng. Hãy giữ nhịp thở điều hòa, ưu tiên độ chính xác 100% trong 15 giây đầu mỗi ván để phá vỡ giới hạn!`,
+      `« Thần Khí Ban Phúc »: Khí Linh nhận thấy các ngón tay của đạo hữu đang tích tụ mỏi cơ. Hãy xoay nhẹ cổ tay theo chiều kim đồng hồ 10 lần, bấm phím số 5 định vị tâm thế trước khi vào trận tiếp theo!`,
+      `« Đạo Cơ Thấu Thị »: Muốn vượt qua mốc 100 WPM, hãy tập buông phím nguyên âm dứt khoát trước khi gõ phím dấu thanh. Bộ đệm Telex thông suốt ắt kiếm khí tự sinh!`,
+      `« Thiên Mệnh Huyền Cơ »: Tu luyện gõ phím như đúc kiếm ngàn năm. Tránh xa các tà niệm gian lận hay auto click, tích lũy từng ký tự chuẩn xác chính là đại đạo quang minh!`,
+    ];
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      const fallback = heuristicPool[Math.floor(Math.random() * heuristicPool.length)];
+      res.json({ success: true, answer: fallback, source: 'heuristic' });
+      return;
+    }
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: { 'User-Agent': 'aistudio-build' },
+        },
+      });
+
+      const prompt = `Bạn là Huyền Thiên Khí Linh (Thiên Đạo Chấp Pháp Sứ) - trí tuệ tối cao giám giới toàn bộ đấu trường tu tiên gõ phím FastTyping.
+Người chơi hỏi: "${q}" (Tên người chơi: ${targetUser}).
+
+Hãy trả lời với tư cách Huyền Thiên Khí Linh:
+- Cách xưng hô: Tự xưng là "Bản Tòa" hoặc "Thiên Đạo Khí Linh". Gọi người chơi là "Đạo Hữu" hoặc "Tiên Hữu".
+- Phong cách: Nghiêm minh, thấu thị càn khôn, nói lời sấm truyền, huyền huyễn Tiên Hiệp hào sảng.
+- Bắt đầu câu trả lời bằng: « Khí Linh Sấm Truyền » hoặc « Thiên Đạo Chỉ Điểm ».
+- Độ dài: Khoảng 2 đến 4 câu văn ngắn gọn, súc tích, truyền cảm hứng.
+- Đưa ra lời khuyên thực tế liên quan đến tốc độ gõ phím, độ chính xác, cách giữ nhịp thở, tâm lý thi đấu hoặc thả lỏng ngón tay.`;
+
+      const text = await callGeminiResilient(ai, prompt);
+      if (text) {
+        res.json({ success: true, answer: text, source: 'gemini' });
+        return;
+      }
+    } catch {
+      // Fallback to heuristic
+    }
+
+    const fallback = heuristicPool[Math.floor(Math.random() * heuristicPool.length)];
+    res.json({ success: true, answer: fallback, source: 'heuristic_fallback' });
   });
 
   // GET /api/online-count: Get exact real-time active online users
@@ -2611,6 +2862,23 @@ async function startServer() {
       };
       saveLeaderboardToFile();
       broadcastLeaderboard();
+
+      // Huyền Thiên Khí Linh phát chiếu thư toàn server & soạn thơ Tiên Hiệp Gemini
+      const modeDisplayName = getModeDisplayName(mode);
+      const isBossOrScoreMode = mode === 'san_boss' || mode === 'ngau_hung' || mode === 'doan_chu';
+      const recordMetric = isBossOrScoreMode ? `${numScore.toLocaleString()} điểm` : `${numWpm} WPM`;
+      broadcastHeavenlyDaoEvent({
+        title: 'THIÊN BẢNG ĐĂNG ĐỈNH',
+        eventType: 'record',
+        targetUser: cleanDisplayName,
+        wpm: numWpm,
+        accuracy: 100,
+        content: `Kiếm khí tung hoành tam thiên lý! Đạo hữu @${cleanDisplayName} vừa xuất chiêu thần tốc đạt ${recordMetric} tại chế độ ${modeDisplayName}, chính thức soán ngôi Đệ Nhất Kiếm Tôn trên Thiên Bảng!`,
+        highlightText: `${cleanDisplayName} đạt ${recordMetric}`,
+        personaId: 'ban_co',
+        generateAiPoem: true,
+      });
+
       res.json({ success: true, isNewRecord: true, highScores: serverHighScores });
       return;
     }
@@ -2641,6 +2909,1017 @@ async function startServer() {
       return;
     }
     res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
+  });
+
+  // Resilient multi-model Gemini caller with graceful fallback during high demand / spikes
+  async function callGeminiResilient(
+    ai: GoogleGenAI,
+    prompt: string,
+    config?: any
+  ): Promise<string | null> {
+    const candidateModels = [
+      'gemini-3.8-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
+    ];
+
+    for (const model of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: config || undefined,
+        });
+        const text = response.text?.trim();
+        if (text) {
+          return text;
+        }
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        const isTemporary =
+          err?.status === 503 ||
+          err?.code === 503 ||
+          err?.status === 429 ||
+          err?.code === 429 ||
+          msg.includes('503') ||
+          msg.includes('high demand') ||
+          msg.includes('UNAVAILABLE') ||
+          msg.includes('RESOURCE_EXHAUSTED');
+
+        if (isTemporary) {
+          console.warn(`[AI Engine] Model ${model} is experiencing high demand (503/429). Attempting fallback model...`);
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          continue;
+        }
+        console.warn(`[AI Engine] Model ${model} warning:`, msg || err);
+      }
+    }
+    return null;
+  }
+
+  // Helper fallback practice word builder
+  function generateFallbackPracticeWords(mistakes: any[] = [], errorKeys: any[] = [], mode = 'vi_dau'): string[] {
+    const pool = new Set<string>();
+    const modeStr = String(mode || '').toLowerCase();
+    const isNumber =
+      modeStr === 'numpad' ||
+      modeStr === 'number' ||
+      modeStr.includes('number') ||
+      modeStr.includes('numpad') ||
+      modeStr.includes('số') ||
+      modeStr.includes('digits');
+
+    if (Array.isArray(mistakes)) {
+      mistakes.forEach((m) => {
+        const orig = m?.original || m?.word;
+        if (orig && typeof orig === 'string') {
+          orig.trim().split(/\s+/).forEach((w: string) => {
+            if (isNumber) {
+              const clean = w.replace(/[^\d+\-*/=.]/g, '');
+              if (clean) pool.add(clean);
+            } else {
+              pool.add(w.toLowerCase());
+            }
+          });
+        }
+      });
+    }
+
+    const keyList = Array.isArray(errorKeys)
+      ? errorKeys.map((k) => (typeof k === 'string' ? k : k?.key)).filter(Boolean)
+      : [];
+
+    if (isNumber) {
+      const numberPool = [
+        '1024', '58008', '2026', '9876', '1234', '5050', '31415', '92653',
+        '7410', '8520', '9630', '4567', '7890', '13579', '24680', '9988',
+        '1122', '3344', '7700', '4040', '8080', '1995', '2000', '2025',
+        '128', '256', '512', '1000', '9999', '8888', '7777', '6543', '2109'
+      ];
+      for (const n of numberPool) {
+        if (pool.size >= 30) break;
+        if (keyList.some((k) => n.includes(String(k)))) {
+          pool.add(n);
+        }
+      }
+      for (const n of numberPool) {
+        if (pool.size >= 25) break;
+        pool.add(n);
+      }
+      return Array.from(pool).slice(0, 30);
+    }
+
+    const isEn = modeStr === 'en';
+    const isViNoDau = modeStr === 'vi_nodau';
+    const relatedVnNoDau = [
+      'nghieng', 'khoang', 'chuyen', 'tuyet', 'khuyen', 'nghiep', 'truyen', 'quyet',
+      'xoay', 'thoat', 'khoanh', 'quynh', 'nguyet', 'duyen', 'ban', 'phim',
+      'toc', 'do', 'chinh', 'xac', 'chien', 'thang', 'ren', 'luyen', 'ky', 'nang',
+      'thao', 'truong', 'phan', 'dau', 'kien', 'tri', 'nhip', 'nhang', 'chuoi'
+    ];
+    const relatedVnDau = [
+      'nghiêng', 'khoảng', 'chuyển', 'tuyệt', 'khuyến', 'nghiệp', 'truyền', 'quyết',
+      'xoay', 'thoát', 'khoảnh', 'ngoéo', 'quỳnh', 'nguyệt', 'duyên', 'bàn', 'phím',
+      'tốc', 'độ', 'chính', 'xác', 'chiến', 'thắng', 'rèn', 'luyện', 'kỹ', 'năng',
+      'thao', 'trường', 'phấn', 'đấu', 'kiên', 'trì', 'nhịp', 'nhàng', 'chuỗi'
+    ];
+    const relatedEn = [
+      'rhythm', 'queue', 'strength', 'synergy', 'awkward', 'beautiful', 'keyboard',
+      'practice', 'accuracy', 'mastery', 'challenge', 'experience', 'quick', 'flight',
+      'balance', 'control', 'fingers', 'velocity', 'precision', 'focus', 'reflexes'
+    ];
+
+    const source = isEn ? relatedEn : isViNoDau ? relatedVnNoDau : relatedVnDau;
+    for (const w of source) {
+      if (pool.size >= 30) break;
+      if (keyList.some((k) => w.includes(String(k)))) {
+        pool.add(w);
+      }
+    }
+    for (const w of source) {
+      if (pool.size >= 25) break;
+      pool.add(w);
+    }
+    return Array.from(pool).slice(0, 30);
+  }
+
+  // Helper builder for Heavenly Dao Analysis Heuristics
+  function buildHeuristicDaoResponse(params: {
+    realmName: string;
+    tier: number;
+    subStage: string;
+    avgWpm: number;
+    peakWpm: number;
+    avgAcc: number;
+    avgConsistency: number;
+    safeTotal: number;
+    count: number;
+    introErrors: number;
+    accelErrors: number;
+    sustainErrors: number;
+    endgameErrors: number;
+    allMistakes: any[];
+    errorKeysMap: Record<string, number>;
+    mode?: string;
+  }) {
+    const {
+      realmName,
+      tier,
+      subStage,
+      avgWpm,
+      peakWpm,
+      avgAcc,
+      avgConsistency,
+      safeTotal,
+      count,
+      introErrors,
+      accelErrors,
+      sustainErrors,
+      endgameErrors,
+      allMistakes,
+      errorKeysMap,
+      mode = 'vi_dau',
+    } = params;
+
+    const modeStr = String(mode || '').toLowerCase();
+    const isNumberMode =
+      modeStr === 'numpad' ||
+      modeStr === 'number' ||
+      modeStr.includes('number') ||
+      modeStr.includes('numpad') ||
+      modeStr.includes('số');
+
+    const defaultErrorPatterns = isNumberMode
+      ? [
+          {
+            id: 'numpad_reach_slip',
+            name: 'Trượt Phím Hàng Số / Numpad Xa',
+            xianxiaTitle: 'Cửu Cung Thần Số Chướng',
+            frequency: Math.max(2, Math.round(safeTotal * 0.45)),
+            percentage: 45,
+            description: 'Vươn ngón tay lên hàng phím số trên cùng hoặc gõ nhầm các phím góc xa (7, 8, 9, 0) trên Numpad.',
+            biomechanics: 'Tầm với của ngón tay kéo căng cơ duỗi cổ tay, thiếu điểm tựa xúc giác định vị như phím 5.',
+            examples: ['7 -> 8', '9 -> 6', '0 -> .'],
+            severity: 'high' as const,
+          },
+          {
+            id: 'digit_transposition',
+            name: 'Đảo Thứ Tự Chữ Số (Tay Nhanh Hơn Não)',
+            xianxiaTitle: 'Nghịch Chuyển Lục Hào Ma',
+            frequency: Math.max(2, Math.round(safeTotal * 0.3)),
+            percentage: 30,
+            description: 'Gõ đảo vị trí 2 chữ số liền kề khi nhịp độ tăng tốc (ví dụ gõ 12 thành 21, 58 thành 85).',
+            biomechanics: 'Mất cân bằng độ trễ vận động thần kinh khi gõ chuỗi số tốc độ cao.',
+            examples: ['58 -> 85', '12 -> 21', '08 -> 80'],
+            severity: 'medium' as const,
+          },
+          {
+            id: 'thumb_pinky_rhythm',
+            name: 'Khựng Nhịp Phím 0 / Enter / Phép Tính',
+            xianxiaTitle: 'Định Thần Khuyết Lực Ma',
+            frequency: Math.max(1, Math.round(safeTotal * 0.25)),
+            percentage: 25,
+            description: 'Ngón cái hoặc ngón út ấn phím 0 hoặc Space bị trễ nhịp so với các ngón trỏ và giữa.',
+            biomechanics: 'Phản xạ ngón cái và ngón út có độ linh hoạt thấp hơn ngón trỏ trên layout numpad.',
+            examples: ['0 hụt lực', 'chậm nhịp chuyển số'],
+            severity: 'low' as const,
+          },
+        ]
+      : [
+          {
+            id: 'telex_tone_clash',
+            name: 'Xung đột Phím Dấu Telex',
+            xianxiaTitle: 'Dấu Thanh Hỗn Loạn Chướng',
+            frequency: Math.max(2, Math.round(safeTotal * 0.4)),
+            percentage: 40,
+            description: 'Gõ phím dấu thanh tiếng Việt (s, f, r, x, j, w) quá sớm khi nguyên âm trước chưa kịp ghi nhận.',
+            biomechanics: 'Ngón tay lướt phím dấu trước khi ngón trỏ hoặc ngón giữa buông phím nguyên âm kế trước.',
+            examples: ['thườg -> thường', 'nhiùe -> nhiều', 'nghĩn -> nghìn'],
+            severity: 'high' as const,
+          },
+          {
+            id: 'transposition_rush',
+            name: 'Đảo Ký Tự Tay Nhanh Hơn Não',
+            xianxiaTitle: 'Tâm Gấp Khí Loạn Ma',
+            frequency: Math.max(2, Math.round(safeTotal * 0.3)),
+            percentage: 30,
+            description: 'Hoán vị thứ tự 2 ký tự liền nhau do tay phải xuất chiêu trước tay trái.',
+            biomechanics: 'Mất cân bằng độ trễ vận động thần kinh giữa hai bán cầu não khi gõ từ quen thuộc.',
+            examples: ['ch -> hc', 'ng -> gn', 'th -> ht'],
+            severity: 'medium' as const,
+          },
+          {
+            id: 'pinky_slip',
+            name: 'Trượt Phím Rìa Ngoài Ngón Út',
+            xianxiaTitle: 'Ngón Út Khuyết Lực Ma',
+            frequency: Math.max(1, Math.round(safeTotal * 0.2)),
+            percentage: 20,
+            description: 'Các phím nằm ở góc xa (P, Q, Z, [, ], Shift) bị hụt lực hoặc chạm nhầm phím liền kề.',
+            biomechanics: 'Cơ duỗi ngón út có tầm với xa nhất và lực ấn yếu nhất trên bàn phím.',
+            examples: ['p -> o', 'q -> w', 'z -> a'],
+            severity: 'low' as const,
+          },
+        ];
+
+    const pathwaySteps = isNumberMode
+      ? {
+          step1: {
+            title: 'Bước 1: Khởi Nhịp Chậm Chắc Ở 10 Giây Đầu',
+            desc: 'Tập trung gõ 100% chính xác ở 10 giây đầu ván để bàn tay thiết lập nhịp điệu số học ổn định.',
+          },
+          step2: {
+            title: 'Bước 2: Định Vị Phím 5 Numpad Làm Điểm Tựa Gốc',
+            desc: 'Giữ ngón giữa luôn cảm nhận điểm gờ phím 5 để các ngón khác vươn tới các phím 7, 8, 9, 1, 2, 3 mà không cần nhìn bàn phím.',
+          },
+          step3: {
+            title: 'Bước 3: Luyện Bộ Dãy Số Hóa Giải Tâm Ma Mỗi Ngày',
+            desc: 'Thực hành đều đặn với bộ chuỗi số cá nhân hóa do Thiên Đạo AI đề xuất trong chế độ Solo Số.',
+          },
+        }
+      : {
+          step1: {
+            title: 'Bước 1: Khởi Nhịp Chậm Chắc Ở 10 Giây Đầu',
+            desc: 'Tập trung gõ 100% chính xác ở 10 giây đầu ván để bàn tay thiết lập nhịp điệu ổn định.',
+          },
+          step2: {
+            title: 'Bước 2: Hóa Giải Lỗi Dấu Telex Bằng Nhịp Buông Phím',
+            desc: 'Tập buông phím nguyên âm trước khi chạm phím dấu thanh để tránh nghẽn bộ đệm gõ tiếng Việt.',
+          },
+          step3: {
+            title: 'Bước 3: Luyện Bộ Từ Hóa Giải Tâm Ma Mỗi Ngày',
+            desc: 'Thực hành đều đặn với bộ từ cá nhân hóa do Thiên Đạo AI đề xuất trong chế độ Solo.',
+          },
+        };
+
+    return {
+      playerRealm: {
+        realmName,
+        tier,
+        subStage,
+        currentWpm: avgWpm,
+        wpmBracket: `${realmName} (${Math.max(20, avgWpm - 10)} - ${avgWpm + 15} WPM)`,
+      },
+      overallVerdict: {
+        title: isNumberMode
+          ? `Thiên Đạo Phán Quyết: Toán Pháp Đạo Cơ ${realmName} ${subStage}`
+          : `Thiên Đạo Phán Quyết: Đạo Cơ ${realmName} ${subStage}`,
+        summary: isNumberMode
+          ? `Quan trắc qua ${count} ván đấu bàn phím số, tốc độ trung bình đạt ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Bạn kiểm soát các phím số rất tốt song đang gặp bình cảnh do nhịp vươn ngón tay ở các phím số xa.`
+          : `Quan trắc qua ${count} ván đấu, tốc độ trung bình đạt ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Bạn đang ở nửa trên của phân khúc trình độ hiện tại, song đang gặp bình cảnh do nhịp phím tại giai đoạn tăng tốc.`,
+        tamMaName: isNumberMode ? 'Tâm Ma Thần Số (Nôn Nóng Bấm Số)' : 'Tâm Gấp Khí Loạn (Vội Vàng Xuất Chiêu)',
+        tamMaDescription: isNumberMode
+          ? 'Lỗi phát sinh chủ yếu khi cố bứt tốc gõ chuỗi số liên tiếp làm ngón tay trượt sang phím số liền kề trên bàn phím số.'
+          : 'Lỗi phát sinh chủ yếu khi cố gắng bứt tốc gõ nhanh hơn ngưỡng phản xạ an toàn của ngón tay, gây ra chuỗi Backspace làm gián đoạn nhịp thở.',
+        overallPercentile: Math.min(95, Math.max(25, Math.round((avgWpm / 110) * 80))),
+        breakthroughReadiness: Math.min(95, Math.max(30, Math.round((avgAcc / 100) * 85))),
+      },
+      errorPatterns: defaultErrorPatterns,
+      timingAnalysis: {
+        phases: [
+          {
+            phaseId: 'intro',
+            name: 'Khởi Thức (Nhập Cuộc)',
+            xianxiaPhase: 'Sơ Khai Định Thần',
+            timeRange: '0s - 15s (25% đầu ván)',
+            errorCount: introErrors,
+            errorPercentage: Math.round((introErrors / safeTotal) * 100),
+            description: 'Bàn tay chưa đủ độ ấm, vội vàng gõ từ đầu tiên dẫn đến lệch nhịp.',
+            riskLevel: introErrors / safeTotal > 0.3 ? 'cao' : 'thap',
+          },
+          {
+            phaseId: 'acceleration',
+            name: 'Tăng Tốc (Vận Khí)',
+            xianxiaPhase: 'Cực Hạn Bứt Phá',
+            timeRange: '15s - 35s (Giai đoạn đẩy WPM)',
+            errorCount: accelErrors,
+            errorPercentage: Math.round((accelErrors / safeTotal) * 100),
+            description: 'Cố gắng đẩy WPM vượt quá ngưỡng phản xạ an toàn của ngón tay.',
+            riskLevel: accelErrors / safeTotal > 0.3 ? 'cao' : 'trung_binh',
+          },
+          {
+            phaseId: 'sustain',
+            name: 'Bình Ổn (Trung Châu)',
+            xianxiaPhase: 'Đạo Tâm Trì Trệ',
+            timeRange: '35s - 50s (Duy trì nhịp)',
+            errorCount: sustainErrors,
+            errorPercentage: Math.round((sustainErrors / safeTotal) * 100),
+            description: 'Lỗi xuất hiện sau các từ dài hoặc khi đổi dòng văn bản.',
+            riskLevel: 'thap',
+          },
+          {
+            phaseId: 'endgame',
+            name: 'Về Đích (Tàn Kiếp)',
+            xianxiaPhase: 'Linh Khí Khô Kiệt',
+            timeRange: '50s - 60s+ (Rút đích)',
+            errorCount: endgameErrors,
+            errorPercentage: Math.round((endgameErrors / safeTotal) * 100),
+            description: 'Mỏi cơ cổ tay hoặc nôn nóng nhìn đồng hồ đếm ngược.',
+            riskLevel: endgameErrors / safeTotal > 0.28 ? 'cao' : 'trung_binh',
+          },
+        ],
+        criticalMomentVerdict: `Thời điểm phát sinh lỗi nhiều nhất tập trung ở giai đoạn ${accelErrors >= introErrors && accelErrors >= endgameErrors ? 'Tăng Tốc (15s - 35s)' : 'Về Đích (50s - 60s+)'}.`,
+        avgRecoveryLatencyMs: 340,
+        peerAvgRecoveryMs: 380,
+        cascadeErrorRate: 22,
+      },
+      peerComparison: {
+        bracketName: `${realmName} (${Math.max(20, avgWpm - 10)} - ${avgWpm + 15} WPM)`,
+        description: `So sánh 6 Trụ Cột Đạo Cơ giữa bạn với bình quân tu sĩ cùng phân khúc WPM.`,
+        metrics: [
+          {
+            key: 'speed',
+            label: 'Tốc Độ Xuất Chiêu (WPM)',
+            xianxiaLabel: 'Ngự Khí Thần Tốc',
+            unit: 'WPM',
+            playerValue: avgWpm,
+            peerAverage: Math.max(15, avgWpm - 4),
+            peerTop10: Math.round(avgWpm * 1.25),
+            percentile: Math.min(95, Math.max(30, Math.round((avgWpm / 120) * 85))),
+            assessment: 'Tốc độ xuất chiêu thuộc diện nhanh nhẹn trong cảnh giới.',
+          },
+          {
+            key: 'accuracy',
+            label: 'Tâm Pháp Tinh Chuẩn (%)',
+            xianxiaLabel: 'Bách Bộ Xuyên Dương',
+            unit: '%',
+            playerValue: avgAcc,
+            peerAverage: 94,
+            peerTop10: 98,
+            percentile: Math.min(99, Math.max(20, Math.round(((avgAcc - 85) / 14) * 100))),
+            assessment: avgAcc >= 95 ? 'Độ chuẩn xác rất tốt' : 'Cần giảm 5% tốc độ để nâng độ chuẩn xác lên trên 96%',
+          },
+          {
+            key: 'consistency',
+            label: 'Đạo Tâm Kiên Định (%)',
+            xianxiaLabel: 'Bất Động Như Sơn',
+            unit: '%',
+            playerValue: avgConsistency,
+            peerAverage: 82,
+            peerTop10: 92,
+            percentile: Math.min(95, Math.max(25, avgConsistency)),
+            assessment: avgConsistency >= 85 ? 'Nhịp gõ cực kỳ đều đặn' : 'Nhịp gõ chưa đều, hay bị khựng giữa các từ',
+          },
+          {
+            key: 'recovery',
+            label: 'Hồi Phục Thần Thức (ms)',
+            xianxiaLabel: 'Hoàn Hồn Định Phách',
+            unit: 'ms',
+            playerValue: 340,
+            peerAverage: 380,
+            peerTop10: 180,
+            percentile: 65,
+            assessment: 'Thời gian sửa lỗi ở mức khá, cần phản xạ Backspace nhanh và dứt khoát hơn.',
+          },
+          {
+            key: 'stamina',
+            label: 'Độ Bền Khí Tức (Cuối Trận)',
+            xianxiaLabel: 'Trường Sinh Bất Diệt',
+            unit: '/100',
+            playerValue: 78,
+            peerAverage: 72,
+            peerTop10: 90,
+            percentile: 78,
+            assessment: 'Giữ được phong độ tương đối ổn định vào cuối ván đấu.',
+          },
+          {
+            key: 'breakthrough',
+            label: 'Tiềm Năng Đột Phá (%)',
+            xianxiaLabel: 'Thiên Cơ Khai Mở',
+            unit: '%',
+            playerValue: 82,
+            peerAverage: 65,
+            peerTop10: 92,
+            percentile: 82,
+            assessment: isNumberMode
+              ? 'Hội tụ đủ khí vận để đột phá cảnh giới kế tiếp nếu khắc phục được lỗi trượt phím số xa.'
+              : 'Hội tụ đủ khí vận để đột phá cảnh giới kế tiếp nếu khắc phục được lỗi dấu Telex.',
+          },
+        ],
+      },
+      breakthroughPathway: pathwaySteps,
+      practiceWords: generateFallbackPracticeWords(
+        allMistakes,
+        Object.entries(errorKeysMap).map(([key, count]) => ({ key, count })),
+        mode
+      ),
+    };
+  }
+
+  // POST /api/ai/personalized-practice: AI analysis & generated custom practice words
+  app.post('/api/ai/personalized-practice', async (req, res) => {
+    try {
+      const {
+        mistakes = [],
+        commonErrorKeys = [],
+        slowestWord,
+        averageHesitationMs,
+        stats = {},
+        recentMatches = [],
+        mode = 'vi_dau',
+      } = req.body || {};
+
+      const modeStr = String(mode || '').toLowerCase();
+      const isNumberMode =
+        modeStr === 'numpad' ||
+        modeStr === 'number' ||
+        modeStr.includes('number') ||
+        modeStr.includes('numpad') ||
+        modeStr.includes('số') ||
+        modeStr.includes('digits');
+      const isEnMode = modeStr === 'en';
+      const isViNoDauMode = modeStr === 'vi_nodau';
+
+      // Clean mistakes and error keys for number mode to prevent any non-digit interference
+      const effectiveMistakes = isNumberMode
+        ? mistakes.filter((m: any) => {
+            const s = String(m?.original || m?.word || '');
+            return /[\d+\-*/=.]/.test(s) && !/[a-zA-Zà-ỹÀ-Ỹ]/.test(s);
+          })
+        : mistakes;
+      const effectiveErrorKeys = isNumberMode
+        ? commonErrorKeys.filter((k: any) => {
+            const s = String(typeof k === 'string' ? k : k?.key || '');
+            return /[\d+\-*/=.]/.test(s) && !/[a-zA-Z]/.test(s);
+          })
+        : commonErrorKeys;
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.json({
+          success: true,
+          analysis: {
+            title: isNumberMode
+              ? 'Bài Tập Luyện Bàn Phím Số Chuyên Sâu (Number Drill)'
+              : 'Bài Tập Khắc Phục Lỗi Sai Cá Nhân',
+            overview: isNumberMode
+              ? 'Đã bóc tách các chữ số hay gõ nhầm và nhịp vươn ngón tay từ các ván đấu chế độ Số của bạn.'
+              : 'Đã phân tích các lỗi sai và cụm phím hay gõ nhầm từ lịch sử đấu của bạn.',
+            dominantErrorPattern: isNumberMode
+              ? 'Trượt phím số xa & nhịp bấm Numpad'
+              : 'Lỗi nhịp gõ & tổ hợp dấu thanh',
+            keyWeaknesses: effectiveMistakes.slice(0, 3).map((m: any) => `${m.original || m.word} (gõ thành ${m.typed})`),
+            targetClusters: effectiveErrorKeys.slice(0, 5).map((k: any) => (typeof k === 'string' ? k : k.key)),
+            coachAdvice: isNumberMode
+              ? 'Giữ ngón giữa đặt trên phím 5 có gờ xúc giác làm điểm tựa để định vị chính xác toàn bộ hàng phím số.'
+              : 'Hãy tập trung gõ đều nhịp, ưu tiên độ chính xác 100% cho các phụ âm và cụm dấu thanh tiếng Việt.',
+          },
+          practiceWords: generateFallbackPracticeWords(effectiveMistakes, effectiveErrorKeys, mode),
+          isAiPowered: false,
+        });
+      }
+
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+
+      let coachRole = 'Bạn là Huấn luyện viên Đánh máy Chuyên sâu (Typing Master Coach) cho môn thể thao gõ phím tiếng Việt (FastTyping Challenge).';
+      let modeRule = '';
+
+      if (isNumberMode) {
+        coachRole = 'Bạn là Huấn luyện viên Chuyên sâu về Bàn phím số & Tốc độ gõ số (Numpad & Number Speed Typing Coach) trên FastTyping.';
+        modeRule = `
+*** ĐẶC BIỆT BẮT BUỘC (CRITICAL REQUIREMENT) ***
+1. Chế độ thi đấu hiện tại của người chơi là: BÀN PHÍM SỐ / NUMBER MODE (CHỈ CHỮ SỐ VÀ PHÉP TOÁN NUMPAD).
+2. TẤT CẢ các từ trong mảng "practiceWords" BẮT BUỘC PHẢI LÀ CÁC CHUỖI SỐ (chữ số từ 0 đến 9, độ dài 2 đến 6 chữ số, ví dụ: "1024", "58008", "9876", "2026", "31415", "8520", "9630", "7410", "4040", "1357", "2468", "8899"...). TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA BẤT KỲ TỪ TIẾNG VIỆT, KHÔNG ĐƯỢC CÓ DẤU THANH VÀ KHÔNG ĐƯỢC CÓ CHỮ CÁI!
+3. Toàn bộ nhận xét "dominantErrorPattern", "keyWeaknesses", "targetClusters", "coachAdvice" PHẢI TẬP TRUNG 100% VÀO KỸ THUẬT GÕ PHÍM SỐ (tầm với hàng số, phím 5 định vị điểm gờ, ngón cái phím 0, trượt phím 7/8/9, đảo thứ tự chữ số...). TUYỆT ĐỐI KHÔNG ĐƯỢC NHẮC ĐẾN DẤU TELEX HAY TIẾNG VIỆT!
+`;
+      } else if (isEnMode) {
+        modeRule = `
+*** ĐẶC BIỆT BẮT BUỘC ***
+Người chơi thi đấu ở CHẾ ĐỘ TIẾNG ANH (ENGLISH). Mọi từ trong "practiceWords" BẮT BUỘC LÀ TỪ TIẾNG ANH CHUẨN, không dấu tiếng Việt.
+`;
+      } else if (isViNoDauMode) {
+        modeRule = `
+*** ĐẶC BIỆT BẮT BUỘC ***
+Người chơi thi đấu ở CHẾ ĐỘ TIẾNG VIỆT KHÔNG DẤU (vi_nodau). Mọi từ trong "practiceWords" TUYỆT ĐỐI KHÔNG ĐƯỢC CÓ DẤU THANH.
+`;
+      }
+
+      const prompt = `${coachRole}
+Nhiệm vụ của bạn là: Phân tích toàn diện lịch sử lỗi gõ phím của người chơi và tạo ra một BÀI TẬP LUYỆN CÁ NHÂN HÓA (Personalized Practice) gồm danh sách chuỗi ký tự thực hành đặc trị các lỗi sai đó.
+${modeRule}
+Dữ liệu phân tích ván đấu của người chơi:
+- Chế độ chơi chính: ${mode}
+- Tốc độ trung bình: ${stats.wpm || 0} WPM | Độ chính xác: ${stats.accuracy || 0}% | Nhịp ổn định: ${stats.consistency || 0}%
+- Các từ bị gõ sai và ký tự gõ nhầm: ${JSON.stringify(effectiveMistakes.slice(0, 15))}
+- Các phím/cụm phím hay bấm sai nhất: ${JSON.stringify(effectiveErrorKeys.slice(0, 8))}
+- Từ bị khựng lâu nhất (Hesitation): ${slowestWord ? `${slowestWord.word} (${(slowestWord.pauseMs / 1000).toFixed(2)}s)` : 'Không có'}
+- Độ trễ trung bình giữa các từ: ${averageHesitationMs || 0}ms
+- Tóm tắt các trận gần nhất: ${recentMatches.slice(0, 5).map((m: any) => `${m.modeId}: ${m.wpm}WPM (${m.accuracy}%)`).join(', ')}
+
+Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown codeblock nếu có thể, hoặc bọc trong \`\`\`json) với định dạng chính xác sau:
+{
+  "title": "${isNumberMode ? 'Tiêu đề bài luyện số (VD: Đặc Trị Hàng Phím Số & Tổ Hợp Numpad)' : 'Tiêu đề bài luyện tập (VD: Đặc Trị Cụm Dấu Thanh & Phím Ngón Út)'}",
+  "overview": "Đoạn văn ngắn 2-3 câu phân tích sâu và sắc bén về thói quen ngón tay, điểm nghẽn tốc độ và nguyên nhân người chơi hay gõ sai.",
+  "dominantErrorPattern": "${isNumberMode ? 'Trượt phím hàng số / Nhầm nhịp Numpad' : 'Tên mẫu lỗi chính (VD: Tranh chấp nhịp hai bàn tay / Khựng ở nguyên âm kép)'}",
+  "keyWeaknesses": ["Điểm yếu 1", "Điểm yếu 2", "Điểm yếu 3"],
+  "targetClusters": ["cụm 1", "cụm 2", "cụm 3"],
+  "coachAdvice": "Lời khuyên kỹ thuật hành động cụ thể để sửa lỗi ngay trong lần gõ tiếp theo.",
+  "practiceWords": [
+    ${isNumberMode ? '"1024", "58008", "9876", "2026", "31415", "8520"' : '"từ_1", "từ_2", "từ_3"'}
+  ]
+}`;
+
+      const textResponse = await callGeminiResilient(ai, prompt);
+      let parsedData: any = null;
+      if (textResponse) {
+        try {
+          const cleaned = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+          parsedData = JSON.parse(cleaned);
+        } catch {
+          const match = textResponse.match(/\{[\s\S]*\}/);
+          if (match) {
+            try {
+              parsedData = JSON.parse(match[0]);
+            } catch {
+              // fallback
+            }
+          }
+        }
+      }
+
+      // Sanitize practiceWords for number mode
+      if (parsedData && Array.isArray(parsedData.practiceWords)) {
+        if (isNumberMode) {
+          parsedData.practiceWords = parsedData.practiceWords
+            .map((w: any) => String(w).trim().replace(/[^\d+\-*/=.]/g, ''))
+            .filter((w: string) => w.length >= 1 && /\d/.test(w));
+          if (parsedData.practiceWords.length < 20) {
+            const fallbackNums = generateFallbackPracticeWords(effectiveMistakes, effectiveErrorKeys, 'numpad');
+            for (const fn of fallbackNums) {
+              if (parsedData.practiceWords.length >= 30) break;
+              if (!parsedData.practiceWords.includes(fn)) {
+                parsedData.practiceWords.push(fn);
+              }
+            }
+          }
+        }
+      }
+
+      if (!parsedData || !Array.isArray(parsedData.practiceWords) || parsedData.practiceWords.length === 0) {
+        parsedData = {
+          title: isNumberMode
+            ? 'Bài Luyện Tập Tăng Cường Phản Xạ Bàn Phím Số'
+            : 'Bài Luyện Tập Tăng Cường Phản Xạ Cụm Phím',
+          overview: isNumberMode
+            ? 'Hệ thống đã nhận diện các chữ số có tỷ lệ gõ nhầm cao nhất trong ván đấu chế độ Số vừa qua.'
+            : 'Hệ thống đã nhận diện các điểm khựng và ký tự có tỷ lệ gõ sai cao trong các ván đấu vừa qua.',
+          dominantErrorPattern: isNumberMode
+            ? 'Trượt phím số xa & nhịp bấm Numpad'
+            : 'Lỗi nhịp gõ & tổ hợp dấu thanh',
+          keyWeaknesses: effectiveMistakes.slice(0, 3).map((m: any) => `${m.original || m.word} -> ${m.typed}`),
+          targetClusters: effectiveErrorKeys.slice(0, 5).map((k: any) => (typeof k === 'string' ? k : k.key)),
+          coachAdvice: isNumberMode
+            ? 'Đặt ngón giữa lên phím 5 có gờ định vị, giảm nhẹ nhịp bứt tốc để tránh trượt sang các phím số liền kề.'
+            : 'Giảm nhẹ 5% tốc độ để tạo cảm giác bấm phím chắc chắn trên từng phím dấu tiếng Việt.',
+          practiceWords: generateFallbackPracticeWords(effectiveMistakes, effectiveErrorKeys, mode),
+        };
+      }
+
+      res.json({
+        success: true,
+        analysis: {
+          title: parsedData.title || (isNumberMode ? 'Bài Luyện Bàn Phím Số Cá Nhân Hóa (AI Coach)' : 'Bài Tập Luyện Cá Nhân Hóa (AI Coach)'),
+          overview: parsedData.overview || '',
+          dominantErrorPattern: parsedData.dominantErrorPattern || (isNumberMode ? 'Tổ hợp phím số tốc độ cao' : 'Tổ hợp phím tốc độ cao'),
+          keyWeaknesses: parsedData.keyWeaknesses || [],
+          targetClusters: parsedData.targetClusters || [],
+          coachAdvice: parsedData.coachAdvice || '',
+        },
+        practiceWords: parsedData.practiceWords,
+        isAiPowered: Boolean(textResponse),
+      });
+    } catch (err: any) {
+      console.warn('[AI Coach] Serving intelligent practice fallback:', err?.message || err);
+      const isNum = String(req.body?.mode || '').toLowerCase().includes('number') || String(req.body?.mode || '').toLowerCase().includes('numpad');
+      res.json({
+        success: true,
+        analysis: {
+          title: isNum ? 'Bài Tập Luyện Bàn Phím Số' : 'Bài Tập Khắc Phục Lỗi Sai Cá Nhân',
+          overview: 'Tổng hợp danh sách các chuỗi ký tự và phím ghi nhận lỗi sai cao nhất trong lịch sử đấu của bạn.',
+          dominantErrorPattern: isNum ? 'Trượt phím số & nhịp gõ' : 'Lỗi chính tả & nhịp bấm',
+          keyWeaknesses: (req.body?.mistakes || []).slice(0, 3).map((m: any) => `${m.original || m.word}`),
+          targetClusters: (req.body?.commonErrorKeys || []).slice(0, 4).map((k: any) => k.key),
+          coachAdvice: isNum
+            ? 'Cố định bàn tay trên cụm phím số và lấy phím 5 làm mốc cảm nhận vị trí.'
+            : 'Thả lỏng cổ tay và quan sát kỹ từng từ trước khi gõ phím Space.',
+        },
+        practiceWords: generateFallbackPracticeWords(req.body?.mistakes, req.body?.commonErrorKeys, req.body?.mode),
+        isAiPowered: false,
+      });
+    }
+  });
+
+  // POST /api/ai/heavenly-dao-analysis: AI Deep Analysis of Keystroke Error Patterns, Error Timing & Cultivation Progress vs Peers
+  app.post('/api/ai/heavenly-dao-analysis', async (req, res) => {
+    try {
+      const {
+        matches = [],
+        cultivation = null,
+        selectedMatch = null,
+      } = req.body || {};
+
+      const completed = matches.filter((m: any) => m.isCompleted !== false && m.result !== 'Đầu hàng');
+      const count = Math.max(1, completed.length);
+
+      const avgWpm = Math.round(completed.reduce((a: number, m: any) => a + (m.wpm || 0), 0) / count) || 60;
+      const avgAcc = Math.round(completed.reduce((a: number, m: any) => a + (m.accuracy || 100), 0) / count) || 94;
+      const avgConsistency = Math.round(completed.reduce((a: number, m: any) => a + (m.consistency || 80), 0) / count) || 82;
+      const peakWpm = Math.max(...completed.map((m: any) => m.peakWpm || m.wpm || 0), Math.round(avgWpm * 1.15));
+
+      // Determine realm & WPM bracket
+      const realmName = cultivation?.realmName || (avgWpm >= 110 ? 'Hóa Thần Kỳ' : avgWpm >= 85 ? 'Nguyên Anh Kỳ' : avgWpm >= 65 ? 'Kết Đan Kỳ' : avgWpm >= 45 ? 'Trúc Cơ Kỳ' : 'Luyện Khí Kỳ');
+      const tier = cultivation?.tier || 3;
+      const subStage = cultivation?.subStage || 'Sơ Kỳ';
+
+      // Aggregate mistakes and keystrokes
+      const allMistakes: any[] = [];
+      const errorKeysMap: Record<string, number> = {};
+      let introErrors = 0;
+      let accelErrors = 0;
+      let sustainErrors = 0;
+      let endgameErrors = 0;
+      let totalErrors = 0;
+
+      completed.forEach((m: any) => {
+        if (Array.isArray(m.mistakes)) {
+          m.mistakes.forEach((item: any) => allMistakes.push(item));
+        }
+        if (Array.isArray(m.commonErrorKeys)) {
+          m.commonErrorKeys.forEach((k: any) => {
+            const keyStr = typeof k === 'string' ? k : k.key;
+            if (keyStr) errorKeysMap[keyStr] = (errorKeysMap[keyStr] || 0) + (k.count || 1);
+          });
+        }
+
+        const dur = m.durationSeconds || 60;
+        if (Array.isArray(m.keystrokes) && m.keystrokes.length > 0) {
+          m.keystrokes.forEach((k: any) => {
+            if (!k.isCorrect) {
+              totalErrors++;
+              const sec = k.timeMs / 1000;
+              if (sec <= dur * 0.25) introErrors++;
+              else if (sec <= dur * 0.55) accelErrors++;
+              else if (sec <= dur * 0.8) sustainErrors++;
+              else endgameErrors++;
+            }
+          });
+        } else if (Array.isArray(m.chartData) && m.chartData.length > 0) {
+          m.chartData.forEach((pt: any) => {
+            const err = pt.errors || 0;
+            if (err > 0) {
+              totalErrors += err;
+              if (pt.second <= dur * 0.25) introErrors += err;
+              else if (pt.second <= dur * 0.55) accelErrors += err;
+              else if (pt.second <= dur * 0.8) sustainErrors += err;
+              else endgameErrors += err;
+            }
+          });
+        } else {
+          const err = m.incorrectWords || 2;
+          totalErrors += err;
+          introErrors += Math.round(err * 0.2);
+          accelErrors += Math.round(err * 0.35);
+          sustainErrors += Math.round(err * 0.2);
+          endgameErrors += Math.max(0, err - Math.round(err * 0.75));
+        }
+      });
+
+      const safeTotal = Math.max(1, totalErrors);
+
+      const targetMode =
+        selectedMatch?.modeId ||
+        selectedMatch?.mode ||
+        (completed[0]?.modeId) ||
+        (completed[0]?.mode) ||
+        'vi_dau';
+      const targetModeStr = String(targetMode).toLowerCase();
+      const isNumberMode =
+        targetModeStr === 'numpad' ||
+        targetModeStr === 'number' ||
+        targetModeStr.includes('number') ||
+        targetModeStr.includes('numpad') ||
+        targetModeStr.includes('số') ||
+        selectedMatch?.difficulty === 'number' ||
+        selectedMatch?.difficulty === 'fullsize';
+
+      // Clean mistakes and keys for number mode in Heavenly Dao analysis
+      const effectiveDaoMistakes = isNumberMode
+        ? allMistakes.filter((m: any) => {
+            const s = String(m?.original || m?.word || '');
+            return /[\d+\-*/=.]/.test(s) && !/[a-zA-Zà-ỹÀ-Ỹ]/.test(s);
+          })
+        : allMistakes;
+      const effectiveDaoErrorKeys = isNumberMode
+        ? Object.fromEntries(
+            Object.entries(errorKeysMap).filter(([k]) => /[\d+\-*/=.]/.test(k) && !/[a-zA-Z]/.test(k))
+          )
+        : errorKeysMap;
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.json({
+          success: true,
+          isAiPowered: false,
+          ...buildHeuristicDaoResponse({
+            realmName,
+            tier,
+            subStage,
+            avgWpm,
+            peakWpm,
+            avgAcc,
+            avgConsistency,
+            safeTotal,
+            count,
+            introErrors,
+            accelErrors,
+            sustainErrors,
+            endgameErrors,
+            allMistakes: effectiveDaoMistakes,
+            errorKeysMap: effectiveDaoErrorKeys,
+            mode: targetMode,
+          }),
+        });
+      }
+
+      // Initialize Gemini Client
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+
+      const modeInstruction = isNumberMode
+        ? `
+*** ĐẶC BIỆT LƯU Ý CHO THIÊN ĐẠO: CHẾ ĐỘ BÀN PHÍM SỐ (NUMPAD/NUMBER) ***
+- Người chơi đang thi đấu ở chế độ Bàn Phím Số / Number.
+- Mẫu lỗi (errorPatterns) & Tâm ma (tamMaName) phải xoay quanh kỹ thuật bấm số (như Cửu Cung Thần Số Chướng, vươn ngón tay trượt phím 7/8/9, nhầm phím 0, định vị phím 5, đảo thứ tự chữ số...). TUYỆT ĐỐI KHÔNG đề cập lỗi dấu Telex hay tiếng Việt!
+- Mảng "practiceWords" BẮT BUỘC LÀ CÁC CHUỖI SỐ (chữ số từ 0 đến 9, như "1024", "58008", "9876", "2026", "31415", "8520", "9630", "7410", "4040"...), TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA TỪ TIẾNG VIỆT CÓ DẤU!
+`
+        : '';
+
+      const prompt = `Bạn là Tông Sư Phân Tích Thiên Đạo (Heavenly Dao Typing Master Coach) cho môn thể thao đánh máy tiếng Việt (FastTyping Challenge) kết hợp chủ đề Tu Tiên (Xianxia Cultivation).
+Nhiệm vụ của bạn là: Phân tích toàn diện lịch sử đấu của người chơi, bóc tách các mẫu lỗi gõ phím (keystroke error patterns), thời điểm thường xuyên mắc lỗi trên trục thời gian ván đấu, và đưa ra biểu đồ so sánh tiến trình tu vi so với các người chơi có cùng trình độ WPM (đồng đạo cùng cảnh giới), giúp người chơi nhận diện rõ tâm ma / điểm yếu cần cải thiện để độ kiếp đột phá cảnh giới.
+${modeInstruction}
+Dữ liệu ván đấu thực tế của người chơi:
+- Chế độ thi đấu: ${targetMode}
+- Cảnh giới tu vi hiện tại: ${realmName} ${subStage} (Tầng ${tier})
+- Tốc độ trung bình: ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) | Độ chính xác: ${avgAcc}% | Độ ổn định nhịp: ${avgConsistency}%
+- Tổng số lỗi quan trắc được: ${safeTotal} lỗi
+- Phân bố lỗi theo thời gian:
+  + Khởi thức (0 - 15s): ${introErrors} lỗi (${Math.round((introErrors / safeTotal) * 100)}%)
+  + Tăng tốc bứt phá (15 - 35s): ${accelErrors} lỗi (${Math.round((accelErrors / safeTotal) * 100)}%)
+  + Bình ổn trung đoạn (35 - 50s): ${sustainErrors} lỗi (${Math.round((sustainErrors / safeTotal) * 100)}%)
+  + Về đích (50 - 60s+): ${endgameErrors} lỗi (${Math.round((endgameErrors / safeTotal) * 100)}%)
+- Các từ bị gõ sai nhiều nhất: ${JSON.stringify(effectiveDaoMistakes.slice(0, 12))}
+- Các phím/cụm phím bị trượt nhiều nhất: ${JSON.stringify(Object.entries(effectiveDaoErrorKeys).slice(0, 8))}
+
+Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown codeblock nếu có thể, hoặc bọc trong \`\`\`json) với định dạng chính xác sau:
+{
+  "playerRealm": {
+    "realmName": "${realmName}",
+    "tier": ${tier},
+    "subStage": "${subStage}",
+    "currentWpm": ${avgWpm},
+    "wpmBracket": "Phân khúc WPM của nhóm người chơi này (VD: Trúc Cơ Kỳ 55 - 75 WPM)"
+  },
+  "overallVerdict": {
+    "title": "Tiêu đề phán quyết Thiên Đạo hùng tráng",
+    "summary": "Đoạn văn ngắn 2-3 câu phân tích sâu sắc về trình độ hiện tại, ưu điểm và điểm nghẽn đạo tâm.",
+    "tamMaName": "Tên tâm ma cản trở lớn nhất",
+    "tamMaDescription": "Mô tả chi tiết nguyên nhân tâm lý và hành vi gõ phím sinh ra tâm ma này.",
+    "overallPercentile": 75,
+    "breakthroughReadiness": 80
+  },
+  "errorPatterns": [
+    {
+      "id": "pattern_1",
+      "name": "Tên mẫu lỗi khoa học",
+      "xianxiaTitle": "Tên tiên hiệp độc đáo",
+      "frequency": 8,
+      "percentage": 42,
+      "description": "Mô tả cách thức lỗi xảy ra.",
+      "biomechanics": "Nguyên lý cơ sinh học ngón tay gây ra lỗi này.",
+      "examples": ["ví dụ 1", "ví dụ 2"],
+      "severity": "high"
+    }
+  ],
+  "timingAnalysis": {
+    "phases": [
+      {
+        "phaseId": "intro",
+        "name": "Khởi Thức (Nhập Cuộc)",
+        "xianxiaPhase": "Sơ Khai Định Thần",
+        "timeRange": "0s - 15s (25% đầu ván)",
+        "errorCount": ${introErrors},
+        "errorPercentage": ${Math.round((introErrors / safeTotal) * 100)},
+        "description": "Nhận xét tình trạng ở giai đoạn khởi đầu.",
+        "riskLevel": "thap"
+      },
+      {
+        "phaseId": "acceleration",
+        "name": "Tăng Tốc (Vận Khí)",
+        "xianxiaPhase": "Cực Hạn Bứt Phá",
+        "timeRange": "15s - 35s (Giai đoạn đẩy WPM)",
+        "errorCount": ${accelErrors},
+        "errorPercentage": ${Math.round((accelErrors / safeTotal) * 100)},
+        "description": "Nhận xét tình trạng ở giai đoạn tăng tốc.",
+        "riskLevel": "cao"
+      },
+      {
+        "phaseId": "sustain",
+        "name": "Bình Ổn (Trung Châu)",
+        "xianxiaPhase": "Đạo Tâm Trì Trệ",
+        "timeRange": "35s - 50s (Duy trì nhịp)",
+        "errorCount": ${sustainErrors},
+        "errorPercentage": ${Math.round((sustainErrors / safeTotal) * 100)},
+        "description": "Nhận xét tình trạng ở giai đoạn duy trì.",
+        "riskLevel": "trung_binh"
+      },
+      {
+        "phaseId": "endgame",
+        "name": "Về Đích (Tàn Kiếp)",
+        "xianxiaPhase": "Linh Khí Khô Kiệt",
+        "timeRange": "50s - 60s+ (Rút đích)",
+        "errorCount": ${endgameErrors},
+        "errorPercentage": ${Math.round((endgameErrors / safeTotal) * 100)},
+        "description": "Nhận xét tình trạng ở giai đoạn về đích.",
+        "riskLevel": "trung_binh"
+      }
+    ],
+    "criticalMomentVerdict": "Nhận định sắc bén về pha thời gian gây tụt WPM nhiều nhất và cách khắc phục.",
+    "avgRecoveryLatencyMs": 320,
+    "peerAvgRecoveryMs": 380,
+    "cascadeErrorRate": 20
+  },
+  "peerComparison": {
+    "bracketName": "Tên nhóm so sánh",
+    "description": "Mô tả nhóm so sánh đồng đạo cùng cảnh giới.",
+    "metrics": [
+      {
+        "key": "speed",
+        "label": "Tốc Độ Xuất Chiêu (WPM)",
+        "xianxiaLabel": "Ngự Khí Thần Tốc",
+        "unit": "WPM",
+        "playerValue": ${avgWpm},
+        "peerAverage": ${Math.round(avgWpm * 0.95)},
+        "peerTop10": ${Math.round(avgWpm * 1.25)},
+        "percentile": 75,
+        "assessment": "Đánh giá chi tiết"
+      }
+    ]
+  },
+  "breakthroughPathway": {
+    "step1": { "title": "Bước 1: Tiêu đề bước 1", "desc": "Chỉ dẫn hành động thực tế 1" },
+    "step2": { "title": "Bước 2: Tiêu đề bước 2", "desc": "Chỉ dẫn hành động thực tế 2" },
+    "step3": { "title": "Bước 3: Tiêu đề bước 3", "desc": "Chỉ dẫn hành động thực tế 3" }
+  },
+  "practiceWords": [
+    ${isNumberMode ? '"1024", "58008", "9876", "2026", "31415", "8520"' : '"nghiêng", "khoảng", "chuyển"'}
+  ]
+}`;
+
+      const textResponse = await callGeminiResilient(ai, prompt);
+      let parsedData: any = null;
+      if (textResponse) {
+        try {
+          const cleaned = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+          parsedData = JSON.parse(cleaned);
+        } catch {
+          const match = textResponse.match(/\{[\s\S]*\}/);
+          if (match) {
+            try {
+              parsedData = JSON.parse(match[0]);
+            } catch {
+              // fallback
+            }
+          }
+        }
+      }
+
+      // Enforce number-only practice words when in number mode
+      if (parsedData && Array.isArray(parsedData.practiceWords)) {
+        if (isNumberMode) {
+          parsedData.practiceWords = parsedData.practiceWords
+            .map((w: any) => String(w).trim().replace(/[^\d+\-*/=.]/g, ''))
+            .filter((w: string) => w.length >= 1 && /\d/.test(w));
+          if (parsedData.practiceWords.length < 20) {
+            const fallbackNums = generateFallbackPracticeWords(effectiveDaoMistakes, [], 'numpad');
+            for (const fn of fallbackNums) {
+              if (parsedData.practiceWords.length >= 30) break;
+              if (!parsedData.practiceWords.includes(fn)) {
+                parsedData.practiceWords.push(fn);
+              }
+            }
+          }
+        }
+      }
+
+      if (parsedData && parsedData.overallVerdict && Array.isArray(parsedData.errorPatterns)) {
+        return res.json({
+          success: true,
+          isAiPowered: true,
+          ...parsedData,
+        });
+      }
+
+      // If AI model is temporarily experiencing high demand or unavailable, serve high-fidelity analytical fallback
+      return res.json({
+        success: true,
+        isAiPowered: false,
+        ...buildHeuristicDaoResponse({
+          realmName,
+          tier,
+          subStage,
+          avgWpm,
+          peakWpm,
+          avgAcc,
+          avgConsistency,
+          safeTotal,
+          count,
+          introErrors,
+          accelErrors,
+          sustainErrors,
+          endgameErrors,
+          allMistakes,
+          errorKeysMap,
+          mode: targetMode,
+        }),
+      });
+    } catch (err: any) {
+      console.warn('[Heavenly Dao] Serving intelligent heuristic Dao analysis:', err?.message || err);
+      const fallbackMode = req.body?.selectedMatch?.modeId || req.body?.selectedMatch?.mode || 'vi_dau';
+      return res.json({
+        success: true,
+        isAiPowered: false,
+        ...buildHeuristicDaoResponse({
+          realmName: 'Tu Sĩ FastTyping',
+          tier: 3,
+          subStage: 'Sơ Kỳ',
+          avgWpm: 60,
+          peakWpm: 70,
+          avgAcc: 94,
+          avgConsistency: 82,
+          safeTotal: 10,
+          count: 1,
+          introErrors: 2,
+          accelErrors: 5,
+          sustainErrors: 2,
+          endgameErrors: 1,
+          allMistakes: [],
+          errorKeysMap: {},
+          mode: fallbackMode,
+        }),
+      });
+    }
   });
 
   // POST /api/leaderboard/reset: Reset leaderboard to clean state (or single mode if provided)

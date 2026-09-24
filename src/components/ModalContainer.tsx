@@ -336,6 +336,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         isOpen={isCultivationOpen}
         onClose={() => setIsCultivationOpen(false)}
         state={cultivationState}
+        username={currentUser?.username || username}
         userAvatar={avatar}
         userFrame={userFrame}
         onSelectFrame={onChangeFrame}

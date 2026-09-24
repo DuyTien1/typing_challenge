@@ -139,6 +139,27 @@ export interface HighScoreRecord {
   frame?: string;
 }
 
+export type HeavenlyDaoEventType =
+  | 'penalty'       // Thiên Lôi Trừng Phạt (Anti-cheat/Hack)
+  | 'breakthrough'  // Đột Phá Cảnh Giới & Độ Kiếp
+  | 'record'        // Kim Bảng Đề Danh / Kỷ lục WPM
+  | 'boss_kill'     // Ma Thần Quỵ Phục (Trảm Boss)
+  | 'guidance'      // Thiên Cơ Chỉ Điểm (Lời khuyên Khí Linh)
+  | 'announcement'; // Chiếu Thư Thiên Đạo
+
+export interface HeavenlyDaoDecree {
+  id: string;
+  title: string;
+  eventType: HeavenlyDaoEventType;
+  targetUser?: string;
+  content: string;
+  timestamp: number;
+  highlightText?: string;
+  wpm?: number;
+  accuracy?: number;
+  realmName?: string;
+}
+
 export interface ChatMessage {
   id: string;
   username: string;
@@ -150,6 +171,9 @@ export interface ChatMessage {
   channel: 'global' | 'room';
   roomId?: string;
   isAdmin?: boolean;
+  isDaoBot?: boolean;
+  daoEventType?: HeavenlyDaoEventType;
+  daoTitle?: string;
 }
 
 export interface MysteryWordItem {

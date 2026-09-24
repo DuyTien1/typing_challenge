@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   X,
   History,
@@ -24,14 +24,26 @@ import {
   BarChart2,
   Filter,
   Trash2,
+  Compass,
 } from 'lucide-react';
+import { GameMode } from '../types';
 import {
   MatchRecord,
   getFriendlyModeName,
   getModeIcon,
   generateTypingAdvice,
   analyzeMatchMistakes,
+  aggregateHistoryMistakes,
+  AiPersonalizedPracticeResult,
 } from '../utils/matchHistory';
+import { generateAlgorithmicDrill } from '../utils/aiPersonalizedDrill';
+import {
+  HeavenlyDaoAnalysisResult,
+  fetchHeavenlyDaoAnalysis,
+  generateHeuristicDaoAnalysis,
+} from '../utils/heavenlyDaoAnalysis';
+import { loadStoredCultivationState } from '../utils/cultivation';
+import { HeavenlyDaoDashboard } from './HeavenlyDaoDashboard';
 import { soundFx } from '../utils/audio';
 
 interface MatchHistoryModalProps {
@@ -39,7 +51,7 @@ interface MatchHistoryModalProps {
   history: MatchRecord[];
   onClose: () => void;
   onClearHistory?: () => void;
-  onPracticeMistakes?: (mistakeWords: string[]) => void;
+  onPracticeMistakes?: (mistakeWords: string[], modeOverride?: any) => void;
   onRetryMatch?: (record: MatchRecord) => void;
 }
 
@@ -52,9 +64,21 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
   onRetryMatch,
 }) => {
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'replay' | 'analytics' | 'errors' | 'coach'>('replay');
+  const [activeTab, setActiveTab] = useState<'replay' | 'analytics' | 'errors' | 'coach' | 'ai_practice' | 'heavenly_dao'>('replay');
   const [filterMode, setFilterMode] = useState<string>('all');
   const [copiedReport, setCopiedReport] = useState(false);
+  const [copiedPracticeWords, setCopiedPracticeWords] = useState(false);
+
+  // AI Personalized Practice States & Selected Mode
+  const [aiDrillMode, setAiDrillMode] = useState<GameMode>('vi_dau');
+  const [aiPracticeResult, setAiPracticeResult] = useState<AiPersonalizedPracticeResult | null>(null);
+  const [isLoadingAiPractice, setIsLoadingAiPractice] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Heavenly Dao Analysis States
+  const [daoAnalysisResult, setDaoAnalysisResult] = useState<HeavenlyDaoAnalysisResult | null>(null);
+  const [isLoadingDaoAnalysis, setIsLoadingDaoAnalysis] = useState(false);
+  const [daoError, setDaoError] = useState<string | null>(null);
 
   // Replay Player States
   const [isPlaying, setIsPlaying] = useState(false);
@@ -85,6 +109,15 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
   const selectedMatch = useMemo(() => {
     return history.find((m) => m.id === selectedMatchId) || filteredMatches[0] || null;
   }, [history, selectedMatchId, filteredMatches]);
+
+  // Sync AI Drill Mode with the selected match or active filter
+  useEffect(() => {
+    if (selectedMatch?.modeId) {
+      setAiDrillMode(selectedMatch.modeId as GameMode);
+    } else if (filterMode !== 'all') {
+      setAiDrillMode(filterMode as GameMode);
+    }
+  }, [selectedMatch?.modeId, filterMode]);
 
   // Total duration of selected match
   const matchDuration = useMemo(() => {
@@ -215,6 +248,199 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
     return generateTypingAdvice(selectedMatch);
   }, [selectedMatch]);
 
+  // Aggregate mistakes across entire match history (up to 20 matches)
+  const historyAggregate = useMemo(() => {
+    return aggregateHistoryMistakes(history);
+  }, [history]);
+
+  // Generate AI Personalized Practice with explicit mode support
+  const handleGenerateAiPractice = async (forceRefresh = false, targetModeOverride?: GameMode) => {
+    const activeMode = (targetModeOverride || aiDrillMode || (selectedMatch?.modeId as GameMode) || (filterMode !== 'all' ? (filterMode as GameMode) : 'vi_dau')) as GameMode;
+    if (targetModeOverride) {
+      setAiDrillMode(targetModeOverride);
+    }
+
+    if (aiPracticeResult && !forceRefresh && !targetModeOverride) {
+      setActiveTab('ai_practice');
+      return;
+    }
+
+    setIsLoadingAiPractice(true);
+    setAiError(null);
+    setActiveTab('ai_practice');
+
+    const isNum = activeMode === 'numpad';
+
+    // Pick mistakes: only pick numeric mistakes if in numpad mode!
+    let sourceMistakes =
+      selectedMatchMistakes.length > 0
+        ? [...selectedMatchMistakes, ...historyAggregate.allMistakes.slice(0, 10)]
+        : historyAggregate.allMistakes;
+
+    if (isNum) {
+      sourceMistakes = sourceMistakes.filter((m) => {
+        const orig = String(m?.original || '');
+        return /[\d+\-*/=.]/.test(orig) && !/[a-zA-Zà-ỹÀ-Ỹ]/.test(orig);
+      });
+      // If user had no numeric mistakes recorded yet, provide sample numeric hesitation keys
+      if (sourceMistakes.length === 0) {
+        sourceMistakes = [
+          { original: '7890', typed: '7800', count: 2, errorIndex: 2 },
+          { original: '1024', typed: '1042', count: 1, errorIndex: 3 },
+          { original: '58008', typed: '58080', count: 1, errorIndex: 3 },
+        ];
+      }
+    }
+
+    let sourceKeys =
+      selectedMatch?.commonErrorKeys && selectedMatch.commonErrorKeys.length > 0
+        ? [...selectedMatch.commonErrorKeys, ...historyAggregate.allErrorKeys.slice(0, 6)]
+        : historyAggregate.allErrorKeys;
+
+    if (isNum) {
+      sourceKeys = sourceKeys.filter((k) => {
+        const keyStr = String(k?.key || '');
+        return /[\d+\-*/=.]/.test(keyStr) && !/[a-zA-Z]/.test(keyStr);
+      });
+      if (sourceKeys.length === 0) {
+        sourceKeys = [
+          { key: '7', count: 3 },
+          { key: '9', count: 3 },
+          { key: '5', count: 2 },
+          { key: '0', count: 2 },
+        ];
+      }
+    }
+
+    try {
+      const payload = {
+        mistakes: sourceMistakes.slice(0, 15),
+        commonErrorKeys: sourceKeys.slice(0, 8),
+        slowestWord: isNum ? undefined : (selectedMatch?.slowestWord || historyAggregate.slowestWords[0] || null),
+        averageHesitationMs: selectedMatch?.averageHesitationMs || 320,
+        stats: {
+          wpm: selectedMatch?.wpm || historyAggregate.avgWpm,
+          accuracy: selectedMatch?.accuracy || historyAggregate.avgAccuracy,
+          consistency: selectedMatch?.consistency || historyAggregate.avgConsistency,
+        },
+        recentMatches: filteredMatches.slice(0, 5).map((m) => ({
+          modeId: m.modeId,
+          wpm: m.wpm,
+          accuracy: m.accuracy,
+        })),
+        mode: activeMode,
+      };
+
+      const res = await fetch('/api/ai/personalized-practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error('Không thể kết nối đến máy chủ AI');
+      }
+
+      const data: AiPersonalizedPracticeResult = await res.json();
+      if (data.success) {
+        if (isNum && Array.isArray(data.practiceWords)) {
+          data.practiceWords = data.practiceWords
+            .map((w) => String(w).trim().replace(/[^\d+\-*/=.]/g, ''))
+            .filter((w) => w.length >= 1 && /\d/.test(w));
+          if (data.practiceWords.length < 20) {
+            const numFallbacks = [
+              '1024', '58008', '2026', '9876', '1234', '5050', '31415', '92653',
+              '7410', '8520', '9630', '4567', '7890', '13579', '24680', '9988',
+              '1122', '3344', '7700', '4040', '8080', '1995', '2000', '2025'
+            ];
+            for (const n of numFallbacks) {
+              if (data.practiceWords.length >= 30) break;
+              if (!data.practiceWords.includes(n)) {
+                data.practiceWords.push(n);
+              }
+            }
+          }
+        }
+        setAiPracticeResult(data);
+      } else {
+        throw new Error('Dữ liệu phân tích AI không hợp lệ');
+      }
+    } catch (err: any) {
+      console.warn('Lỗi phân tích AI, chuyển sang giải thuật phân tích cục bộ thông minh:', err);
+      try {
+        const algorithmicResult = generateAlgorithmicDrill(
+          sourceMistakes,
+          sourceKeys,
+          isNum ? ['1024', '58008', '2026', '9876'] : historyAggregate.frequentErrorWords,
+          activeMode
+        );
+        setAiPracticeResult({
+          success: true,
+          isAiPowered: false,
+          analysis: {
+            title: algorithmicResult.title,
+            overview: algorithmicResult.diagnosis,
+            dominantErrorPattern: isNum
+              ? 'Trượt phím số xa & nhịp bấm Numpad'
+              : (algorithmicResult.focalClusters[0]?.label || 'Lỗi nhịp phím & thanh điệu'),
+            keyWeaknesses: algorithmicResult.coachingAdvice.slice(0, 3),
+            targetClusters: algorithmicResult.focalClusters.map((c) => c.label),
+            coachAdvice: algorithmicResult.coachingAdvice[0] || (isNum ? 'Giữ phím 5 Numpad có gờ làm điểm tựa định vị.' : 'Tập trung duy trì nhịp gõ đều đặn.'),
+          },
+          practiceWords: algorithmicResult.drillWords,
+        });
+      } catch {
+        setAiError(err.message || 'Không thể tạo bài tập luyện AI lúc này.');
+      }
+    } finally {
+      setIsLoadingAiPractice(false);
+    }
+  };
+
+  // Launch AI Practice Solo Game
+  const handleStartAiSoloGame = () => {
+    if (!aiPracticeResult || !aiPracticeResult.practiceWords || aiPracticeResult.practiceWords.length === 0) return;
+    soundFx.playKeyClick();
+    if (onPracticeMistakes) {
+      const mode = (aiDrillMode || (selectedMatch?.modeId as GameMode) || (filterMode !== 'all' ? (filterMode as GameMode) : 'vi_dau')) as GameMode;
+      onPracticeMistakes(aiPracticeResult.practiceWords, mode);
+      onClose();
+    }
+  };
+
+  // Copy practice words to clipboard
+  const handleCopyPracticeWords = () => {
+    if (!aiPracticeResult?.practiceWords || aiPracticeResult.practiceWords.length === 0) return;
+    navigator.clipboard.writeText(aiPracticeResult.practiceWords.join(' ')).then(() => {
+      soundFx.playKeyClick();
+      setCopiedPracticeWords(true);
+      setTimeout(() => setCopiedPracticeWords(false), 2000);
+    });
+  };
+
+  // Launch Heavenly Dao Analysis (AI + Cultivation Biomechanics)
+  const handleOpenHeavenlyDao = async (forceRefresh = false) => {
+    setActiveTab('heavenly_dao');
+    if (daoAnalysisResult && !forceRefresh) return;
+
+    setIsLoadingDaoAnalysis(true);
+    setDaoError(null);
+    try {
+      const cultivationState = loadStoredCultivationState();
+      const dataset = filteredMatches.length > 0 ? filteredMatches : history;
+      const result = await fetchHeavenlyDaoAnalysis(dataset, cultivationState, selectedMatch);
+      setDaoAnalysisResult(result);
+    } catch (err: any) {
+      console.warn('Lỗi khi tải Phân Tích Thiên Đạo:', err);
+      setDaoError(err.message || 'Không thể lấy dữ liệu phân tích Thiên Đạo.');
+      const cultivationState = loadStoredCultivationState();
+      const dataset = filteredMatches.length > 0 ? filteredMatches : history;
+      setDaoAnalysisResult(generateHeuristicDaoAnalysis(dataset, cultivationState, selectedMatch));
+    } finally {
+      setIsLoadingDaoAnalysis(false);
+    }
+  };
+
   // Copy Analysis Report to clipboard
   const handleCopyReport = () => {
     if (!selectedMatch) return;
@@ -271,7 +497,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                 <h2 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
                   LỊCH SỬ ĐẤU & PHÂN TÍCH KỸ NĂNG
                 </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   Tối đa 20 ván gần nhất
                 </span>
               </div>
@@ -291,7 +517,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                     onClearHistory();
                   }
                 }}
-                className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                className="h-9 px-3.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
                 title="Xóa toàn bộ lịch sử đấu"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -305,10 +531,10 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                 soundFx.playKeyClick();
                 onClose();
               }}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-all cursor-pointer"
+              className="h-9 w-9 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 flex items-center justify-center transition-all cursor-pointer active:scale-95"
               title="Đóng (Phím Esc)"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -338,27 +564,55 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
             </div>
           </div>
 
-          {/* Mode Filter Dropdown */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={filterMode}
-              onChange={(e) => {
+          {/* Mode Filter & AI Button */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
                 soundFx.playKeyClick();
-                setFilterMode(e.target.value);
+                handleOpenHeavenlyDao();
               }}
-              className="bg-slate-900 border border-slate-700/80 text-slate-300 text-xs rounded-lg px-2 py-1 outline-none cursor-pointer focus:border-amber-400"
+              className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-purple-500/25 via-indigo-500/25 to-amber-500/20 hover:from-purple-500/35 hover:to-amber-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+              title="Mở Bảng Điều Khiển Phân Tích Thiên Đạo"
             >
-              <option value="all">Tất cả chế độ ({history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng').length})</option>
-              <option value="vi_dau">🇻🇳 TV Có Dấu</option>
-              <option value="vi_nodau">⚡ TV Không Dấu</option>
-              <option value="en">🇬🇧 Tiếng Anh</option>
-              <option value="numpad">🔢 Phím Số</option>
-              <option value="outplay">👑 Outplay</option>
-              <option value="san_boss">🐉 Săn Boss</option>
-              <option value="doan_chu">🔍 Đoán Chữ</option>
-              <option value="ngau_hung">🟡 Ngẫu Hứng</option>
-            </select>
+              <Compass className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Phân Tích Thiên Đạo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                handleGenerateAiPractice();
+              }}
+              className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-cyan-500/20 via-teal-500/20 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+              title="Phân tích toàn bộ 20 ván và tạo bài tập luyện cá nhân hóa"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Tạo Bài Luyện AI</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={filterMode}
+                onChange={(e) => {
+                  soundFx.playKeyClick();
+                  setFilterMode(e.target.value);
+                }}
+                className="h-9 bg-slate-900 border border-slate-700/80 text-slate-300 text-xs rounded-xl px-3 outline-none cursor-pointer focus:border-amber-400 transition-colors"
+              >
+                <option value="all">Tất cả chế độ ({history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng').length})</option>
+                <option value="vi_dau">🇻🇳 TV Có Dấu</option>
+                <option value="vi_nodau">⚡ TV Không Dấu</option>
+                <option value="en">🇬🇧 Tiếng Anh</option>
+                <option value="numpad">🔢 Phím Số</option>
+                <option value="outplay">👑 Outplay</option>
+                <option value="san_boss">🐉 Săn Boss</option>
+                <option value="doan_chu">🔍 Đoán Chữ</option>
+                <option value="ngau_hung">🟡 Ngẫu Hứng</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -445,15 +699,15 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
             {selectedMatch ? (
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 {/* MATCH SUB-HEADER: TABS */}
-                <div className="p-3 sm:px-5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="p-3 sm:px-5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2.5 shrink-0 overflow-x-auto">
+                  <div className="flex items-center gap-2 overflow-x-auto py-0.5">
                     <button
                       type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setActiveTab('replay');
                       }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 ${
                         activeTab === 'replay'
                           ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                           : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -469,7 +723,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         setActiveTab('analytics');
                       }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 ${
                         activeTab === 'analytics'
                           ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                           : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -485,7 +739,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         setActiveTab('errors');
                       }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer relative ${
+                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 relative ${
                         activeTab === 'errors'
                           ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                           : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -506,7 +760,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         setActiveTab('coach');
                       }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 ${
                         activeTab === 'coach'
                           ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                           : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -515,13 +769,51 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                       <Lightbulb className="w-3.5 h-3.5" />
                       <span>Lời Khuyên & Kỹ Năng</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        handleGenerateAiPractice();
+                      }}
+                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 relative shadow-sm ${
+                        activeTab === 'ai_practice'
+                          ? 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 font-black shadow-cyan-500/25 ring-1 ring-cyan-300'
+                          : 'bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 hover:text-white border border-cyan-500/40'
+                      }`}
+                    >
+                      <Sparkles className={`w-3.5 h-3.5 ${isLoadingAiPractice ? 'animate-spin text-cyan-200' : 'text-cyan-300'}`} />
+                      <span>Luyện Cá Nhân Hóa (AI)</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-mono">
+                        AI 3.8
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        handleOpenHeavenlyDao();
+                      }}
+                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 relative shadow-sm ${
+                        activeTab === 'heavenly_dao'
+                          ? 'bg-gradient-to-r from-amber-400 via-purple-500 to-indigo-600 text-white font-black shadow-purple-500/30 ring-1 ring-purple-300'
+                          : 'bg-purple-950/60 hover:bg-purple-900/60 text-purple-300 hover:text-white border border-purple-500/40'
+                      }`}
+                    >
+                      <span className="text-amber-400 text-xs">☯️</span>
+                      <span>Phân Tích Thiên Đạo</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-500/30 text-purple-200 border border-purple-400/40 font-mono">
+                        AI 3.8
+                      </span>
+                    </button>
                   </div>
 
                   {/* Quick Action Button: Copy Report */}
                   <button
                     type="button"
                     onClick={handleCopyReport}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                    className="h-9.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 font-bold active:scale-95"
                     title="Sao chép báo cáo trận đấu"
                   >
                     {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -841,6 +1133,36 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                             : '⚠️ Có sự chênh lệch nhịp gõ giữa các giai đoạn. Hãy chú ý thả lỏng vai và giữ tư thế ngồi thẳng lưng để duy trì tốc độ cao khi gõ bài dài.'}
                         </p>
                       </div>
+
+                      {/* Heavenly Dao Teaser Banner */}
+                      <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-slate-900 border border-purple-500/35 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-lg shrink-0">
+                            ☯️
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="text-xs font-black text-white flex items-center gap-1.5">
+                              <span>BẢNG ĐIỀU KHIỂN PHÂN TÍCH THIÊN ĐẠO</span>
+                              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-500/30 text-purple-200 border border-purple-400/40">AI 3.8</span>
+                            </div>
+                            <p className="text-[11px] text-slate-300">
+                              Khám phá biểu đồ Radar 6 Trụ Cột Đạo Cơ đối chiếu với đồng đạo cùng cảnh giới và bóc tách tâm ma gõ phím.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            handleOpenHeavenlyDao();
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-purple-500/20 shrink-0 self-stretch sm:self-auto justify-center"
+                        >
+                          <Compass className="w-3.5 h-3.5" />
+                          <span>Khai Mở Thiên Đạo</span>
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -924,6 +1246,42 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                           </p>
                         </div>
                       )}
+
+                      {/* AI & Heavenly Dao Prompt Banner in Errors Tab */}
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-cyan-950/40 border border-purple-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-lg">☯️</span>
+                          <div className="text-xs">
+                            <span className="font-bold text-white">Muốn phân tích sâu mẫu lỗi & thời điểm mắc lỗi? </span>
+                            <span className="text-slate-400 hidden sm:inline">Khám phá Bảng Điều Khiển Thiên Đạo hoặc tạo bài luyện AI.</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playKeyClick();
+                              handleOpenHeavenlyDao();
+                            }}
+                            className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/40 text-purple-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Compass className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Phân Tích Thiên Đạo</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playKeyClick();
+                              handleGenerateAiPractice();
+                            }}
+                            className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Bài Luyện AI</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -966,7 +1324,24 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                           <Award className="w-4 h-4 text-amber-400" />
                           <span>Hành Động Khắc Phục Điểm Yếu:</span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playKeyClick();
+                              handleGenerateAiPractice();
+                            }}
+                            className="p-3 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-left transition-all cursor-pointer group shadow-sm sm:col-span-2 lg:col-span-1"
+                          >
+                            <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5 group-hover:text-cyan-200">
+                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                              <span>Bài Tập Cá Nhân Hóa AI</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-1">
+                              AI phân tích lỗi & tạo danh sách từ chứa cụm phím hay gõ nhầm để luyện tập solo.
+                            </div>
+                          </button>
+
                           {selectedMatchMistakes.length > 0 && onPracticeMistakes && (
                             <button
                               type="button"
@@ -1010,6 +1385,363 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         </div>
                       </div>
                     </div>
+                  )}
+
+                  {/* TAB 5: AI PERSONALIZED PRACTICE & COMPREHENSIVE MISTAKE ANALYSIS */}
+                  {activeTab === 'ai_practice' && (
+                    <div className="space-y-4">
+                      {/* 1. Target Mode Switcher & Focus Indicator Bar */}
+                      <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-md">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                            <Filter className="w-3.5 h-3.5 text-cyan-400" />
+                            Chế độ bài luyện AI:
+                          </span>
+                          <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 gap-1 flex-wrap">
+                            {[
+                              { id: 'numpad', label: '🔢 Phím Số (Numpad)', desc: 'Chỉ gồm số 0-9' },
+                              { id: 'vi_dau', label: '🇻🇳 TV Có Dấu', desc: 'Dấu thanh Telex' },
+                              { id: 'vi_nodau', label: '⚡ TV Không Dấu', desc: 'Tốc độ cơ bản' },
+                              { id: 'en', label: '🇬🇧 Tiếng Anh', desc: 'Từ vựng tiếng Anh' },
+                            ].map((m) => {
+                              const isActive = aiDrillMode === m.id;
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundFx.playKeyClick();
+                                    setAiDrillMode(m.id as GameMode);
+                                    handleGenerateAiPractice(true, m.id as GameMode);
+                                  }}
+                                  className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                                    isActive
+                                      ? 'bg-gradient-to-r from-cyan-400 to-teal-400 text-slate-950 font-black shadow-md shadow-cyan-500/20'
+                                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                                  }`}
+                                  title={m.desc}
+                                >
+                                  <span>{m.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>
+                            {aiDrillMode === 'numpad'
+                              ? 'Chế độ Số: Đảm bảo 100% chuỗi số 0-9, không từ tiếng Việt'
+                              : aiDrillMode === 'en'
+                              ? 'Chế độ Tiếng Anh: 100% từ vựng chuẩn quốc tế'
+                              : aiDrillMode === 'vi_nodau'
+                              ? 'Chế độ Không Dấu: Không dấu thanh'
+                              : 'Chế độ Tiếng Việt: Cụm dấu Telex & âm tiết chuẩn'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 2. Top Header Hero Card */}
+                      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-cyan-950/70 via-slate-900 to-indigo-950/60 border border-cyan-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center text-slate-950 text-2xl font-black shrink-0 shadow-lg shadow-cyan-500/25">
+                            {aiDrillMode === 'numpad' ? '🔢' : '🤖'}
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
+                                {aiDrillMode === 'numpad'
+                                  ? 'BÀI TẬP LUYỆN BÀN PHÍM SỐ CÁ NHÂN HÓA (NUMPAD COACH)'
+                                  : 'BÀI TẬP LUYỆN CÁ NHÂN HÓA (AI COACH)'}
+                              </h3>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                                {aiPracticeResult?.isAiPowered ? 'Gemini 3.8 Flash' : 'Phân Tích Chuyên Sâu'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                              {aiDrillMode === 'numpad'
+                                ? 'AI bóc tách chính xác các chữ số hay gõ nhầm, đo đạc độ trễ vươn ngón tay hàng số 7-8-9 và phím số 5 để tạo bài luyện Numpad đặc trị.'
+                                : 'AI tự động bóc tách các điểm nghẽn, từ khựng lâu nhất và cụm phím hay gõ nhầm từ lịch sử đấu để sinh ra bộ từ luyện tập phản xạ riêng biệt.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Standardized Header Action CTAs */}
+                        <div className="flex items-center gap-2.5 self-stretch sm:self-auto shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playKeyClick();
+                              handleGenerateAiPractice(true);
+                            }}
+                            disabled={isLoadingAiPractice}
+                            className="h-10 px-4.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                            title="Phân tích lại và sinh bộ từ mới"
+                          >
+                            <RotateCcw className={`w-4 h-4 ${isLoadingAiPractice ? 'animate-spin text-cyan-400' : 'text-slate-300'}`} />
+                            <span>{isLoadingAiPractice ? 'Đang tạo...' : 'Phân Tích Lại'}</span>
+                          </button>
+
+                          {aiPracticeResult?.practiceWords && aiPracticeResult.practiceWords.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleStartAiSoloGame}
+                              className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all cursor-pointer active:scale-95"
+                            >
+                              <Play className="w-4 h-4 fill-current" />
+                              <span>Vào Luyện Solo Ngay ({aiPracticeResult.practiceWords.length} chuỗi)</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Loading State */}
+                      {isLoadingAiPractice && (
+                        <div className="p-10 rounded-3xl bg-slate-900/90 border border-slate-800 text-center space-y-4 shadow-xl">
+                          <div className="relative w-14 h-14 mx-auto flex items-center justify-center">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-25"></span>
+                            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-2xl">
+                              ✨
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-sm font-bold text-white">
+                              {aiDrillMode === 'numpad'
+                                ? 'AI đang phân tích các phím số và thiết lập bài luyện Numpad...'
+                                : 'AI đang phân tích toàn diện lịch sử ván đấu...'}
+                            </div>
+                            <p className="text-xs text-slate-400 max-w-md mx-auto">
+                              {aiDrillMode === 'numpad'
+                                ? 'Đang lọc các chữ số bị gõ trượt và tổng hợp danh sách chuỗi số luyện cơ bàn tay chuẩn xác.'
+                                : 'Đang đối chiếu các phím bấm sai, phân tích cụm âm tiết và soạn thảo danh sách từ luyện tập đặc trị riêng cho ngón tay của bạn.'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error State */}
+                      {aiError && !isLoadingAiPractice && (
+                        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span>{aiError}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateAiPractice(true)}
+                            className="h-8 px-3 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold cursor-pointer"
+                          >
+                            Thử lại
+                          </button>
+                        </div>
+                      )}
+
+                      {/* AI Content Result */}
+                      {aiPracticeResult && !isLoadingAiPractice && (
+                        <div className="space-y-4 animate-fadeIn">
+                          {/* 1. Deep AI Diagnostics Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 flex flex-col justify-between shadow-sm">
+                              <div className="space-y-1">
+                                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Target className="w-3.5 h-3.5 text-rose-400" />
+                                  <span>Mẫu Lỗi Chi Phối</span>
+                                </div>
+                                <div className="text-sm font-black text-rose-300">
+                                  {aiPracticeResult.analysis?.dominantErrorPattern ||
+                                    (aiDrillMode === 'numpad'
+                                      ? 'Trượt phím số xa & nhịp bấm Numpad'
+                                      : 'Lỗi nhịp phím & thanh điệu')}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                                {aiDrillMode === 'numpad'
+                                  ? 'Tần suất ngón tay bị với quá đà sang các phím số liền kề khi gõ liên tiếp.'
+                                  : 'Xác định qua chuỗi bấm phím sai và tần suất sửa phím (Backspace) liên tiếp.'}
+                              </p>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 flex flex-col justify-between shadow-sm">
+                              <div className="space-y-1.5">
+                                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>{aiDrillMode === 'numpad' ? 'Cụm Số Cần Tăng Cường' : 'Cụm Phím Cần Tăng Cường'}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(aiPracticeResult.analysis?.targetClusters && aiPracticeResult.analysis.targetClusters.length > 0
+                                    ? aiPracticeResult.analysis.targetClusters
+                                    : aiDrillMode === 'numpad'
+                                    ? ['Hàng 7-8-9', 'Phím 5 có gờ', 'Phím 0 ngón cái', 'Phím / * - +']
+                                    : ['ngh', 'kho', 'uyên', 'iêng', 'dấu ngã']
+                                  ).map((cluster, i) => (
+                                    <span
+                                      key={i}
+                                      className="px-2.5 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono font-bold text-xs"
+                                    >
+                                      {cluster}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                                {aiDrillMode === 'numpad'
+                                  ? 'Các vị trí số có độ trễ vươn tay lớn nhất cần tập trung rèn phản xạ.'
+                                  : 'Các tổ hợp phím có thời gian phản ứng lâu hoặc hay bị gõ đảo thứ tự.'}
+                              </p>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 flex flex-col justify-between shadow-sm">
+                              <div className="space-y-1">
+                                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>Điểm Khựng Nghiêm Trọng</span>
+                                </div>
+                                <div className="text-sm font-bold text-cyan-300 font-mono">
+                                  {selectedMatch?.slowestWord
+                                    ? `"${selectedMatch.slowestWord.word}" (${(selectedMatch.slowestWord.pauseMs / 1000).toFixed(2)}s)`
+                                    : historyAggregate.slowestWords[0]
+                                    ? `"${historyAggregate.slowestWords[0].word}" (${(historyAggregate.slowestWords[0].pauseMs / 1000).toFixed(2)}s)`
+                                    : 'Nhịp gõ khá đồng đều'}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                                Vị trí ngón tay bị khập khiễng, khiến nhịp WPM tổng thể bị sụt giảm.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* 2. AI Coach In-depth Analysis & Technical Advice */}
+                          <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3 shadow-md">
+                            <div className="flex items-center gap-2">
+                              <Lightbulb className="w-4 h-4 text-amber-400" />
+                              <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider">
+                                Nhận Định & Lời Khuyên Huấn Luyện Viên
+                              </h4>
+                            </div>
+
+                            {aiPracticeResult.analysis?.overview && (
+                              <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                                {aiPracticeResult.analysis.overview}
+                              </p>
+                            )}
+
+                            {aiPracticeResult.analysis?.coachAdvice && (
+                              <div className="flex items-start gap-2.5 text-xs text-emerald-300 bg-emerald-950/30 p-3 rounded-xl border border-emerald-500/30">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                                <div>
+                                  <strong className="text-emerald-200">Kỹ thuật khắc phục đề xuất: </strong>
+                                  <span>{aiPracticeResult.analysis.coachAdvice}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {aiPracticeResult.analysis?.keyWeaknesses && aiPracticeResult.analysis.keyWeaknesses.length > 0 && (
+                              <div className="space-y-1.5 pt-1">
+                                <div className="text-[11px] font-bold text-slate-400">Các lỗi đã được khoanh vùng xử lý:</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  {aiPracticeResult.analysis.keyWeaknesses.map((w, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 flex items-center gap-2"
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                                      <span className="truncate">{w}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 3. Generated Practice Word Bank */}
+                          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 space-y-3.5 shadow-xl">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-cyan-400" />
+                                <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                                  {aiDrillMode === 'numpad'
+                                    ? `Danh Sách Chuỗi Số Thực Hành Đặc Trị (${aiPracticeResult.practiceWords.length} chuỗi số)`
+                                    : `Danh Sách Từ Thực Hành Đặc Trị (${aiPracticeResult.practiceWords.length} từ)`}
+                                </h4>
+                              </div>
+
+                              {/* Standardized Button Toolbar */}
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleCopyPracticeWords}
+                                  className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer active:scale-95 shadow-sm"
+                                  title="Sao chép toàn bộ danh sách để luyện tập"
+                                >
+                                  {copiedPracticeWords ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                  )}
+                                  <span>{copiedPracticeWords ? 'Đã Sao Chép' : 'Sao Chép Bộ Từ'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={handleStartAiSoloGame}
+                                  className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/25 active:scale-95"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>Vào Luyện Solo Ngay</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400">
+                              {aiDrillMode === 'numpad'
+                                ? 'Các chuỗi số này được thiết kế để rèn luyện trí nhớ cơ bắp ngón tay trên cụm bàn phím số Numpad hoặc hàng số máy tính.'
+                                : 'Các từ này được tối ưu nhằm bắt các ngón tay lặp lại chính xác các mẫu phím sai, giúp hình thành trí nhớ cơ bắp (muscle memory) chuẩn xác.'}
+                            </p>
+
+                            <div className="flex flex-wrap gap-2.5 p-4 rounded-2xl bg-slate-950 border border-slate-800/80 max-h-56 overflow-y-auto">
+                              {aiPracticeResult.practiceWords.map((word, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-default select-all ${
+                                    aiDrillMode === 'numpad'
+                                      ? 'bg-cyan-950/40 hover:bg-cyan-900/50 border-cyan-500/30 text-cyan-200 font-mono tracking-wider shadow-sm'
+                                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700/80 text-amber-200'
+                                  }`}
+                                >
+                                  {word}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 6: HEAVENLY DAO ANALYSIS DASHBOARD */}
+                  {activeTab === 'heavenly_dao' && (
+                    <HeavenlyDaoDashboard
+                      analysis={
+                        daoAnalysisResult ||
+                        generateHeuristicDaoAnalysis(
+                          filteredMatches.length > 0 ? filteredMatches : history,
+                          loadStoredCultivationState(),
+                          selectedMatch
+                        )
+                      }
+                      isLoading={isLoadingDaoAnalysis}
+                      onRefresh={() => handleOpenHeavenlyDao(true)}
+                      onStartPractice={(words) => {
+                        if (onPracticeMistakes) {
+                          const targetMode =
+                            (selectedMatch?.modeId as GameMode) ||
+                            (filterMode !== 'all' ? (filterMode as GameMode) : 'vi_dau');
+                          onPracticeMistakes(words, targetMode);
+                          onClose();
+                        }
+                      }}
+                    />
                   )}
                 </div>
               </div>

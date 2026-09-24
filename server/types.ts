@@ -52,6 +52,9 @@ export interface ServerChatMessage {
   channel: 'global' | 'room';
   roomId?: string;
   isAdmin?: boolean;
+  isDaoBot?: boolean;
+  daoEventType?: 'penalty' | 'record' | 'breakthrough' | 'boss_kill' | 'guidance' | 'announcement';
+  daoTitle?: string;
 }
 
 export interface ServerHighScoreRecord {

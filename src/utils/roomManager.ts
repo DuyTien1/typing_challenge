@@ -1,6 +1,7 @@
 import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord, OnlineUserDetail, BestWpmRecord, CultivationLeaderboardEntry } from '../types';
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken } from './auth';
+import { saveDaoDecree } from './heavenlyDaoBot';
 
 export interface PresenceUserMeta {
   username?: string;
@@ -722,6 +723,9 @@ export async function sendChatMessage(msg: {
   channel: 'global' | 'room';
   roomId?: string;
   isAdmin?: boolean;
+  isDaoBot?: boolean;
+  daoEventType?: string;
+  daoTitle?: string;
 }): Promise<ChatMessage | null> {
   try {
     const res = await fetch('/api/chat/messages', {
@@ -1140,6 +1144,8 @@ export function subscribeToGlobalChat(
             updatePresence(ev.count);
           } else if (ev.type === 'leaderboard_updated' && ev.highScores) {
             if (onLeaderboard) onLeaderboard(ev.highScores);
+          } else if (ev.type === 'heavenly_dao_event' && ev.decree) {
+            saveDaoDecree(ev.decree);
           }
         } catch {
           // Ignore
