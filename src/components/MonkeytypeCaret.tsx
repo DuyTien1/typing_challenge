@@ -8,7 +8,7 @@ interface MonkeytypeCaretProps {
   glowColor?: string;
 }
 
-export const MonkeytypeCaret: React.FC<MonkeytypeCaretProps> = ({
+export const MonkeytypeCaret: React.FC<MonkeytypeCaretProps> = React.memo(({
   caretPos,
   isTyping,
   isFocused = true,
@@ -36,4 +36,4 @@ export const MonkeytypeCaret: React.FC<MonkeytypeCaretProps> = ({
       />
     </div>
   );
-};
+});

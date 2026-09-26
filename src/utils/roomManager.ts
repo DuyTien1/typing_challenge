@@ -1,4 +1,23 @@
-import { GameMode, GameRoom, Player, DifficultyLevel, MysteryWordItem, ChatMessage, HighScoreRecord, OnlineUserDetail, BestWpmRecord, CultivationLeaderboardEntry } from '../types';
+import { 
+  GameMode, 
+  GameRoom, 
+  Player, 
+  DifficultyLevel, 
+  MysteryWordItem, 
+  ChatMessage, 
+  ChatChannel,
+  ChatCardType,
+  ChatCardData,
+  FriendRecord,
+  FriendRequest,
+  HighScoreRecord, 
+  OnlineUserDetail, 
+  BestWpmRecord, 
+  CultivationLeaderboardEntry, 
+  SectLeaderboardEntry, 
+  SectInfo, 
+  SectRole 
+} from '../types';
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken } from './auth';
 import { saveDaoDecree } from './heavenlyDaoBot';
@@ -692,13 +711,37 @@ export function broadcastLocalChatClear() {
 }
 
 /**
- * Fetch chat messages from server
+ * Fetch chat messages from server with multi-channel support
  */
-export async function fetchChatMessages(channel: 'global' | 'room', roomId?: string): Promise<ChatMessage[]> {
+export async function fetchChatMessages(
+  channelOrParams: ChatChannel | {
+    channel: ChatChannel;
+    roomId?: string;
+    sectId?: string;
+    currentUserId?: string;
+    targetUserId?: string;
+  },
+  roomId?: string
+): Promise<ChatMessage[]> {
   try {
-    const url = channel === 'room' && roomId
-      ? `/api/chat/messages?channel=room&roomId=${encodeURIComponent(normalizeRoomCode(roomId))}`
-      : `/api/chat/messages?channel=global`;
+    let url = '/api/chat/messages';
+    if (typeof channelOrParams === 'string') {
+      const channel = channelOrParams;
+      if (channel === 'room' && roomId) {
+        url = `/api/chat/messages?channel=room&roomId=${encodeURIComponent(normalizeRoomCode(roomId))}`;
+      } else {
+        url = `/api/chat/messages?channel=${encodeURIComponent(channel)}`;
+      }
+    } else if (typeof channelOrParams === 'object') {
+      const p = new URLSearchParams();
+      p.append('channel', channelOrParams.channel);
+      if (channelOrParams.roomId) p.append('roomId', normalizeRoomCode(channelOrParams.roomId));
+      if (channelOrParams.sectId) p.append('sectId', channelOrParams.sectId);
+      if (channelOrParams.currentUserId) p.append('currentUserId', channelOrParams.currentUserId);
+      if (channelOrParams.targetUserId) p.append('targetUserId', channelOrParams.targetUserId);
+      url = `/api/chat/messages?${p.toString()}`;
+    }
+
     const res = await fetch(url);
     if (!res.ok) return [];
     const data = await res.json();
@@ -712,7 +755,7 @@ export async function fetchChatMessages(channel: 'global' | 'room', roomId?: str
 }
 
 /**
- * Send chat message to server and broadcast locally
+ * Send chat message to server and broadcast locally with rich card & multi-channel support
  */
 export async function sendChatMessage(msg: {
   id?: string;
@@ -720,8 +763,17 @@ export async function sendChatMessage(msg: {
   avatar?: string;
   frame?: string;
   message: string;
-  channel: 'global' | 'room';
+  channel: ChatChannel;
   roomId?: string;
+  sectId?: string;
+  whisperTarget?: string;
+  whisperTargetUserId?: string;
+  senderUserId?: string;
+  senderRealm?: string;
+  senderRealmIcon?: string;
+  senderSectTag?: string;
+  cardType?: ChatCardType;
+  cardData?: ChatCardData;
   isAdmin?: boolean;
   isDaoBot?: boolean;
   daoEventType?: string;
@@ -742,6 +794,207 @@ export async function sendChatMessage(msg: {
     // Fallback quietly
   }
   return null;
+}
+
+// ==========================================
+// HỆ THỐNG ĐẠO HỮU & KẾT BÁI ĐẠO LỮ (CLIENT UTILS)
+// ==========================================
+
+export async function fetchFriendsList(userId?: string): Promise<{
+  success: boolean;
+  friends: FriendRecord[];
+  pendingRequests: FriendRequest[];
+  sentRequests: any[];
+  isGuest?: boolean;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const url = userId ? `/api/friends/list?userId=${encodeURIComponent(userId)}` : '/api/friends/list';
+    const res = await fetch(url, { headers, cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch friends list:', err);
+  }
+  return { success: false, friends: [], pendingRequests: [], sentRequests: [] };
+}
+
+export async function sendFriendRequest(targetUsername: string, targetUserId?: string, message?: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+  autoAccepted?: boolean;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/request', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetUsername, targetUserId, message }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function respondFriendRequest(requestId: string, action: 'accept' | 'reject'): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/respond', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ requestId, action }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function removeFriend(friendshipId?: string, targetUserId?: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/remove', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ friendshipId, targetUserId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function giftNgocDaoTea(targetUserId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+  intimacy?: number;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/tea', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetUserId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function mentorGuidance(targetUserId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+  intimacy?: number;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/guide', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetUserId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function proposeDaoLu(targetUserId: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/daolu/propose', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetUserId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function respondDaoLu(friendshipId: string, accept: boolean): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/daolu/respond', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ friendshipId, accept }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+export async function inviteFriendToRoom(targetUserId: string, roomId: string, mode?: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/friends/invite-room', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetUserId, roomId, mode }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
 }
 
 /**
@@ -957,6 +1210,182 @@ export async function fetchCultivationLeaderboard(params?: {
 }
 
 /**
+ * Lấy Bảng Xếp Hạng Tông Môn từ Server (sắp xếp theo Tổng Tu Vi Thành Viên)
+ */
+export async function fetchSectLeaderboard(): Promise<{
+  success: boolean;
+  topSects: SectLeaderboardEntry[];
+  totalSects?: number;
+  lastUpdated?: number;
+}> {
+  try {
+    const res = await fetch('/api/leaderboard/sects');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.topSects)) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch sect leaderboard:', err);
+  }
+  return { success: false, topSects: [] };
+}
+
+/**
+ * Lấy danh sách toàn bộ Tông Môn từ Server
+ */
+export async function fetchServerSects(): Promise<{ success: boolean; sects: SectInfo[] }> {
+  try {
+    const res = await fetch('/api/sects');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.sects)) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch sects:', err);
+  }
+  return { success: false, sects: [] };
+}
+
+/**
+ * Khai Sơn Lập Phái thông qua Server API
+ */
+export async function serverCreateSect(params: {
+  name: string;
+  tag: string;
+  description: string;
+  slogan?: string;
+  badgeIcon: string;
+  bannerColor?: string;
+}): Promise<{ success: boolean; message?: string; error?: string; sect?: SectInfo; cultivation?: any }> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(params),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+/**
+ * Bái nhập môn phái thông qua Server API
+ */
+export async function serverJoinSect(sectId: string): Promise<{ success: boolean; message?: string; error?: string; sect?: SectInfo; cultivation?: any }> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ sectId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+/**
+ * Rời khỏi môn phái thông qua Server API
+ */
+export async function serverLeaveSect(): Promise<{ success: boolean; message?: string; error?: string; cultivation?: any }> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/leave', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+/**
+ * Tấn phong / bãi miễn chức vụ đệ tử thông qua Server API
+ */
+export async function serverUpdateMemberRole(
+  targetUsername: string,
+  newRole: SectRole
+): Promise<{ success: boolean; message?: string; error?: string; sect?: SectInfo; cultivation?: any }> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/role', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ targetUsername, newRole }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+/**
+ * Trục xuất đệ tử khỏi môn phái thông qua Server API
+ */
+export async function serverKickSectMember(targetUsername: string): Promise<{ success: boolean; message?: string; error?: string; sect?: SectInfo }> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/kick', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ targetUsername }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+/**
+ * Cống hiến Linh Thạch bồi dưỡng Linh Mạch thông qua Server API
+ */
+export async function serverContributeToSect(amount: number): Promise<{ success: boolean; message?: string; error?: string; sect?: SectInfo; cultivation?: any }> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/contribute', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ amount }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
+  }
+}
+
+/**
  * Submit player score to server leaderboard
  * Chỉ được ghi nhận khi ván đấu diễn ra trọn vẹn, người chơi không đầu hàng hoặc out phòng
  */
@@ -1058,7 +1487,8 @@ export function subscribeToGlobalChat(
   onLeaderboard?: (highScores: Record<string, HighScoreRecord | null>) => void,
   userId?: string,
   tabId?: string,
-  getUserMeta?: () => PresenceUserMeta
+  getUserMeta?: () => PresenceUserMeta,
+  onFriendEvent?: (event: any) => void
 ): () => void {
   let isSubscribed = true;
   let isSseConnected = false;
@@ -1146,6 +1576,17 @@ export function subscribeToGlobalChat(
             if (onLeaderboard) onLeaderboard(ev.highScores);
           } else if (ev.type === 'heavenly_dao_event' && ev.decree) {
             saveDaoDecree(ev.decree);
+          } else if (
+            ev.type === 'friend_request_received' ||
+            ev.type === 'friend_request_accepted' ||
+            ev.type === 'room_invite' ||
+            ev.type === 'tea_gift_received' ||
+            ev.type === 'mentor_guidance_received' ||
+            ev.type === 'daolu_proposal_received' ||
+            ev.type === 'daolu_ceremony_complete' ||
+            ev.type === 'friend_requests_count'
+          ) {
+            if (onFriendEvent) onFriendEvent(ev);
           }
         } catch {
           // Ignore

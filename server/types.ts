@@ -49,12 +49,44 @@ export interface ServerChatMessage {
   message: string;
   timestamp: number;
   isSystem?: boolean;
-  channel: 'global' | 'room';
+  channel: 'global' | 'sect' | 'room' | 'whisper';
   roomId?: string;
+  sectId?: string;
+  whisperTarget?: string;
+  whisperTargetUserId?: string;
+  senderUserId?: string;
+  senderRealm?: string;
+  senderRealmIcon?: string;
+  senderSectTag?: string;
   isAdmin?: boolean;
   isDaoBot?: boolean;
   daoEventType?: 'penalty' | 'record' | 'breakthrough' | 'boss_kill' | 'guidance' | 'announcement';
   daoTitle?: string;
+  cardType?: 'battle_challenge' | 'record_share' | 'item_share' | 'roll_result' | 'tea_gift';
+  cardData?: any;
+}
+
+export interface ServerFriendshipRecord {
+  id: string;
+  user1Id: string;
+  user2Id: string;
+  intimacy: number; // 0 - 5000+
+  isDaoLu?: boolean;
+  daoLuTitle?: string;
+  lastGiftTeaDate?: { [userId: string]: string }; // userId -> YYYY-MM-DD
+  lastGuidedDate?: { [userId: string]: string }; // userId -> YYYY-MM-DD
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ServerFriendRequestRecord {
+  id: string;
+  fromUserId: string;
+  fromUsername?: string;
+  toUserId: string;
+  toUsername?: string;
+  message?: string;
+  createdAt: number;
 }
 
 export interface ServerHighScoreRecord {

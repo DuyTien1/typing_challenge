@@ -27,6 +27,8 @@ const SWITCHES: { id: SwitchType; name: string; desc: string; icon: string }[] =
   { id: 'cherry_brown', name: 'Cherry Brown', desc: 'Tactile, khấc êm đầm ấm (850Hz)', icon: '🟫' },
   { id: 'cherry_red', name: 'Cherry Red', desc: 'Linear, mượt mà lướt êm (480Hz)', icon: '🟥' },
   { id: 'thock', name: 'Deep Thock', desc: 'Trầm ấm, âm trầm hộp phím sâu (340Hz)', icon: '⬛' },
+  { id: 'topre', name: 'Topre Electro-Capacitive', desc: 'Thock trầm ấm êm dịu, đệm điện dung nảy nhẹ (260Hz)', icon: '🟪' },
+  { id: 'truc_tien', name: 'Trúc Tiên Đạo', desc: 'Mộc phím trúc thanh tao tiên hiệp, âm mộc gõ đầm ấm (620Hz)', icon: '🎋' },
 ];
 
 export const AppearanceModal: React.FC<AppearanceModalProps> = ({ isOpen, onClose }) => {

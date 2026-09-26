@@ -35,12 +35,14 @@ import {
   analyzeMatchMistakes,
   aggregateHistoryMistakes,
   AiPersonalizedPracticeResult,
+  detectMatchCategory,
 } from '../utils/matchHistory';
 import { generateAlgorithmicDrill } from '../utils/aiPersonalizedDrill';
 import {
   HeavenlyDaoAnalysisResult,
   fetchHeavenlyDaoAnalysis,
   generateHeuristicDaoAnalysis,
+  generateDaoSpecializedDrillWords,
 } from '../utils/heavenlyDaoAnalysis';
 import { loadStoredCultivationState } from '../utils/cultivation';
 import { HeavenlyDaoDashboard } from './HeavenlyDaoDashboard';
@@ -112,12 +114,13 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
 
   // Sync AI Drill Mode with the selected match or active filter
   useEffect(() => {
-    if (selectedMatch?.modeId) {
-      setAiDrillMode(selectedMatch.modeId as GameMode);
+    if (selectedMatch) {
+      const category = detectMatchCategory(selectedMatch);
+      setAiDrillMode(category.resolvedModeId as GameMode);
     } else if (filterMode !== 'all') {
       setAiDrillMode(filterMode as GameMode);
     }
-  }, [selectedMatch?.modeId, filterMode]);
+  }, [selectedMatch, filterMode]);
 
   // Total duration of selected match
   const matchDuration = useMemo(() => {
@@ -131,7 +134,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
     return 60;
   }, [selectedMatch]);
 
-  // Reset replay progress when selecting a new match
+  // Reset replay progress and Dao analysis when selecting a new match
   useEffect(() => {
     setIsPlaying(false);
     setReplayProgressSec(0);
@@ -139,6 +142,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
       clearInterval(replayTimerRef.current);
       replayTimerRef.current = null;
     }
+    setDaoAnalysisResult(null);
   }, [selectedMatchId]);
 
   // Replay playback loop
@@ -255,7 +259,8 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
 
   // Generate AI Personalized Practice with explicit mode support
   const handleGenerateAiPractice = async (forceRefresh = false, targetModeOverride?: GameMode) => {
-    const activeMode = (targetModeOverride || aiDrillMode || (selectedMatch?.modeId as GameMode) || (filterMode !== 'all' ? (filterMode as GameMode) : 'vi_dau')) as GameMode;
+    const matchCat = detectMatchCategory(selectedMatch);
+    const activeMode = (targetModeOverride || (matchCat.isNumberMode ? 'numpad' : matchCat.isEnMode ? 'en' : matchCat.isViNoDauMode ? 'vi_nodau' : aiDrillMode || 'vi_dau')) as GameMode;
     if (targetModeOverride) {
       setAiDrillMode(targetModeOverride);
     }
@@ -269,7 +274,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
     setAiError(null);
     setActiveTab('ai_practice');
 
-    const isNum = activeMode === 'numpad';
+    const isNum = activeMode === 'numpad' || matchCat.isNumberMode;
 
     // Pick mistakes: only pick numeric mistakes if in numpad mode!
     let sourceMistakes =
@@ -402,7 +407,11 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
     if (!aiPracticeResult || !aiPracticeResult.practiceWords || aiPracticeResult.practiceWords.length === 0) return;
     soundFx.playKeyClick();
     if (onPracticeMistakes) {
-      const mode = (aiDrillMode || (selectedMatch?.modeId as GameMode) || (filterMode !== 'all' ? (filterMode as GameMode) : 'vi_dau')) as GameMode;
+      const matchCat = detectMatchCategory(selectedMatch);
+      const hasNumbers = aiPracticeResult.practiceWords.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
+      const mode = (matchCat.isNumberMode || hasNumbers
+        ? 'numpad'
+        : (aiDrillMode || matchCat.resolvedModeId)) as GameMode;
       onPracticeMistakes(aiPracticeResult.practiceWords, mode);
       onClose();
     }
@@ -966,8 +975,12 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                               type="button"
                               onClick={() => {
                                 soundFx.playKeyClick();
-                                const mistakesList = selectedMatchMistakes.map((m) => m.original);
-                                onPracticeMistakes(mistakesList);
+                                const category = detectMatchCategory(selectedMatch);
+                                const specialized = generateDaoSpecializedDrillWords(history, selectedMatch, category.resolvedModeId);
+                                const hasNumbers = specialized.practiceWords.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
+                                const targetMode: GameMode =
+                                  category.isNumberMode || hasNumbers ? 'numpad' : category.resolvedModeId;
+                                onPracticeMistakes(specialized.practiceWords, targetMode);
                                 onClose();
                               }}
                               className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1184,8 +1197,12 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                             type="button"
                             onClick={() => {
                               soundFx.playKeyClick();
-                              const mistakesList = selectedMatchMistakes.map((m) => m.original);
-                              onPracticeMistakes(mistakesList);
+                              const category = detectMatchCategory(selectedMatch);
+                              const specialized = generateDaoSpecializedDrillWords(history, selectedMatch, category.resolvedModeId);
+                              const hasNumbers = specialized.practiceWords.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
+                              const targetMode: GameMode =
+                                category.isNumberMode || hasNumbers ? 'numpad' : category.resolvedModeId;
+                              onPracticeMistakes(specialized.practiceWords, targetMode);
                               onClose();
                             }}
                             className="px-3 py-1 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
@@ -1347,8 +1364,12 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                               type="button"
                               onClick={() => {
                                 soundFx.playKeyClick();
-                                const mistakesList = selectedMatchMistakes.map((m) => m.original);
-                                onPracticeMistakes(mistakesList);
+                                const category = detectMatchCategory(selectedMatch);
+                                const specialized = generateDaoSpecializedDrillWords(history, selectedMatch, category.resolvedModeId);
+                                const hasNumbers = specialized.practiceWords.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
+                                const targetMode: GameMode =
+                                  category.isNumberMode || hasNumbers ? 'numpad' : category.resolvedModeId;
+                                onPracticeMistakes(specialized.practiceWords, targetMode);
                                 onClose();
                               }}
                               className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all cursor-pointer group"
@@ -1734,9 +1755,16 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                       onRefresh={() => handleOpenHeavenlyDao(true)}
                       onStartPractice={(words) => {
                         if (onPracticeMistakes) {
-                          const targetMode =
-                            (selectedMatch?.modeId as GameMode) ||
-                            (filterMode !== 'all' ? (filterMode as GameMode) : 'vi_dau');
+                          const category = detectMatchCategory(selectedMatch);
+                          const hasNumbers = words.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
+                          const targetMode: GameMode =
+                            category.isNumberMode || hasNumbers
+                              ? 'numpad'
+                              : category.isEnMode
+                              ? 'en'
+                              : category.isViNoDauMode
+                              ? 'vi_nodau'
+                              : 'vi_dau';
                           onPracticeMistakes(words, targetMode);
                           onClose();
                         }

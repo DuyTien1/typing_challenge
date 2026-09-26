@@ -6,7 +6,7 @@ interface GhostCaretProps {
   wpm?: number;
 }
 
-export const GhostCaret: React.FC<GhostCaretProps> = ({ caretPos, label, wpm }) => {
+export const GhostCaret: React.FC<GhostCaretProps> = React.memo(({ caretPos, label, wpm }) => {
   if (!caretPos) return null;
 
   return (
@@ -24,4 +24,4 @@ export const GhostCaret: React.FC<GhostCaretProps> = ({ caretPos, label, wpm }) 
       />
     </div>
   );
-};
+});

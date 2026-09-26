@@ -95,7 +95,7 @@ export function validateKeystrokes(
   durationSeconds: number
 ): ValidationResult {
   if (!Array.isArray(keystrokes) || keystrokes.length === 0) {
-    return { isValid: false, verifiedWpm: 0, consistency: 0, reason: 'Không có dữ liệu gõ phím' };
+    return { isValid: false, verifiedWpm: 0, consistency: 0, isFlaggedBot: true, reason: 'Không có dữ liệu gõ phím / Can thiệp bất thường' };
   }
 
   const consistency = calculateConsistency(keystrokes);

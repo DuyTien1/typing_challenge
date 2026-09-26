@@ -614,7 +614,18 @@ export const AvatarWithFrame: React.FC<{
   className?: string;
   showBadge?: boolean;
   isLocked?: boolean;
-}> = ({ icon, frameId = 'default', size = 'md', className = '', showBadge = true, isLocked = false }) => {
+  realmIndex?: number;
+  showRealmAura?: boolean;
+}> = ({
+  icon,
+  frameId = 'default',
+  size = 'md',
+  className = '',
+  showBadge = true,
+  isLocked = false,
+  realmIndex,
+  showRealmAura = true,
+}) => {
   const frame = getFrameConfig(frameId);
 
   const sizeMap = {
@@ -626,6 +637,14 @@ export const AvatarWithFrame: React.FC<{
 
   return (
     <div className={`relative inline-flex items-center justify-center shrink-0 ${className}`}>
+      {/* Xianxia Realm Aura Halo */}
+      {!isLocked && showRealmAura && typeof realmIndex === 'number' && realmIndex >= 0 && realmIndex <= 11 && (
+        <div
+          className={`realm-aura-glow realm-aura-${realmIndex}`}
+          title={XIANXIA_REALMS[realmIndex]?.name}
+        />
+      )}
+
       {/* Conic Ring for admin_gold / mythic */}
       {!isLocked && frame.isConic && (
         <>

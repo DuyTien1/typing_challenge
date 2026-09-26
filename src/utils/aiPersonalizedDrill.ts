@@ -22,7 +22,7 @@ export interface AiPersonalizedDrillResult {
 }
 
 // Rich linguistic clusters bank for Vietnamese typing drills
-const CLUSTER_DICTIONARY: Record<string, { label: string; description: string; words: string[] }> = {
+export const CLUSTER_DICTIONARY: Record<string, { label: string; description: string; words: string[] }> = {
   'ngh': {
     label: 'Phụ âm ghép NGH-',
     description: 'Tổ hợp 3 chữ cái đầu từ dễ gây rối loạn nhịp ngón trỏ và ngón giữa.',

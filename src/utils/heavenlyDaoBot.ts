@@ -110,9 +110,11 @@ export function saveDaoDecree(decree: HeavenlyDaoDecree) {
     // ignore
   }
 
-  // Dispatch global window event for reactive UI updates
+  // Dispatch global window event for reactive UI updates asynchronously so it never triggers during React render
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(DECREES_EVENT_NAME, { detail: decree }));
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(DECREES_EVENT_NAME, { detail: decree }));
+    }, 0);
   }
 }
 
@@ -148,6 +150,8 @@ export async function broadcastDaoDecree(params: {
   generateAiPoem?: boolean;
 }): Promise<HeavenlyDaoDecree> {
   const id = `decree-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const persona = (params.personaId && DAO_BOT_PERSONAS[params.personaId]) || DAO_BOT_PERSONAS.huyen_thien;
+
   const decree: HeavenlyDaoDecree = {
     id,
     title: params.title,
@@ -159,6 +163,9 @@ export async function broadcastDaoDecree(params: {
     wpm: params.wpm,
     accuracy: params.accuracy,
     realmName: params.realmName,
+    personaId: persona.id,
+    personaName: persona.name,
+    personaAvatar: persona.avatar,
   };
 
   saveDaoDecree(decree);
@@ -170,14 +177,13 @@ export async function broadcastDaoDecree(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...params,
+        personaId: persona.id,
         generateAiPoem: params.generateAiPoem ?? (params.eventType === 'record' || params.eventType === 'breakthrough'),
       }),
     }).catch(() => {});
   } catch {
     // ignore
   }
-
-  const persona = (params.personaId && DAO_BOT_PERSONAS[params.personaId]) || DAO_BOT_PERSONAS.huyen_thien;
 
   // Send message to global chat as Dao Bot
   const fullChatMessage = `[${decree.title}] ${decree.content}`;
@@ -202,22 +208,22 @@ export async function broadcastDaoDecree(params: {
 // =========================================================================
 
 /**
- * ⚡ 1. Thiên Lôi Phạt Tội (Anti-Cheat / Auto / Paste violation)
+ * ⚡ 1. Thiên Lôi Phạt Tội (Bàn Cổ Thần Thức - Giám Giới Thần Quân trừng phạt vi phạm & cấm đấu 2 giờ)
  */
 export async function announcePenalty(
   username: string,
   reason: string,
-  penaltyDetail = 'Phế trừ 500 Tu Vi, tịch thu Đan Dược và đày vào U Minh Hàn Ngục (Cấm thi đấu 24 canh giờ) để tự hối lỗi!'
+  penaltyDetail = 'Phế trừ 500 Tu Vi, tịch thu Đan Dược và đày vào U Minh Hàn Ngục (Cấm thi đấu 2 giờ) để tự hối lỗi!'
 ): Promise<HeavenlyDaoDecree> {
-  const content = `Nghịch đồ @${username} dám thi triển tà thuật 'Hư Không Thâu Phím' (${reason}) làm vấy bẩn Đạo Cơ! Thiên Đạo hạ lệnh giáng cửu trọng thiên lôi: ${penaltyDetail}`;
+  const content = `Bàn Cổ Khí Tức chấn động! Nghịch đồ @${username} dám thi triển tà thuật 'Hư Không Thâu Phím' (${reason}) làm vấy bẩn Đạo Cơ! Bàn Cổ Thần Thức hạ lệnh giáng cửu trọng thiên lôi: ${penaltyDetail}`;
 
   return broadcastDaoDecree({
-    title: 'THIÊN LÔI GIÁNG THẾ',
+    title: 'BÀN CỔ TRỪNG PHẠT',
     eventType: 'penalty',
     targetUser: username,
     content,
-    highlightText: `Trừng phạt ${username}`,
-    personaId: 'huyen_thien',
+    highlightText: `Bàn Cổ phạt ${username} (2 giờ)`,
+    personaId: 'ban_co',
   });
 }
 
@@ -314,4 +320,71 @@ export async function announceGuidance(customTip?: string): Promise<HeavenlyDaoD
     personaId: 'linh_lung',
   });
 }
+
+/**
+ * 🪷 6. Linh Lung Hoan Hô & Cổ Vũ Trận Đấu (Lively match cheer by Linh Lung Tiên Đồng)
+ */
+export async function announceLinhLungCheer(
+  username: string,
+  wpm: number,
+  accuracy: number,
+  modeName: string
+): Promise<HeavenlyDaoDecree> {
+  const cheers = [
+    `Oa oa! Đạo hữu @${username} vừa xuất chiêu đẹp mắt tuyệt trần tại ${modeName}! Đạt ${wpm} WPM cùng ${accuracy}% chuẩn xác, kiếm khí tung hoành tựa tiên hạc lướt mây! 🪷`,
+    `Hoan hô đạo hữu @${username}! Tốc độ ${wpm} WPM tại ${modeName} mượt mà như dòng suối tiên! Tiên Đồng nhìn mà mê tít mắt, các đạo hữu khác mau mau học hỏi nha! ✨`,
+    `Kiếm pháp xuất thần! @${username} vừa hoàn thành ván đấu ${modeName} với phong độ đỉnh cao ${wpm} WPM (${accuracy}% chính xác)! Bảng Vàng lại sắp sửa đón thêm một bậc kỳ tài rồi nè! 🎉`,
+    `Chuẩn xác tuyệt luân! @${username} xuất chiêu tại ${modeName} không hề gợn một nét ngập ngừng, đạt trọn vẹn ${wpm} WPM! Tiên Đồng tặng đạo hữu một đóa hoa sen tím cát tường! 🪷`,
+  ];
+  const content = cheers[Math.floor(Math.random() * cheers.length)];
+
+  return broadcastDaoDecree({
+    title: 'LINH LUNG HOAN HÔ',
+    eventType: 'guidance',
+    targetUser: username,
+    wpm,
+    accuracy,
+    content,
+    highlightText: `Linh Lung khen ngợi ${username}`,
+    personaId: 'linh_lung',
+    generateAiPoem: false,
+  });
+}
+
+/**
+ * 🪷 7. Linh Lung Bình Phẩm & Động Viên (Witty commentary & tips by Linh Lung Tiên Đồng)
+ */
+export async function announceLinhLungCommentary(params: {
+  username: string;
+  wpm: number;
+  accuracy: number;
+  modeName: string;
+  errors?: number;
+}): Promise<HeavenlyDaoDecree> {
+  let content = '';
+  const { username, wpm, accuracy, modeName, errors = 0 } = params;
+
+  if (accuracy === 100) {
+    content = `Tuyệt phẩm vô khuyết! @${username} gõ ${modeName} không sai một ly (${accuracy}% chuẩn xác, ${wpm} WPM)! Đạo tâm vững như bàn thạch, Tiên Đồng khâm phục vô cùng! 🪷✨`;
+  } else if (errors > 8) {
+    content = `Ái chà chà! Đạo hữu @${username} thi triển chiêu thức tại ${modeName} hăng hái quá nên ngón tay hơi vấp ${errors} lần rồi kìa! Đừng vội nản lòng, buông lỏng cổ tay uống ngụm tiên trà rồi vào ván mới phục thù nha! 🍵🪷`;
+  } else if (wpm >= 90) {
+    content = `Gió cuốn mây tan! @${username} lướt phím tại ${modeName} đạt tận ${wpm} WPM! Tốc độ này làm mặt gương Phong Thần Bảng sáng rực lên rồi kìa! ⚡🪷`;
+  } else {
+    content = `Trận đấu ${modeName} rất có khí thế! @${username} đạt ${wpm} WPM (${accuracy}%). Tiên Đồng mách nhỏ: cứ giữ nhịp thở đều thì ván sau chắc chắn sẽ bứt phá thêm 10 WPM nữa đó! 🪷`;
+  }
+
+  return broadcastDaoDecree({
+    title: 'LINH LUNG BÌNH PHẨM',
+    eventType: 'guidance',
+    targetUser: username,
+    wpm,
+    accuracy,
+    content,
+    highlightText: `Linh Lung bình phẩm ${username}`,
+    personaId: 'linh_lung',
+    generateAiPoem: false,
+  });
+}
+
 

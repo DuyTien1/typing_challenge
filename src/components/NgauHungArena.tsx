@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Player, NgauHungGameStats, NgauHungRoundResult } from '../types';
 import { soundFx } from '../utils/audio';
+import { loadStoredCultivationState } from '../utils/cultivation';
+import { getStoredFrame } from '../utils/frames';
+import { ArtifactInputVfxFrame } from './vfx/ArtifactInputVfxFrame';
 import { Zap, Clock, Trophy, Flag, RotateCcw, Home, AlertTriangle } from 'lucide-react';
 
 interface NgauHungArenaProps {
@@ -38,6 +41,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   const [isIntermission, setIsIntermission] = useState(false);
   const [intermissionLeft, setIntermissionLeft] = useState(intermissionDurationSec);
   const [inputVal, setInputVal] = useState('');
+  const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number>(0);
   const [userFinishedThisRound, setUserFinishedThisRound] = useState(false);
   const [roundPlacement, setRoundPlacement] = useState<number | null>(null);
   const [roundFinishers, setRoundFinishers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
@@ -330,6 +334,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     isComposingRef.current = false;
     const val = e.currentTarget.value;
     setInputVal(val);
+    setLastKeystrokeTime(performance.now());
     soundFx.playKeyClick(false);
     checkFinishWord(val);
   };
@@ -378,6 +383,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     if (isIntermission || userFinishedThisRound || isSurrendered) return;
     const val = e.target.value;
     setInputVal(val);
+    setLastKeystrokeTime(performance.now());
 
     if (!isComposingRef.current) {
       soundFx.playKeyClick(false);
@@ -590,35 +596,43 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
             )}
 
             <div className="max-w-md mx-auto">
-              <input
-                id="input-ngauhung-word"
-                ref={inputRef}
-                type="text"
-                value={inputVal}
-                onChange={handleInputChange}
-                onCompositionStart={handleCompositionStart}
-                onCompositionEnd={handleCompositionEnd}
-                disabled={inRoomCountdown !== null || userFinishedThisRound || isSurrendered || hasFinishedGame}
-                readOnly={isSurrendered || hasFinishedGame}
-                placeholder={
-                  hasFinishedGame
-                    ? "⚡ Bạn đã hoàn thành tất cả vòng đấu! Đang theo dõi các đối thủ còn lại..."
-                    : inRoomCountdown !== null
-                    ? `Bắt đầu sau ${inRoomCountdown}s...`
-                    : isSurrendered
-                    ? "Bạn đã đầu hàng. Đang theo dõi trận đấu..."
-                    : userFinishedThisRound
-                    ? (currentRound >= totalRounds ? "Đã hoàn thành vòng cuối! Đang tổng kết..." : "Đã hoàn thành vòng này! Nghỉ ngơi chờ vòng mới...")
-                    : "Gõ từ trên thật nhanh..."
-                }
-                className={`w-full px-4 py-3 rounded-xl bg-slate-950 border ${
-                  isSurrendered
-                    ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
-                    : 'border-yellow-500/50 text-white'
-                } font-['JetBrains_Mono',monospace] text-xl text-center outline-none focus:ring-2 focus:ring-yellow-400 shadow-inner`}
-                autoComplete="off"
-                spellCheck="false"
-              />
+              <ArtifactInputVfxFrame
+                userFrame={players.find((p) => p.id === currentPlayerId)?.frame || getStoredFrame()}
+                cultivationState={loadStoredCultivationState()}
+                isTyping={inputVal.length > 0}
+                isError={inputVal.length > 0 && !targetWord.startsWith(inputVal.trim())}
+                lastKeystroke={lastKeystrokeTime}
+              >
+                <input
+                  id="input-ngauhung-word"
+                  ref={inputRef}
+                  type="text"
+                  value={inputVal}
+                  onChange={handleInputChange}
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={handleCompositionEnd}
+                  disabled={inRoomCountdown !== null || userFinishedThisRound || isSurrendered || hasFinishedGame}
+                  readOnly={isSurrendered || hasFinishedGame}
+                  placeholder={
+                    hasFinishedGame
+                      ? "⚡ Bạn đã hoàn thành tất cả vòng đấu! Đang theo dõi các đối thủ còn lại..."
+                      : inRoomCountdown !== null
+                      ? `Bắt đầu sau ${inRoomCountdown}s...`
+                      : isSurrendered
+                      ? "Bạn đã đầu hàng. Đang theo dõi trận đấu..."
+                      : userFinishedThisRound
+                      ? (currentRound >= totalRounds ? "Đã hoàn thành vòng cuối! Đang tổng kết..." : "Đã hoàn thành vòng này! Nghỉ ngơi chờ vòng mới...")
+                      : "Gõ từ trên thật nhanh..."
+                  }
+                  className={`w-full px-4 py-3 rounded-xl bg-slate-950/90 border ${
+                    isSurrendered
+                      ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
+                      : 'border-slate-800 text-white'
+                  } font-['JetBrains_Mono',monospace] text-xl text-center outline-none focus:ring-1 focus:ring-yellow-400 shadow-inner`}
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+              </ArtifactInputVfxFrame>
             </div>
           </div>
         )}

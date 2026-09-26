@@ -1,4 +1,4 @@
-export type SwitchType = 'cherry_blue' | 'cherry_brown' | 'cherry_red' | 'thock';
+export type SwitchType = 'cherry_blue' | 'cherry_brown' | 'cherry_red' | 'thock' | 'topre' | 'truc_tien';
 
 class SoundEffects {
   private ctx: AudioContext | null = null;
@@ -11,7 +11,7 @@ class SoundEffects {
     this.isMuted = savedMute === 'true';
 
     const savedSwitch = localStorage.getItem('fasttyping_switch_type') as SwitchType | null;
-    if (savedSwitch && ['cherry_blue', 'cherry_brown', 'cherry_red', 'thock'].includes(savedSwitch)) {
+    if (savedSwitch && ['cherry_blue', 'cherry_brown', 'cherry_red', 'thock', 'topre', 'truc_tien'].includes(savedSwitch)) {
       this.switchType = savedSwitch;
     }
   }
@@ -127,6 +127,30 @@ class SoundEffects {
 
           gain.gain.setValueAtTime(0.32, now);
           gain.gain.exponentialRampToValueAtTime(0.005, now + 0.05);
+          break;
+        }
+
+        case 'topre': {
+          // Topre: Capacitive dome thock - deep, muffled tactile thud with soft cushion bottom-out
+          osc.type = 'sine';
+          const startFreq = 260 + Math.random() * 30 - 15;
+          osc.frequency.setValueAtTime(startFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(42, now + 0.048);
+
+          gain.gain.setValueAtTime(0.34, now);
+          gain.gain.exponentialRampToValueAtTime(0.004, now + 0.048);
+          break;
+        }
+
+        case 'truc_tien': {
+          // Trúc Tiên Đạo: Bamboo Xianxia Key Thock - organic wood chime with airy overtone
+          osc.type = 'triangle';
+          const startFreq = 620 + Math.random() * 50 - 25;
+          osc.frequency.setValueAtTime(startFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(110, now + 0.045);
+
+          gain.gain.setValueAtTime(0.26, now);
+          gain.gain.exponentialRampToValueAtTime(0.006, now + 0.045);
           break;
         }
       }
@@ -332,6 +356,10 @@ class SoundEffects {
   // In-Game milestone chime sound (WPM milestone or Combo streak achievement)
   public playSuccess() {
     this.playMilestone('combo');
+  }
+
+  public playLevelUp() {
+    this.playAchievementUnlock();
   }
 
   public playMilestone(type: 'combo' | 'wpm' = 'combo') {
@@ -548,6 +576,359 @@ class SoundEffects {
       gain.connect(this.ctx.destination);
       osc.start(now);
       osc.stop(now + 0.42);
+    } catch {}
+  }
+
+  // === XIANXIA TRIBULATION (ĐỘ KIẾP LÔI ĐÌNH & KIẾM KHÍ) ===
+  // Thunder Strike: Deep rumbling thunderclap with lightning crackle
+  public playThunderStrike() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // 1. Low frequency thunder blast
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(32, now + 0.6);
+
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.005, now + 0.65);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.7);
+
+      // 2. High-voltage lightning crackle noise
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.45);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2200, now);
+      filter.frequency.exponentialRampToValueAtTime(400, now + 0.45);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.28, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+      noise.start(now);
+    } catch {}
+  }
+
+  // Sword Clash: Sharp metallic sword strike cleaving through lightning
+  public playSwordClash() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1950, now);
+      osc.frequency.exponentialRampToValueAtTime(820, now + 0.18);
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.005, now + 0.22);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } catch {}
+  }
+
+  // Tribulation Wave Victory: Harmonious chime
+  public playTribulationPassWave() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const freqs = [784.0, 987.77, 1318.51, 1567.98]; // G5, B5, E6, G6
+      freqs.forEach((freq, idx) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+
+        gain.gain.setValueAtTime(0, now + idx * 0.05);
+        gain.gain.linearRampToValueAtTime(0.16, now + idx * 0.05 + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.28);
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+        osc.start(now + idx * 0.05);
+        osc.stop(now + idx * 0.05 + 0.3);
+      });
+    } catch {}
+  }
+
+  // === VẠN ĐẠO QUY TÔNG: ÂM HƯỞNG TIÊN ĐẠO ===
+  // Tiếng chuông cổ ngân vang (Ancient Temple Bronze Bell Chime)
+  public playAncientBell() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Chuông đồng: kết hợp tần số cơ bản và các họa âm ngân dài
+      const partials = [
+        { freq: 220, gain: 0.35, decay: 1.8 },
+        { freq: 440, gain: 0.25, decay: 1.4 },
+        { freq: 587, gain: 0.2, decay: 1.1 },
+        { freq: 880, gain: 0.15, decay: 0.8 },
+        { freq: 1174, gain: 0.1, decay: 0.6 },
+      ];
+
+      partials.forEach((p) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(p.freq, now);
+
+        gain.gain.setValueAtTime(p.gain, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + p.decay);
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+        osc.start(now);
+        osc.stop(now + p.decay + 0.05);
+      });
+    } catch {}
+  }
+
+  // Tiếng đàn tranh thanh tao (Guzheng pentatonic note pluck)
+  public playGuzhengNote(noteIndex = 0) {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Thang ngũ cung C D E G A (Cung Thương Giác Chủy Vũ)
+      const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+      const baseFreq = pentatonicScale[Math.abs(noteIndex) % pentatonicScale.length];
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(baseFreq, now);
+      // Giả lập tiếng gảy dây đàn tranh: tần số rung nhẹ
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.995, now + 0.6);
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.005, now + 0.65);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.7);
+    } catch {}
+  }
+
+  // Tiếng lò luyện đan bùng phát dị tượng / thành đan cực phẩm
+  public playAlchemySuccess(isSuperTier = false) {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Hợp âm ngũ sắc thăng hoa
+      const chords = isSuperTier ? [523.25, 659.25, 783.99, 1046.50, 1318.51] : [440, 554.37, 659.25, 880];
+      chords.forEach((f, idx) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        osc.type = isSuperTier ? 'sawtooth' : 'triangle';
+        osc.frequency.setValueAtTime(f, now + idx * 0.06);
+
+        gain.gain.setValueAtTime(0.18, now + idx * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.002, now + idx * 0.06 + 0.45);
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+        osc.start(now + idx * 0.06);
+        osc.stop(now + idx * 0.06 + 0.5);
+      });
+    } catch {}
+  }
+
+  // Tiếng hào quang pháp bảo cộng hưởng
+  public playArtifactAura() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1760, now + 0.2);
+      osc.frequency.exponentialRampToValueAtTime(440, now + 0.45);
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.002, now + 0.5);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.52);
+    } catch {}
+  }
+
+  // ⚔️ Thanh Vân Kiếm: Tiếng kiếm ngân sắc lạnh rạch ngang hư không
+  public playSwordEcho() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1400, now);
+      osc.frequency.exponentialRampToValueAtTime(2800, now + 0.05);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.28);
+
+      gain.gain.setValueAtTime(0.24, now);
+      gain.gain.exponentialRampToValueAtTime(0.005, now + 0.3);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.32);
+    } catch {}
+  }
+
+  // 🪓 Bàn Cổ Phủ: Tiếng sấm sét và rạn nứt mặt đất
+  public playThunderCrack() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(45, now + 0.35);
+
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } catch {}
+  }
+
+  // 🪷 Cửu Phẩm Hắc Liên: Hấp thụ đòn đánh, hộ mạch
+  public playLotusShield() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(640, now + 0.15);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.4);
+
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.005, now + 0.42);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.45);
+    } catch {}
+  }
+
+  // 💥 Lò luyện đan nổ lò (Đan phệ)
+  public playFurnaceExplode() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(40, now + 0.45);
+
+      gain.gain.setValueAtTime(0.4, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.52);
+    } catch {}
+  }
+
+  // 🔔 Âm thanh chuông ngọc thanh thoát (Mật đàm / Lời mời đạo hữu)
+  public playWhisperPing() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Harmonic 1: Pure crystal bell tone (1174Hz - D6)
+      const osc1 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1174.66, now);
+
+      gain1.gain.setValueAtTime(0.28, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+      osc1.connect(gain1);
+      gain1.connect(this.ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.7);
+
+      // Harmonic 2: Shimmering overtone chime (2349Hz - D7)
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(2349.32, now + 0.04);
+
+      gain2.gain.setValueAtTime(0.18, now + 0.04);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      osc2.connect(gain2);
+      gain2.connect(this.ctx.destination);
+      osc2.start(now + 0.04);
+      osc2.stop(now + 0.6);
     } catch {}
   }
 }

@@ -6,8 +6,17 @@ import { NgauHungResultView } from './gameover/NgauHungResultView';
 import { MysteryWordResultView } from './gameover/MysteryWordResultView';
 import { BossResultView } from './gameover/BossResultView';
 import { RaceResultView } from './gameover/RaceResultView';
-import { CultivationState, XIANXIA_REALMS, getSubStage } from '../utils/cultivation';
+import { CultivationState, XIANXIA_REALMS, getSubStage, HERBS_CONFIGS, HerbType } from '../utils/cultivation';
 import { XianxiaAchievement } from '../utils/achievements';
+
+export interface CultivationMatchHarvest {
+  gainedExp: number;
+  comboMultiplier?: number;
+  notices?: string[];
+  droppedHerbs?: HerbType[];
+  droppedPill?: string;
+  gainedLinhThach?: number;
+}
 
 interface GameOverModalProps {
   players: Player[];
@@ -28,6 +37,7 @@ interface GameOverModalProps {
   mysteryWordStats?: MysteryWordGameStats | null;
   bossBattleStats?: BossBattleStats | null;
   cultivationState?: CultivationState;
+  cultivationMatchResult?: CultivationMatchHarvest | null;
   onOpenCultivation?: () => void;
   newlyUnlockedAchievements?: XianxiaAchievement[];
   onOpenProfileAchievements?: () => void;
@@ -53,6 +63,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   mysteryWordStats = null,
   bossBattleStats = null,
   cultivationState,
+  cultivationMatchResult = null,
   onOpenCultivation,
   newlyUnlockedAchievements = [],
   onOpenProfileAchievements,
@@ -97,12 +108,21 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }
   }, [countdown, isSolo]);
 
-  // Phím tắt điều hướng nhanh tại Bảng Tổng Kết: Enter / Space chơi lại, Esc về trang chủ
+  // Phím tắt điều hướng nhanh tại Bảng Tổng Kết: Tab + Enter / Enter / Space chơi lại, Esc về trang chủ
+  const isTabPressedRef = React.useRef(false);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
+      }
+
+      if (e.key === 'Tab') {
+        isTabPressedRef.current = true;
+        setTimeout(() => {
+          isTabPressedRef.current = false;
+        }, 1500);
       }
 
       if (e.key === 'Escape' || e.key === 'h' || e.key === 'H' || e.key === 'Backspace') {
@@ -241,6 +261,91 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             isSolo={isSolo}
             isOutplay={isOutplay}
           />
+        )}
+
+        {/* Harvest Card: Vạn Đạo Quy Tông Tu Tiên */}
+        {isLoggedIn && cultivationMatchResult && (cultivationMatchResult.gainedExp > 0 || (cultivationMatchResult.droppedHerbs && cultivationMatchResult.droppedHerbs.length > 0) || (cultivationMatchResult.gainedLinhThach && cultivationMatchResult.gainedLinhThach > 0)) && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/60 via-slate-900 to-indigo-950/50 border border-amber-500/40 shadow-xl space-y-3 animate-fadeIn text-left">
+            <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+              <h4 className="text-xs sm:text-sm font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                <span>✨</span>
+                <span>Thu Hoạch Tu Luyện Sau Trận Đấu</span>
+              </h4>
+              {cultivationMatchResult.comboMultiplier && cultivationMatchResult.comboMultiplier > 1 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 font-bold text-[11px] animate-pulse">
+                  🔥 Nhập Định Đốn Ngộ (Tu Vi x{cultivationMatchResult.comboMultiplier})
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {/* Tu Vi (EXP) */}
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-2.5">
+                <span className="text-2xl">⚡</span>
+                <div>
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Tu Vi Đắc Được</div>
+                  <div className="text-sm font-black text-amber-400 font-mono">+{cultivationMatchResult.gainedExp.toLocaleString()} EXP</div>
+                </div>
+              </div>
+
+              {/* Linh Thạch */}
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-2.5">
+                <span className="text-2xl">🪙</span>
+                <div>
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Linh Thạch</div>
+                  <div className="text-sm font-black text-amber-300 font-mono">+{(cultivationMatchResult.gainedLinhThach || 0).toLocaleString()} Viên</div>
+                </div>
+              </div>
+
+              {/* Đan Dược Rơi Ra (nếu có) */}
+              {cultivationMatchResult.droppedPill && (
+                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-emerald-500/40 flex items-center gap-2.5 col-span-2 sm:col-span-1">
+                  <span className="text-2xl">🧪</span>
+                  <div>
+                    <div className="text-[10px] text-emerald-400 font-semibold uppercase">Đan Dược Rơi</div>
+                    <div className="text-xs font-black text-emerald-300 truncate">{cultivationMatchResult.droppedPill}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Dược Liệu Rơi Ra (Kỳ Hoa Dị Thảo) */}
+            {cultivationMatchResult.droppedHerbs && cultivationMatchResult.droppedHerbs.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                  <span>🌿</span>
+                  <span>Đào được Kỳ Hoa Dị Thảo ({cultivationMatchResult.droppedHerbs.length} loài):</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {cultivationMatchResult.droppedHerbs.map((hKey, idx) => {
+                    const hConfig = HERBS_CONFIGS[hKey];
+                    return (
+                      <span
+                        key={idx}
+                        className="px-2.5 py-1 rounded-xl bg-slate-950 border border-emerald-500/30 text-xs font-semibold text-emerald-200 flex items-center gap-1.5 shadow-sm"
+                      >
+                        <span>{hConfig?.icon || '🌿'}</span>
+                        <span>{hConfig?.name || hKey}</span>
+                        <span className="text-[10px] text-amber-300 font-mono font-bold">(+1)</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Thông Điệp Tâm Pháp / Kinh Mạch */}
+            {cultivationMatchResult.notices && cultivationMatchResult.notices.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                {cultivationMatchResult.notices.map((n, i) => (
+                  <div key={i} className="text-[11px] text-amber-200/90 flex items-center gap-1.5">
+                    <span>◈</span>
+                    <span>{n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Cultivation Advancement Mini Bar */}
@@ -450,7 +555,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   ? 'bg-slate-800 border-slate-700 text-slate-600'
                   : 'bg-amber-950/20 border-amber-900/30 text-amber-950'
               }`}>
-                Enter ↵
+                Tab + Enter ↵
               </kbd>
             </button>
           </div>

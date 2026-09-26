@@ -12,7 +12,8 @@
     "isVerified": true,
     "sessionTokens": [
       "tok_1789829203716_8d7d528d6d7fc5af9cb2250cb7d357b5",
-      "tok_1789829219499_1f829c7d036979f51b9cce97c7b46de9"
+      "tok_1789829219499_1f829c7d036979f51b9cce97c7b46de9",
+      "tok_1790427163499_3346c5c0b1c8accdd76798395de8fbcc"
     ],
     "showcaseAchievements": [
       "speed_100",
@@ -55,11 +56,1466 @@
       "hidden_night",
       "hidden_midnight",
       "hidden_verified_dao",
-      "hidden_top1"
+      "hidden_top1",
+      "pvp_streak_8",
+      "hidden_room_full",
+      "hidden_comeback",
+      "hidden_flawless_fast",
+      "hidden_unyielding",
+      "hidden_top_glory",
+      "hidden_all_modes",
+      "hidden_aura_frame",
+      "hidden_steady_heart"
     ],
     "createdAt": 1700000000000,
-    "updatedAt": 1790092870567,
-    "displayName": "admin"
+    "updatedAt": 1790430163720,
+    "displayName": "admin",
+    "cultivation": {
+      "level": 1,
+      "realmIndex": 0,
+      "tier": 1,
+      "realmName": "Luyện Khí Kỳ",
+      "subStage": "Sơ Kỳ",
+      "titleName": "Luyện Khí Tu Sĩ",
+      "exp": 0,
+      "maxExp": 138,
+      "thoNguyen": 240,
+      "maxThoNguyen": 240,
+      "lastThoNguyenDecay": 1790430163391,
+      "lastCultivateTime": 1790430163391,
+      "dailyExpEarned": 0,
+      "dailyExpDate": "2026-09-26",
+      "pillCount": {
+        "thoNguyen": 2,
+        "hoTam": 1,
+        "phaCanh": 1,
+        "tuViDan": 0,
+        "sieuCapTuViDan": 0,
+        "dinhTam": 1,
+        "ngungThan": 1
+      },
+      "dailyQuests": [
+        {
+          "id": "quest_meditation",
+          "name": "Tọa Thiền Nhập Định",
+          "desc": "Hoàn thành 1 bài thi đấu bất kỳ để ngưng tụ khí huyết",
+          "rewardExp": 300,
+          "rewardPill": "thoNguyen",
+          "progress": 0,
+          "target": 1,
+          "isCompleted": false,
+          "isClaimed": false
+        },
+        {
+          "id": "quest_accuracy",
+          "name": "Bách Phát Bách Trúng",
+          "desc": "Đạt độ chính xác ≥ 96% trong 1 trận đấu để rèn luyện tâm kiếm",
+          "rewardExp": 450,
+          "rewardPill": "thoNguyen",
+          "progress": 0,
+          "target": 1,
+          "isCompleted": false,
+          "isClaimed": false
+        },
+        {
+          "id": "quest_speed",
+          "name": "Lôi Đình Xuất Kích",
+          "desc": "Đạt WPM ≥ 50 trong 1 trận đấu để bứt phá tốc độ",
+          "rewardExp": 350,
+          "rewardPill": "hoTam",
+          "progress": 0,
+          "target": 1,
+          "isCompleted": false,
+          "isClaimed": false
+        },
+        {
+          "id": "quest_arena",
+          "name": "Trảm Yêu Phục Ma",
+          "desc": "Tham gia 1 trận Săn Boss, Đoán Chữ hoặc Ngẫu Hứng",
+          "rewardExp": 500,
+          "rewardPill": "phaCanh",
+          "progress": 0,
+          "target": 1,
+          "isCompleted": false,
+          "isClaimed": false
+        }
+      ],
+      "dailyQuestsDate": "2026-09-26",
+      "tamPhap": {
+        "equipped": "than_hanh",
+        "matchesSinceHeal": 0,
+        "levels": {
+          "than_hanh": 1,
+          "bat_dong": 1,
+          "cuu_chuyen": 1
+        },
+        "exp": {
+          "than_hanh": 0,
+          "bat_dong": 0,
+          "cuu_chuyen": 0
+        }
+      },
+      "herbs": {
+        "uLan": 2,
+        "huyetTinh": 3,
+        "hoaAnh": 1,
+        "huyenThiet": 1,
+        "longTu": 0
+      },
+      "artifacts": {
+        "equipped": "thanh_van_kiem",
+        "levels": {
+          "thanh_van_kiem": 1,
+          "hao_thien_kinh": 0,
+          "cuu_pham_lien": 0,
+          "ban_co_phu": 0
+        },
+        "spiritAwakened": {
+          "thanh_van_kiem": false,
+          "hao_thien_kinh": false,
+          "cuu_pham_lien": false,
+          "ban_co_phu": false
+        },
+        "spiritAffection": {
+          "thanh_van_kiem": 10,
+          "hao_thien_kinh": 0,
+          "cuu_pham_lien": 0,
+          "ban_co_phu": 0
+        }
+      },
+      "activeBuffs": {
+        "dinhTamMatchesRemaining": 0,
+        "ngungThanMatchesRemaining": 0,
+        "kimCangImmunityUntil": 0
+      },
+      "sect": {
+        "sectId": "sect_thuc_son",
+        "sectName": "Thục Sơn Kiếm Phái",
+        "sectTag": "Thục Sơn",
+        "role": "noi_mon",
+        "contribution": 150,
+        "joinedAt": 1790430163392,
+        "tournamentWins": 0
+      },
+      "linhThach": 150,
+      "historyLog": [
+        "Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)"
+      ]
+    },
+    "bestWpm": 71,
+    "bestWpmRecord": {
+      "wpm": 71,
+      "mode": "Outplay Yourself (Numpad Số)",
+      "modeName": "Outplay Yourself",
+      "timestamp": 1790429893288
+    },
+    "totalGames": 3,
+    "matchHistory": [
+      {
+        "id": "match_1790429914374_xoepn",
+        "timestamp": 1790429914374,
+        "mode": "Outplay Yourself (Numpad Số)",
+        "modeId": "outplay",
+        "subMode": "numpad_number",
+        "difficulty": "number",
+        "wpm": 64,
+        "accuracy": 100,
+        "result": "Thắng",
+        "score": 0,
+        "playType": "solo",
+        "isCompleted": true,
+        "durationSeconds": 8,
+        "totalWords": 10,
+        "correctWords": 10,
+        "incorrectWords": 0,
+        "correctChars": 41,
+        "totalErrors": 0,
+        "consistency": 72,
+        "promptWords": [
+          "19",
+          "37",
+          "5",
+          "28",
+          "3786",
+          "1895",
+          "67",
+          "4149",
+          "947856",
+          "5935"
+        ],
+        "wordLogs": [
+          {
+            "word": "19",
+            "typed": "19",
+            "isCorrect": true
+          },
+          {
+            "word": "37",
+            "typed": "37",
+            "isCorrect": true
+          },
+          {
+            "word": "5",
+            "typed": "5",
+            "isCorrect": true
+          },
+          {
+            "word": "28",
+            "typed": "28",
+            "isCorrect": true
+          },
+          {
+            "word": "3786",
+            "typed": "3786",
+            "isCorrect": true
+          },
+          {
+            "word": "1895",
+            "typed": "1895",
+            "isCorrect": true
+          },
+          {
+            "word": "67",
+            "typed": "67",
+            "isCorrect": true
+          },
+          {
+            "word": "4149",
+            "typed": "4149",
+            "isCorrect": true
+          },
+          {
+            "word": "947856",
+            "typed": "947856",
+            "isCorrect": true
+          },
+          {
+            "word": "5935",
+            "typed": "5935",
+            "isCorrect": true
+          }
+        ],
+        "keystrokes": [
+          {
+            "key": "1",
+            "timeMs": 414681
+          },
+          {
+            "key": "9",
+            "timeMs": 414836
+          },
+          {
+            "key": "9",
+            "timeMs": 414956
+          },
+          {
+            "key": " ",
+            "timeMs": 414959
+          },
+          {
+            "key": "3",
+            "timeMs": 415126
+          },
+          {
+            "key": "7",
+            "timeMs": 415268
+          },
+          {
+            "key": "7",
+            "timeMs": 415403
+          },
+          {
+            "key": " ",
+            "timeMs": 415406
+          },
+          {
+            "key": "5",
+            "timeMs": 415494
+          },
+          {
+            "key": "5",
+            "timeMs": 415644
+          },
+          {
+            "key": " ",
+            "timeMs": 415647
+          },
+          {
+            "key": "2",
+            "timeMs": 415750
+          },
+          {
+            "key": "8",
+            "timeMs": 415931
+          },
+          {
+            "key": "8",
+            "timeMs": 416027
+          },
+          {
+            "key": " ",
+            "timeMs": 416029
+          },
+          {
+            "key": "3",
+            "timeMs": 416133
+          },
+          {
+            "key": "7",
+            "timeMs": 416291
+          },
+          {
+            "key": "8",
+            "timeMs": 416468
+          },
+          {
+            "key": "6",
+            "timeMs": 416659
+          },
+          {
+            "key": "6",
+            "timeMs": 416804
+          },
+          {
+            "key": " ",
+            "timeMs": 416807
+          },
+          {
+            "key": "1",
+            "timeMs": 416942
+          },
+          {
+            "key": "8",
+            "timeMs": 417300
+          },
+          {
+            "key": "9",
+            "timeMs": 417516
+          },
+          {
+            "key": "5",
+            "timeMs": 417660
+          },
+          {
+            "key": "5",
+            "timeMs": 417787
+          },
+          {
+            "key": " ",
+            "timeMs": 417791
+          },
+          {
+            "key": "6",
+            "timeMs": 417862
+          },
+          {
+            "key": "7",
+            "timeMs": 418005
+          },
+          {
+            "key": "7",
+            "timeMs": 418131
+          },
+          {
+            "key": " ",
+            "timeMs": 418134
+          },
+          {
+            "key": "4",
+            "timeMs": 418318
+          },
+          {
+            "key": "1",
+            "timeMs": 418499
+          },
+          {
+            "key": "4",
+            "timeMs": 418685
+          },
+          {
+            "key": "9",
+            "timeMs": 418820
+          },
+          {
+            "key": "9",
+            "timeMs": 418996
+          },
+          {
+            "key": " ",
+            "timeMs": 418999
+          },
+          {
+            "key": "9",
+            "timeMs": 419134
+          },
+          {
+            "key": "4",
+            "timeMs": 419300
+          },
+          {
+            "key": "7",
+            "timeMs": 419477
+          },
+          {
+            "key": "8",
+            "timeMs": 419676
+          },
+          {
+            "key": "6",
+            "timeMs": 419860
+          },
+          {
+            "key": "8",
+            "timeMs": 420403
+          },
+          {
+            "key": "5",
+            "timeMs": 420507
+          },
+          {
+            "key": "6",
+            "timeMs": 420596
+          },
+          {
+            "key": "6",
+            "timeMs": 420892
+          },
+          {
+            "key": " ",
+            "timeMs": 420895
+          },
+          {
+            "key": "9",
+            "timeMs": 421030
+          },
+          {
+            "key": "5",
+            "timeMs": 421220
+          },
+          {
+            "key": "9",
+            "timeMs": 421660
+          },
+          {
+            "key": "Backspace",
+            "timeMs": 421804
+          },
+          {
+            "key": "IME_Char",
+            "timeMs": 421806
+          },
+          {
+            "key": "5",
+            "timeMs": 421830
+          },
+          {
+            "key": "9",
+            "timeMs": 421923
+          },
+          {
+            "key": "3",
+            "timeMs": 422140
+          },
+          {
+            "key": "5",
+            "timeMs": 422228
+          },
+          {
+            "key": "5",
+            "timeMs": 422356
+          },
+          {
+            "key": " ",
+            "timeMs": 422359
+          }
+        ],
+        "chartData": [
+          {
+            "second": 0,
+            "wpm": 0,
+            "errors": 0
+          },
+          {
+            "second": 0.8,
+            "wpm": 96,
+            "errors": 0
+          },
+          {
+            "second": 1.5,
+            "wpm": 81,
+            "errors": 0
+          },
+          {
+            "second": 2.3,
+            "wpm": 65,
+            "errors": 0
+          },
+          {
+            "second": 3,
+            "wpm": 64,
+            "errors": 0
+          },
+          {
+            "second": 3.8,
+            "wpm": 70,
+            "errors": 0
+          },
+          {
+            "second": 4.5,
+            "wpm": 71,
+            "errors": 0
+          },
+          {
+            "second": 5.3,
+            "wpm": 66,
+            "errors": 0
+          },
+          {
+            "second": 6,
+            "wpm": 58,
+            "errors": 0
+          },
+          {
+            "second": 6.8,
+            "wpm": 61,
+            "errors": 0
+          },
+          {
+            "second": 7.5,
+            "wpm": 62,
+            "errors": 0
+          },
+          {
+            "second": 8,
+            "wpm": 64,
+            "errors": 0
+          }
+        ],
+        "mistakes": [],
+        "commonErrorKeys": [
+          {
+            "key": " ",
+            "count": 10
+          },
+          {
+            "key": "5",
+            "count": 9
+          },
+          {
+            "key": "9",
+            "count": 9
+          },
+          {
+            "key": "6",
+            "count": 6
+          },
+          {
+            "key": "7",
+            "count": 6
+          },
+          {
+            "key": "8",
+            "count": 6
+          },
+          {
+            "key": "1",
+            "count": 3
+          },
+          {
+            "key": "3",
+            "count": 3
+          }
+        ],
+        "peakWpm": 96,
+        "averageHesitationMs": 0
+      },
+      {
+        "id": "match_1790429893287_vfh9a",
+        "timestamp": 1790429893287,
+        "mode": "Outplay Yourself (Numpad Số)",
+        "modeId": "outplay",
+        "subMode": "numpad_number",
+        "difficulty": "number",
+        "wpm": 71,
+        "accuracy": 100,
+        "result": "Thắng",
+        "score": 0,
+        "playType": "solo",
+        "isCompleted": true,
+        "durationSeconds": 8,
+        "totalWords": 10,
+        "correctWords": 10,
+        "incorrectWords": 0,
+        "correctChars": 46,
+        "totalErrors": 0,
+        "consistency": 83,
+        "promptWords": [
+          "2959",
+          "623407",
+          "995",
+          "12",
+          "753",
+          "7456",
+          "124",
+          "3546",
+          "2655",
+          "376"
+        ],
+        "wordLogs": [
+          {
+            "word": "2959",
+            "typed": "2959",
+            "isCorrect": true
+          },
+          {
+            "word": "623407",
+            "typed": "623407",
+            "isCorrect": true
+          },
+          {
+            "word": "995",
+            "typed": "995",
+            "isCorrect": true
+          },
+          {
+            "word": "12",
+            "typed": "12",
+            "isCorrect": true
+          },
+          {
+            "word": "753",
+            "typed": "753",
+            "isCorrect": true
+          },
+          {
+            "word": "7456",
+            "typed": "7456",
+            "isCorrect": true
+          },
+          {
+            "word": "124",
+            "typed": "124",
+            "isCorrect": true
+          },
+          {
+            "word": "3546",
+            "typed": "3546",
+            "isCorrect": true
+          },
+          {
+            "word": "2655",
+            "typed": "2655",
+            "isCorrect": true
+          },
+          {
+            "word": "376",
+            "typed": "376",
+            "isCorrect": true
+          }
+        ],
+        "keystrokes": [
+          {
+            "key": "2",
+            "timeMs": 393475
+          },
+          {
+            "key": "9",
+            "timeMs": 393661
+          },
+          {
+            "key": "5",
+            "timeMs": 393772
+          },
+          {
+            "key": "9",
+            "timeMs": 393932
+          },
+          {
+            "key": "9",
+            "timeMs": 394156
+          },
+          {
+            "key": " ",
+            "timeMs": 394159
+          },
+          {
+            "key": "6",
+            "timeMs": 394574
+          },
+          {
+            "key": "2",
+            "timeMs": 394788
+          },
+          {
+            "key": "3",
+            "timeMs": 394915
+          },
+          {
+            "key": "4",
+            "timeMs": 395124
+          },
+          {
+            "key": "0",
+            "timeMs": 395253
+          },
+          {
+            "key": "7",
+            "timeMs": 395388
+          },
+          {
+            "key": "7",
+            "timeMs": 395549
+          },
+          {
+            "key": " ",
+            "timeMs": 395552
+          },
+          {
+            "key": "9",
+            "timeMs": 395710
+          },
+          {
+            "key": "9",
+            "timeMs": 395828
+          },
+          {
+            "key": "5",
+            "timeMs": 396003
+          },
+          {
+            "key": "5",
+            "timeMs": 396196
+          },
+          {
+            "key": " ",
+            "timeMs": 396198
+          },
+          {
+            "key": "1",
+            "timeMs": 396254
+          },
+          {
+            "key": "2",
+            "timeMs": 396387
+          },
+          {
+            "key": "2",
+            "timeMs": 396532
+          },
+          {
+            "key": " ",
+            "timeMs": 396533
+          },
+          {
+            "key": "7",
+            "timeMs": 396710
+          },
+          {
+            "key": "5",
+            "timeMs": 396907
+          },
+          {
+            "key": "3",
+            "timeMs": 397052
+          },
+          {
+            "key": "3",
+            "timeMs": 397293
+          },
+          {
+            "key": " ",
+            "timeMs": 397296
+          },
+          {
+            "key": "7",
+            "timeMs": 397615
+          },
+          {
+            "key": "4",
+            "timeMs": 397796
+          },
+          {
+            "key": "5",
+            "timeMs": 397955
+          },
+          {
+            "key": "6",
+            "timeMs": 398067
+          },
+          {
+            "key": "6",
+            "timeMs": 398219
+          },
+          {
+            "key": " ",
+            "timeMs": 398222
+          },
+          {
+            "key": "1",
+            "timeMs": 398325
+          },
+          {
+            "key": "2",
+            "timeMs": 398452
+          },
+          {
+            "key": "4",
+            "timeMs": 398635
+          },
+          {
+            "key": "4",
+            "timeMs": 398779
+          },
+          {
+            "key": " ",
+            "timeMs": 398782
+          },
+          {
+            "key": "3",
+            "timeMs": 398966
+          },
+          {
+            "key": "5",
+            "timeMs": 399115
+          },
+          {
+            "key": "4",
+            "timeMs": 399315
+          },
+          {
+            "key": "6",
+            "timeMs": 399429
+          },
+          {
+            "key": "6",
+            "timeMs": 399635
+          },
+          {
+            "key": " ",
+            "timeMs": 399638
+          },
+          {
+            "key": "2",
+            "timeMs": 399782
+          },
+          {
+            "key": "6",
+            "timeMs": 400236
+          },
+          {
+            "key": "5",
+            "timeMs": 400444
+          },
+          {
+            "key": "5",
+            "timeMs": 400588
+          },
+          {
+            "key": "5",
+            "timeMs": 400708
+          },
+          {
+            "key": " ",
+            "timeMs": 400711
+          },
+          {
+            "key": "3",
+            "timeMs": 400806
+          },
+          {
+            "key": "7",
+            "timeMs": 400948
+          },
+          {
+            "key": "6",
+            "timeMs": 401115
+          },
+          {
+            "key": "6",
+            "timeMs": 401268
+          },
+          {
+            "key": " ",
+            "timeMs": 401271
+          }
+        ],
+        "chartData": [
+          {
+            "second": 0,
+            "wpm": 0,
+            "errors": 0
+          },
+          {
+            "second": 0.8,
+            "wpm": 60,
+            "errors": 0
+          },
+          {
+            "second": 1.5,
+            "wpm": 45,
+            "errors": 0
+          },
+          {
+            "second": 2.3,
+            "wpm": 40,
+            "errors": 0
+          },
+          {
+            "second": 3,
+            "wpm": 64,
+            "errors": 0
+          },
+          {
+            "second": 3.8,
+            "wpm": 68,
+            "errors": 0
+          },
+          {
+            "second": 4.5,
+            "wpm": 68,
+            "errors": 0
+          },
+          {
+            "second": 5.3,
+            "wpm": 66,
+            "errors": 0
+          },
+          {
+            "second": 6,
+            "wpm": 64,
+            "errors": 0
+          },
+          {
+            "second": 6.8,
+            "wpm": 63,
+            "errors": 0
+          },
+          {
+            "second": 7.5,
+            "wpm": 63,
+            "errors": 0
+          },
+          {
+            "second": 8,
+            "wpm": 71,
+            "errors": 0
+          }
+        ],
+        "mistakes": [],
+        "commonErrorKeys": [
+          {
+            "key": " ",
+            "count": 10
+          },
+          {
+            "key": "5",
+            "count": 9
+          },
+          {
+            "key": "6",
+            "count": 8
+          },
+          {
+            "key": "2",
+            "count": 6
+          },
+          {
+            "key": "3",
+            "count": 5
+          },
+          {
+            "key": "4",
+            "count": 5
+          },
+          {
+            "key": "7",
+            "count": 5
+          },
+          {
+            "key": "9",
+            "count": 5
+          }
+        ],
+        "peakWpm": 71,
+        "averageHesitationMs": 0
+      },
+      {
+        "id": "match_1790427183884_it4dj",
+        "timestamp": 1790427183884,
+        "mode": "Outplay Yourself (Numpad Số)",
+        "modeId": "outplay",
+        "subMode": "numpad_number",
+        "difficulty": "number",
+        "wpm": 51,
+        "accuracy": 100,
+        "result": "Thắng",
+        "score": 0,
+        "playType": "solo",
+        "isCompleted": true,
+        "durationSeconds": 13,
+        "totalWords": 10,
+        "correctWords": 10,
+        "incorrectWords": 0,
+        "correctChars": 54,
+        "totalErrors": 0,
+        "consistency": 71,
+        "promptWords": [
+          "5320",
+          "267370",
+          "6435",
+          "3",
+          "99128",
+          "27504",
+          "80",
+          "49482",
+          "696448",
+          "326797"
+        ],
+        "wordLogs": [
+          {
+            "word": "5320",
+            "typed": "5320",
+            "isCorrect": true
+          },
+          {
+            "word": "267370",
+            "typed": "267370",
+            "isCorrect": true
+          },
+          {
+            "word": "6435",
+            "typed": "6435",
+            "isCorrect": true
+          },
+          {
+            "word": "3",
+            "typed": "3",
+            "isCorrect": true
+          },
+          {
+            "word": "99128",
+            "typed": "99128",
+            "isCorrect": true
+          },
+          {
+            "word": "27504",
+            "typed": "27504",
+            "isCorrect": true
+          },
+          {
+            "word": "80",
+            "typed": "80",
+            "isCorrect": true
+          },
+          {
+            "word": "49482",
+            "typed": "49482",
+            "isCorrect": true
+          },
+          {
+            "word": "696448",
+            "typed": "696448",
+            "isCorrect": true
+          },
+          {
+            "word": "326797",
+            "typed": "326797",
+            "isCorrect": true
+          }
+        ],
+        "keystrokes": [
+          {
+            "key": "5",
+            "timeMs": 39463
+          },
+          {
+            "key": "3",
+            "timeMs": 39955
+          },
+          {
+            "key": "0",
+            "timeMs": 40124
+          },
+          {
+            "key": "3",
+            "timeMs": 41019
+          },
+          {
+            "key": "2",
+            "timeMs": 41227
+          },
+          {
+            "key": "0",
+            "timeMs": 41338
+          },
+          {
+            "key": "0",
+            "timeMs": 41554
+          },
+          {
+            "key": " ",
+            "timeMs": 41557
+          },
+          {
+            "key": "2",
+            "timeMs": 42006
+          },
+          {
+            "key": "6",
+            "timeMs": 42219
+          },
+          {
+            "key": "7",
+            "timeMs": 42419
+          },
+          {
+            "key": "3",
+            "timeMs": 42667
+          },
+          {
+            "key": "7",
+            "timeMs": 42844
+          },
+          {
+            "key": "1",
+            "timeMs": 42955
+          },
+          {
+            "key": "0",
+            "timeMs": 42963
+          },
+          {
+            "key": "1",
+            "timeMs": 43922
+          },
+          {
+            "key": "7",
+            "timeMs": 44082
+          },
+          {
+            "key": "0",
+            "timeMs": 44195
+          },
+          {
+            "key": "0",
+            "timeMs": 44451
+          },
+          {
+            "key": " ",
+            "timeMs": 44454
+          },
+          {
+            "key": "6",
+            "timeMs": 44670
+          },
+          {
+            "key": "4",
+            "timeMs": 44819
+          },
+          {
+            "key": "3",
+            "timeMs": 45003
+          },
+          {
+            "key": "5",
+            "timeMs": 45146
+          },
+          {
+            "key": "5",
+            "timeMs": 45307
+          },
+          {
+            "key": " ",
+            "timeMs": 45309
+          },
+          {
+            "key": "3",
+            "timeMs": 45429
+          },
+          {
+            "key": "3",
+            "timeMs": 45579
+          },
+          {
+            "key": " ",
+            "timeMs": 45582
+          },
+          {
+            "key": "9",
+            "timeMs": 45781
+          },
+          {
+            "key": "9",
+            "timeMs": 45923
+          },
+          {
+            "key": "1",
+            "timeMs": 46123
+          },
+          {
+            "key": "2",
+            "timeMs": 46235
+          },
+          {
+            "key": "8",
+            "timeMs": 46459
+          },
+          {
+            "key": "8",
+            "timeMs": 46571
+          },
+          {
+            "key": " ",
+            "timeMs": 46574
+          },
+          {
+            "key": "2",
+            "timeMs": 46789
+          },
+          {
+            "key": "7",
+            "timeMs": 47035
+          },
+          {
+            "key": "5",
+            "timeMs": 47211
+          },
+          {
+            "key": "0",
+            "timeMs": 47410
+          },
+          {
+            "key": "4",
+            "timeMs": 47595
+          },
+          {
+            "key": "4",
+            "timeMs": 47827
+          },
+          {
+            "key": " ",
+            "timeMs": 47830
+          },
+          {
+            "key": "8",
+            "timeMs": 47965
+          },
+          {
+            "key": "0",
+            "timeMs": 48044
+          },
+          {
+            "key": "0",
+            "timeMs": 48219
+          },
+          {
+            "key": " ",
+            "timeMs": 48221
+          },
+          {
+            "key": "4",
+            "timeMs": 48349
+          },
+          {
+            "key": "9",
+            "timeMs": 48810
+          },
+          {
+            "key": "4",
+            "timeMs": 48941
+          },
+          {
+            "key": "8",
+            "timeMs": 49171
+          },
+          {
+            "key": "2",
+            "timeMs": 49355
+          },
+          {
+            "key": "2",
+            "timeMs": 49498
+          },
+          {
+            "key": " ",
+            "timeMs": 49501
+          },
+          {
+            "key": "6",
+            "timeMs": 49942
+          },
+          {
+            "key": "9",
+            "timeMs": 50138
+          },
+          {
+            "key": "6",
+            "timeMs": 50323
+          },
+          {
+            "key": "4",
+            "timeMs": 50587
+          },
+          {
+            "key": "4",
+            "timeMs": 50779
+          },
+          {
+            "key": "8",
+            "timeMs": 50915
+          },
+          {
+            "key": "8",
+            "timeMs": 51066
+          },
+          {
+            "key": " ",
+            "timeMs": 51069
+          },
+          {
+            "key": "3",
+            "timeMs": 51213
+          },
+          {
+            "key": "2",
+            "timeMs": 51475
+          },
+          {
+            "key": "6",
+            "timeMs": 51627
+          },
+          {
+            "key": "7",
+            "timeMs": 51893
+          },
+          {
+            "key": "9",
+            "timeMs": 52018
+          },
+          {
+            "key": "7",
+            "timeMs": 52148
+          },
+          {
+            "key": "7",
+            "timeMs": 52250
+          },
+          {
+            "key": " ",
+            "timeMs": 52253
+          }
+        ],
+        "chartData": [
+          {
+            "second": 0,
+            "wpm": 0,
+            "errors": 0
+          },
+          {
+            "second": 1,
+            "wpm": 0,
+            "errors": 0
+          },
+          {
+            "second": 2,
+            "wpm": 0,
+            "errors": 0
+          },
+          {
+            "second": 3,
+            "wpm": 20,
+            "errors": 0
+          },
+          {
+            "second": 4,
+            "wpm": 15,
+            "errors": 0
+          },
+          {
+            "second": 5,
+            "wpm": 29,
+            "errors": 0
+          },
+          {
+            "second": 6,
+            "wpm": 34,
+            "errors": 0
+          },
+          {
+            "second": 7,
+            "wpm": 33,
+            "errors": 0
+          },
+          {
+            "second": 8,
+            "wpm": 38,
+            "errors": 0
+          },
+          {
+            "second": 9,
+            "wpm": 45,
+            "errors": 0
+          },
+          {
+            "second": 10,
+            "wpm": 41,
+            "errors": 0
+          },
+          {
+            "second": 11,
+            "wpm": 44,
+            "errors": 0
+          },
+          {
+            "second": 12,
+            "wpm": 47,
+            "errors": 0
+          },
+          {
+            "second": 13,
+            "wpm": 47,
+            "errors": 0
+          }
+        ],
+        "mistakes": [],
+        "commonErrorKeys": [
+          {
+            "key": " ",
+            "count": 10
+          },
+          {
+            "key": "0",
+            "count": 9
+          },
+          {
+            "key": "2",
+            "count": 7
+          },
+          {
+            "key": "3",
+            "count": 7
+          },
+          {
+            "key": "4",
+            "count": 7
+          },
+          {
+            "key": "7",
+            "count": 7
+          },
+          {
+            "key": "8",
+            "count": 6
+          },
+          {
+            "key": "6",
+            "count": 5
+          }
+        ],
+        "peakWpm": 47,
+        "averageHesitationMs": 0
+      }
+    ]
   },
   "usr_1789923577102_iba8o": {
     "id": "usr_1789923577102_iba8o",
@@ -143,11 +1599,11 @@
       "realmName": "Luyện Khí Kỳ",
       "subStage": "Sơ Kỳ",
       "titleName": "Luyện Khí Tu Sĩ",
-      "exp": 38,
+      "exp": 0,
       "maxExp": 250,
-      "thoNguyen": 240,
+      "thoNguyen": 194,
       "maxThoNguyen": 240,
-      "lastThoNguyenDecay": 1790093175301,
+      "lastThoNguyenDecay": 1790424375301,
       "lastCultivateTime": 1790093231407,
       "dailyExpEarned": 369,
       "dailyExpDate": "2026-09-22",
@@ -204,6 +1660,9 @@
       ],
       "dailyQuestsDate": "2026-09-22",
       "historyLog": [
+        "💀 [TÂM MA XÂM LẤN] Không tu luyện quá 48h, tổn thất 8 Tu Vi!",
+        "💀 [TÂM MA XÂM LẤN] Không tu luyện quá 48h, tổn thất 15 Tu Vi!",
+        "💀 [TÂM MA XÂM LẤN] Không tu luyện quá 48h, tổn thất 15 Tu Vi!",
         "🎉 Chúc mừng tu sĩ thăng cấp lên Luyện Khí Kỳ Tầng 3 (Sơ Kỳ)!",
         "🎉 Chúc mừng tu sĩ thăng cấp lên Luyện Khí Kỳ Tầng 2 (Sơ Kỳ)!",
         "Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)"

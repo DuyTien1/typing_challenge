@@ -54,6 +54,7 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
   const [targetLevel, setTargetLevel] = useState<number>(current.level || 1);
   const [selectedRealmIdx, setSelectedRealmIdx] = useState<number>(current.realmIndex || 0);
   const [selectedTier, setSelectedTier] = useState<number>(current.tier || 1);
+  const [unbanInput, setUnbanInput] = useState<string>('');
 
   // Đồng bộ khi cultivationState bên ngoài thay đổi
   useEffect(() => {
@@ -624,6 +625,68 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
               <span>+50.000 Tu Vi EXP</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 5. BÀN CỔ THẦN THỨC - QUẢN LÝ PHONG ẤN & HÓA GIẢI ÁN PHẠT (UNBAN) */}
+      {/* ------------------------------------------------------------- */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-red-950/40 via-slate-900 to-slate-900 border border-red-500/40 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚡</span>
+            <h4 className="text-xs font-black text-rose-300 uppercase tracking-wider">
+              Bàn Cổ Thần Thức • Quản Lý Án Phạt U Minh Hàn Ngục
+            </h4>
+          </div>
+          <span className="text-[10px] text-red-300 bg-red-950/80 px-2 py-0.5 rounded border border-red-500/40 font-bold">
+            Án phạt: 2 Giờ
+          </span>
+        </div>
+
+        <p className="text-[11px] text-slate-300 leading-relaxed">
+          Người chơi bị phát hiện can thiệp macro / auto sẽ tự động bị Bàn Cổ Thần Thức phế trừ 500 Tu Vi và cấm thi đấu trong 2 giờ. Quản trị viên có thể nhập tên người chơi để hóa giải phong ấn sớm nếu cần:
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-center gap-2">
+          <input
+            type="text"
+            id="admin-unban-username-input"
+            value={unbanInput}
+            onChange={(e) => setUnbanInput(e.target.value)}
+            placeholder="Nhập username hoặc displayName cần gỡ án phạt..."
+            className="flex-1 w-full h-10 px-3.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 outline-none focus:border-red-400 transition-colors"
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              const u = unbanInput.trim();
+              if (!u) {
+                showToast('⚠️ Vui lòng nhập tên người chơi cần gỡ án phạt!');
+                return;
+              }
+              try {
+                const res = await fetch('/api/admin/unban', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ username: u }),
+                });
+                if (res.ok) {
+                  soundFx.playLevelUp();
+                  showToast(`⚡ Đã hóa giải phong ấn Bàn Cổ Thần Thức cho @${u}!`);
+                  setUnbanInput('');
+                } else {
+                  showToast('❌ Không thể gỡ án phạt. Vui lòng thử lại!');
+                }
+              } catch {
+                showToast('❌ Lỗi kết nối máy chủ!');
+              }
+            }}
+            className="w-full sm:w-auto h-10 px-5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-red-900/40 active:scale-95 shrink-0"
+          >
+            <span>⚡</span>
+            <span>Hóa Giải Phong Ấn (Unban)</span>
+          </button>
         </div>
       </div>
     </div>

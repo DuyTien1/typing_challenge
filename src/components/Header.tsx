@@ -29,6 +29,8 @@ interface HeaderProps {
   onOpenLeaderboard: () => void;
   onOpenMatchHistory?: () => void;
   onToggleChat: () => void;
+  onOpenFriends?: () => void;
+  friendRequestsCount?: number;
   onOpenAdmin: () => void;
   onOpenProfile: () => void;
   onOpenAppearance?: () => void;
@@ -47,6 +49,9 @@ interface HeaderProps {
   chatUnreadCount?: number;
   activeModeName?: string;
   onOpenHeavenlyChronicle?: () => void;
+  isBanned?: boolean;
+  bannedRemainingFormatted?: string;
+  onOpenBanModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -60,6 +65,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLeaderboard,
   onOpenMatchHistory,
   onToggleChat,
+  onOpenFriends,
+  friendRequestsCount = 0,
   onOpenAdmin,
   onOpenProfile,
   onOpenAppearance,
@@ -75,7 +82,11 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onGoHome,
   chatUnreadCount = 0,
+  activeModeName,
   onOpenHeavenlyChronicle,
+  isBanned = false,
+  bannedRemainingFormatted,
+  onOpenBanModal,
 }) => {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -189,7 +200,7 @@ export const Header: React.FC<HeaderProps> = ({
               soundFx.playKeyClick();
               onToggleChat();
             }}
-            title="Kênh Chat"
+            title="Kênh Chat & Mật Đàm"
             className="h-8.5 px-2.5 relative flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/70 hover:bg-slate-700/80 border border-slate-700/50 text-slate-300 hover:text-white text-xs font-medium transition-colors cursor-pointer shrink-0"
           >
             <MessageSquare className="w-4 h-4 text-sky-400" />
@@ -200,6 +211,28 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
+
+          {/* Đạo Hữu (Friends Roster & Dao Lu) Button */}
+          {onOpenFriends && (
+            <button
+              id="btn-open-friends"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                onOpenFriends();
+              }}
+              title="Sổ Tay Đạo Hữu & Kết Bái Đạo Lữ"
+              className="h-8.5 px-2.5 relative flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/70 hover:bg-slate-700/80 border border-slate-700/50 text-emerald-400 hover:text-emerald-300 text-xs font-medium transition-colors cursor-pointer shrink-0"
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden lg:inline whitespace-nowrap">Đạo Hữu</span>
+              {friendRequestsCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center animate-bounce shadow-md">
+                  {friendRequestsCount > 9 ? '9+' : friendRequestsCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Leaderboard Button */}
           <button
@@ -230,6 +263,25 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <span className="text-sm group-hover:rotate-180 transition-transform duration-500">☯️</span>
               <span className="hidden xl:inline whitespace-nowrap">Khí Linh</span>
+            </button>
+          )}
+
+          {/* Bàn Cổ Thần Thức - Warning Banner Button if Banned */}
+          {isBanned && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                if (onOpenBanModal) onOpenBanModal();
+              }}
+              title="Đang chịu án phạt cấm đấu từ Bàn Cổ Thần Thức. Bấm để xem chi tiết thời gian thụ án"
+              className="h-8.5 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-red-950 via-rose-950 to-red-900 border border-red-500 text-red-300 font-bold text-xs shadow-md shadow-red-950/60 cursor-pointer animate-pulse active:scale-95 shrink-0"
+            >
+              <span className="text-sm animate-bounce">⚡</span>
+              <span className="hidden sm:inline font-black text-rose-300">Bàn Cổ Phạt:</span>
+              <span className="font-mono text-amber-300 font-black">
+                {bannedRemainingFormatted || '2h'}
+              </span>
             </button>
           )}
 
@@ -370,9 +422,38 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="min-w-0">
                           <div className="font-bold text-xs text-white flex items-center gap-1.5">
                             <span>Lịch Sử Đấu</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">20 ván</span>
                           </div>
                           <div className="text-[10px] text-slate-400">Replay, phân tích lỗi sai & lời khuyên</div>
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Mục 4: Sổ Tay Đạo Hữu */}
+                  {onOpenFriends && (
+                    <button
+                      id="menu-item-friends"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setIsMoreMenuOpen(false);
+                        onOpenFriends();
+                      }}
+                      className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all cursor-pointer group border border-transparent hover:border-slate-800"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                            <span>Sổ Tay Đạo Hữu</span>
+                            {friendRequestsCount > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono font-bold">
+                                {friendRequestsCount} mới
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400">Danh sách bạn bè, Hảo Cảm & Đạo Lữ</div>
                         </div>
                       </div>
                     </button>
@@ -399,9 +480,6 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="min-w-0">
                           <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
                             <span>Huyền Thiên Khí Linh</span>
-                            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">
-                              BOT
-                            </span>
                           </div>
                           <div className="text-[10px] text-slate-400">
                             Thiên Đạo Chấp Pháp Sứ & Chiếu Thư

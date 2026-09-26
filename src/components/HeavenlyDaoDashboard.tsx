@@ -17,6 +17,8 @@ import {
   Award,
   Layers,
   Info,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   HeavenlyDaoAnalysisResult,
@@ -39,6 +41,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
 }) => {
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [activeSubView, setActiveSubView] = useState<'overview' | 'patterns' | 'timing' | 'radar'>('overview');
+  const [copiedWords, setCopiedWords] = useState(false);
 
   const {
     playerRealm,
@@ -48,6 +51,10 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
     peerComparison,
     breakthroughPathway,
     practiceWords,
+    targetedMistakes,
+    targetedClusters,
+    practiceDrillTitle,
+    practiceDrillNote,
     isAiPowered,
   } = analysis;
 
@@ -790,6 +797,115 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 5. BỘ TỪ THIÊN ĐẠO ĐẶC TRỊ TỪ SAI THỰC TẾ */}
+      {practiceWords && practiceWords.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/30 space-y-3.5 shadow-2xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-rose-400" />
+                <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                  <span className="bg-gradient-to-r from-rose-300 via-amber-200 to-cyan-300 bg-clip-text text-transparent">
+                    {practiceDrillTitle || (targetedMistakes && targetedMistakes.length > 0 ? `Bộ Từ Đặc Trị ${targetedMistakes.length} Lỗi Sai Thực Tế` : 'Bộ Từ Luyện Phản Xạ Cơ Ngón Tay')}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
+                    {practiceWords.length} từ mục tiêu
+                  </span>
+                </h4>
+              </div>
+              <p className="text-xs text-slate-300">
+                {practiceDrillNote || 'Thiên Đạo đã bóc tách chính xác các từ bạn gõ sai hoặc ngập ngừng để tạo chuỗi bài tập đặc trị này.'}
+              </p>
+            </div>
+
+            {/* Actions: Copy & Play */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(practiceWords.join(' ')).then(() => {
+                    soundFx.playKeyClick();
+                    setCopiedWords(true);
+                    setTimeout(() => setCopiedWords(false), 2000);
+                  });
+                }}
+                className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer active:scale-95 shadow-sm"
+                title="Sao chép toàn bộ danh sách để tự luyện tập"
+              >
+                {copiedWords ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                <span>{copiedWords ? 'Đã Sao Chép' : 'Sao Chép Bộ Từ'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  onStartPractice(practiceWords);
+                }}
+                className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/20 active:scale-95"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Vào Luyện Bài Này Ngay</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Targeted Weakness Clusters & Mistakes Badges */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80 text-xs">
+            {targetedMistakes && targetedMistakes.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-rose-400 font-mono">Từ sai đã khoanh vùng:</span>
+                {targetedMistakes.map((w, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-[11px] font-bold"
+                  >
+                    ✕ {w}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {targetedClusters && targetedClusters.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-amber-400 font-mono">Cụm âm/phím khắc phục:</span>
+                {targetedClusters.map((c, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[11px] font-medium"
+                  >
+                    ⚡ {c}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Word Preview Pills */}
+          <div className="flex flex-wrap gap-2 p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 max-h-48 overflow-y-auto">
+            {practiceWords.map((word, idx) => {
+              const isMistakeWord = targetedMistakes?.some(
+                (m) => m.toLowerCase() === word.toLowerCase()
+              );
+              return (
+                <span
+                  key={idx}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-default select-all ${
+                    isMistakeWord
+                      ? 'bg-rose-950/50 hover:bg-rose-900/60 border-rose-500/60 text-rose-200 shadow-md shadow-rose-500/10 font-mono'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
+                  }`}
+                  title={isMistakeWord ? 'Từ bạn từng gõ sai trong trận đấu - hãy tập trung cao độ!' : 'Từ rèn luyện bổ trợ cùng cụm phím'}
+                >
+                  {isMistakeWord && <span className="text-rose-400 mr-1 font-black">●</span>}
+                  {word}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

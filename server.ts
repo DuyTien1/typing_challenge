@@ -13,6 +13,8 @@ import {
   ServerHighScoreRecord,
   ServerUserRecord,
   ActivePresenceSession,
+  ServerFriendshipRecord,
+  ServerFriendRequestRecord,
 } from './server/types';
 import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
 
@@ -96,7 +98,7 @@ const USERS_FILE = path.join(process.cwd(), 'users.json');
 function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
   let adminUser: ServerUserRecord | undefined;
   for (const u of map.values()) {
-    if (u.username.toLowerCase() === 'admin' || u.id === 'usr_admin_default') {
+    if (String(u.username || '').toLowerCase() === 'admin' || u.id === 'usr_admin_default') {
       adminUser = u;
       break;
     }
@@ -232,6 +234,952 @@ function saveUsersToFile() {
   }
 }
 
+export const XIANXIA_REALM_METAS = [
+  { name: 'Luyện Khí Kỳ', titleName: 'Luyện Khí Tu Sĩ', icon: '🌿', badge: 'Khí', frameId: 'frame_xianxia_luyenkhi', startLevel: 1, endLevel: 30 },
+  { name: 'Trúc Cơ Kỳ', titleName: 'Trúc Cơ Chân Nhân', icon: '🧱', badge: 'Cơ', frameId: 'frame_xianxia_trucco', startLevel: 31, endLevel: 70 },
+  { name: 'Kết Đan Kỳ', titleName: 'Kim Đan Tông Sư', icon: '🔮', badge: 'Đan', frameId: 'frame_xianxia_ketdan', startLevel: 71, endLevel: 130 },
+  { name: 'Nguyên Anh Kỳ', titleName: 'Nguyên Anh Lão Quái', icon: '👶', badge: 'Anh', frameId: 'frame_xianxia_nguyenanh', startLevel: 131, endLevel: 210 },
+  { name: 'Hóa Thần Kỳ', titleName: 'Hóa Thần Tôn Giả', icon: '🌌', badge: 'Thần', frameId: 'frame_xianxia_hoathan', startLevel: 211, endLevel: 310 },
+  { name: 'Luyện Hư Kỳ', titleName: 'Luyện Hư Thần Quân', icon: '🌀', badge: 'Hư', frameId: 'frame_xianxia_luyenhu', startLevel: 311, endLevel: 430 },
+  { name: 'Hợp Thể Kỳ', titleName: 'Hợp Thể Thánh Quân', icon: '⚡', badge: 'Thể', frameId: 'frame_xianxia_hopthe', startLevel: 431, endLevel: 570 },
+  { name: 'Đại Thừa Kỳ', titleName: 'Đại Thừa Chí Tôn', icon: '☀️', badge: 'Thừa', frameId: 'frame_xianxia_daithua', startLevel: 571, endLevel: 720 },
+  { name: 'Độ Kiếp Kỳ', titleName: 'Độ Kiếp Tiên Tôn', icon: '🌩️', badge: 'Kiếp', frameId: 'frame_xianxia_dokiep', startLevel: 721, endLevel: 870 },
+  { name: 'Kim Tiên', titleName: 'Bất Hủ Kim Tiên', icon: '🌟', badge: 'Kim', frameId: 'frame_xianxia_kimtien', startLevel: 871, endLevel: 940 },
+  { name: 'Đại La Tiên', titleName: 'Đại La Kim Tiên', icon: '🌠', badge: 'La', frameId: 'frame_xianxia_daila', startLevel: 941, endLevel: 980 },
+  { name: 'Thiên Tôn', titleName: 'Hỗn Độn Thiên Tôn', icon: '👑', badge: 'Tôn', frameId: 'frame_xianxia_thienton', startLevel: 981, endLevel: 1000 },
+];
+
+// =========================================================================
+// HỆ THỐNG TÔNG MÔN - PERSISTENT STORAGE (sects.json)
+// =========================================================================
+const SECTS_FILE = path.join(process.cwd(), 'sects.json');
+
+export interface ServerSectMemberRecord {
+  userId: string;
+  username: string;
+  displayName?: string;
+  avatar: string;
+  frame?: string;
+  role: 'chuong_mon' | 'dai_truong_lao' | 'chan_truyen' | 'noi_mon' | 'ngoai_mon';
+  contribution: number;
+  realmIndex: number;
+  realmName: string;
+  realmIcon: string;
+  level: number;
+  tier: number;
+  exp: number;
+  tuViScore: number;
+  joinedAt: number;
+  lastActive?: number;
+}
+
+export interface ServerSectRecord {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  leaderId: string;
+  leaderName: string;
+  leaderAvatar?: string;
+  leaderFrame?: string;
+  leaderRealmName?: string;
+  leaderLevel?: number;
+  linhMachLevel: number;
+  totalContribution: number;
+  memberCount: number;
+  totalTuVi: number;
+  avgLevel?: number;
+  avgRealmName?: string;
+  badgeIcon: string;
+  slogan?: string;
+  bannerColor?: string;
+  weeklyTournamentPoints?: number;
+  isHoldingThienCung?: boolean;
+  members: ServerSectMemberRecord[];
+  createdAt?: number;
+  worldBoss?: any;
+}
+
+const DEFAULT_SERVER_SECTS: ServerSectRecord[] = [
+  {
+    id: 'sect_thuc_son',
+    name: 'Thục Sơn Kiếm Phái',
+    tag: 'Thục Sơn',
+    description: 'Kiếm tu đệ nhất thiên hạ, vạn kiếm quy tông, ngự kiếm trảm yêu trừ ma.',
+    leaderId: 'leader_thuc_son',
+    leaderName: 'Độc Cô Kiếm Tôn',
+    leaderAvatar: '⚔️',
+    leaderFrame: 'frame_xianxia_dokiep',
+    leaderRealmName: 'Độ Kiếp Kỳ',
+    leaderLevel: 820,
+    linhMachLevel: 3,
+    totalContribution: 24500,
+    memberCount: 8,
+    totalTuVi: 40007000,
+    avgLevel: 375,
+    avgRealmName: 'Hóa Thần Kỳ',
+    badgeIcon: '⚔️',
+    slogan: 'Vạn Kiếm Quy Nhất • Trảm Phá Thái Hư',
+    bannerColor: '#38bdf8',
+    weeklyTournamentPoints: 840,
+    isHoldingThienCung: true,
+    worldBoss: {
+      id: 'boss_hac_long',
+      name: 'Thái Cổ Hắc Long',
+      icon: '🐉',
+      hp: 154000,
+      maxHp: 200000,
+      level: 10,
+      isDefeated: false,
+      lastResetTime: Date.now(),
+    },
+    members: [
+      {
+        userId: 'thuc_son_1',
+        username: 'Độc Cô Kiếm Tôn',
+        displayName: 'Độc Cô Kiếm Tôn',
+        avatar: '⚔️',
+        frame: 'frame_xianxia_dokiep',
+        role: 'chuong_mon',
+        contribution: 12000,
+        realmIndex: 8,
+        realmName: 'Độ Kiếp Kỳ',
+        realmIcon: '🌩️',
+        level: 820,
+        tier: 8,
+        exp: 820000,
+        tuViScore: 8820000,
+        joinedAt: Date.now() - 30 * 86400000,
+      },
+      {
+        userId: 'thuc_son_2',
+        username: 'Thanh Hư Chân Nhân',
+        displayName: 'Thanh Hư Chân Nhân',
+        avatar: '🧙‍♂️',
+        frame: 'frame_xianxia_daithua',
+        role: 'dai_truong_lao',
+        contribution: 5800,
+        realmIndex: 7,
+        realmName: 'Đại Thừa Kỳ',
+        realmIcon: '☀️',
+        level: 650,
+        tier: 6,
+        exp: 650000,
+        tuViScore: 7650000,
+        joinedAt: Date.now() - 25 * 86400000,
+      },
+      {
+        userId: 'thuc_son_3',
+        username: 'Lăng Phong Kiếm Sĩ',
+        displayName: 'Lăng Phong Kiếm Sĩ',
+        avatar: '🗡️',
+        frame: 'frame_xianxia_hopthe',
+        role: 'chan_truyen',
+        contribution: 2900,
+        realmIndex: 6,
+        realmName: 'Hợp Thể Kỳ',
+        realmIcon: '⚡',
+        level: 480,
+        tier: 5,
+        exp: 480000,
+        tuViScore: 6480000,
+        joinedAt: Date.now() - 20 * 86400000,
+      },
+      {
+        userId: 'thuc_son_4',
+        username: 'Vân Dao Kiếm Nữ',
+        displayName: 'Vân Dao Kiếm Nữ',
+        avatar: '🧝‍♀️',
+        frame: 'frame_xianxia_hopthe',
+        role: 'chan_truyen',
+        contribution: 2400,
+        realmIndex: 6,
+        realmName: 'Hợp Thể Kỳ',
+        realmIcon: '⚡',
+        level: 450,
+        tier: 4,
+        exp: 450000,
+        tuViScore: 6450000,
+        joinedAt: Date.now() - 18 * 86400000,
+      },
+      {
+        userId: 'thuc_son_5',
+        username: 'Hàn Lập',
+        displayName: 'Hàn Lập',
+        avatar: '🌿',
+        frame: 'frame_xianxia_hoathan',
+        role: 'noi_mon',
+        contribution: 850,
+        realmIndex: 4,
+        realmName: 'Hóa Thần Kỳ',
+        realmIcon: '🌌',
+        level: 270,
+        tier: 4,
+        exp: 270000,
+        tuViScore: 4270000,
+        joinedAt: Date.now() - 14 * 86400000,
+      },
+      {
+        userId: 'thuc_son_6',
+        username: 'Diệp Thần',
+        displayName: 'Diệp Thần',
+        avatar: '🔥',
+        frame: 'frame_xianxia_hoathan',
+        role: 'noi_mon',
+        contribution: 720,
+        realmIndex: 4,
+        realmName: 'Hóa Thần Kỳ',
+        realmIcon: '🌌',
+        level: 240,
+        tier: 3,
+        exp: 240000,
+        tuViScore: 4240000,
+        joinedAt: Date.now() - 12 * 86400000,
+      },
+      {
+        userId: 'thuc_son_7',
+        username: 'Trương Đan',
+        displayName: 'Trương Đan',
+        avatar: '🧱',
+        frame: 'frame_xianxia_trucco',
+        role: 'ngoai_mon',
+        contribution: 180,
+        realmIndex: 1,
+        realmName: 'Trúc Cơ Kỳ',
+        realmIcon: '🧱',
+        level: 55,
+        tier: 2,
+        exp: 55000,
+        tuViScore: 1055000,
+        joinedAt: Date.now() - 5 * 86400000,
+      },
+      {
+        userId: 'thuc_son_8',
+        username: 'Lục Tuyết',
+        displayName: 'Lục Tuyết',
+        avatar: '❄️',
+        frame: 'frame_xianxia_trucco',
+        role: 'ngoai_mon',
+        contribution: 150,
+        realmIndex: 1,
+        realmName: 'Trúc Cơ Kỳ',
+        realmIcon: '🧱',
+        level: 42,
+        tier: 1,
+        exp: 42000,
+        tuViScore: 1042000,
+        joinedAt: Date.now() - 3 * 86400000,
+      },
+    ],
+  },
+  {
+    id: 'sect_cuu_trong',
+    name: 'Cửu Trọng Thiên',
+    tag: 'Cửu Trọng',
+    description: 'Chưởng quản lôi đình cửu thiên, uy trấn bát hoang lục hợp vô địch.',
+    leaderId: 'leader_cuu_trong',
+    leaderName: 'Cửu Thiên Thần Quân',
+    leaderAvatar: '⚡',
+    leaderFrame: 'frame_xianxia_dokiep',
+    leaderRealmName: 'Độ Kiếp Kỳ',
+    leaderLevel: 850,
+    linhMachLevel: 4,
+    totalContribution: 38900,
+    memberCount: 6,
+    totalTuVi: 35900000,
+    avgLevel: 483,
+    avgRealmName: 'Hợp Thể Kỳ',
+    badgeIcon: '⚡',
+    slogan: 'Lôi Đình Vạn Trượng • Chấn Nhiếp Bát Hoang',
+    bannerColor: '#facc15',
+    weeklyTournamentPoints: 780,
+    isHoldingThienCung: false,
+    worldBoss: {
+      id: 'boss_hoa_phuong',
+      name: 'Cửu Thiên Hỏa Phượng',
+      icon: '🦅',
+      hp: 195000,
+      maxHp: 250000,
+      level: 12,
+      isDefeated: false,
+      lastResetTime: Date.now(),
+    },
+    members: [
+      {
+        userId: 'cuu_trong_1',
+        username: 'Cửu Thiên Thần Quân',
+        displayName: 'Cửu Thiên Thần Quân',
+        avatar: '⚡',
+        frame: 'frame_xianxia_dokiep',
+        role: 'chuong_mon',
+        contribution: 15000,
+        realmIndex: 8,
+        realmName: 'Độ Kiếp Kỳ',
+        realmIcon: '🌩️',
+        level: 850,
+        tier: 9,
+        exp: 850000,
+        tuViScore: 8850000,
+        joinedAt: Date.now() - 35 * 86400000,
+      },
+      {
+        userId: 'cuu_trong_2',
+        username: 'Lôi Chấn Tử',
+        displayName: 'Lôi Chấn Tử',
+        avatar: '🌩️',
+        frame: 'frame_xianxia_daithua',
+        role: 'dai_truong_lao',
+        contribution: 8200,
+        realmIndex: 7,
+        realmName: 'Đại Thừa Kỳ',
+        realmIcon: '☀️',
+        level: 680,
+        tier: 7,
+        exp: 680000,
+        tuViScore: 7680000,
+        joinedAt: Date.now() - 28 * 86400000,
+      },
+      {
+        userId: 'cuu_trong_3',
+        username: 'Phong Lôi Tiên Tử',
+        displayName: 'Phong Lôi Tiên Tử',
+        avatar: '🌪️',
+        frame: 'frame_xianxia_hopthe',
+        role: 'chan_truyen',
+        contribution: 3200,
+        realmIndex: 6,
+        realmName: 'Hợp Thể Kỳ',
+        realmIcon: '⚡',
+        level: 490,
+        tier: 5,
+        exp: 490000,
+        tuViScore: 6490000,
+        joinedAt: Date.now() - 22 * 86400000,
+      },
+      {
+        userId: 'cuu_trong_4',
+        username: 'Thần Tiêu Kiếm Hiệp',
+        displayName: 'Thần Tiêu Kiếm Hiệp',
+        avatar: '🗡️',
+        frame: 'frame_xianxia_hopthe',
+        role: 'chan_truyen',
+        contribution: 2600,
+        realmIndex: 6,
+        realmName: 'Hợp Thể Kỳ',
+        realmIcon: '⚡',
+        level: 460,
+        tier: 4,
+        exp: 460000,
+        tuViScore: 6460000,
+        joinedAt: Date.now() - 17 * 86400000,
+      },
+      {
+        userId: 'cuu_trong_5',
+        username: 'Lôi Bạo Cuồng Đao',
+        displayName: 'Lôi Bạo Cuồng Đao',
+        avatar: '⚔️',
+        frame: 'frame_xianxia_luyenhu',
+        role: 'noi_mon',
+        contribution: 980,
+        realmIndex: 5,
+        realmName: 'Luyện Hư Kỳ',
+        realmIcon: '🌀',
+        level: 360,
+        tier: 3,
+        exp: 360000,
+        tuViScore: 5360000,
+        joinedAt: Date.now() - 10 * 86400000,
+      },
+      {
+        userId: 'cuu_trong_6',
+        username: 'Lôi Đình Tiểu Sinh',
+        displayName: 'Lôi Đình Tiểu Sinh',
+        avatar: '👦',
+        frame: 'frame_xianxia_trucco',
+        role: 'ngoai_mon',
+        contribution: 120,
+        realmIndex: 1,
+        realmName: 'Trúc Cơ Kỳ',
+        realmIcon: '🧱',
+        level: 60,
+        tier: 2,
+        exp: 60000,
+        tuViScore: 1060000,
+        joinedAt: Date.now() - 4 * 86400000,
+      },
+    ],
+  },
+  {
+    id: 'sect_van_kiem',
+    name: 'Vạn Kiếm Quy Tông',
+    tag: 'Vạn Kiếm',
+    description: 'Kiếm ý thông thiên triệt địa, một kiếm phá vạn pháp khai mở thái hư.',
+    leaderId: 'leader_van_kiem',
+    leaderName: 'Vô Nhai Kiếm Thánh',
+    leaderAvatar: '🗡️',
+    leaderFrame: 'frame_xianxia_daithua',
+    leaderRealmName: 'Đại Thừa Kỳ',
+    leaderLevel: 710,
+    linhMachLevel: 3,
+    totalContribution: 29400,
+    memberCount: 5,
+    totalTuVi: 26065000,
+    avgLevel: 413,
+    avgRealmName: 'Hóa Thần Kỳ',
+    badgeIcon: '🗡️',
+    slogan: 'Nhất Kiếm Đoạt Mệnh • Khai Mở Càn Khôn',
+    bannerColor: '#a855f7',
+    weeklyTournamentPoints: 710,
+    isHoldingThienCung: false,
+    worldBoss: {
+      id: 'boss_bach_ho',
+      name: 'Thần Thú Bạch Hổ',
+      icon: '🐯',
+      hp: 140000,
+      maxHp: 200000,
+      level: 9,
+      isDefeated: false,
+      lastResetTime: Date.now(),
+    },
+    members: [
+      {
+        userId: 'van_kiem_1',
+        username: 'Vô Nhai Kiếm Thánh',
+        displayName: 'Vô Nhai Kiếm Thánh',
+        avatar: '🗡️',
+        frame: 'frame_xianxia_daithua',
+        role: 'chuong_mon',
+        contribution: 11000,
+        realmIndex: 7,
+        realmName: 'Đại Thừa Kỳ',
+        realmIcon: '☀️',
+        level: 710,
+        tier: 8,
+        exp: 710000,
+        tuViScore: 7710000,
+        joinedAt: Date.now() - 29 * 86400000,
+      },
+      {
+        userId: 'van_kiem_2',
+        username: 'Tàng Kiếm Lão Nhân',
+        displayName: 'Tàng Kiếm Lão Nhân',
+        avatar: '🧙‍♂️',
+        frame: 'frame_xianxia_hopthe',
+        role: 'dai_truong_lao',
+        contribution: 6200,
+        realmIndex: 6,
+        realmName: 'Hợp Thể Kỳ',
+        realmIcon: '⚡',
+        level: 560,
+        tier: 6,
+        exp: 560000,
+        tuViScore: 6560000,
+        joinedAt: Date.now() - 21 * 86400000,
+      },
+      {
+        userId: 'van_kiem_3',
+        username: 'Kiếm Vô Ngấn',
+        displayName: 'Kiếm Vô Ngấn',
+        avatar: '⚔️',
+        frame: 'frame_xianxia_luyenhu',
+        role: 'chan_truyen',
+        contribution: 2700,
+        realmIndex: 5,
+        realmName: 'Luyện Hư Kỳ',
+        realmIcon: '🌀',
+        level: 410,
+        tier: 4,
+        exp: 410000,
+        tuViScore: 5410000,
+        joinedAt: Date.now() - 15 * 86400000,
+      },
+      {
+        userId: 'van_kiem_4',
+        username: 'Mặc Kiếm Khách',
+        displayName: 'Mặc Kiếm Khách',
+        avatar: '🥷',
+        frame: 'frame_xianxia_hoathan',
+        role: 'noi_mon',
+        contribution: 920,
+        realmIndex: 4,
+        realmName: 'Hóa Thần Kỳ',
+        realmIcon: '🌌',
+        level: 290,
+        tier: 3,
+        exp: 290000,
+        tuViScore: 4290000,
+        joinedAt: Date.now() - 9 * 86400000,
+      },
+      {
+        userId: 'van_kiem_5',
+        username: 'Tố Kiếm Đệ Tử',
+        displayName: 'Tố Kiếm Đệ Tử',
+        avatar: '🌸',
+        frame: 'frame_xianxia_ketdan',
+        role: 'ngoai_mon',
+        contribution: 210,
+        realmIndex: 2,
+        realmName: 'Kết Đan Kỳ',
+        realmIcon: '🔮',
+        level: 95,
+        tier: 2,
+        exp: 95000,
+        tuViScore: 2095000,
+        joinedAt: Date.now() - 4 * 86400000,
+      },
+    ],
+  },
+  {
+    id: 'sect_tieu_dao',
+    name: 'Tiêu Dao Cung',
+    tag: 'Tiêu Dao',
+    description: 'Tiêu dao tự tại giữa đất trời, tâm như chỉ thủy, thân tự phù vân ngao du vạn dặm.',
+    leaderId: 'leader_tieu_dao',
+    leaderName: 'Tiêu Dao Tử',
+    leaderAvatar: '🪷',
+    leaderFrame: 'frame_xianxia_daithua',
+    leaderRealmName: 'Đại Thừa Kỳ',
+    leaderLevel: 690,
+    linhMachLevel: 2,
+    totalContribution: 16800,
+    memberCount: 5,
+    totalTuVi: 25978000,
+    avgLevel: 395,
+    avgRealmName: 'Hóa Thần Kỳ',
+    badgeIcon: '🪷',
+    slogan: 'Tiêu Dao Tự Tại • Đạo Pháp Tự Nhiên',
+    bannerColor: '#34d399',
+    weeklyTournamentPoints: 620,
+    isHoldingThienCung: false,
+    worldBoss: {
+      id: 'boss_ky_lan',
+      name: 'Hồng Hoang Kỳ Lân',
+      icon: '🦄',
+      hp: 120000,
+      maxHp: 180000,
+      level: 8,
+      isDefeated: false,
+      lastResetTime: Date.now(),
+    },
+    members: [
+      {
+        userId: 'tieu_dao_1',
+        username: 'Tiêu Dao Tử',
+        displayName: 'Tiêu Dao Tử',
+        avatar: '🪷',
+        frame: 'frame_xianxia_daithua',
+        role: 'chuong_mon',
+        contribution: 8500,
+        realmIndex: 7,
+        realmName: 'Đại Thừa Kỳ',
+        realmIcon: '☀️',
+        level: 690,
+        tier: 7,
+        exp: 690000,
+        tuViScore: 7690000,
+        joinedAt: Date.now() - 27 * 86400000,
+      },
+      {
+        userId: 'tieu_dao_2',
+        username: 'Cầm Họa Tiên Cô',
+        displayName: 'Cầm Họa Tiên Cô',
+        avatar: '🪕',
+        frame: 'frame_xianxia_hopthe',
+        role: 'dai_truong_lao',
+        contribution: 5100,
+        realmIndex: 6,
+        realmName: 'Hợp Thể Kỳ',
+        realmIcon: '⚡',
+        level: 530,
+        tier: 5,
+        exp: 530000,
+        tuViScore: 6530000,
+        joinedAt: Date.now() - 20 * 86400000,
+      },
+      {
+        userId: 'tieu_dao_3',
+        username: 'Bạch Lộc Chân Quân',
+        displayName: 'Bạch Lộc Chân Quân',
+        avatar: '🦌',
+        frame: 'frame_xianxia_luyenhu',
+        role: 'chan_truyen',
+        contribution: 2300,
+        realmIndex: 5,
+        realmName: 'Luyện Hư Kỳ',
+        realmIcon: '🌀',
+        level: 390,
+        tier: 4,
+        exp: 390000,
+        tuViScore: 5390000,
+        joinedAt: Date.now() - 14 * 86400000,
+      },
+      {
+        userId: 'tieu_dao_4',
+        username: 'Lưu Vân Đạo Trưởng',
+        displayName: 'Lưu Vân Đạo Trưởng',
+        avatar: '☁️',
+        frame: 'frame_xianxia_hoathan',
+        role: 'noi_mon',
+        contribution: 880,
+        realmIndex: 4,
+        realmName: 'Hóa Thần Kỳ',
+        realmIcon: '🌌',
+        level: 280,
+        tier: 3,
+        exp: 280000,
+        tuViScore: 4280000,
+        joinedAt: Date.now() - 8 * 86400000,
+      },
+      {
+        userId: 'tieu_dao_5',
+        username: 'Thính Phong Tử',
+        displayName: 'Thính Phong Tử',
+        avatar: '🍃',
+        frame: 'frame_xianxia_ketdan',
+        role: 'ngoai_mon',
+        contribution: 190,
+        realmIndex: 2,
+        realmName: 'Kết Đan Kỳ',
+        realmIcon: '🔮',
+        level: 88,
+        tier: 2,
+        exp: 88000,
+        tuViScore: 2088000,
+        joinedAt: Date.now() - 3 * 86400000,
+      },
+    ],
+  },
+];
+
+function recalculateSectStats(sect: ServerSectRecord) {
+  if (!sect.members || !Array.isArray(sect.members)) {
+    sect.members = [];
+  }
+  const totalTuVi = sect.members.reduce((acc: number, m: any) => acc + (Number(m.tuViScore) || 0), 0);
+  sect.totalTuVi = totalTuVi > 0 ? totalTuVi : (sect.totalTuVi || 1000000);
+  sect.memberCount = sect.members.length;
+  if (sect.members.length > 0) {
+    sect.avgLevel = Math.round(sect.members.reduce((acc: number, m: any) => acc + (Number(m.level) || 1), 0) / sect.members.length);
+    const avgRealmIdx = Math.round(sect.members.reduce((acc: number, m: any) => acc + (Number(m.realmIndex) || 0), 0) / sect.members.length);
+    sect.avgRealmName = XIANXIA_REALM_METAS[Math.min(11, Math.max(0, avgRealmIdx))]?.name || 'Hóa Thần Kỳ';
+  }
+}
+
+function loadSectsFromFile(): Map<string, ServerSectRecord> {
+  const map = new Map<string, ServerSectRecord>();
+  try {
+    if (fs.existsSync(SECTS_FILE)) {
+      const content = fs.readFileSync(SECTS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data)) {
+        for (const s of data) {
+          if (s && s.id) {
+            recalculateSectStats(s);
+            map.set(s.id, s);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error reading sects.json:', err);
+  }
+
+  // Ensure default sects exist if map is empty or missing them
+  if (map.size === 0) {
+    for (const s of DEFAULT_SERVER_SECTS) {
+      recalculateSectStats(s);
+      map.set(s.id, s);
+    }
+    try {
+      fs.writeFileSync(SECTS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
+    } catch {}
+  } else {
+    // Check if any default sects are missing
+    let needSave = false;
+    for (const d of DEFAULT_SERVER_SECTS) {
+      if (!map.has(d.id)) {
+        recalculateSectStats(d);
+        map.set(d.id, d);
+        needSave = true;
+      }
+    }
+    if (needSave) {
+      try {
+        fs.writeFileSync(SECTS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
+      } catch {}
+    }
+  }
+
+  return map;
+}
+
+const serverSects = loadSectsFromFile();
+
+function saveSectsToFile() {
+  try {
+    const arr = Array.from(serverSects.values());
+    fs.writeFileSync(SECTS_FILE, JSON.stringify(arr, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving sects.json:', err);
+  }
+}
+
+function syncUserToSect(user: ServerUserRecord) {
+  if (!user || !user.cultivation?.sect?.sectId) return;
+  const sectId = user.cultivation.sect.sectId;
+  const sect = serverSects.get(sectId);
+  if (!sect) return;
+
+  const cult = user.cultivation;
+  const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+  const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+  const level = Math.max(1, Number(cult.level) || 1);
+  const tier = Math.max(1, Number(cult.tier) || 1);
+  const exp = Math.max(0, Number(cult.exp) || 0);
+  const tuViScore = (realmIndex * 1_000_000) + (level * 10_000) + (tier * 1_000) + exp;
+
+  if (!sect.members) sect.members = [];
+  const uLower = user.username.toLowerCase();
+  const existingIdx = sect.members.findIndex((m: any) => m.username?.toLowerCase() === uLower);
+
+  const role = user.cultivation.sect.role || 'ngoai_mon';
+  const contribution = user.cultivation.sect.contribution || 50;
+
+  const memberData: ServerSectMemberRecord = {
+    userId: user.id,
+    username: user.username,
+    displayName: user.displayName || user.username,
+    avatar: user.avatar || '⚡',
+    frame: user.frame || realmMeta.frameId,
+    role,
+    contribution,
+    realmIndex,
+    realmName: realmMeta.name,
+    realmIcon: realmMeta.icon,
+    level,
+    tier,
+    exp,
+    tuViScore,
+    joinedAt: user.cultivation.sect.joinedAt || Date.now(),
+    lastActive: Date.now(),
+  };
+
+  if (existingIdx !== -1) {
+    sect.members[existingIdx] = memberData;
+  } else {
+    sect.members.push(memberData);
+  }
+
+  if (role === 'chuong_mon') {
+    sect.leaderId = user.id;
+    sect.leaderName = user.username;
+    sect.leaderAvatar = user.avatar;
+    sect.leaderFrame = user.frame;
+    sect.leaderRealmName = realmMeta.name;
+    sect.leaderLevel = level;
+  }
+
+  recalculateSectStats(sect);
+  saveSectsToFile();
+}
+
+// =========================================================================
+// BÀN CỔ THẦN THỨC - HỆ THỐNG TRỪNG PHẠT & PHONG ẤN GIAN LẬN (2H BAN)
+// =========================================================================
+const BANS_FILE = path.join(process.cwd(), 'banned_users.json');
+
+export interface ServerBanRecord {
+  username: string;
+  userId?: string;
+  bannedAt: number;
+  bannedUntil: number;
+  durationMs: number;
+  reason: string;
+  personaId: 'ban_co';
+}
+
+function loadBansFromFile(): Map<string, ServerBanRecord> {
+  const map = new Map<string, ServerBanRecord>();
+  try {
+    if (fs.existsSync(BANS_FILE)) {
+      const content = fs.readFileSync(BANS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (data && typeof data === 'object') {
+        const now = Date.now();
+        for (const [key, val] of Object.entries(data)) {
+          if (val && typeof val === 'object' && (val as any).bannedUntil > now) {
+            map.set(key.toLowerCase(), val as ServerBanRecord);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error reading banned_users.json:', err);
+  }
+  return map;
+}
+
+const serverBans = loadBansFromFile();
+
+function saveBansToFile() {
+  try {
+    const obj: Record<string, ServerBanRecord> = {};
+    const now = Date.now();
+    for (const [k, v] of serverBans.entries()) {
+      if (v.bannedUntil > now) {
+        obj[k] = v;
+      }
+    }
+    fs.writeFileSync(BANS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving banned_users.json:', err);
+  }
+}
+
+function checkIsBanned(usernameOrId?: string): {
+  isBanned: boolean;
+  record?: ServerBanRecord;
+  remainingMs: number;
+  remainingMinutes: number;
+} {
+  if (!usernameOrId) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+  const key = String(usernameOrId).trim().toLowerCase();
+  if (!key) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+
+  const now = Date.now();
+  let record = serverBans.get(key);
+
+  if (!record) {
+    for (const b of serverBans.values()) {
+      if ((b.username && b.username.toLowerCase() === key) || (b.userId && b.userId.toLowerCase() === key)) {
+        record = b;
+        break;
+      }
+    }
+  }
+
+  if (record) {
+    if (record.bannedUntil > now) {
+      const remainingMs = record.bannedUntil - now;
+      return {
+        isBanned: true,
+        record,
+        remainingMs,
+        remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
+      };
+    } else {
+      // Hết hạn 2 giờ -> tự động giải trừ phong ấn
+      serverBans.delete(key);
+      saveBansToFile();
+    }
+  }
+
+  // Kiểm tra tài khoản trong serverUsers
+  const user = getUserByUsername(usernameOrId) || serverUsers.get(usernameOrId);
+  if (user && (user as any).bannedUntil && (user as any).bannedUntil > now) {
+    const remainingMs = (user as any).bannedUntil - now;
+    const rec: ServerBanRecord = {
+      username: user.username,
+      userId: user.id,
+      bannedAt: (user as any).bannedAt || now,
+      bannedUntil: (user as any).bannedUntil,
+      durationMs: (user as any).bannedDurationMs || (2 * 60 * 60 * 1000),
+      reason: (user as any).banReason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro',
+      personaId: 'ban_co',
+    };
+    serverBans.set(user.username.toLowerCase(), rec);
+    return {
+      isBanned: true,
+      record: rec,
+      remainingMs,
+      remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
+    };
+  }
+
+  return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+}
+
+let syncUserCultivationToCache: ((user: ServerUserRecord) => void) | null = null;
+
+function executeApplyBan(params: {
+  username: string;
+  userId?: string;
+  reason?: string;
+  durationMs?: number;
+}): ServerBanRecord {
+  const durationMs = params.durationMs || (2 * 60 * 60 * 1000); // 2 giờ
+  const now = Date.now();
+  const bannedUntil = now + durationMs;
+  const cleanUsername = String(params.username || 'Vô Danh').trim();
+  const reason = String(params.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro').trim();
+
+  const record: ServerBanRecord = {
+    username: cleanUsername,
+    userId: params.userId,
+    bannedAt: now,
+    bannedUntil,
+    durationMs,
+    reason,
+    personaId: 'ban_co',
+  };
+
+  serverBans.set(cleanUsername.toLowerCase(), record);
+  if (params.userId) {
+    serverBans.set(params.userId.toLowerCase(), record);
+  }
+  saveBansToFile();
+
+  // Phế trừ 500 Tu Vi nếu tài khoản đã đăng ký
+  const user = getUserByUsername(cleanUsername) || (params.userId ? serverUsers.get(params.userId) : null);
+  if (user) {
+    (user as any).bannedUntil = bannedUntil;
+    (user as any).bannedAt = now;
+    (user as any).banReason = reason;
+    (user as any).bannedDurationMs = durationMs;
+
+    if (user.cultivation) {
+      const exp = Number(user.cultivation.exp) || 0;
+      user.cultivation.exp = Math.max(0, exp - 500);
+      if (syncUserCultivationToCache) {
+        try {
+          syncUserCultivationToCache(user);
+        } catch {}
+      }
+    }
+    saveUsersToFile();
+  }
+
+  // Trục xuất ngay lập tức khỏi mọi phòng thi đấu đang tham gia
+  for (const [code, r] of rooms.entries()) {
+    const hasP = r.players.some(
+      (p) =>
+        (p.username && p.username.toLowerCase() === cleanUsername.toLowerCase()) ||
+        (params.userId && p.id === params.userId)
+    );
+    if (hasP) {
+      r.players = r.players.filter(
+        (p) =>
+          (!p.username || p.username.toLowerCase() !== cleanUsername.toLowerCase()) &&
+          (!params.userId || p.id !== params.userId)
+      );
+      if (r.players.length === 0) {
+        rooms.delete(code);
+      } else {
+        if (r.hostName && r.hostName.toLowerCase() === cleanUsername.toLowerCase()) {
+          r.hostId = r.players[0].id;
+          r.hostName = r.players[0].username;
+        }
+        broadcastToRoom(code, {
+          type: 'room_updated',
+          room: r,
+        });
+      }
+    }
+  }
+
+  return record;
+}
+
 function getUserByToken(rawToken?: string): ServerUserRecord | null {
   if (!rawToken) return null;
   const cleanToken = rawToken.replace(/^Bearer\s+/i, '').trim();
@@ -344,6 +1292,57 @@ export interface PresenceSession {
 const activePresenceSessions = new Map<string, PresenceSession>(); // tabId -> session
 const sseGlobalClients = new Map<express.Response, string>(); // res -> tabId
 const sseGlobalChatClients = new Set<express.Response>();
+const sseClientMeta = new Map<express.Response, { userId?: string; username?: string; tabId?: string; sectId?: string }>();
+
+// Multi-Channel Chat Storage
+const sectChatMessages = new Map<string, ServerChatMessage[]>(); // sectId -> messages
+const whisperChatMessages = new Map<string, ServerChatMessage[]>(); // sorted pair key -> messages
+
+function getWhisperKey(id1: string, id2: string): string {
+  return [String(id1 || '').toLowerCase(), String(id2 || '').toLowerCase()].sort().join('_');
+}
+
+// ==========================================
+// FRIENDS & DAO LU PERSISTENT STORAGE
+// ==========================================
+const FRIENDS_FILE = path.resolve(process.cwd(), 'friends.json');
+const serverFriendships = new Map<string, ServerFriendshipRecord>();
+const serverFriendRequests = new Map<string, ServerFriendRequestRecord>();
+
+function loadFriendsFromFile() {
+  try {
+    if (fs.existsSync(FRIENDS_FILE)) {
+      const content = fs.readFileSync(FRIENDS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (data && Array.isArray(data.friendships)) {
+        for (const f of data.friendships) {
+          if (f && f.id) serverFriendships.set(f.id, f);
+        }
+      }
+      if (data && Array.isArray(data.requests)) {
+        for (const r of data.requests) {
+          if (r && r.id) serverFriendRequests.set(r.id, r);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error loading friends.json:', err);
+  }
+}
+
+function saveFriendsToFile() {
+  try {
+    const data = {
+      friendships: Array.from(serverFriendships.values()),
+      requests: Array.from(serverFriendRequests.values()),
+    };
+    fs.writeFileSync(FRIENDS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving friends.json:', err);
+  }
+}
+
+loadFriendsFromFile();
 
 function parseUserAgent(ua?: string): { browser: string; device: string } {
   if (!ua) return { browser: 'Web Browser', device: 'Desktop' };
@@ -617,6 +1616,76 @@ function broadcastGlobalChat(msg: ServerChatMessage) {
     } catch {
       sseGlobalChatClients.delete(client);
       sseGlobalClients.delete(client);
+      sseClientMeta.delete(client);
+    }
+  }
+}
+
+function broadcastSectChat(sectId: string, msg: ServerChatMessage) {
+  const payload = `data: ${JSON.stringify({ type: 'new_chat_message', message: msg })}\n\n`;
+  for (const client of Array.from(sseGlobalChatClients)) {
+    try {
+      const meta = sseClientMeta.get(client);
+      const user = meta?.userId ? serverUsers.get(meta.userId) : (meta?.username ? getUserByUsername(meta.username) : null);
+      const userSectId = user?.cultivation?.sectId || meta?.sectId;
+      if (userSectId === sectId || meta?.username === 'Admin' || user?.isAdmin) {
+        client.write(payload);
+      }
+    } catch {
+      sseGlobalChatClients.delete(client);
+      sseGlobalClients.delete(client);
+      sseClientMeta.delete(client);
+    }
+  }
+}
+
+function broadcastWhisperChat(user1Id: string, user2Id: string, msg: ServerChatMessage) {
+  const payload = `data: ${JSON.stringify({ type: 'new_chat_message', message: msg })}\n\n`;
+  const clean1 = (user1Id || '').toLowerCase();
+  const clean2 = (user2Id || '').toLowerCase();
+  const targetName = (msg.whisperTarget || '').toLowerCase();
+  const senderName = (msg.username || '').toLowerCase();
+
+  for (const client of Array.from(sseGlobalChatClients)) {
+    try {
+      const meta = sseClientMeta.get(client);
+      const cUserId = (meta?.userId || '').toLowerCase();
+      const cUsername = (meta?.username || '').toLowerCase();
+
+      const isParticipant =
+        (cUserId && (cUserId === clean1 || cUserId === clean2)) ||
+        (cUsername && (cUsername === senderName || cUsername === targetName)) ||
+        cUsername === 'admin';
+
+      if (isParticipant) {
+        client.write(payload);
+      }
+    } catch {
+      sseGlobalChatClients.delete(client);
+      sseGlobalClients.delete(client);
+      sseClientMeta.delete(client);
+    }
+  }
+}
+
+function broadcastToUser(targetUserIdOrName: string, event: any) {
+  if (!targetUserIdOrName) return;
+  const payload = `data: ${JSON.stringify(event)}\n\n`;
+  const clean = String(targetUserIdOrName || '').toLowerCase();
+
+  for (const client of Array.from(sseGlobalChatClients)) {
+    try {
+      const meta = sseClientMeta.get(client);
+      if (
+        (meta?.userId && meta.userId.toLowerCase() === clean) ||
+        (meta?.username && meta.username.toLowerCase() === clean)
+      ) {
+        client.write(payload);
+      }
+    } catch {
+      sseGlobalChatClients.delete(client);
+      sseGlobalClients.delete(client);
+      sseClientMeta.delete(client);
     }
   }
 }
@@ -1220,21 +2289,6 @@ async function startServer() {
   let cachedCultivationRankedList: any[] = [];
   let cachedTotalCultivators = 0;
 
-  const XIANXIA_REALM_METAS = [
-    { name: 'Luyện Khí Kỳ', titleName: 'Luyện Khí Tu Sĩ', icon: '🌿', badge: 'Khí', frameId: 'frame_xianxia_luyenkhi', startLevel: 1, endLevel: 30 },
-    { name: 'Trúc Cơ Kỳ', titleName: 'Trúc Cơ Chân Nhân', icon: '🧱', badge: 'Cơ', frameId: 'frame_xianxia_trucco', startLevel: 31, endLevel: 70 },
-    { name: 'Kết Đan Kỳ', titleName: 'Kim Đan Tông Sư', icon: '🔮', badge: 'Đan', frameId: 'frame_xianxia_ketdan', startLevel: 71, endLevel: 130 },
-    { name: 'Nguyên Anh Kỳ', titleName: 'Nguyên Anh Lão Quái', icon: '👶', badge: 'Anh', frameId: 'frame_xianxia_nguyenanh', startLevel: 131, endLevel: 210 },
-    { name: 'Hóa Thần Kỳ', titleName: 'Hóa Thần Tôn Giả', icon: '🌌', badge: 'Thần', frameId: 'frame_xianxia_hoathan', startLevel: 211, endLevel: 310 },
-    { name: 'Luyện Hư Kỳ', titleName: 'Luyện Hư Thần Quân', icon: '🌀', badge: 'Hư', frameId: 'frame_xianxia_luyenhu', startLevel: 311, endLevel: 430 },
-    { name: 'Hợp Thể Kỳ', titleName: 'Hợp Thể Thánh Quân', icon: '⚡', badge: 'Thể', frameId: 'frame_xianxia_hopthe', startLevel: 431, endLevel: 570 },
-    { name: 'Đại Thừa Kỳ', titleName: 'Đại Thừa Chí Tôn', icon: '☀️', badge: 'Thừa', frameId: 'frame_xianxia_daithua', startLevel: 571, endLevel: 720 },
-    { name: 'Độ Kiếp Kỳ', titleName: 'Độ Kiếp Tiên Tôn', icon: '🌩️', badge: 'Kiếp', frameId: 'frame_xianxia_dokiep', startLevel: 721, endLevel: 870 },
-    { name: 'Kim Tiên', titleName: 'Bất Hủ Kim Tiên', icon: '🌟', badge: 'Kim', frameId: 'frame_xianxia_kimtien', startLevel: 871, endLevel: 940 },
-    { name: 'Đại La Tiên', titleName: 'Đại La Kim Tiên', icon: '🌠', badge: 'La', frameId: 'frame_xianxia_daila', startLevel: 941, endLevel: 980 },
-    { name: 'Thiên Tôn', titleName: 'Hỗn Độn Thiên Tôn', icon: '👑', badge: 'Tôn', frameId: 'frame_xianxia_thienton', startLevel: 981, endLevel: 1000 },
-  ];
-
   function getSubStageName(tier: number): 'Sơ Kỳ' | 'Trung Kỳ' | 'Hậu Kỳ' | 'Đại Viên Mãn' {
     if (tier <= 3) return 'Sơ Kỳ';
     if (tier <= 6) return 'Trung Kỳ';
@@ -1317,7 +2371,7 @@ async function startServer() {
   }, CULTIVATION_LEADERBOARD_INTERVAL_MS);
 
   // Helper đồng bộ tu vi thực tế của người chơi vào danh sách ngay khi có cập nhật
-  function syncUserCultivationToCache(user: ServerUserRecord) {
+  syncUserCultivationToCache = function(user: ServerUserRecord) {
     if (!user || !user.username || !user.cultivation) return;
     const cult = user.cultivation;
     const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
@@ -1329,8 +2383,8 @@ async function startServer() {
     const thoNguyen = !isNaN(rawTho) && rawTho >= 0 ? rawTho : 240;
     const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
 
-    const uLower = user.username.toLowerCase();
-    const existingIndex = cachedCultivationRankedList.findIndex((item) => item.username.toLowerCase() === uLower);
+    const uLower = String(user.username || '').toLowerCase();
+    const existingIndex = cachedCultivationRankedList.findIndex((item) => (item.username || '').toLowerCase() === uLower);
     if (existingIndex !== -1) {
       cachedCultivationRankedList[existingIndex] = {
         ...cachedCultivationRankedList[existingIndex],
@@ -1349,7 +2403,7 @@ async function startServer() {
       };
     }
 
-    const topIndex = cachedCultivationTop50.findIndex((item) => item.username.toLowerCase() === uLower);
+    const topIndex = cachedCultivationTop50.findIndex((item) => (item.username || '').toLowerCase() === uLower);
     if (topIndex !== -1) {
       cachedCultivationTop50[topIndex] = {
         ...cachedCultivationTop50[topIndex],
@@ -1515,6 +2569,16 @@ async function startServer() {
       return;
     }
 
+    // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
+    const hostBan = checkIsBanned(host.username || host.id);
+    if (hostBan.isBanned) {
+      res.status(403).json({
+        success: false,
+        error: `Tài khoản đang chịu án phạt từ Bàn Cổ Thần Thức (Cấm thi đấu 2 giờ). Thời gian thụ án còn lại: ${hostBan.remainingMinutes} phút!`,
+      });
+      return;
+    }
+
     const code = generateUniqueRoomCode();
     const hostPlayer: Player = {
       ...host,
@@ -1554,6 +2618,16 @@ async function startServer() {
     const { rawCode, player, currentMode } = req.body;
     if (!rawCode || !player) {
       res.status(400).json({ success: false, error: 'Vui lòng nhập mã phòng hợp lệ.' });
+      return;
+    }
+
+    // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
+    const playerBan = checkIsBanned(player.username || player.id);
+    if (playerBan.isBanned) {
+      res.status(403).json({
+        success: false,
+        error: `Tài khoản đang chịu án phạt từ Bàn Cổ Thần Thức (Cấm thi đấu 2 giờ). Thời gian thụ án còn lại: ${playerBan.remainingMinutes} phút!`,
+      });
       return;
     }
 
@@ -1661,6 +2735,16 @@ async function startServer() {
     const { mode, player, difficulty } = req.body;
     if (!mode || !player) {
       res.status(400).json({ success: false, error: 'Thiếu thông tin người chơi hoặc chế độ.' });
+      return;
+    }
+
+    // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
+    const playerBan = checkIsBanned(player.username || player.id);
+    if (playerBan.isBanned) {
+      res.status(403).json({
+        success: false,
+        error: `Tài khoản đang chịu án phạt từ Bàn Cổ Thần Thức (Cấm thi đấu 2 giờ). Thời gian thụ án còn lại: ${playerBan.remainingMinutes} phút!`,
+      });
       return;
     }
 
@@ -2240,41 +3324,231 @@ async function startServer() {
     });
   });
 
-  // GET /api/chat/messages: Fetch chat messages for global or specific room
+  // SSE Stream for Realtime Global/Sect/Whisper Chat, Online Presence, Leaderboards, and Live Friend Events
+  app.get('/api/chat/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const tabId = String(req.query.tabId || '').trim();
+    const userId = String(req.query.userId || '').trim();
+    const username = String(req.query.username || '').trim();
+
+    sseGlobalChatClients.add(res);
+    sseClientMeta.set(res, { userId, username, tabId });
+
+    if (tabId) {
+      sseGlobalClients.set(res, tabId);
+      const meta = extractSessionMetaFromReq(req);
+      registerPresence(tabId, userId, meta);
+    }
+
+    // Send initial chat, presence and leaderboard state
+    res.write(`data: ${JSON.stringify({ type: 'init_chat', messages: globalChatMessages.slice(-50) })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'online_count', count: getRealOnlineCount() })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'leaderboard_updated', highScores: serverHighScores })}\n\n`);
+
+    // Notify of pending friend requests if user is registered
+    if (userId || username) {
+      const cleanId = (userId || '').toLowerCase();
+      const cleanName = (username || '').toLowerCase();
+      const pendingCount = Array.from(serverFriendRequests.values()).filter(
+        (r) =>
+          (cleanId && r.toUserId && r.toUserId.toLowerCase() === cleanId) ||
+          (cleanName && r.toUsername && r.toUsername.toLowerCase() === cleanName) ||
+          (cleanName && r.toUserId && r.toUserId.toLowerCase() === cleanName)
+      ).length;
+      if (pendingCount > 0) {
+        res.write(`data: ${JSON.stringify({ type: 'friend_requests_count', count: pendingCount })}\n\n`);
+      }
+    }
+
+    // Keep-alive heartbeat every 15s
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(': heartbeat\n\n');
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      sseGlobalChatClients.delete(res);
+      sseGlobalClients.delete(res);
+      sseClientMeta.delete(res);
+      if (tabId) {
+        removePresence(tabId);
+      }
+    });
+  });
+
+  // GET /api/chat/messages: Fetch chat messages with multi-channel support (global, room, sect, whisper)
   app.get('/api/chat/messages', (req, res) => {
-    const channel = req.query.channel === 'room' ? 'room' : 'global';
+    const channel = String(req.query.channel || 'global').trim();
     const roomId = req.query.roomId ? normalizeRoomCode(String(req.query.roomId)) : '';
+    const sectId = String(req.query.sectId || '').trim();
+    const currentUserId = String(req.query.currentUserId || '').trim();
+    const targetUserId = String(req.query.targetUserId || '').trim();
+
     if (channel === 'room' && roomId) {
       const msgs = roomChatMessages.get(roomId) || [];
       res.json({ success: true, messages: msgs });
       return;
     }
+
+    if (channel === 'sect' && sectId) {
+      const msgs = sectChatMessages.get(sectId) || [];
+      res.json({ success: true, messages: msgs });
+      return;
+    }
+
+    if (channel === 'whisper' && currentUserId && targetUserId) {
+      const key = getWhisperKey(currentUserId, targetUserId);
+      const msgs = whisperChatMessages.get(key) || [];
+      res.json({ success: true, messages: msgs });
+      return;
+    }
+
     res.json({ success: true, messages: globalChatMessages });
   });
 
-  // POST /api/chat/messages: Broadcast new chat message to global or room
+  // POST /api/chat/messages: Broadcast new chat message with multi-channel, rich cards & slash commands
   app.post('/api/chat/messages', (req, res) => {
-    const { username, avatar, frame, message, channel, roomId, isAdmin, isDaoBot, daoEventType, daoTitle } = req.body;
+    let { 
+      username, 
+      avatar, 
+      frame, 
+      message, 
+      channel = 'global', 
+      roomId, 
+      sectId,
+      whisperTarget,
+      whisperTargetUserId,
+      senderUserId,
+      senderRealm,
+      senderRealmIcon,
+      senderSectTag,
+      cardType,
+      cardData,
+      isAdmin, 
+      isDaoBot, 
+      daoEventType, 
+      daoTitle 
+    } = req.body;
+
     if (!message || typeof message !== 'string' || !message.trim()) {
       res.status(400).json({ success: false, error: 'Tin nhắn không được để trống' });
       return;
     }
 
-    const targetChannel = channel === 'room' ? 'room' : 'global';
+    let targetChannel = (['global', 'sect', 'room', 'whisper'].includes(channel) ? channel : 'global') as 'global' | 'sect' | 'room' | 'whisper';
     const normRoomId = roomId ? normalizeRoomCode(String(roomId)) : undefined;
     const msgId = (typeof req.body.id === 'string' && req.body.id.trim())
       ? req.body.id.trim()
       : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+    const isBotName = username === 'Huyền Thiên Khí Linh' || username === 'Linh Lung Tiên Đồng' || username === 'Bàn Cổ Thần Thức';
+    const finalUsername = isDaoBot 
+      ? (username && isBotName ? username : (username || 'Huyền Thiên Khí Linh'))
+      : String(username || 'Vô Danh').trim().slice(0, 30);
+
+    // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu / cấm túc
+    if (!isDaoBot && !isBotName) {
+      const userBan = checkIsBanned(finalUsername);
+      if (userBan.isBanned) {
+        res.status(403).json({
+          success: false,
+          error: `Đạo hữu đang chịu án phạt từ Bàn Cổ Thần Thức (Cấm túc U Minh Hàn Ngục còn ${userBan.remainingMinutes} phút), tạm thời không thể phát ngôn!`,
+        });
+        return;
+      }
+    }
+
+    // Look up sender's registered user record if available to enrich realm and sect badge
+    const senderUser = senderUserId ? serverUsers.get(senderUserId) : getUserByUsername(finalUsername);
+    if (senderUser) {
+      if (!senderUserId) senderUserId = senderUser.id;
+      if (!senderRealm && senderUser.cultivation) {
+        const rMeta = XIANXIA_REALM_METAS[senderUser.cultivation.realmIndex || 0];
+        senderRealm = rMeta?.name;
+        senderRealmIcon = rMeta?.icon;
+      }
+      if (!senderSectTag && senderUser.cultivation?.sectTag) {
+        senderSectTag = senderUser.cultivation.sectTag;
+      }
+    }
+
+    // Slash Commands parsing
+    const rawText = message.trim();
+    if (rawText.startsWith('/roll')) {
+      const topic = rawText.replace(/^\/roll\s*/i, '').trim() || 'Lắc xí ngầu độ duyên';
+      const rollVal = Math.floor(Math.random() * 100) + 1;
+      cardType = 'roll_result';
+      cardData = {
+        rollNumber: rollVal,
+        rollTopic: topic,
+      };
+      message = `🎲 [Độ Duyên]: ${finalUsername} lắc được ${rollVal} điểm! (${topic})`;
+    } else if (rawText.startsWith('/w ') || rawText.startsWith('/whisper ')) {
+      const parts = rawText.split(' ');
+      if (parts.length >= 3) {
+        whisperTarget = parts[1].replace(/^@/, '');
+        message = parts.slice(2).join(' ');
+        targetChannel = 'whisper';
+        const targetU = getUserByUsername(whisperTarget);
+        if (targetU) whisperTargetUserId = targetU.id;
+      }
+    } else if (rawText.startsWith('/phapbao')) {
+      cardType = 'item_share';
+      const artName = senderUser?.cultivation?.artifacts?.equipped || 'Tru Tiên Cổ Kiếm';
+      cardData = {
+        itemType: 'artifact',
+        itemName: artName,
+        itemIcon: '⚔️',
+        itemQuality: 'Thần Phẩm Chí Bảo',
+        itemDescription: 'Khí tức ngập tràn thiên địa, chấn nhiếp bát hoang yêu ma.',
+      };
+      message = `⚔️ ${finalUsername} khoe pháp bảo: [${artName}]!`;
+    } else if (rawText.startsWith('/dan')) {
+      cardType = 'item_share';
+      cardData = {
+        itemType: 'pill',
+        itemName: 'Hóa Thần Cửu Chuyển Đan',
+        itemIcon: '🔮',
+        itemQuality: 'Cực Phẩm Linh Đan',
+        itemDescription: 'Hỗ trợ ngưng tụ nguyên thần, bứt phá bình cảnh tu vi trong chớp mắt.',
+      };
+      message = `🔮 ${finalUsername} khoe linh đan: [Hóa Thần Cửu Chuyển Đan]!`;
+    }
+
+    const finalAvatar = isDaoBot
+      ? (avatar || (finalUsername === 'Linh Lung Tiên Đồng' ? '🪷' : (finalUsername === 'Bàn Cổ Thần Thức' ? '⚡' : '☯️')))
+      : (avatar || '⚡');
+    const finalFrame = isDaoBot
+      ? (frame || (finalUsername === 'Linh Lung Tiên Đồng' ? 'arcane_purple' : (finalUsername === 'Bàn Cổ Thần Thức' ? 'dragon_dark_blood' : 'admin_gold')))
+      : (frame || 'default');
+
     const newMsg: ServerChatMessage = {
       id: msgId,
-      username: isDaoBot ? 'Huyền Thiên Khí Linh' : String(username || 'Vô Danh').trim().slice(0, 30),
-      avatar: isDaoBot ? '☯️' : (avatar || '⚡'),
-      frame: isDaoBot ? 'admin_gold' : (frame || 'default'),
-      message: message.trim().slice(0, 400),
+      username: finalUsername,
+      avatar: finalAvatar,
+      frame: finalFrame,
+      message: message.trim().slice(0, 500),
       timestamp: Date.now(),
       channel: targetChannel,
       roomId: normRoomId,
+      sectId: sectId || undefined,
+      whisperTarget: whisperTarget || undefined,
+      whisperTargetUserId: whisperTargetUserId || undefined,
+      senderUserId: senderUserId || undefined,
+      senderRealm: senderRealm || undefined,
+      senderRealmIcon: senderRealmIcon || undefined,
+      senderSectTag: senderSectTag || undefined,
+      cardType: cardType || undefined,
+      cardData: cardData || undefined,
       isAdmin: Boolean(isAdmin || isDaoBot),
       isDaoBot: Boolean(isDaoBot),
       daoEventType: daoEventType || undefined,
@@ -2285,6 +3559,57 @@ async function startServer() {
       globalChatMessages.push(newMsg);
       if (globalChatMessages.length > 200) globalChatMessages.shift();
       broadcastGlobalChat(newMsg);
+
+      // Khi người chơi nhắc đến Linh Lung Tiên Đồng trong chat (@Linh Lung, @Tiên Đồng...)
+      if (!newMsg.isDaoBot && !newMsg.isSystem) {
+        const lower = newMsg.message.toLowerCase();
+        const mentionsLinhLung =
+          lower.includes('@linh lung') ||
+          lower.includes('@linhlung') ||
+          lower.includes('@tiên đồng') ||
+          lower.includes('@tiendong') ||
+          lower.includes('linh lung ơi') ||
+          lower.includes('tiên đồng ơi');
+
+        if (mentionsLinhLung) {
+          setTimeout(() => {
+            triggerLinhLungChatReply(newMsg.username, newMsg.message).catch(() => {});
+          }, 900);
+        }
+      }
+    } else if (targetChannel === 'sect' && sectId) {
+      let list = sectChatMessages.get(sectId);
+      if (!list) {
+        list = [];
+        sectChatMessages.set(sectId, list);
+      }
+      list.push(newMsg);
+      if (list.length > 150) list.shift();
+      broadcastSectChat(sectId, newMsg);
+    } else if (targetChannel === 'whisper') {
+      const u1 = senderUserId || finalUsername;
+      const u2 = whisperTargetUserId || whisperTarget || 'unknown';
+      const key = getWhisperKey(u1, u2);
+      let list = whisperChatMessages.get(key);
+      if (!list) {
+        list = [];
+        whisperChatMessages.set(key, list);
+      }
+      list.push(newMsg);
+      if (list.length > 100) list.shift();
+      broadcastWhisperChat(u1, u2, newMsg);
+
+      // Nhẹ nhàng tăng hảo cảm khi đạo hữu đàm đạo với nhau (+1 hảo cảm, tối đa 20/ngày)
+      const fsRecord = Array.from(serverFriendships.values()).find(
+        (f) =>
+          (f.user1Id === u1 && f.user2Id === u2) ||
+          (f.user1Id === u2 && f.user2Id === u1)
+      );
+      if (fsRecord) {
+        fsRecord.intimacy = Math.min(10000, (fsRecord.intimacy || 0) + 1);
+        fsRecord.updatedAt = Date.now();
+        saveFriendsToFile();
+      }
     } else if (normRoomId) {
       let list = roomChatMessages.get(normRoomId);
       if (!list) {
@@ -2293,8 +3618,6 @@ async function startServer() {
       }
       list.push(newMsg);
       if (list.length > 150) list.shift();
-
-      // Broadcast to room participants via room SSE stream
       broadcastToRoom(normRoomId, { type: 'chat_message', message: newMsg });
     }
 
@@ -2302,7 +3625,633 @@ async function startServer() {
   });
 
   // =========================================================================
-  // HUYỀN THIÊN KHÍ LINH (DAO BOT) SERVER STATE & ENDPOINTS
+  // HỆ THỐNG ĐẠO HỮU & KẾT BÁI ĐẠO LỮ (FRIENDS & DAO LU APIS)
+  // =========================================================================
+
+  // Helper tính Intimacy Level: 1: Sơ Thức (0-499), 2: Kim Lan (500-1999), 3: Tri Kỷ (2000-4999), 4: Đạo Lữ (5000+)
+  function calculateIntimacyLevel(intimacy: number, isDaoLu?: boolean): 1 | 2 | 3 | 4 {
+    if (isDaoLu || intimacy >= 5000) return 4;
+    if (intimacy >= 2000) return 3;
+    if (intimacy >= 500) return 2;
+    return 1;
+  }
+
+  // GET /api/friends/list: Danh sách đạo hữu, trạng thái online, độ hảo cảm & lời mời chờ duyệt
+  app.get('/api/friends/list', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const queryUserId = String(req.query.userId || '').trim();
+    const queryUsername = String(req.query.username || '').trim();
+
+    if (!authUser && queryUserId) {
+      authUser = serverUsers.get(queryUserId) || null;
+    }
+    if (!authUser && queryUsername) {
+      authUser = getUserByUsername(queryUsername);
+    }
+
+    if (!authUser) {
+      res.json({
+        success: true,
+        friends: [],
+        pendingRequests: [],
+        sentRequests: [],
+        isGuest: true,
+      });
+      return;
+    }
+
+    const myId = authUser.id;
+    const myName = String(authUser.username || '').toLowerCase();
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // Lọc danh sách bạn bè
+    const friends: any[] = [];
+    for (const fsRecord of serverFriendships.values()) {
+      if (fsRecord.user1Id === myId || fsRecord.user2Id === myId) {
+        const otherId = fsRecord.user1Id === myId ? fsRecord.user2Id : fsRecord.user1Id;
+        const otherUser = serverUsers.get(otherId);
+
+        // Kiểm tra trạng thái hiện diện online thời gian thực
+        let onlineSession: PresenceSession | undefined;
+        for (const sess of activePresenceSessions.values()) {
+          if (
+            (sess.userId && sess.userId === otherId) ||
+            (otherUser && otherUser.username && sess.username && sess.username.toLowerCase() === otherUser.username.toLowerCase())
+          ) {
+            onlineSession = sess;
+            break;
+          }
+        }
+
+        let friendStatus: 'online' | 'offline' | 'in_match' = 'offline';
+        if (onlineSession) {
+          friendStatus = (onlineSession.status === 'playing' || onlineSession.status === 'outplay')
+            ? 'in_match'
+            : 'online';
+        }
+
+        const intimacy = fsRecord.intimacy || 0;
+        const intimacyLevel = calculateIntimacyLevel(intimacy, fsRecord.isDaoLu);
+        const lastTea = fsRecord.lastGiftTeaDate?.[myId];
+        const canGiftTeaToday = lastTea !== todayStr;
+
+        const myLevel = Number(authUser.cultivation?.level) || 1;
+        const friendLevel = Number(otherUser?.cultivation?.level) || (onlineSession?.totalGames ? onlineSession.totalGames * 2 : 1);
+        const lastGuided = fsRecord.lastGuidedDate?.[myId];
+        const canGuideToday = myLevel > friendLevel && lastGuided !== todayStr;
+
+        const otherRealmIdx = otherUser?.cultivation?.realmIndex || 0;
+        const otherRealm = XIANXIA_REALM_METAS[otherRealmIdx] || XIANXIA_REALM_METAS[0];
+
+        friends.push({
+          friendshipId: fsRecord.id,
+          userId: otherId,
+          username: otherUser?.username || onlineSession?.username || 'Đạo Hữu',
+          displayName: otherUser?.displayName || otherUser?.username || onlineSession?.username || 'Đạo Hữu',
+          avatar: otherUser?.avatar || onlineSession?.avatar || '⚡',
+          frame: otherUser?.frame || onlineSession?.frame || 'default',
+          bestWpm: otherUser?.bestWpm || onlineSession?.bestWpm || 0,
+          level: friendLevel,
+          realmName: otherRealm.name,
+          realmIcon: otherRealm.icon,
+          sectName: otherUser?.cultivation?.sectName,
+          sectTag: otherUser?.cultivation?.sectTag,
+          status: friendStatus,
+          currentRoomId: onlineSession?.currentRoomId || null,
+          currentMode: onlineSession?.currentMode || null,
+          intimacy,
+          intimacyLevel,
+          isDaoLu: Boolean(fsRecord.isDaoLu),
+          daoLuTitle: fsRecord.daoLuTitle || (fsRecord.isDaoLu ? 'Tâm Đầu Ý Hợp' : undefined),
+          canGiftTeaToday,
+          canGuideToday,
+          connectedAt: onlineSession?.connectedAt,
+          lastSeen: onlineSession?.lastSeen || otherUser?.updatedAt || fsRecord.updatedAt,
+        });
+      }
+    }
+
+    // Sắp xếp: Đang online/in_match lên trước, sau đó theo điểm Hảo Cảm cao nhất
+    friends.sort((a, b) => {
+      if (a.status !== 'offline' && b.status === 'offline') return -1;
+      if (a.status === 'offline' && b.status !== 'offline') return 1;
+      return b.intimacy - a.intimacy;
+    });
+
+    // Lời mời kết bạn đang chờ duyệt (Pending Requests)
+    const pendingRequests: any[] = [];
+    for (const reqRecord of serverFriendRequests.values()) {
+      const toId = String(reqRecord.toUserId || '').toLowerCase();
+      if (reqRecord.toUserId === myId || (myName && toId === myName)) {
+        const fromU = serverUsers.get(reqRecord.fromUserId) || getUserByUsername(reqRecord.fromUserId);
+        const fromRealm = XIANXIA_REALM_METAS[fromU?.cultivation?.realmIndex || 0] || XIANXIA_REALM_METAS[0];
+        pendingRequests.push({
+          id: reqRecord.id,
+          fromUserId: reqRecord.fromUserId,
+          fromUsername: fromU?.username || reqRecord.fromUserId,
+          fromDisplayName: fromU?.displayName || fromU?.username || reqRecord.fromUserId,
+          fromAvatar: fromU?.avatar || '⚡',
+          fromFrame: fromU?.frame || 'default',
+          fromRealmName: fromRealm.name,
+          fromLevel: fromU?.cultivation?.level || 1,
+          toUserId: reqRecord.toUserId,
+          toUsername: authUser.username,
+          createdAt: reqRecord.createdAt,
+          message: reqRecord.message,
+        });
+      }
+    }
+
+    // Lời mời đã gửi đi (Sent Requests)
+    const sentRequests = Array.from(serverFriendRequests.values())
+      .filter((r) => r.fromUserId === myId || (myName && String(r.fromUserId || '').toLowerCase() === myName))
+      .map((r) => ({
+        id: r.id,
+        toUserId: r.toUserId,
+        createdAt: r.createdAt,
+      }));
+
+    res.json({
+      success: true,
+      friends,
+      pendingRequests,
+      sentRequests,
+    });
+  });
+
+  // POST /api/friends/request: Gửi lời mời kết bạn (bằng username hoặc userId)
+  app.post('/api/friends/request', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { targetUsername, targetUserId, message } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Vui lòng đăng nhập tài khoản để kết bạn!' });
+      return;
+    }
+
+    const cleanTargetName = String(targetUsername || '').trim();
+    const cleanTargetId = String(targetUserId || '').trim();
+
+    let targetUser = cleanTargetId ? serverUsers.get(cleanTargetId) : null;
+    if (!targetUser && cleanTargetName) {
+      targetUser = getUserByUsername(cleanTargetName);
+    }
+
+    if (!targetUser) {
+      res.status(404).json({ success: false, error: `Không tìm thấy đạo hữu "${cleanTargetName || cleanTargetId}" trên máy chủ!` });
+      return;
+    }
+
+    if (targetUser.id === authUser.id) {
+      res.status(400).json({ success: false, error: 'Không thể tự gửi lời mời kết bạn cho chính mình!' });
+      return;
+    }
+
+    // Kiểm tra đã là bạn bè chưa
+    const alreadyFriends = Array.from(serverFriendships.values()).some(
+      (f) =>
+        (f.user1Id === authUser.id && f.user2Id === targetUser!.id) ||
+        (f.user1Id === targetUser!.id && f.user2Id === authUser.id)
+    );
+
+    if (alreadyFriends) {
+      res.status(400).json({ success: false, error: 'Hai vị đã là đạo hữu tri kỷ rồi!' });
+      return;
+    }
+
+    // Kiểm tra nếu đối phương đã từng gửi lời mời kết bạn cho mình trước đó -> Tự động chấp thuận kết bái luôn!
+    const reciprocalReq = Array.from(serverFriendRequests.values()).find(
+      (r) =>
+        (r.fromUserId === targetUser!.id && r.toUserId === authUser.id) ||
+        (r.fromUserId === targetUser!.username && r.toUserId === authUser.username)
+    );
+
+    if (reciprocalReq) {
+      serverFriendRequests.delete(reciprocalReq.id);
+      const fsId = `fs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const newFriendship: ServerFriendshipRecord = {
+        id: fsId,
+        user1Id: authUser.id,
+        user2Id: targetUser.id,
+        intimacy: 60,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      serverFriendships.set(fsId, newFriendship);
+      saveFriendsToFile();
+
+      broadcastToUser(targetUser.id, {
+        type: 'friend_request_accepted',
+        friendName: authUser.displayName || authUser.username,
+      });
+
+      res.json({
+        success: true,
+        autoAccepted: true,
+        message: `Đạo hữu ${targetUser.displayName || targetUser.username} cũng vừa gửi lời mời! Hai người đã chính thức kết bái thành công!`,
+      });
+      return;
+    }
+
+    // Kiểm tra xem đã gửi lời mời đang chờ hay chưa
+    const alreadyPending = Array.from(serverFriendRequests.values()).some(
+      (r) =>
+        (r.fromUserId === authUser.id && r.toUserId === targetUser!.id) ||
+        (r.fromUserId === authUser.id && targetUser?.username && String(r.toUserId || '').toLowerCase() === targetUser.username.toLowerCase())
+    );
+
+    if (alreadyPending) {
+      res.status(400).json({ success: false, error: 'Đã gửi lời mời trước đó rồi, vui lòng đợi đạo hữu phản hồi!' });
+      return;
+    }
+
+    const reqId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const newReq: ServerFriendRequestRecord = {
+      id: reqId,
+      fromUserId: authUser.id,
+      toUserId: targetUser.id,
+      message: message ? String(message).slice(0, 150) : 'Kết bái đạo hữu, cùng đàm đạo gõ phím!',
+      createdAt: Date.now(),
+    };
+
+    serverFriendRequests.set(reqId, newReq);
+    saveFriendsToFile();
+
+    // Thông báo SSE tới đạo hữu được mời
+    broadcastToUser(targetUser.id, {
+      type: 'friend_request_received',
+      fromUser: {
+        id: authUser.id,
+        username: authUser.username,
+        displayName: authUser.displayName || authUser.username,
+        avatar: authUser.avatar,
+        frame: authUser.frame,
+      },
+      message: newReq.message,
+    });
+
+    res.json({
+      success: true,
+      message: `Đã gửi lời mời kết bạn tới đạo hữu ${targetUser.displayName || targetUser.username}!`,
+    });
+  });
+
+  // POST /api/friends/respond: Chấp nhận hoặc từ chối lời mời kết bạn
+  app.post('/api/friends/respond', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { requestId, action } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const friendReq = serverFriendRequests.get(requestId);
+    if (!friendReq) {
+      res.status(404).json({ success: false, error: 'Lời mời kết bạn không tồn tại hoặc đã được xử lý!' });
+      return;
+    }
+
+    if (action === 'accept') {
+      serverFriendRequests.delete(requestId);
+      const fsId = `fs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const newFriendship: ServerFriendshipRecord = {
+        id: fsId,
+        user1Id: friendReq.fromUserId,
+        user2Id: authUser.id,
+        intimacy: 60, // Điểm hảo cảm khởi tạo
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      serverFriendships.set(fsId, newFriendship);
+      saveFriendsToFile();
+
+      // Thông báo cho người gửi lời mời
+      broadcastToUser(friendReq.fromUserId, {
+        type: 'friend_request_accepted',
+        friendName: authUser.displayName || authUser.username,
+      });
+
+      res.json({
+        success: true,
+        message: 'Đã chấp thuận kết bái đạo hữu thành công!',
+      });
+    } else {
+      serverFriendRequests.delete(requestId);
+      saveFriendsToFile();
+      res.json({
+        success: true,
+        message: 'Đã từ chối lời mời kết bạn.',
+      });
+    }
+  });
+
+  // POST /api/friends/remove: Hủy quan hệ đạo hữu
+  app.post('/api/friends/remove', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { friendshipId, targetUserId } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    let targetFs = friendshipId ? serverFriendships.get(friendshipId) : null;
+    if (!targetFs && targetUserId) {
+      targetFs = Array.from(serverFriendships.values()).find(
+        (f) =>
+          (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
+          (f.user1Id === targetUserId && f.user2Id === authUser.id)
+      ) || null;
+    }
+
+    if (targetFs) {
+      serverFriendships.delete(targetFs.id);
+      saveFriendsToFile();
+    }
+
+    res.json({ success: true, message: 'Đã hủy kết bái đạo hữu.' });
+  });
+
+  // POST /api/friends/tea: Tặng Ngộ Đạo Trà (+50 Tu Vi cho bạn, +10 Hảo Cảm)
+  app.post('/api/friends/tea', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { targetUserId } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const fsRecord = Array.from(serverFriendships.values()).find(
+      (f) =>
+        (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
+        (f.user1Id === targetUserId && f.user2Id === authUser.id)
+    );
+
+    if (!fsRecord) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy quan hệ đạo hữu!' });
+      return;
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (!fsRecord.lastGiftTeaDate) fsRecord.lastGiftTeaDate = {};
+
+    if (fsRecord.lastGiftTeaDate[authUser.id] === todayStr) {
+      res.status(400).json({ success: false, error: 'Hôm nay đạo hữu đã mời Ngộ Đạo Trà rồi, ngày mai hãy tiếp tục nhé!' });
+      return;
+    }
+
+    fsRecord.lastGiftTeaDate[authUser.id] = todayStr;
+    fsRecord.intimacy = (fsRecord.intimacy || 0) + 10;
+    fsRecord.updatedAt = Date.now();
+    saveFriendsToFile();
+
+    // Cộng +50 Tu Vi cho người nhận
+    const recipient = serverUsers.get(targetUserId);
+    if (recipient) {
+      if (!recipient.cultivation) recipient.cultivation = {};
+      recipient.cultivation.exp = (recipient.cultivation.exp || 0) + 50;
+      recipient.updatedAt = Date.now();
+      saveUsersToFile();
+      syncUserCultivationToCache(recipient);
+    }
+
+    // Thông báo SSE tới người nhận
+    broadcastToUser(targetUserId, {
+      type: 'tea_gift_received',
+      fromName: authUser.displayName || authUser.username,
+      tuViBonus: 50,
+      newIntimacy: fsRecord.intimacy,
+    });
+
+    res.json({
+      success: true,
+      message: `Đã dâng một chén Ngộ Đạo Trà tới đạo hữu! (+10 Hảo Cảm, bạn nhận +50 Tu Vi)`,
+      intimacy: fsRecord.intimacy,
+      intimacyLevel: calculateIntimacyLevel(fsRecord.intimacy, fsRecord.isDaoLu),
+    });
+  });
+
+  // POST /api/friends/guide: Sư Đồ / Tiền Bối Chỉ Điểm Bàn Phím (+30 Tu Vi, +20 Hảo Cảm)
+  app.post('/api/friends/guide', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { targetUserId } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const fsRecord = Array.from(serverFriendships.values()).find(
+      (f) =>
+        (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
+        (f.user1Id === targetUserId && f.user2Id === authUser.id)
+    );
+
+    if (!fsRecord) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy quan hệ đạo hữu!' });
+      return;
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (!fsRecord.lastGuidedDate) fsRecord.lastGuidedDate = {};
+
+    if (fsRecord.lastGuidedDate[authUser.id] === todayStr) {
+      res.status(400).json({ success: false, error: 'Hôm nay đạo hữu đã truyền thụ chỉ điểm rồi!' });
+      return;
+    }
+
+    fsRecord.lastGuidedDate[authUser.id] = todayStr;
+    fsRecord.intimacy = (fsRecord.intimacy || 0) + 20;
+    fsRecord.updatedAt = Date.now();
+    saveFriendsToFile();
+
+    const recipient = serverUsers.get(targetUserId);
+    if (recipient) {
+      if (!recipient.cultivation) recipient.cultivation = {};
+      recipient.cultivation.exp = (recipient.cultivation.exp || 0) + 30;
+      recipient.updatedAt = Date.now();
+      saveUsersToFile();
+      syncUserCultivationToCache(recipient);
+    }
+
+    broadcastToUser(targetUserId, {
+      type: 'mentor_guidance_received',
+      fromName: authUser.displayName || authUser.username,
+      tuViBonus: 30,
+    });
+
+    res.json({
+      success: true,
+      message: 'Đã truyền thụ công lực và chia sẻ tâm pháp gõ phím cho đạo hữu (+20 Hảo Cảm, bạn nhận +30 Tu Vi)!',
+      intimacy: fsRecord.intimacy,
+    });
+  });
+
+  // POST /api/friends/daolu/propose: Cầu hôn / Kết Duyên Đạo Lữ (Yêu cầu Hảo Cảm >= 2000)
+  app.post('/api/friends/daolu/propose', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { targetUserId } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const fsRecord = Array.from(serverFriendships.values()).find(
+      (f) =>
+        (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
+        (f.user1Id === targetUserId && f.user2Id === authUser.id)
+    );
+
+    if (!fsRecord) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy quan hệ đạo hữu!' });
+      return;
+    }
+
+    if (fsRecord.intimacy < 2000) {
+      res.status(400).json({ success: false, error: `Độ thân mật hiện tại (${fsRecord.intimacy}/2000) chưa đạt Bậc 3 (Tri Kỷ)! Hãy cùng thi đấu và tặng trà để bồi dưỡng thêm tình cảm!` });
+      return;
+    }
+
+    if (fsRecord.isDaoLu) {
+      res.status(400).json({ success: false, error: 'Hai người đã là Đạo Lữ Kết Duyên rồi!' });
+      return;
+    }
+
+    broadcastToUser(targetUserId, {
+      type: 'daolu_proposal_received',
+      friendshipId: fsRecord.id,
+      fromName: authUser.displayName || authUser.username,
+      fromAvatar: authUser.avatar,
+      fromFrame: authUser.frame,
+    });
+
+    res.json({
+      success: true,
+      message: 'Đã gửi lời cầu kết duyên Đạo Lữ kèm Tín Vật Định Tình tới người thương!',
+    });
+  });
+
+  // POST /api/friends/daolu/respond: Phản hồi lời kết duyên Đạo Lữ
+  app.post('/api/friends/daolu/respond', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { friendshipId, accept } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const fsRecord = serverFriendships.get(friendshipId);
+    if (!fsRecord) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy khế ước kết duyên!' });
+      return;
+    }
+
+    if (accept) {
+      fsRecord.isDaoLu = true;
+      fsRecord.daoLuTitle = 'Tâm Đầu Ý Hợp';
+      fsRecord.intimacy = Math.max(5000, fsRecord.intimacy + 1000);
+      fsRecord.updatedAt = Date.now();
+      saveFriendsToFile();
+
+      const user1 = serverUsers.get(fsRecord.user1Id);
+      const user2 = serverUsers.get(fsRecord.user2Id);
+      const name1 = user1?.displayName || user1?.username || 'Đạo Hữu';
+      const name2 = user2?.displayName || user2?.username || 'Đạo Hữu';
+
+      // Chiếu Thư Thiên Đạo thông báo toàn cõi Tiên Giới
+      broadcastHeavenlyDaoEvent({
+        title: 'ĐẠO LỮ KẾT DUYÊN',
+        eventType: 'announcement',
+        content: `🌸 Hoa rơi đầy trời, hỷ khí ngập càn khôn! Chúc mừng hai vị đạo hữu @${name1} và @${name2} đã cử hành đại lễ Kết Duyên Đạo Lữ! Kính chúc trăm năm hòa hợp, sớm ngày cùng nhau đắc đạo phi thăng!`,
+        personaId: 'linh_lung',
+      });
+
+      broadcastToUser(fsRecord.user1Id, { type: 'daolu_ceremony_complete', partnerName: name2 });
+      broadcastToUser(fsRecord.user2Id, { type: 'daolu_ceremony_complete', partnerName: name1 });
+
+      res.json({
+        success: true,
+        message: 'Đại lễ Kết Duyên Đạo Lữ hoàn tất! Kích hoạt hiệu ứng Tâm Hữu Linh Tê!',
+      });
+    } else {
+      res.json({ success: true, message: 'Đã từ chối lời kết duyên.' });
+    }
+  });
+
+  // POST /api/friends/invite-room: Mời bạn bè vào phòng thi đấu
+  app.post('/api/friends/invite-room', (req, res) => {
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const { targetUserId, roomId, mode } = req.body;
+
+    if (!authUser && req.body.currentUserId) {
+      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    }
+
+    if (!authUser) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    broadcastToUser(targetUserId, {
+      type: 'room_invite',
+      fromUser: {
+        id: authUser.id,
+        username: authUser.username,
+        displayName: authUser.displayName || authUser.username,
+        avatar: authUser.avatar,
+        frame: authUser.frame,
+      },
+      roomId: normalizeRoomCode(roomId),
+      mode,
+    });
+
+    res.json({ success: true, message: 'Đã gửi lời mời tham gia phòng thi đấu!' });
+  });
+
+  // =========================================================================
+  // HUYỀN THIÊN KHÍ LINH & LINH LUNG TIÊN ĐỒNG (DAO BOT) SERVER STATE & ENDPOINTS
   // =========================================================================
   interface ServerDaoDecree {
     id: string;
@@ -2315,7 +4264,181 @@ async function startServer() {
     wpm?: number;
     accuracy?: number;
     realmName?: string;
+    personaId?: string;
+    personaName?: string;
+    personaAvatar?: string;
   }
+
+  // Resilient multi-model Gemini caller with graceful fallback during high demand or access denial
+  let isGeminiProjectAccessDenied = false;
+  let lastAccessDeniedCheck = 0;
+
+  async function callGeminiResilient(
+    ai: GoogleGenAI,
+    prompt: string,
+    config?: any
+  ): Promise<string | null> {
+    if (isGeminiProjectAccessDenied) {
+      if (Date.now() - lastAccessDeniedCheck < 600000) {
+        return null;
+      }
+      isGeminiProjectAccessDenied = false;
+    }
+
+    const candidateModels = [
+      'gemini-3.8-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
+    ];
+
+    for (const model of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: config || undefined,
+        });
+        const text = response.text?.trim();
+        if (text) {
+          return text;
+        }
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        const isPermissionDenied =
+          err?.status === 403 ||
+          err?.code === 403 ||
+          msg.includes('PERMISSION_DENIED') ||
+          msg.includes('denied access') ||
+          msg.includes('API_KEY_INVALID') ||
+          msg.includes('403');
+
+        if (isPermissionDenied) {
+          isGeminiProjectAccessDenied = true;
+          lastAccessDeniedCheck = Date.now();
+          // Project lacks Gemini access; silently fall back
+          break;
+        }
+
+        const isTemporary =
+          err?.status === 503 ||
+          err?.code === 503 ||
+          err?.status === 429 ||
+          err?.code === 429 ||
+          msg.includes('503') ||
+          msg.includes('high demand') ||
+          msg.includes('UNAVAILABLE') ||
+          msg.includes('RESOURCE_EXHAUSTED');
+
+        if (isTemporary) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          continue;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Phản hồi trò chuyện tự động, hoạt bát của Linh Lung Tiên Đồng khi được gọi tên trong Chat
+  async function triggerLinhLungChatReply(sender: string, userMsg: string) {
+    const cleanUser = String(sender || 'Đạo Hữu').trim();
+    const botName = 'Linh Lung Tiên Đồng';
+    const botAvatar = '🪷';
+    const botFrame = 'arcane_purple';
+
+    const fallbackReplies = [
+      `Hi hi @${cleanUser}! Tiên Đồng nghe thấy tiếng gọi rồi nè! Mau mau vào làm ván Ngẫu Hứng hay Săn Boss nào, Tiên Đồng đang cổ vũ hết mình đó! 🪷✨`,
+      `Chào @${cleanUser}! Muốn bí kíp gõ phím thần sầu của Tiên Đồng hông? Bí quyết là thả lỏng hai vai, gõ đúng nhịp và giữ độ chính xác trên 96% nha! ✨`,
+      `Oa, @${cleanUser} gọi Tiên Đồng đó hả? Đang ngồi canh Phong Thần Bảng nè, chờ xem bao giờ đạo hữu leo lên Top 1 để Tiên Đồng gióng trống mở cờ mừng nè! 🎉🪷`,
+      `Hi hi, ngón tay của @${cleanUser} hôm nay thế nào rồi? Nhớ đừng gồng cứng cổ tay nha, lướt phím như chim hạc lướt mây mới là cảnh giới thượng thừa! 🪷`,
+      `@${cleanUser} ơi, Tiên Đồng vừa ngó qua Phong Thần Bảng, linh khí của đạo hữu hôm nay vượng lắm đó! Làm liền 3 ván bứt phá WPM ngay và luôn đi nào! ⚡🪷`,
+      `Ái chà @${cleanUser}! Muốn hỏi quẻ may mắn hả? Quẻ hôm nay: Đại Cát! Cứ giữ vững tâm lý thì ván đấu tới ắt xuất chiêu phá vỡ giới hạn WPM! 🪷✨`,
+    ];
+
+    let replyText = '';
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey && !isGeminiProjectAccessDenied) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+        });
+        const prompt = `Bạn là Linh Lung Tiên Đồng (Chưởng Quản Phong Thần Bảng, avatar 🪷) của đấu trường tu tiên gõ phím FastTyping Challenge.
+Người chơi @${cleanUser} vừa gửi tin nhắn gọi hoặc hỏi bạn trên kênh Chat Chung: "${userMsg}".
+Hãy đáp lại trực tiếp cho @${cleanUser}:
+- Cách xưng hô: Tự xưng là "Tiên Đồng" hoặc "Bản Tiên Đồng". Gọi người chơi là "@${cleanUser}", "đạo hữu" hoặc "huynh đài/tỷ tỷ".
+- Phong cách: Hoạt bát, tinh nghịch, lém lỉnh, thân thiện, tràn ngập năng lượng tích cực, dùng icon 🪷, ✨ hoặc 🎉.
+- Nội dung: Trả lời ngắn gọn ĐÚNG 1 ĐẾN 2 CÂU, có lời khuyên gõ phím thực tế hoặc lời cổ vũ leo bảng vàng đầy hào hứng.
+- Tuyệt đối không thêm lời chào thừa hay định dạng markdown rườm rà.`;
+        const aiText = await callGeminiResilient(ai, prompt);
+        if (aiText && aiText.trim()) {
+          replyText = aiText.trim().replace(/^["'«]/, '').replace(/["'»]$/, '').trim();
+        }
+      } catch {
+        // Silently fall back to heuristic reply
+      }
+    }
+
+    if (!replyText) {
+      replyText = fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)];
+    }
+
+    const replyMsgId = `ll-reply-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const replyMsg: ServerChatMessage = {
+      id: replyMsgId,
+      username: botName,
+      avatar: botAvatar,
+      frame: botFrame,
+      message: replyText,
+      timestamp: Date.now(),
+      channel: 'global',
+      isAdmin: true,
+      isDaoBot: true,
+      daoEventType: 'guidance',
+      daoTitle: 'LINH LUNG ĐÁP LỜI',
+    };
+
+    globalChatMessages.push(replyMsg);
+    if (globalChatMessages.length > 200) globalChatMessages.shift();
+    broadcastGlobalChat(replyMsg);
+  }
+
+  // Khí linh Linh Lung Tiên Đồng phát lời bình phẩm, mách nước sôi nổi định kỳ trên Kênh Chat Chung (mỗi 5 phút)
+  const LINH_LUNG_PERIODIC_BANTER = [
+    '🪷 [Linh Lung Bình Phẩm]: Phong Thần Bảng hôm nay náo nhiệt quá chừng! Chư vị đạo hữu ai đang ủ mưu soán ngôi Quán Quân thì mau mau xuất chiêu cho Tiên Đồng chiêm ngưỡng với nha!',
+    '🪷 [Tiên Đồng Mách Nước]: Khi gõ các từ có vần phức tạp (uyên, oang, uông), các đạo hữu nhớ xoay nhẹ cổ tay chứ đừng dùng sức đè mạnh ngón út nhé! Phím mượt mà thì tâm mới thanh thản!',
+    '🪷 [Phong Thần Cơ Mật]: Muốn giữ WPM trên 100 thì đừng nhìn chăm chăm vào đồng hồ đếm ngược! Mắt nhìn trước 1-2 từ tiếp theo, ngón tay tự khắc lướt đi trong vô thức đó!',
+    '🪷 [Linh Lung Nhắc Nhở]: Tu luyện hăng say nhưng chớ quên nhấp ngụm trà dưỡng thần! Cứ sau mỗi 5 trận đấu, hãy xoay cổ tay 10 vòng rồi hẵng tiếp tục xung trận nhé chư vị!',
+    '🪷 [Linh Lung Soi Quẻ]: Thần thức Tiên Đồng mách bảo hôm nay sẽ có một vị kỳ tài bứt phá vượt cảnh giới WPM mới! Ai tự tin ngón tay nhanh như chớp giật thì mau vào khiêu chiến nào!',
+    '🪷 [Tiên Đồng Đố Vui]: Đố chư vị đạo hữu: Gặp từ gõ sai thì nên vội vàng spam Backspace hay hít sâu một hơi rồi xóa dứt khoát? Đáp án là: Xóa dứt khoát rồi lập tức tìm lại nhịp điệu nha!',
+  ];
+  let linhLungBanterIndex = 0;
+
+  setInterval(() => {
+    // Chỉ phát nếu có client đang kết nối
+    if (sseGlobalChatClients.size > 0 || activePresenceSessions.size > 0) {
+      const msgText = LINH_LUNG_PERIODIC_BANTER[linhLungBanterIndex % LINH_LUNG_PERIODIC_BANTER.length];
+      linhLungBanterIndex++;
+
+      const banterId = `ll-banter-${Date.now()}`;
+      const banterMsg: ServerChatMessage = {
+        id: banterId,
+        username: 'Linh Lung Tiên Đồng',
+        avatar: '🪷',
+        frame: 'arcane_purple',
+        message: msgText,
+        timestamp: Date.now(),
+        channel: 'global',
+        isAdmin: true,
+        isDaoBot: true,
+        daoEventType: 'guidance',
+        daoTitle: 'LINH LUNG BÌNH PHẨM',
+      };
+
+      globalChatMessages.push(banterMsg);
+      if (globalChatMessages.length > 200) globalChatMessages.shift();
+      broadcastGlobalChat(banterMsg);
+    }
+  }, 5 * 60 * 1000);
 
   const serverDaoDecrees: ServerDaoDecree[] = [
     {
@@ -2358,7 +4481,25 @@ async function startServer() {
     personaId?: string;
     generateAiPoem?: boolean;
   }): ServerDaoDecree {
+    const isPenalty = params.eventType === 'penalty';
+    const effectivePersona = isPenalty ? 'ban_co' : (params.personaId || 'huyen_thien');
+
     const decreeId = `decree-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const botName = effectivePersona === 'ban_co'
+      ? 'Bàn Cổ Thần Thức'
+      : (effectivePersona === 'linh_lung' ? 'Linh Lung Tiên Đồng' : 'Huyền Thiên Khí Linh');
+    const botAvatar = effectivePersona === 'ban_co' ? '⚡' : (effectivePersona === 'linh_lung' ? '🪷' : '☯️');
+    const botFrame = effectivePersona === 'ban_co' ? 'dragon_dark_blood' : (effectivePersona === 'linh_lung' ? 'arcane_purple' : 'admin_gold');
+
+    // Bàn Cổ Thần Thức: Khi có án phạt vi phạm, tự động thi hành cấm đấu 2 giờ (2h) và phế trừ tu vi
+    if (isPenalty && params.targetUser) {
+      executeApplyBan({
+        username: params.targetUser,
+        reason: params.content,
+        durationMs: 2 * 60 * 60 * 1000,
+      });
+    }
+
     const decree: ServerDaoDecree = {
       id: decreeId,
       title: String(params.title).slice(0, 100),
@@ -2370,16 +4511,13 @@ async function startServer() {
       wpm: typeof params.wpm === 'number' ? params.wpm : undefined,
       accuracy: typeof params.accuracy === 'number' ? params.accuracy : undefined,
       realmName: params.realmName ? String(params.realmName).slice(0, 50) : undefined,
+      personaId: effectivePersona,
+      personaName: botName,
+      personaAvatar: botAvatar,
     };
 
     serverDaoDecrees.unshift(decree);
     if (serverDaoDecrees.length > 50) serverDaoDecrees.pop();
-
-    const botName = params.personaId === 'ban_co'
-      ? 'Bàn Cổ Thần Thức'
-      : (params.personaId === 'linh_lung' ? 'Linh Lung Tiên Đồng' : 'Huyền Thiên Khí Linh');
-    const botAvatar = params.personaId === 'ban_co' ? '⚡' : (params.personaId === 'linh_lung' ? '🪷' : '☯️');
-    const botFrame = params.personaId === 'ban_co' ? 'dragon_dark_blood' : (params.personaId === 'linh_lung' ? 'arcane_purple' : 'admin_gold');
 
     const fullChatMessage = `[${decree.title}] ${decree.content}`;
     const daoMsg: ServerChatMessage = {
@@ -2416,7 +4554,7 @@ async function startServer() {
     // Khi có sự kiện đặc biệt (kỷ lục mới, đột phá cảnh giới, săn boss), AI tự động sáng tác câu thơ Tiên Hiệp gửi lên kênh Chat
     if (params.generateAiPoem || decree.eventType === 'record' || decree.eventType === 'breakthrough' || decree.eventType === 'boss_kill') {
       const apiKey = process.env.GEMINI_API_KEY;
-      if (apiKey) {
+      if (apiKey && !isGeminiProjectAccessDenied) {
         setTimeout(async () => {
           try {
             const ai = new GoogleGenAI({
@@ -2425,40 +4563,49 @@ async function startServer() {
                 headers: { 'User-Agent': 'aistudio-build' },
               },
             });
-            const poemPrompt = `Bạn là ${botName} (${params.personaId === 'ban_co' ? 'Giám Giới Thần Quân' : (params.personaId === 'linh_lung' ? 'Chưởng Quản Phong Thần Bảng' : 'Thiên Đạo Chấp Pháp Sứ')}) của đấu trường tu tiên gõ phím FastTyping.
+            const isLinhLung = params.personaId === 'linh_lung';
+            const isBanCo = params.personaId === 'ban_co';
+            const roleTitle = isBanCo ? 'Giám Giới Thần Quân' : (isLinhLung ? 'Chưởng Quản Phong Thần Bảng' : 'Thiên Đạo Chấp Pháp Sứ');
+            const styleTone = isLinhLung 
+              ? 'Hoạt bát, tinh nghịch, lém lỉnh, thích bình phẩm Phong Thần Bảng, khen ngợi hào sảng pha chút trêu đùa dễ thương'
+              : (isBanCo ? 'Uy nghiêm trầm mặc, khí phách thái cổ vô song' : 'Nghiêm minh, thấu thị càn khôn, nói lời sấm truyền');
+
+            const poemPrompt = `Bạn là ${botName} (${roleTitle}) của đấu trường tu tiên gõ phím FastTyping.
+Phong cách đặc trưng của bạn: ${styleTone}.
 Sự kiện chấn động vừa xảy ra trên toàn cõi Tiên Giới:
 - Tiêu đề: ${decree.title}
 - Nội dung: ${decree.content}
 - Đạo hữu: ${decree.targetUser || 'Chư vị tu sĩ'}
 
-Hãy xuất khẩu thành thơ sáng tác ĐÚNG 2 CÂU THƠ (hoặc câu đối tiên hiệp hào sảng) để bình phẩm hoặc tán dương sự kiện này.
+Hãy xuất khẩu thành thơ sáng tác ĐÚNG 2 CÂU THƠ hoặc 2 câu khẩu ngữ tiên hiệp súc tích để bình phẩm hoặc tán dương sự kiện này.
 Yêu cầu:
 - Tuyệt đối không thêm lời chào, không thêm giải thích hay markdown rườm rà.
-- Đúng 2 câu thơ / câu đối cô đọng, khí phách ngút trời, âm hưởng tiên hiệp.`;
+- Đúng 2 câu thơ / câu đối cô đọng, giàu hình tượng tiên hiệp.`;
 
             const poem = await callGeminiResilient(ai, poemPrompt);
             const cleanPoem = poem?.trim()?.replace(/^["'«]/, '')?.replace(/["'»]$/, '')?.trim();
             if (cleanPoem) {
               const poemMsgId = `poem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+              const poemPrefix = isLinhLung ? '« Linh Lung Bình Phẩm »:' : (isBanCo ? '« Thần Quân Đề Thơ »:' : '« Khí Linh Đề Thơ »:');
               const poemMsg: ServerChatMessage = {
                 id: poemMsgId,
                 username: botName,
                 avatar: botAvatar,
                 frame: botFrame,
-                message: `« Khí Linh Đề Thơ »: ${cleanPoem}`,
+                message: `${poemPrefix} ${cleanPoem}`,
                 timestamp: Date.now(),
                 channel: 'global',
                 isAdmin: true,
                 isDaoBot: true,
                 daoEventType: 'guidance',
-                daoTitle: 'KHÍ LINH ĐỀ THƠ',
+                daoTitle: isLinhLung ? 'LINH LUNG BÌNH PHẨM' : 'KHÍ LINH ĐỀ THƠ',
               };
               globalChatMessages.push(poemMsg);
               if (globalChatMessages.length > 200) globalChatMessages.shift();
               broadcastGlobalChat(poemMsg);
             }
-          } catch (poemErr) {
-            console.warn('[Heavenly Dao] Failed to generate AI poem:', poemErr);
+          } catch {
+            // Silently fall back
           }
         }, 800);
       }
@@ -2491,9 +4638,90 @@ Yêu cầu:
     res.json({ success: true, decree });
   });
 
+  // POST /api/dao/penalize: Bàn Cổ Thần Thức trừng phạt trực tiếp (2 Giờ)
+  app.post('/api/dao/penalize', (req, res) => {
+    const { username, userId, reason, durationMs = 2 * 60 * 60 * 1000 } = req.body;
+    if (!username) {
+      res.status(400).json({ success: false, error: 'Thiếu thông tin người chơi cần thụ án' });
+      return;
+    }
+
+    const cleanUser = String(username).trim();
+    const cleanReason = String(reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro').trim();
+    const banRecord = executeApplyBan({
+      username: cleanUser,
+      userId,
+      reason: cleanReason,
+      durationMs,
+    });
+
+    const decree = broadcastHeavenlyDaoEvent({
+      title: 'BÀN CỔ TRỪNG PHẠT',
+      eventType: 'penalty',
+      targetUser: cleanUser,
+      content: `Bàn Cổ Khí Tức chấn động! Nghịch đồ @${cleanUser} dám thi triển tà thuật gian lận (${cleanReason})! Bàn Cổ Thần Thức hạ lệnh phế trừ 500 Tu Vi, phong ấn kinh mạch và đày vào U Minh Hàn Ngục (Cấm thi đấu 2 giờ) để tự hối lỗi!`,
+      highlightText: `Bàn Cổ phạt ${cleanUser} (2 giờ)`,
+      personaId: 'ban_co',
+      generateAiPoem: false,
+    });
+
+    res.json({ success: true, banRecord, decree });
+  });
+
+  // GET /api/user/ban-status: Kiểm tra thời hạn thụ án cấm đấu 2 giờ
+  app.get('/api/user/ban-status', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const username = String(req.query.username || '').trim();
+    const userId = String(req.query.userId || '').trim();
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    let banCheck = username ? checkIsBanned(username) : { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+    if (!banCheck.isBanned && userId) {
+      banCheck = checkIsBanned(userId);
+    }
+    if (!banCheck.isBanned && user) {
+      banCheck = checkIsBanned(user.username);
+      if (!banCheck.isBanned && user.id) {
+        banCheck = checkIsBanned(user.id);
+      }
+    }
+    res.json({
+      success: true,
+      ...banCheck,
+    });
+  });
+
+  // POST /api/admin/unban: Quản trị viên hóa giải phong ấn
+  app.post('/api/admin/unban', (req, res) => {
+    const { username, userId } = req.body || {};
+    if (username) {
+      serverBans.delete(String(username).toLowerCase());
+      const u = getUserByUsername(username);
+      if (u) {
+        delete (u as any).bannedUntil;
+        delete (u as any).banReason;
+        delete (u as any).bannedDurationMs;
+        saveUsersToFile();
+      }
+    }
+    if (userId) {
+      serverBans.delete(String(userId).toLowerCase());
+      const u = serverUsers.get(userId);
+      if (u) {
+        delete (u as any).bannedUntil;
+        delete (u as any).banReason;
+        delete (u as any).bannedDurationMs;
+        saveUsersToFile();
+      }
+    }
+    saveBansToFile();
+    res.json({ success: true, message: 'Đã hóa giải phong ấn Bàn Cổ Thần Thức thành công!' });
+  });
+
   // POST /api/dao/oracle: Ask Dao Bot (Gemini 3.8 Flash with Xianxia persona)
   app.post('/api/dao/oracle', async (req, res) => {
-    const { question, username } = req.body;
+    const { question, username, personaId } = req.body;
     const targetUser = username ? String(username).trim() : 'Đạo hữu';
     const q = question ? String(question).trim() : '';
 
@@ -2502,7 +4730,18 @@ Yêu cầu:
       return;
     }
 
-    const heuristicPool = [
+    const isLinhLung = personaId === 'linh_lung' || /linh\s*lung|tiên\s*đồng/i.test(q);
+    const isBanCo = personaId === 'ban_co' || /bàn\s*cổ/i.test(q);
+
+    const linhLungPool = [
+      `« Linh Lung Mách Nước »: Hi hi, đạo hữu ${targetUser}! Tiên Đồng ngó qua Phong Thần Bảng thấy ngón tay của đạo hữu đang dồi dào linh lực đó! Mau vào làm liền 3 ván chế độ Ngẫu Hứng hoặc Săn Boss, điểm bùng nổ WPM đang chờ đón kìa! 🪷`,
+      `« Tiên Đồng Chỉ Điểm »: Ái chà, đạo hữu hay bị vấp ở mấy từ ghép telex đúng không nè? Nhớ thả lỏng hai vai, nhịp gõ đều đặn như gảy đàn tranh. Gõ đúng từng chữ thì tốc độ tự khắc vút bay như tiên kiếm! ✨`,
+      `« Phong Thần Cơ Mật »: Bí kíp độc quyền của Tiên Đồng đây: Muốn leo top Bảng Vàng thì 10 giây đầu đừng ham gõ nhanh, giữ độ chính xác tuyệt đối 100% để tích tụ kiếm thế, sau đó mới tăng tốc thì đối thủ chỉ có hít khói! 🪷`,
+      `« Linh Lung Soi Quẻ »: Quẻ hôm nay: Đại Cát! Các ngón trỏ và ngón giữa linh hoạt tuyệt đối, rất hợp để chinh phục các từ hiểm hóc. Mau mau lên đồ so tài đi nào! 🎉`,
+      `« Tiên Đồng Nhắc Nhở »: Gõ 5 ván rồi thì nhớ buông chuột nhấp ngụm nước ấm, chớp mắt thư giãn nha! Mắt sáng tay dẻo thì mới trường kỳ tu tiên trên Phong Thần Bảng được chớ! 🍵`,
+    ];
+
+    const huyenThienPool = [
       `« Khí Linh Chiếu Mệnh »: Đạo hữu ${targetUser}, thần thức quan trắc hôm nay vận khí hanh thông, ngón tay linh hoạt như gió lốc! Hãy thi đấu ngay 3 ván chế độ TV Có Dấu để đón đầu lôi kiếp đột phá WPM!`,
       `« Thiên Đạo Chỉ Điểm »: Bình cảnh hiện tại không nằm ở tốc độ bàn tay mà ở đạo tâm nôn nóng. Hãy giữ nhịp thở điều hòa, ưu tiên độ chính xác 100% trong 15 giây đầu mỗi ván để phá vỡ giới hạn!`,
       `« Thần Khí Ban Phúc »: Khí Linh nhận thấy các ngón tay của đạo hữu đang tích tụ mỏi cơ. Hãy xoay nhẹ cổ tay theo chiều kim đồng hồ 10 lần, bấm phím số 5 định vị tâm thế trước khi vào trận tiếp theo!`,
@@ -2510,8 +4749,10 @@ Yêu cầu:
       `« Thiên Mệnh Huyền Cơ »: Tu luyện gõ phím như đúc kiếm ngàn năm. Tránh xa các tà niệm gian lận hay auto click, tích lũy từng ký tự chuẩn xác chính là đại đạo quang minh!`,
     ];
 
+    const heuristicPool = isLinhLung ? linhLungPool : huyenThienPool;
+
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    if (!apiKey || isGeminiProjectAccessDenied) {
       const fallback = heuristicPool[Math.floor(Math.random() * heuristicPool.length)];
       res.json({ success: true, answer: fallback, source: 'heuristic' });
       return;
@@ -2525,15 +4766,43 @@ Yêu cầu:
         },
       });
 
-      const prompt = `Bạn là Huyền Thiên Khí Linh (Thiên Đạo Chấp Pháp Sứ) - trí tuệ tối cao giám giới toàn bộ đấu trường tu tiên gõ phím FastTyping.
+      const targetBot = isLinhLung
+        ? {
+            name: 'Linh Lung Tiên Đồng',
+            title: 'Chưởng Quản Phong Thần Bảng',
+            pronoun: 'Tiên Đồng (hoặc Bản Tiên Đồng)',
+            callUser: 'Đạo Hữu, Huynh đài, Tỷ tỷ hoặc Kiếm khách',
+            prefix: '« Linh Lung Chỉ Điểm »',
+            style: 'Hoạt bát, tinh nghịch, lém lỉnh, thích bình phẩm Phong Thần Bảng, đưa ra lời khuyên gõ phím cực kỳ chính xác và thực tế, dùng icon 🪷 hoặc ✨',
+          }
+        : isBanCo
+        ? {
+            name: 'Bàn Cổ Thần Thức',
+            title: 'Giám Giới Thần Quân',
+            pronoun: 'Bản Tôn',
+            callUser: 'Hậu bối, Tiểu hữu',
+            prefix: '« Thần Quân Sấm Truyền »',
+            style: 'Uy nghiêm, trầm mặc, khí khái thái cổ hùng vĩ',
+          }
+        : {
+            name: 'Huyền Thiên Khí Linh',
+            title: 'Thiên Đạo Chấp Pháp Sứ',
+            pronoun: 'Bản Tòa',
+            callUser: 'Đạo Hữu, Tiên Hữu',
+            prefix: '« Thiên Đạo Chỉ Điểm »',
+            style: 'Nghiêm minh, thấu thị càn khôn, nói lời sấm truyền huyền huyễn',
+          };
+
+      const prompt = `Bạn là ${targetBot.name} (${targetBot.title}) của đấu trường tu tiên gõ phím FastTyping Challenge.
 Người chơi hỏi: "${q}" (Tên người chơi: ${targetUser}).
 
-Hãy trả lời với tư cách Huyền Thiên Khí Linh:
-- Cách xưng hô: Tự xưng là "Bản Tòa" hoặc "Thiên Đạo Khí Linh". Gọi người chơi là "Đạo Hữu" hoặc "Tiên Hữu".
-- Phong cách: Nghiêm minh, thấu thị càn khôn, nói lời sấm truyền, huyền huyễn Tiên Hiệp hào sảng.
-- Bắt đầu câu trả lời bằng: « Khí Linh Sấm Truyền » hoặc « Thiên Đạo Chỉ Điểm ».
-- Độ dài: Khoảng 2 đến 4 câu văn ngắn gọn, súc tích, truyền cảm hứng.
-- Đưa ra lời khuyên thực tế liên quan đến tốc độ gõ phím, độ chính xác, cách giữ nhịp thở, tâm lý thi đấu hoặc thả lỏng ngón tay.`;
+Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
+- Tự xưng: "${targetBot.pronoun}".
+- Gọi người chơi: "${targetBot.callUser}".
+- Phong cách: ${targetBot.style}.
+- Bắt đầu câu trả lời bằng: ${targetBot.prefix}: 
+- Độ dài: Khoảng 2 đến 4 câu văn sinh động, súc tích, tạo hứng khởi tu luyện.
+- Đưa ra lời khuyên CHÍNH XÁC VÀ THỰC TẾ về kỹ năng gõ phím (bộ gõ Telex, nhịp thở, độ chính xác, giữ cổ tay thả lỏng, cách sửa lỗi, mẹo leo bảng vàng...).`;
 
       const text = await callGeminiResilient(ai, prompt);
       if (text) {
@@ -2666,6 +4935,336 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
     });
   });
 
+  // GET /api/admin/system-stats: Real-time system diagnostics & infrastructure telemetry
+  app.get('/api/admin/system-stats', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    cleanStaleSessions();
+    const mem = process.memoryUsage();
+    res.json({
+      success: true,
+      onlineCount: getRealOnlineCount(),
+      totalConnections: activePresenceSessions.size,
+      activeRoomsCount: rooms.size,
+      totalRegisteredUsers: serverUsers.size,
+      serverUptimeSeconds: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+      memoryUsage: {
+        rssMb: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+        heapUsedMb: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+        heapTotalMb: Math.round((mem.heapTotal / 1024 / 1024) * 10) / 10,
+      },
+      systemTime: Date.now(),
+    });
+  });
+
+  // GET /api/admin/users: Complete list of registered users with full telemetry
+  app.get('/api/admin/users', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const userList = [];
+    for (const [id, u] of serverUsers.entries()) {
+      const banCheck = checkIsBanned(u.username);
+      userList.push({
+        id: u.id || id,
+        username: u.username,
+        email: u.email,
+        avatar: u.avatar || '👤',
+        frame: u.frame || 'default',
+        isAdmin: Boolean(u.isAdmin),
+        isVerified: Boolean(u.isVerified),
+        createdAt: u.createdAt || Date.now(),
+        bestWpm: u.bestWpm || 0,
+        totalGames: u.totalGames || 0,
+        isBanned: banCheck.isBanned,
+        remainingMinutes: banCheck.remainingMinutes,
+        banReason: banCheck.record?.reason || '',
+        cultivationRealm: (u.cultivation as any)?.currentRealm?.name || 'Luyện Khí Kỳ',
+        cultivationTier: (u.cultivation as any)?.currentTier || 1,
+        spiritStones: (u.cultivation as any)?.spiritStones || 0,
+      });
+    }
+
+    userList.sort((a, b) => {
+      if (a.isAdmin && !b.isAdmin) return -1;
+      if (!a.isAdmin && b.isAdmin) return 1;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    res.json({
+      success: true,
+      total: userList.length,
+      users: userList,
+    });
+  });
+
+  // POST /api/admin/users/action: Execute administrative actions on accounts
+  app.post('/api/admin/users/action', (req, res) => {
+    const { action, username, userId, reason, durationMs, spiritStones, exp, newPassword } = req.body || {};
+    const targetUsername = String(username || '').trim();
+    if (!targetUsername && !userId) {
+      res.status(400).json({ success: false, error: 'Thiếu định danh người chơi' });
+      return;
+    }
+
+    const user = getUserByUsername(targetUsername) || (userId ? serverUsers.get(userId) : null);
+
+    if (action === 'ban') {
+      const ms = Number(durationMs) || (2 * 60 * 60 * 1000);
+      const cleanReason = String(reason || 'Quyết định từ Ban Quản Trị Hệ Thống').trim();
+      executeApplyBan({
+        username: targetUsername || user?.username || 'Người chơi',
+        userId: user?.id || userId,
+        reason: cleanReason,
+        durationMs: ms,
+      });
+      broadcastHeavenlyDaoEvent({
+        title: 'LỆNH TRỪNG PHẠT ADMIN',
+        eventType: 'penalty',
+        targetUser: targetUsername || user?.username,
+        content: `Ban Quản Trị ra quyết định xử phạt @${targetUsername || user?.username}: ${cleanReason} (Thời hạn: ${Math.round(ms / 60000)} phút).`,
+        highlightText: `Admin phạt ${targetUsername || user?.username}`,
+        personaId: 'ban_co',
+      });
+      res.json({ success: true, message: `Đã cấm tài khoản ${targetUsername} thành công!` });
+      return;
+    }
+
+    if (action === 'unban') {
+      if (targetUsername) serverBans.delete(targetUsername.toLowerCase());
+      if (user?.id) serverBans.delete(user.id.toLowerCase());
+      if (userId) serverBans.delete(String(userId).toLowerCase());
+      if (user) {
+        delete (user as any).bannedUntil;
+        delete (user as any).banReason;
+        delete (user as any).bannedDurationMs;
+        saveUsersToFile();
+      }
+      saveBansToFile();
+      res.json({ success: true, message: `Đã gỡ cấm cho ${targetUsername || user?.username}!` });
+      return;
+    }
+
+    if (action === 'toggle_admin') {
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản để phân quyền' });
+        return;
+      }
+      if (user.id === 'usr_admin_default' || user.username === 'admin') {
+        res.status(400).json({ success: false, error: 'Không thể thay đổi quyền tài khoản Admin gốc!' });
+        return;
+      }
+      user.isAdmin = !user.isAdmin;
+      saveUsersToFile();
+      res.json({
+        success: true,
+        isAdmin: user.isAdmin,
+        message: user.isAdmin ? `Đã thăng cấp ${user.username} thành Quản Trị Viên!` : `Đã hạ quyền ${user.username} về Thành Viên thường!`,
+      });
+      return;
+    }
+
+    if (action === 'reward') {
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người chơi' });
+        return;
+      }
+      if (!user.cultivation) {
+        res.status(400).json({ success: false, error: 'Người chơi chưa khởi tạo dữ liệu Tu Tiên' });
+        return;
+      }
+      if (spiritStones) {
+        user.cultivation.spiritStones = Math.max(0, (user.cultivation.spiritStones || 0) + Number(spiritStones));
+      }
+      if (exp) {
+        user.cultivation.cultivationExp = Math.max(0, (user.cultivation.cultivationExp || 0) + Number(exp));
+      }
+      saveUsersToFile();
+      res.json({
+        success: true,
+        cultivation: user.cultivation,
+        message: `Đã ban thưởng tài nguyên thành công cho ${user.username}!`,
+      });
+      return;
+    }
+
+    if (action === 'reset_password') {
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản' });
+        return;
+      }
+      const newPwd = String(newPassword || 'fasttyping123').trim();
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = hashPassword(newPwd, salt);
+      user.passwordHash = passwordHash;
+      user.salt = salt;
+      saveUsersToFile();
+      res.json({
+        success: true,
+        message: `Đã đặt lại mật khẩu cho ${user.username} thành công! Mật khẩu mới: ${newPwd}`,
+      });
+      return;
+    }
+
+    if (action === 'delete') {
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người chơi để xóa' });
+        return;
+      }
+      if (user.id === 'usr_admin_default' || user.username.toLowerCase() === 'admin') {
+        res.status(400).json({ success: false, error: 'Không được phép xóa tài khoản Admin gốc!' });
+        return;
+      }
+
+      const deletedUsername = user.username;
+      const deletedUserId = user.id;
+
+      // 1. Delete from serverUsers map and any residual duplicates
+      serverUsers.delete(deletedUserId);
+      for (const [k, u] of serverUsers.entries()) {
+        if (u.id === deletedUserId || u.username.toLowerCase() === deletedUsername.toLowerCase()) {
+          serverUsers.delete(k);
+        }
+      }
+      saveUsersToFile();
+
+      // 2. Clear ban records
+      serverBans.delete(deletedUsername.toLowerCase());
+      serverBans.delete(deletedUserId.toLowerCase());
+      if (userId) serverBans.delete(String(userId).toLowerCase());
+      saveBansToFile();
+
+      // 3. Clear active presence sessions
+      for (const [sessId, session] of activePresenceSessions.entries()) {
+        if (session.userId === deletedUserId || session.username.toLowerCase() === deletedUsername.toLowerCase()) {
+          activePresenceSessions.delete(sessId);
+        }
+      }
+
+      // 4. Remove from sect memberships if applicable
+      try {
+        let sectChanged = false;
+        for (const sect of serverSects.values()) {
+          if (sect.members && Array.isArray(sect.members)) {
+            const beforeCount = sect.members.length;
+            sect.members = sect.members.filter((m) => m.userId !== deletedUserId && m.username.toLowerCase() !== deletedUsername.toLowerCase());
+            if (sect.members.length !== beforeCount) {
+              sect.memberCount = sect.members.length;
+              sectChanged = true;
+            }
+          }
+        }
+        if (sectChanged) {
+          saveSectsToFile();
+        }
+      } catch (e) {
+        console.error('Error cleaning sect membership for deleted user:', e);
+      }
+
+      // 5. Broadcast Heavenly Dao notice to server
+      broadcastHeavenlyDaoEvent({
+        title: 'LỆNH TRẢM QUYẾT ADMIN',
+        eventType: 'penalty',
+        targetUser: deletedUsername,
+        content: `Ban Quản Trị đã xóa vĩnh viễn tài khoản @${deletedUsername} khỏi hệ thống Đạo Giới.`,
+        highlightText: `Xóa vĩnh viễn @${deletedUsername}`,
+        personaId: 'ban_co',
+      });
+
+      res.json({ success: true, message: `Đã xóa vĩnh viễn tài khoản @${deletedUsername} khỏi hệ thống thành công!` });
+      return;
+    }
+
+    res.status(400).json({ success: false, error: 'Hành động không hợp lệ' });
+  });
+
+  // GET /api/admin/rooms: Detailed monitor of all active rooms
+  app.get('/api/admin/rooms', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const roomList = Array.from(rooms.values()).map((r) => {
+      const host = r.players.find((p) => p.id === r.hostId);
+      return {
+        id: r.id,
+        code: r.id,
+        name: `Phòng #${r.id}`,
+        mode: r.mode,
+        modeName: getModeDisplayName(r.mode),
+        difficulty: r.difficulty || 'normal',
+        status: r.status,
+        hostId: r.hostId,
+        hostName: r.hostName || host?.username || 'Vô Danh',
+        maxSlots: r.maxSlots,
+        playerCount: r.players.length,
+        createdAt: r.createdAt || Date.now(),
+        players: r.players.map((p) => ({
+          id: p.id,
+          name: p.username,
+          avatar: p.icon,
+          wpm: p.wpm || 0,
+          progress: p.progress || 0,
+          isHost: p.id === r.hostId,
+          isReady: !p.inMatch,
+          isFinished: p.isFinished,
+          isSurrendered: p.isSurrendered,
+        })),
+      };
+    });
+
+    res.json({
+      success: true,
+      totalRooms: roomList.length,
+      rooms: roomList,
+    });
+  });
+
+  // POST /api/admin/rooms/:id/close: Force terminate room
+  app.post('/api/admin/rooms/:id/close', (req, res) => {
+    const rawId = req.params.id;
+    const norm = normalizeRoomCode(rawId);
+    const room = rooms.get(norm);
+    if (!room) {
+      res.status(404).json({ success: false, error: 'Phòng không tồn tại hoặc đã giải tán' });
+      return;
+    }
+
+    // Broadcast room closed to all SSE clients in that room
+    const clients = sseClientsByRoom.get(room.id);
+    if (clients) {
+      const closeMsg = `data: ${JSON.stringify({ type: 'ROOM_CLOSED_BY_ADMIN', reason: 'Phòng đã được giải tán bởi Ban Quản Trị' })}\n\n`;
+      for (const client of clients) {
+        try {
+          client.write(closeMsg);
+          client.end();
+        } catch (_) {}
+      }
+      sseClientsByRoom.delete(room.id);
+    }
+
+    rooms.delete(norm);
+    if (room.id !== norm) {
+      rooms.delete(room.id);
+    }
+
+    res.json({ success: true, message: `Đã đóng phòng #${room.id} thành công!` });
+  });
+
+  // POST /api/admin/broadcast: Instant global broadcast banner/announcement
+  app.post('/api/admin/broadcast', (req, res) => {
+    const { title, message, personaId = 'admin' } = req.body || {};
+    if (!message) {
+      res.status(400).json({ success: false, error: 'Nội dung thông báo không được để trống' });
+      return;
+    }
+
+    const decree = broadcastHeavenlyDaoEvent({
+      title: title || 'THÔNG BÁO TỪ QUẢN TRỊ VIÊN',
+      eventType: 'announcement',
+      content: message,
+      highlightText: title || 'Thông Báo Admin',
+      personaId: personaId === 'admin' ? 'huyen_thien' : personaId,
+    });
+
+    res.json({ success: true, decree, message: 'Đã phát sóng thông báo toàn hệ thống thành công!' });
+  });
+
   // GET /api/leaderboard/cultivation: Top 50 tu vi cao nhất server (Cập nhật định kỳ 1 giờ/lần)
   app.get('/api/leaderboard/cultivation', (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -2732,6 +5331,616 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
     });
   });
 
+  // =========================================================================
+  // API TÔNG MÔN & BẢNG XẾP HẠNG TÔNG MÔN (SECT SYSTEM & LEADERBOARD)
+  // =========================================================================
+
+  // Helper broadcast thông báo tông môn lên kênh chat thế giới
+  function broadcastSectAnnouncement(message: string) {
+    const msgId = `sect-ann-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const sysMsg: ServerChatMessage = {
+      id: msgId,
+      username: 'Huyền Thiên Khí Linh',
+      avatar: '☯️',
+      frame: 'admin_gold',
+      message,
+      timestamp: Date.now(),
+      channel: 'global',
+      isAdmin: true,
+      isDaoBot: true,
+      daoEventType: 'announcement',
+      daoTitle: 'Tông Môn Lệnh',
+    };
+    globalChatMessages.push(sysMsg);
+    if (globalChatMessages.length > 200) globalChatMessages.shift();
+
+    const payload = `data: ${JSON.stringify({ type: 'new_chat_message', message: sysMsg })}\n\n`;
+    for (const client of Array.from(sseGlobalChatClients)) {
+      try {
+        client.write(payload);
+      } catch {
+        sseGlobalChatClients.delete(client);
+        sseGlobalClients.delete(client);
+      }
+    }
+  }
+
+  // GET /api/leaderboard/sects: Bảng Xếp Hạng Tông Môn dựa trên Tổng Tu Vi Thành Viên
+  app.get('/api/leaderboard/sects', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+    const sects = Array.from(serverSects.values()).map((s) => {
+      recalculateSectStats(s);
+      const topMembers = [...(s.members || [])]
+        .sort((a, b) => (b.tuViScore || 0) - (a.tuViScore || 0))
+        .slice(0, 5);
+
+      return {
+        id: s.id,
+        name: s.name,
+        tag: s.tag,
+        description: s.description,
+        slogan: s.slogan,
+        bannerColor: s.bannerColor,
+        badgeIcon: s.badgeIcon,
+        leaderId: s.leaderId,
+        leaderName: s.leaderName,
+        leaderAvatar: s.leaderAvatar || '👑',
+        leaderFrame: s.leaderFrame || 'frame_xianxia_dokiep',
+        leaderRealmName: s.leaderRealmName || 'Độ Kiếp Kỳ',
+        leaderLevel: s.leaderLevel || 800,
+        memberCount: s.members ? s.members.length : s.memberCount || 1,
+        totalTuVi: s.totalTuVi || 1000000,
+        avgLevel: s.avgLevel || 350,
+        avgRealmName: s.avgRealmName || 'Hóa Thần Kỳ',
+        linhMachLevel: s.linhMachLevel || 1,
+        totalContribution: s.totalContribution || 0,
+        weeklyTournamentPoints: s.weeklyTournamentPoints || 0,
+        isHoldingThienCung: Boolean(s.isHoldingThienCung),
+        topMembers,
+        members: s.members || [],
+        createdAt: s.createdAt,
+      };
+    });
+
+    // Sắp xếp thứ hạng theo Tổng Tu Vi Thành Viên giảm dần
+    sects.sort((a, b) => b.totalTuVi - a.totalTuVi);
+
+    const rankedSects = sects.map((s, index) => ({
+      ...s,
+      rank: index + 1,
+    }));
+
+    res.json({
+      success: true,
+      topSects: rankedSects,
+      totalSects: rankedSects.length,
+      lastUpdated: Date.now(),
+    });
+  });
+
+  // GET /api/sects: Lấy toàn bộ danh sách tông môn
+  app.get('/api/sects', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const list = Array.from(serverSects.values()).map((s) => {
+      recalculateSectStats(s);
+      return s;
+    });
+    res.json({ success: true, sects: list });
+  });
+
+  // POST /api/sects/create: Khai Sơn Lập Phái (Tạo tông môn mới)
+  app.post('/api/sects/create', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập để Khai Sơn Lập Phái!' });
+      return;
+    }
+
+    const { name, tag, description, slogan, badgeIcon, bannerColor } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ success: false, error: 'Tên tông môn không được để trống!' });
+      return;
+    }
+    if (!tag || typeof tag !== 'string' || !tag.trim()) {
+      res.status(400).json({ success: false, error: 'Tông Huy Hiệu không được để trống!' });
+      return;
+    }
+
+    const cleanName = name.trim().slice(0, 30);
+    const cleanTag = tag.trim().toUpperCase().slice(0, 6);
+    const cleanDesc = (description && typeof description === 'string')
+      ? description.trim().slice(0, 200)
+      : 'Một tông môn ẩn thế quật khởi tại cõi tu tiên.';
+    const cleanSlogan = (slogan && typeof slogan === 'string')
+      ? slogan.trim().slice(0, 100)
+      : 'Khai Sơn Lập Phái • Vạn Cổ Trường Tồn';
+    const cleanIcon = badgeIcon || '⚡';
+    const cleanColor = bannerColor || '#f59e0b';
+
+    // Kiểm tra trùng tên hoặc tag
+    for (const s of serverSects.values()) {
+      if (s.name.toLowerCase() === cleanName.toLowerCase() || s.tag.toLowerCase() === cleanTag.toLowerCase()) {
+        res.status(400).json({ success: false, error: 'Tên tông môn hoặc Tông Huy Hiệu này đã có người sử dụng!' });
+        return;
+      }
+    }
+
+    const cult = user.cultivation || {};
+    const userLevel = Math.max(1, Number(cult.level) || 1);
+    const userLinhThach = Number(cult.linhThach) || 0;
+
+    // Yêu cầu: Trúc Cơ Kỳ (Cấp >= 31) và 300 Linh Thạch
+    if (userLevel < 31) {
+      res.status(400).json({ success: false, error: 'Cần đạt cảnh giới Trúc Cơ Kỳ trở lên mới có thể Khai Sơn Lập Phái!' });
+      return;
+    }
+    if (userLinhThach < 300) {
+      res.status(400).json({ success: false, error: `Khai sơn lập phái cần 300 Linh Thạch, hiện có ${userLinhThach}!` });
+      return;
+    }
+
+    const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+    const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+    const tier = Math.max(1, Number(cult.tier) || 1);
+    const exp = Math.max(0, Number(cult.exp) || 0);
+    const tuViScore = (realmIndex * 1_000_000) + (userLevel * 10_000) + (tier * 1_000) + exp;
+
+    // Khấu trừ 300 Linh Thạch
+    cult.linhThach = userLinhThach - 300;
+
+    const sectId = `sect_custom_${Date.now()}`;
+    const founderMember: ServerSectMemberRecord = {
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName || user.username,
+      avatar: user.avatar || '👑',
+      frame: user.frame || realmMeta.frameId,
+      role: 'chuong_mon',
+      contribution: 500,
+      realmIndex,
+      realmName: realmMeta.name,
+      realmIcon: realmMeta.icon,
+      level: userLevel,
+      tier,
+      exp,
+      tuViScore,
+      joinedAt: Date.now(),
+      lastActive: Date.now(),
+    };
+
+    const newSect: ServerSectRecord = {
+      id: sectId,
+      name: cleanName,
+      tag: cleanTag,
+      description: cleanDesc,
+      leaderId: user.id,
+      leaderName: user.username,
+      leaderAvatar: user.avatar || '👑',
+      leaderFrame: user.frame || realmMeta.frameId,
+      leaderRealmName: realmMeta.name,
+      leaderLevel: userLevel,
+      linhMachLevel: 1,
+      totalContribution: 500,
+      memberCount: 1,
+      totalTuVi: tuViScore,
+      avgLevel: userLevel,
+      avgRealmName: realmMeta.name,
+      badgeIcon: cleanIcon,
+      slogan: cleanSlogan,
+      bannerColor: cleanColor,
+      weeklyTournamentPoints: 100,
+      isHoldingThienCung: false,
+      members: [founderMember],
+      createdAt: Date.now(),
+    };
+
+    serverSects.set(sectId, newSect);
+    saveSectsToFile();
+
+    // Cập nhật thông tin tông môn vào user
+    cult.sect = {
+      sectId: newSect.id,
+      sectName: newSect.name,
+      sectTag: newSect.tag,
+      role: 'chuong_mon',
+      contribution: 500,
+      joinedAt: Date.now(),
+    };
+    if (!cult.historyLog) cult.historyLog = [];
+    cult.historyLog.unshift(`👑 [KHAI SƠN LẬP PHÁI] Chúc mừng đạo hữu sáng lập ${newSect.name} [${newSect.tag}], tôn xưng Chưởng Môn!`);
+    if (cult.historyLog.length > 20) cult.historyLog.pop();
+
+    user.cultivation = cult;
+    user.updatedAt = Date.now();
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+    syncUserCultivationToCache(user);
+
+    broadcastSectAnnouncement(`👑 [KHAI SƠN LẬP PHÁI] Đại năng ${user.displayName || user.username} đã khai sơn lập phái, sáng lập tông môn ${cleanName} [${cleanTag}] chấn động toàn cõi Tiên Giới!`);
+
+    res.json({
+      success: true,
+      message: `Chúc mừng đạo hữu sáng lập ${cleanName} [${cleanTag}], tôn xưng Chưởng Môn!`,
+      sect: newSect,
+      cultivation: cult,
+    });
+  });
+
+  // POST /api/sects/join: Bái nhập môn phái
+  app.post('/api/sects/join', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập để bái nhập môn phái!' });
+      return;
+    }
+
+    const { sectId } = req.body;
+    const targetSect = serverSects.get(String(sectId));
+    if (!targetSect) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy môn phái này!' });
+      return;
+    }
+
+    const cult = user.cultivation || {};
+    const oldSectId = cult.sect?.sectId;
+
+    // Nếu đã ở trong môn phái này rồi
+    if (oldSectId === sectId) {
+      res.json({ success: true, message: 'Đạo hữu đã là thành viên của môn phái này!', sect: targetSect, cultivation: cult });
+      return;
+    }
+
+    // Rời môn phái cũ nếu có
+    if (oldSectId && serverSects.has(oldSectId)) {
+      const oldSect = serverSects.get(oldSectId)!;
+      oldSect.members = (oldSect.members || []).filter((m) => String(m.username || '').toLowerCase() !== String(user.username || '').toLowerCase());
+      recalculateSectStats(oldSect);
+    }
+
+    const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+    const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+    const userLevel = Math.max(1, Number(cult.level) || 1);
+    const tier = Math.max(1, Number(cult.tier) || 1);
+    const exp = Math.max(0, Number(cult.exp) || 0);
+    const tuViScore = (realmIndex * 1_000_000) + (userLevel * 10_000) + (tier * 1_000) + exp;
+
+    // Đệ tử mới gia nhập luôn là Ngoại Môn
+    const newMember: ServerSectMemberRecord = {
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName || user.username,
+      avatar: user.avatar || '⚡',
+      frame: user.frame || realmMeta.frameId,
+      role: 'ngoai_mon',
+      contribution: 50,
+      realmIndex,
+      realmName: realmMeta.name,
+      realmIcon: realmMeta.icon,
+      level: userLevel,
+      tier,
+      exp,
+      tuViScore,
+      joinedAt: Date.now(),
+      lastActive: Date.now(),
+    };
+
+    if (!targetSect.members) targetSect.members = [];
+    // Xóa trùng nếu có
+    targetSect.members = targetSect.members.filter((m) => String(m.username || '').toLowerCase() !== String(user.username || '').toLowerCase());
+    targetSect.members.push(newMember);
+    recalculateSectStats(targetSect);
+    saveSectsToFile();
+
+    cult.sect = {
+      sectId: targetSect.id,
+      sectName: targetSect.name,
+      sectTag: targetSect.tag,
+      role: 'ngoai_mon',
+      contribution: 50,
+      joinedAt: Date.now(),
+    };
+    if (!cult.historyLog) cult.historyLog = [];
+    cult.historyLog.unshift(`🏰 Bái nhập Tông Môn: Chúc mừng đạo hữu trở thành Ngoại Môn Đệ Tử của ${targetSect.name} [${targetSect.tag}]!`);
+    if (cult.historyLog.length > 20) cult.historyLog.pop();
+
+    user.cultivation = cult;
+    user.updatedAt = Date.now();
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+    syncUserCultivationToCache(user);
+
+    res.json({
+      success: true,
+      message: `Đã bái nhập ${targetSect.name} [${targetSect.tag}] thành công!`,
+      sect: targetSect,
+      cultivation: cult,
+    });
+  });
+
+  // POST /api/sects/leave: Rời khỏi môn phái
+  app.post('/api/sects/leave', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập!' });
+      return;
+    }
+
+    const cult = user.cultivation || {};
+    const sectId = cult.sect?.sectId;
+    if (!sectId || !serverSects.has(sectId)) {
+      res.status(400).json({ success: false, error: 'Đạo hữu hiện không thuộc môn phái nào!' });
+      return;
+    }
+
+    const sect = serverSects.get(sectId)!;
+    // Chưởng Môn không được tùy tiện rời phái nếu vẫn còn đệ tử khác
+    if (cult.sect.role === 'chuong_mon') {
+      const otherMembers = (sect.members || []).filter((m) => String(m.username || '').toLowerCase() !== String(user.username || '').toLowerCase());
+      if (otherMembers.length > 0) {
+        res.status(400).json({ success: false, error: 'Chưởng Môn cần truyền vị cho đồng đạo khác trước khi rời môn phái!' });
+        return;
+      }
+    }
+
+    sect.members = (sect.members || []).filter((m) => String(m.username || '').toLowerCase() !== String(user.username || '').toLowerCase());
+    recalculateSectStats(sect);
+    saveSectsToFile();
+
+    cult.sect = undefined;
+    if (!cult.historyLog) cult.historyLog = [];
+    cult.historyLog.unshift(`🚪 [XUẤT SƯ THOÁI PHÁI] Đạo hữu đã rời khỏi môn phái, trở về thân phận tán tu.`);
+    if (cult.historyLog.length > 20) cult.historyLog.pop();
+
+    user.cultivation = cult;
+    user.updatedAt = Date.now();
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+    syncUserCultivationToCache(user);
+
+    res.json({ success: true, message: 'Đã rời môn phái thành công.', cultivation: cult });
+  });
+
+  // POST /api/sects/role: Tấn phong / bãi miễn chức vụ đệ tử (Chưởng Môn & Đại Trưởng Lão)
+  app.post('/api/sects/role', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const { targetUsername, newRole } = req.body;
+    const validRoles = ['chuong_mon', 'dai_truong_lao', 'chan_truyen', 'noi_mon', 'ngoai_mon'];
+    if (!targetUsername || !newRole || !validRoles.includes(newRole)) {
+      res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ!' });
+      return;
+    }
+
+    const cult = user.cultivation || {};
+    const sectId = cult.sect?.sectId;
+    const callerRole = cult.sect?.role;
+
+    if (!sectId || !serverSects.has(sectId)) {
+      res.status(400).json({ success: false, error: 'Đạo hữu không có môn phái!' });
+      return;
+    }
+
+    if (callerRole !== 'chuong_mon' && callerRole !== 'dai_truong_lao') {
+      res.status(403).json({ success: false, error: 'Chỉ có Chưởng Môn hoặc Đại Trưởng Lão mới có quyền tấn phong chức vụ!' });
+      return;
+    }
+
+    if (newRole === 'chuong_mon' && callerRole !== 'chuong_mon') {
+      res.status(403).json({ success: false, error: 'Chỉ có Chưởng Môn mới có quyền truyền vị!' });
+      return;
+    }
+
+    if (newRole === 'dai_truong_lao' && callerRole !== 'chuong_mon') {
+      res.status(403).json({ success: false, error: 'Chỉ có Chưởng Môn mới có quyền tấn phong Đại Trưởng Lão!' });
+      return;
+    }
+
+    const sect = serverSects.get(sectId)!;
+    const targetMember = (sect.members || []).find((m) => String(m.username || '').toLowerCase() === String(targetUsername).toLowerCase());
+    if (!targetMember) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy đệ tử này trong môn phái!' });
+      return;
+    }
+
+    // Nếu truyền vị Chưởng Môn: Chưởng Môn hiện tại tự chuyển thành Đại Trưởng Lão
+    if (newRole === 'chuong_mon') {
+      const oldLeaderMember = (sect.members || []).find((m) => String(m.username || '').toLowerCase() === String(user.username || '').toLowerCase());
+      if (oldLeaderMember) {
+        oldLeaderMember.role = 'dai_truong_lao';
+      }
+      cult.sect.role = 'dai_truong_lao';
+      user.cultivation = cult;
+      serverUsers.set(user.id, user);
+
+      sect.leaderId = targetMember.userId;
+      sect.leaderName = targetMember.username;
+      sect.leaderAvatar = targetMember.avatar;
+      sect.leaderFrame = targetMember.frame;
+      sect.leaderRealmName = targetMember.realmName;
+      sect.leaderLevel = targetMember.level;
+    }
+
+    targetMember.role = newRole as any;
+
+    // Cập nhật người chơi mục tiêu nếu đang có tài khoản trong serverUsers
+    const targetUserRecord = getUserByUsername(targetMember.username);
+    if (targetUserRecord && targetUserRecord.cultivation?.sect) {
+      targetUserRecord.cultivation.sect.role = newRole as any;
+      if (!targetUserRecord.cultivation.historyLog) targetUserRecord.cultivation.historyLog = [];
+      targetUserRecord.cultivation.historyLog.unshift(`✨ [TÔNG MÔN TẤN PHONG] Chúc mừng đạo hữu được tấn phong làm [${newRole}] của ${sect.name}!`);
+      serverUsers.set(targetUserRecord.id, targetUserRecord);
+    }
+
+    recalculateSectStats(sect);
+    saveSectsToFile();
+    saveUsersToFile();
+
+    const roleTitles: Record<string, string> = {
+      chuong_mon: 'Chưởng Môn',
+      dai_truong_lao: 'Đại Trưởng Lão',
+      chan_truyen: 'Chân Truyền Đệ Tử',
+      noi_mon: 'Nội Môn Đệ Tử',
+      ngoai_mon: 'Ngoại Môn Đệ Tử',
+    };
+
+    broadcastSectAnnouncement(`✨ [TÔNG MÔN TẤN PHONG] ${sect.name} [${sect.tag}]: Đệ tử ${targetMember.displayName || targetMember.username} đã được tấn phong làm [${roleTitles[newRole] || newRole}]!`);
+
+    res.json({
+      success: true,
+      message: `Đã tấn phong ${targetMember.displayName || targetMember.username} làm [${roleTitles[newRole] || newRole}]!`,
+      sect,
+      cultivation: user.cultivation,
+    });
+  });
+
+  // POST /api/sects/kick: Trục xuất đệ tử khỏi môn phái
+  app.post('/api/sects/kick', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const { targetUsername } = req.body;
+    const cult = user.cultivation || {};
+    const sectId = cult.sect?.sectId;
+    const callerRole = cult.sect?.role;
+
+    if (!sectId || !serverSects.has(sectId)) {
+      res.status(400).json({ success: false, error: 'Đạo hữu không có môn phái!' });
+      return;
+    }
+
+    if (callerRole !== 'chuong_mon' && callerRole !== 'dai_truong_lao') {
+      res.status(403).json({ success: false, error: 'Chỉ có Chưởng Môn hoặc Đại Trưởng Lão mới có quyền trục xuất đệ tử!' });
+      return;
+    }
+
+    const sect = serverSects.get(sectId)!;
+    const targetMember = (sect.members || []).find((m) => m.username.toLowerCase() === String(targetUsername).toLowerCase());
+    if (!targetMember) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy đệ tử trong môn phái!' });
+      return;
+    }
+
+    if (targetMember.role === 'chuong_mon') {
+      res.status(403).json({ success: false, error: 'Không thể trục xuất Chưởng Môn!' });
+      return;
+    }
+
+    if (callerRole === 'dai_truong_lao' && (targetMember.role === 'dai_truong_lao' || targetMember.role === 'chan_truyen')) {
+      res.status(403).json({ success: false, error: 'Đại Trưởng Lão không thể trục xuất đệ tử đồng cấp hoặc Chân Truyền!' });
+      return;
+    }
+
+    sect.members = (sect.members || []).filter((m) => String(m.username || '').toLowerCase() !== String(targetUsername).toLowerCase());
+    recalculateSectStats(sect);
+    saveSectsToFile();
+
+    // Xóa môn phái khỏi tài khoản người bị đuổi
+    const targetUserRecord = getUserByUsername(targetMember.username);
+    if (targetUserRecord && targetUserRecord.cultivation) {
+      targetUserRecord.cultivation.sect = undefined;
+      serverUsers.set(targetUserRecord.id, targetUserRecord);
+      saveUsersToFile();
+    }
+
+    res.json({
+      success: true,
+      message: `Đã trục xuất ${targetMember.displayName || targetMember.username} khỏi môn phái.`,
+      sect,
+    });
+  });
+
+  // POST /api/sects/contribute: Cống hiến Linh Thạch bồi dưỡng Linh Mạch
+  app.post('/api/sects/contribute', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+      return;
+    }
+
+    const { amount } = req.body;
+    const contrib = Math.max(1, Number(amount) || 0);
+    const cult = user.cultivation || {};
+    const sectId = cult.sect?.sectId;
+
+    if (!sectId || !serverSects.has(sectId)) {
+      res.status(400).json({ success: false, error: 'Đạo hữu không có môn phái!' });
+      return;
+    }
+
+    const currentLinhThach = Number(cult.linhThach) || 0;
+    if (currentLinhThach < contrib) {
+      res.status(400).json({ success: false, error: `Thiếu Linh Thạch: cần ${contrib}, hiện có ${currentLinhThach}!` });
+      return;
+    }
+
+    cult.linhThach = currentLinhThach - contrib;
+    cult.sect.contribution = (cult.sect.contribution || 0) + contrib;
+
+    const sect = serverSects.get(sectId)!;
+    sect.totalContribution = (sect.totalContribution || 0) + contrib;
+
+    // Tìm và cập nhật thành viên trong sect
+    const m = (sect.members || []).find((x) => String(x.username || '').toLowerCase() === String(user.username || '').toLowerCase());
+    if (m) {
+      m.contribution = (m.contribution || 0) + contrib;
+    }
+
+    // Kiểm tra thăng cấp Linh Mạch (ngưỡng: 5000, 15000, 30000, 60000)
+    const thresholds = [0, 5000, 15000, 30000, 60000];
+    let didLevelUp = false;
+    if (sect.linhMachLevel < 5 && sect.totalContribution >= thresholds[sect.linhMachLevel]) {
+      sect.linhMachLevel += 1;
+      didLevelUp = true;
+    }
+
+    recalculateSectStats(sect);
+    saveSectsToFile();
+
+    const msg = didLevelUp
+      ? `🌟 [LINH MẠCH ĐỘT PHÁ] Cống hiến ${contrib} Linh Thạch! Linh Mạch ${sect.name} đã thăng lên Cấp ${sect.linhMachLevel}!`
+      : `🏰 Đóng góp ${contrib} Linh Thạch cho ${sect.name}, cống hiến cá nhân tăng +${contrib}!`;
+
+    if (!cult.historyLog) cult.historyLog = [];
+    cult.historyLog.unshift(msg);
+    if (cult.historyLog.length > 20) cult.historyLog.pop();
+
+    user.cultivation = cult;
+    user.updatedAt = Date.now();
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+
+    if (didLevelUp) {
+      broadcastSectAnnouncement(`🌟 [LINH MẠCH ĐỘT PHÁ] Nhờ sự cống hiến của chư vị đệ tử, Linh Mạch Động Phủ của ${sect.name} [${sect.tag}] đã chính thức thăng cấp lên Cấp ${sect.linhMachLevel}/5!`);
+    }
+
+    res.json({
+      success: true,
+      message: msg,
+      sect,
+      cultivation: cult,
+    });
+  });
+
   // GET /api/leaderboard: Get real server-wide high scores
   app.get('/api/leaderboard', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -2775,6 +5984,18 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
     const validModes = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'ngau_hung', 'doan_chu', 'san_boss'];
     if (!mode || !validModes.includes(mode) || !username) {
       res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
+      return;
+    }
+
+    // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
+    const banCheck = checkIsBanned(username || (playerId ? playerId : ''));
+    if (banCheck.isBanned) {
+      res.json({
+        success: false,
+        isNewRecord: false,
+        error: `Tài khoản đang chịu án phạt từ Bàn Cổ Thần Thức (Cấm thi đấu 2 giờ). Thời gian thụ án còn lại: ${banCheck.remainingMinutes} phút! Điểm số không được ghi nhận lên Bảng Vàng!`,
+        highScores: serverHighScores,
+      });
       return;
     }
 
@@ -2863,19 +6084,19 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
       saveLeaderboardToFile();
       broadcastLeaderboard();
 
-      // Huyền Thiên Khí Linh phát chiếu thư toàn server & soạn thơ Tiên Hiệp Gemini
+      // Linh Lung Tiên Đồng (Chưởng Quản Phong Thần Bảng) phát chiếu thư toàn server & bình phẩm sôi nổi
       const modeDisplayName = getModeDisplayName(mode);
       const isBossOrScoreMode = mode === 'san_boss' || mode === 'ngau_hung' || mode === 'doan_chu';
       const recordMetric = isBossOrScoreMode ? `${numScore.toLocaleString()} điểm` : `${numWpm} WPM`;
       broadcastHeavenlyDaoEvent({
-        title: 'THIÊN BẢNG ĐĂNG ĐỈNH',
+        title: 'PHONG THẦN ĐĂNG ĐỈNH',
         eventType: 'record',
         targetUser: cleanDisplayName,
         wpm: numWpm,
         accuracy: 100,
-        content: `Kiếm khí tung hoành tam thiên lý! Đạo hữu @${cleanDisplayName} vừa xuất chiêu thần tốc đạt ${recordMetric} tại chế độ ${modeDisplayName}, chính thức soán ngôi Đệ Nhất Kiếm Tôn trên Thiên Bảng!`,
+        content: `Phong Thần Bảng rung chuyển! Đạo hữu @${cleanDisplayName} vừa xuất chiêu thần tốc đạt ${recordMetric} tại chế độ ${modeDisplayName}, chính thức ghi danh Đệ Nhất Bảng Vàng! Mau mau bái phục nào! 🪷🎉`,
         highlightText: `${cleanDisplayName} đạt ${recordMetric}`,
-        personaId: 'ban_co',
+        personaId: 'linh_lung',
         generateAiPoem: true,
       });
 
@@ -2911,52 +6132,6 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
     res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
   });
 
-  // Resilient multi-model Gemini caller with graceful fallback during high demand / spikes
-  async function callGeminiResilient(
-    ai: GoogleGenAI,
-    prompt: string,
-    config?: any
-  ): Promise<string | null> {
-    const candidateModels = [
-      'gemini-3.8-flash',
-      'gemini-3.1-flash-lite',
-      'gemini-flash-latest',
-    ];
-
-    for (const model of candidateModels) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: prompt,
-          config: config || undefined,
-        });
-        const text = response.text?.trim();
-        if (text) {
-          return text;
-        }
-      } catch (err: any) {
-        const msg = String(err?.message || '');
-        const isTemporary =
-          err?.status === 503 ||
-          err?.code === 503 ||
-          err?.status === 429 ||
-          err?.code === 429 ||
-          msg.includes('503') ||
-          msg.includes('high demand') ||
-          msg.includes('UNAVAILABLE') ||
-          msg.includes('RESOURCE_EXHAUSTED');
-
-        if (isTemporary) {
-          console.warn(`[AI Engine] Model ${model} is experiencing high demand (503/429). Attempting fallback model...`);
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          continue;
-        }
-        console.warn(`[AI Engine] Model ${model} warning:`, msg || err);
-      }
-    }
-    return null;
-  }
-
   // Helper fallback practice word builder
   function generateFallbackPracticeWords(mistakes: any[] = [], errorKeys: any[] = [], mode = 'vi_dau'): string[] {
     const pool = new Set<string>();
@@ -2969,16 +6144,24 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
       modeStr.includes('số') ||
       modeStr.includes('digits');
 
+    const rawMistakes: string[] = [];
     if (Array.isArray(mistakes)) {
       mistakes.forEach((m) => {
-        const orig = m?.original || m?.word;
+        const orig = typeof m === 'string' ? m : m?.original || m?.word;
         if (orig && typeof orig === 'string') {
           orig.trim().split(/\s+/).forEach((w: string) => {
             if (isNumber) {
               const clean = w.replace(/[^\d+\-*/=.]/g, '');
-              if (clean) pool.add(clean);
+              if (clean && !rawMistakes.includes(clean)) {
+                rawMistakes.push(clean);
+                pool.add(clean);
+              }
             } else {
-              pool.add(w.toLowerCase());
+              const clean = w.toLowerCase().trim();
+              if (clean && !rawMistakes.includes(clean)) {
+                rawMistakes.push(clean);
+                pool.add(clean);
+              }
             }
           });
         }
@@ -3030,6 +6213,28 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
     ];
 
     const source = isEn ? relatedEn : isViNoDau ? relatedVnNoDau : relatedVnDau;
+
+    // Detect clusters from mistakes to pick matching words
+    const detectedPatterns: string[] = [];
+    rawMistakes.forEach((w) => {
+      const lower = w.toLowerCase();
+      ['ngh', 'qu', 'ph', 'tr', 'ch', 'kh', 'uyên', 'uông', 'ương', 'oang'].forEach((pat) => {
+        if (lower.includes(pat) && !detectedPatterns.includes(pat)) {
+          detectedPatterns.push(pat);
+        }
+      });
+    });
+
+    // Add matching pattern words
+    if (detectedPatterns.length > 0) {
+      source.forEach((w) => {
+        if (pool.size >= 26) return;
+        if (detectedPatterns.some((pat) => w.includes(pat))) {
+          pool.add(w);
+        }
+      });
+    }
+
     for (const w of source) {
       if (pool.size >= 30) break;
       if (keyList.some((k) => w.includes(String(k)))) {
@@ -3082,12 +6287,17 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
     } = params;
 
     const modeStr = String(mode || '').toLowerCase();
+    const hasNumericMistakes = allMistakes && allMistakes.some((m: any) => {
+      const s = String(typeof m === 'string' ? m : m?.original || m?.word || '').trim();
+      return /^[\d+\-*/=.]+$/.test(s);
+    });
     const isNumberMode =
       modeStr === 'numpad' ||
       modeStr === 'number' ||
       modeStr.includes('number') ||
       modeStr.includes('numpad') ||
-      modeStr.includes('số');
+      modeStr.includes('số') ||
+      Boolean(hasNumericMistakes);
 
     const defaultErrorPatterns = isNumberMode
       ? [
@@ -3340,7 +6550,7 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
       practiceWords: generateFallbackPracticeWords(
         allMistakes,
         Object.entries(errorKeysMap).map(([key, count]) => ({ key, count })),
-        mode
+        isNumberMode ? 'numpad' : mode
       ),
     };
   }
@@ -3384,7 +6594,7 @@ Hãy trả lời với tư cách Huyền Thiên Khí Linh:
         : commonErrorKeys;
 
       const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
+      if (!apiKey || isGeminiProjectAccessDenied) {
         return res.json({
           success: true,
           analysis: {
@@ -3534,8 +6744,7 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
         practiceWords: parsedData.practiceWords,
         isAiPowered: Boolean(textResponse),
       });
-    } catch (err: any) {
-      console.warn('[AI Coach] Serving intelligent practice fallback:', err?.message || err);
+    } catch {
       const isNum = String(req.body?.mode || '').toLowerCase().includes('number') || String(req.body?.mode || '').toLowerCase().includes('numpad');
       res.json({
         success: true,
@@ -3632,21 +6841,39 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
 
       const safeTotal = Math.max(1, totalErrors);
 
-      const targetMode =
-        selectedMatch?.modeId ||
-        selectedMatch?.mode ||
-        (completed[0]?.modeId) ||
-        (completed[0]?.mode) ||
-        'vi_dau';
-      const targetModeStr = String(targetMode).toLowerCase();
+      const reqMode = String(req.body?.mode || '').toLowerCase();
+      const matchSubMode = String(selectedMatch?.subMode || completed[0]?.subMode || '').toLowerCase();
+      const matchDiff = String(selectedMatch?.difficulty || completed[0]?.difficulty || '').toLowerCase();
+      const matchModeName = String(selectedMatch?.mode || completed[0]?.mode || '').toLowerCase();
+
+      // Kiểm tra mẫu từ vựng thực tế trong mistakes hoặc promptWords
+      const sampleCheckWords = [
+        ...(Array.isArray(allMistakes) ? allMistakes : []),
+        ...(Array.isArray(selectedMatch?.promptWords) ? selectedMatch.promptWords.slice(0, 15) : []),
+        ...(Array.isArray(selectedMatch?.mistakes) ? selectedMatch.mistakes.slice(0, 10).map((m: any) => m?.original) : []),
+      ]
+        .map((w: any) => String(typeof w === 'string' ? w : w?.original || w?.word || '').trim())
+        .filter(Boolean);
+
+      const numCount = sampleCheckWords.filter((w) => /^[\d+\-*/=.]+$/.test(w)).length;
+      const hasStrongNumberSignature = sampleCheckWords.length > 0 && numCount / sampleCheckWords.length >= 0.35;
+
       const isNumberMode =
-        targetModeStr === 'numpad' ||
-        targetModeStr === 'number' ||
-        targetModeStr.includes('number') ||
-        targetModeStr.includes('numpad') ||
-        targetModeStr.includes('số') ||
-        selectedMatch?.difficulty === 'number' ||
-        selectedMatch?.difficulty === 'fullsize';
+        reqMode === 'numpad' ||
+        reqMode === 'number' ||
+        reqMode.includes('numpad') ||
+        reqMode.includes('number') ||
+        matchSubMode.includes('numpad') ||
+        matchSubMode.includes('number') ||
+        matchDiff === 'number' ||
+        matchDiff === 'fullsize' ||
+        matchModeName.includes('numpad') ||
+        matchModeName.includes('số') ||
+        hasStrongNumberSignature;
+
+      const targetMode = isNumberMode
+        ? 'numpad'
+        : (req.body?.mode || selectedMatch?.modeId || selectedMatch?.mode || (completed[0]?.modeId) || (completed[0]?.mode) || 'vi_dau');
 
       // Clean mistakes and keys for number mode in Heavenly Dao analysis
       const effectiveDaoMistakes = isNumberMode
@@ -3662,7 +6889,7 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
         : errorKeysMap;
 
       const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
+      if (!apiKey || isGeminiProjectAccessDenied) {
         return res.json({
           success: true,
           isAiPowered: false,
@@ -3823,6 +7050,7 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
     "step3": { "title": "Bước 3: Tiêu đề bước 3", "desc": "Chỉ dẫn hành động thực tế 3" }
   },
   "practiceWords": [
+    // BẮT BUỘC chứa các từ bị gõ sai thực tế của người chơi (${effectiveDaoMistakes.slice(0, 8).map((m: any) => typeof m === 'string' ? m : m?.original || m?.word).filter(Boolean).join(', ') || (isNumberMode ? '1024, 58008' : 'nghiêng, chuyển')}) đan xen với các từ cùng cụm phím/âm tiết bị lỗi. Đủ 25 - 30 từ!
     ${isNumberMode ? '"1024", "58008", "9876", "2026", "31415", "8520"' : '"nghiêng", "khoảng", "chuyển"'}
   ]
 }`;
@@ -3863,11 +7091,31 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
         }
       }
 
+      // Đảm bảo các từ sai thực tế của người chơi BẮT BUỘC xuất hiện trong practiceWords
+      const actualMistakeList: string[] = effectiveDaoMistakes
+        .map((m: any) => String(typeof m === 'string' ? m : m?.original || m?.word || '').trim())
+        .filter(Boolean);
+
+      if (parsedData && Array.isArray(parsedData.practiceWords)) {
+        if (actualMistakeList.length > 0) {
+          const missing = actualMistakeList.filter(
+            (m) => !parsedData.practiceWords.some((w: string) => w.toLowerCase() === m.toLowerCase())
+          );
+          if (missing.length > 0) {
+            parsedData.practiceWords = [
+              ...missing,
+              ...parsedData.practiceWords.filter((w: string) => !missing.includes(w)),
+            ].slice(0, 30);
+          }
+        }
+      }
+
       if (parsedData && parsedData.overallVerdict && Array.isArray(parsedData.errorPatterns)) {
         return res.json({
           success: true,
           isAiPowered: true,
           ...parsedData,
+          targetedMistakes: actualMistakeList.slice(0, 10),
         });
       }
 
@@ -3894,8 +7142,7 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
           mode: targetMode,
         }),
       });
-    } catch (err: any) {
-      console.warn('[Heavenly Dao] Serving intelligent heuristic Dao analysis:', err?.message || err);
+    } catch {
       const fallbackMode = req.body?.selectedMatch?.modeId || req.body?.selectedMatch?.mode || 'vi_dau';
       return res.json({
         success: true,

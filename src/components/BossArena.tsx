@@ -4,6 +4,9 @@ import { soundFx } from '../utils/audio';
 import { calculateBossDamageServer } from '../utils/antiCheat';
 import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
+import { loadStoredCultivationState } from '../utils/cultivation';
+import { getStoredFrame } from '../utils/frames';
+import { ArtifactInputVfxFrame } from './vfx/ArtifactInputVfxFrame';
 import { 
   ShieldAlert, 
   Bomb, 
@@ -135,6 +138,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
   // Monkeytype Caret State & Focus
   const [caretPos, setCaretPos] = useState<{ x: number; y: number; height?: number } | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number>(0);
   const [isFocused, setIsFocused] = useState(true);
   const typingTimeoutRef = useRef<number | null>(null);
   const wordContainerRef = useRef<HTMLDivElement>(null);
@@ -812,6 +816,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
     setCurrentInput(val);
     
     setIsTyping(true);
+    setLastKeystrokeTime(performance.now());
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
 
@@ -821,10 +826,12 @@ export const BossArena: React.FC<BossArenaProps> = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (timeLeft <= 0 || inRoomCountdown !== null || isSurrendered) return;
     const val = e.target.value;
+    const now = performance.now();
+    setLastKeystrokeTime(now);
 
     keystrokesRef.current.push({
       key: val.slice(-1) || 'Backspace',
-      time: performance.now(),
+      time: now,
     });
 
     setIsTyping(true);
@@ -1269,37 +1276,48 @@ export const BossArena: React.FC<BossArenaProps> = ({
           </div>
         </div>
 
-        {/* Input with Composition API */}
+        {/* Input with Composition API & Canvas VFX Engine */}
         <div className="mt-4 flex items-center gap-2 sm:gap-3">
-          <input
-            id="boss-typing-input"
-            ref={inputRef}
-            type="text"
-            value={currentInput}
-            onChange={handleInputChange}
-            onCompositionStart={handleCompositionStart}
-            onCompositionEnd={handleCompositionEnd}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            onPaste={(e) => e.preventDefault()}
-            disabled={timeLeft <= 0 || inRoomCountdown !== null || isSurrendered}
-            readOnly={isSurrendered}
-            placeholder={
-              isSurrendered
-                ? "Bạn đã đầu hàng. Đang theo dõi trận săn boss..."
-                : inRoomCountdown !== null
-                ? `Trận chiến bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
-                : "Gõ từ trên và bấm Cách (Space) để xuất chiêu..."
-            }
-            className={`flex-1 min-w-0 h-12 px-4 rounded-xl bg-slate-950 border ${
-              isSurrendered
-                ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
-                : 'border-red-500/50 text-white'
-            } font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-2 focus:ring-red-500 shadow-inner`}
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck="false"
-          />
+          <div className="flex-1 min-w-0">
+            <ArtifactInputVfxFrame
+              userFrame={players.find((p) => p.id === currentPlayerId)?.frame || getStoredFrame()}
+              cultivationState={loadStoredCultivationState()}
+              combo={combo}
+              isTyping={isTyping}
+              isError={currentInput.length > 0 && !(words[currentWordIndex] || '').startsWith(currentInput)}
+              lastKeystroke={lastKeystrokeTime}
+            >
+              <input
+                id="boss-typing-input"
+                ref={inputRef}
+                type="text"
+                value={currentInput}
+                onChange={handleInputChange}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                onPaste={(e) => e.preventDefault()}
+                disabled={timeLeft <= 0 || inRoomCountdown !== null || isSurrendered}
+                readOnly={isSurrendered}
+                placeholder={
+                  isSurrendered
+                    ? "Bạn đã đầu hàng. Đang theo dõi trận săn boss..."
+                    : inRoomCountdown !== null
+                    ? `Trận chiến bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
+                    : "Gõ từ trên và bấm Cách (Space) để xuất chiêu..."
+                }
+                className={`w-full h-12 px-4 rounded-xl bg-slate-950/90 border ${
+                  isSurrendered
+                    ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
+                    : 'border-slate-800 text-white'
+                } font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-1 focus:ring-red-500 shadow-inner`}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+              />
+            </ArtifactInputVfxFrame>
+          </div>
 
           {/* Self-destruct button */}
           {!isSurrendered && (

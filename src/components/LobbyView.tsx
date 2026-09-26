@@ -20,6 +20,9 @@ interface LobbyViewProps {
   onStartSoloGame: (modeOverride?: GameMode) => void;
   onJoinWaitingRoom: (mode?: GameMode) => void;
   hasAnyModalOpen?: boolean;
+  isBanned?: boolean;
+  bannedRemainingFormatted?: string;
+  onOpenBanModal?: () => void;
 }
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
@@ -28,6 +31,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   onStartSoloGame,
   onJoinWaitingRoom,
   hasAnyModalOpen = false,
+  isBanned = false,
+  bannedRemainingFormatted,
+  onOpenBanModal,
 }) => {
   const modes = [
     {
@@ -156,6 +162,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         const targetMode = keyMap[e.key];
         soundFx.playKeyClick();
         if (currentMode === targetMode) {
+          if (isBanned) {
+            if (onOpenBanModal) onOpenBanModal();
+            return;
+          }
           if (targetMode === 'outplay') {
             soundFx.playCountdown(true);
             onStartSoloGame('outplay');
@@ -216,6 +226,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         soundFx.playKeyClick();
+        if (isBanned) {
+          if (onOpenBanModal) onOpenBanModal();
+          return;
+        }
         if (currentMode === 'outplay') {
           soundFx.playCountdown(true);
           onStartSoloGame('outplay');
@@ -227,7 +241,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentMode, hasAnyModalOpen, onSelectMode, onStartSoloGame, onJoinWaitingRoom]);
+  }, [currentMode, hasAnyModalOpen, onSelectMode, onStartSoloGame, onJoinWaitingRoom, isBanned, onOpenBanModal]);
 
   const handleCardClick = (mode: typeof modes[0]) => {
     soundFx.playKeyClick();
@@ -259,6 +273,43 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Ban Warning Banner if active */}
+      {isBanned && (
+        <div
+          id="banner-banco-ban"
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            soundFx.playKeyClick();
+            if (onOpenBanModal) onOpenBanModal();
+          }}
+          className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-red-950 via-rose-950 to-red-900 border-2 border-red-500 text-slate-100 flex items-center justify-between gap-3 shadow-xl shadow-red-950/70 cursor-pointer animate-pulse hover:border-red-400 transition-all select-none"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-2xl animate-bounce">⚡</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-rose-300 uppercase tracking-wide">
+                  Bàn Cổ Thần Thức Phong Ấn • Cấm Đấu 2 Giờ
+                </span>
+                <span className="text-xs font-mono font-black text-amber-300 px-2 py-0.5 rounded-full bg-black/50 border border-red-500/50">
+                  {bannedRemainingFormatted || '02:00:00'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 truncate">
+                Tài khoản đang bị giam cầm tại U Minh Hàn Ngục do nghi vấn gian lận/macro. Bấm để xem chi tiết án phạt.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs shrink-0 cursor-pointer shadow-md"
+          >
+            Chi tiết
+          </button>
+        </div>
+      )}
 
       {/* 8 Clean Game Mode Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -314,6 +365,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (isBanned) {
+                        soundFx.playKeyClick();
+                        if (onOpenBanModal) onOpenBanModal();
+                        return;
+                      }
                       onSelectMode(mode.id);
                       soundFx.playCountdown(true);
                       onStartSoloGame(mode.id);
@@ -335,6 +391,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (isBanned) {
+                        soundFx.playKeyClick();
+                        if (onOpenBanModal) onOpenBanModal();
+                        return;
+                      }
                       onSelectMode(mode.id);
                       onJoinWaitingRoom(mode.id);
                     }}

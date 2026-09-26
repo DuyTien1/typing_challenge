@@ -10,6 +10,10 @@ export type GameMode =
 
 export type DifficultyLevel = 'normal' | 'hard' | 'legendary' | 'hell' | 'custom' | 'number' | 'fullsize';
 
+export type GameState = 'lobby' | 'waiting_room' | 'countdown' | 'playing' | 'gameover';
+
+export type MatchResult = 'Thắng' | 'Thua' | 'Đầu hàng' | 'Hoàn thành' | 'Top 1' | 'Top 2' | 'Top 3';
+
 export interface BestWpmRecord {
   wpm: number;
   mode: string;
@@ -158,6 +162,45 @@ export interface HeavenlyDaoDecree {
   wpm?: number;
   accuracy?: number;
   realmName?: string;
+  personaId?: string;
+  personaName?: string;
+  personaAvatar?: string;
+}
+
+export type ChatChannel = 'global' | 'sect' | 'room' | 'whisper';
+
+export type ChatCardType = 'battle_challenge' | 'record_share' | 'item_share' | 'roll_result' | 'tea_gift';
+
+export interface ChatCardData {
+  // battle_challenge
+  challengeRoomId?: string;
+  challengeMode?: string;
+  challengeModeTitle?: string;
+  challengeStake?: number;
+  challengeHostName?: string;
+  challengeStatus?: 'pending' | 'accepted' | 'expired';
+
+  // record_share
+  recordWpm?: number;
+  recordAccuracy?: number;
+  recordModeName?: string;
+  recordTime?: number;
+
+  // item_share
+  itemType?: 'artifact' | 'pill' | 'herb';
+  itemName?: string;
+  itemIcon?: string;
+  itemDescription?: string;
+  itemQuality?: string;
+
+  // roll_result
+  rollNumber?: number; // 1 - 100
+  rollTopic?: string;
+
+  // tea_gift
+  teaDonor?: string;
+  teaReceiver?: string;
+  teaTuViBonus?: number;
 }
 
 export interface ChatMessage {
@@ -168,12 +211,64 @@ export interface ChatMessage {
   message: string;
   timestamp: number;
   isSystem?: boolean;
-  channel: 'global' | 'room';
+  channel: ChatChannel;
   roomId?: string;
+  sectId?: string;
+  whisperTarget?: string;
+  whisperTargetUserId?: string;
+  senderUserId?: string;
+  senderRealm?: string;
+  senderRealmIcon?: string;
+  senderSectTag?: string;
   isAdmin?: boolean;
   isDaoBot?: boolean;
   daoEventType?: HeavenlyDaoEventType;
   daoTitle?: string;
+  cardType?: ChatCardType;
+  cardData?: ChatCardData;
+}
+
+export type FriendStatus = 'online' | 'offline' | 'in_match' | 'meditating';
+
+export interface FriendRecord {
+  friendshipId: string;
+  userId: string;
+  username: string;
+  displayName?: string;
+  avatar: string;
+  frame: string;
+  bestWpm?: number;
+  level?: number;
+  realmName?: string;
+  realmIcon?: string;
+  sectName?: string;
+  sectTag?: string;
+  status: FriendStatus;
+  currentRoomId?: string | null;
+  currentMode?: string | null;
+  intimacy: number; // 0 - 5000+
+  intimacyLevel: 1 | 2 | 3 | 4; // 1: Sơ Thức (0-499), 2: Kim Lan (500-1999), 3: Tri Kỷ (2000-4999), 4: Đạo Lữ (5000+)
+  isDaoLu?: boolean;
+  daoLuTitle?: string;
+  canGiftTeaToday?: boolean;
+  canGuideToday?: boolean;
+  connectedAt?: number;
+  lastSeen?: number;
+}
+
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  fromUsername: string;
+  fromDisplayName?: string;
+  fromAvatar: string;
+  fromFrame?: string;
+  fromRealmName?: string;
+  fromLevel?: number;
+  toUserId: string;
+  toUsername: string;
+  createdAt: number;
+  message?: string;
 }
 
 export interface MysteryWordItem {
@@ -447,3 +542,134 @@ export interface CultivationLeaderboardEntry {
   thoNguyen: number;
   isRegistered?: boolean;
 }
+
+// === VẠN ĐẠO QUY TÔNG: TÂM PHÁP, PHÁP BẢO, LUYỆN ĐAN & TÔNG MÔN ===
+export type TamPhapType = 'than_hanh' | 'bat_dong' | 'cuu_chuyen';
+export type ArtifactType = 'thanh_van_kiem' | 'hao_thien_kinh' | 'cuu_pham_lien' | 'ban_co_phu';
+export type HerbType = 'uLan' | 'huyetTinh' | 'hoaAnh' | 'huyenThiet' | 'longTu';
+export type SectRole = 'chuong_mon' | 'dai_truong_lao' | 'chan_truyen' | 'noi_mon' | 'ngoai_mon';
+
+export interface SectMemberRecord {
+  userId: string;
+  username: string;
+  displayName?: string;
+  avatar: string;
+  frame?: string;
+  role: SectRole;
+  contribution: number;
+  realmIndex: number;
+  realmName: string;
+  realmIcon: string;
+  level: number;
+  tier: number;
+  exp: number;
+  tuViScore: number;
+  joinedAt: number;
+  lastActive?: number;
+}
+
+export interface SectLeaderboardEntry {
+  rank: number;
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  slogan?: string;
+  bannerColor?: string;
+  badgeIcon: string;
+  leaderId: string;
+  leaderName: string;
+  leaderAvatar?: string;
+  leaderFrame?: string;
+  leaderRealmName?: string;
+  leaderLevel?: number;
+  memberCount: number;
+  totalTuVi: number;
+  avgLevel: number;
+  avgRealmName: string;
+  linhMachLevel: number;
+  totalContribution: number;
+  weeklyTournamentPoints?: number;
+  isHoldingThienCung?: boolean;
+  topMembers?: SectMemberRecord[];
+  members?: SectMemberRecord[];
+  createdAt?: number;
+}
+
+export interface CultivationHerbs {
+  uLan: number;       // Thiên Niên U Lan
+  huyetTinh: number;  // Huyết Tinh Thảo
+  hoaAnh: number;     // Hóa Anh Quả
+  huyenThiet: number; // Huyền Thiết Tinh Hoa
+  longTu: number;     // Long Tu Thảo
+}
+
+export interface CultivationArtifacts {
+  equipped: ArtifactType | null;
+  levels: Record<ArtifactType, number>;
+  spiritAwakened?: Record<ArtifactType, boolean>;
+  spiritAffection?: Record<ArtifactType, number>;
+}
+
+export interface CultivationTamPhap {
+  equipped: TamPhapType | null;
+  matchesSinceHeal: number;
+  levels?: Record<TamPhapType, number>; // Tầng 1 -> Tầng 9
+  exp?: Record<TamPhapType, number>;    // EXP tích lũy của từng tâm pháp
+}
+
+export interface ActivePillBuffs {
+  dinhTamMatchesRemaining?: number; // Định Tâm Đan (giảm 50% ảnh hưởng lỗi)
+  ngungThanMatchesRemaining?: number; // Ngưng Thần Đan (+20% rơi thảo dược quý)
+  kimCangImmunityUntil?: number; // Kim Cang Bất Hoại (miễn trừ suy giảm thọ nguyên trong 6h)
+}
+
+export interface SectWorldBoss {
+  id: string;
+  name: string;
+  icon: string;
+  hp: number;
+  maxHp: number;
+  level: number;
+  isDefeated: boolean;
+  defeatedBy?: string;
+  lastResetTime: number;
+}
+
+export interface SectInfo {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  leaderId: string;
+  leaderName: string;
+  leaderAvatar?: string;
+  leaderFrame?: string;
+  leaderRealmName?: string;
+  leaderLevel?: number;
+  linhMachLevel: number; // 1 - 5
+  totalContribution: number;
+  memberCount: number;
+  badgeIcon: string;
+  slogan?: string;
+  bannerColor?: string;
+  weeklyTournamentPoints?: number;
+  isHoldingThienCung?: boolean; // Chiếm cứ Thiên Cung Long Mạch
+  worldBoss?: SectWorldBoss;
+  totalTuVi?: number;
+  avgLevel?: number;
+  avgRealmName?: string;
+  members?: SectMemberRecord[];
+  createdAt?: number;
+}
+
+export interface CultivationSectMember {
+  sectId?: string;
+  sectName?: string;
+  sectTag?: string;
+  role?: SectRole;
+  contribution: number;
+  joinedAt?: number;
+  tournamentWins?: number;
+}
+

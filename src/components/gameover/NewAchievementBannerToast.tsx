@@ -185,6 +185,23 @@ export const NewAchievementBannerToast: React.FC<NewAchievementBannerToastProps>
     return () => clearInterval(timer);
   }, [current, durationMs, handleNext]);
 
+  // Listen to Escape key to dismiss achievement toast quickly
+  useEffect(() => {
+    if (!current) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const target = e.target as HTMLElement | null;
+        const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        if (!isTyping) {
+          e.preventDefault();
+          handleDismissAll();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [current, handleDismissAll]);
+
   // If nothing is showing and queue is empty, render nothing
   if (!current) {
     return null;

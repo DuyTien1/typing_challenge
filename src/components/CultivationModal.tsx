@@ -16,6 +16,11 @@ import {
 import { soundFx } from '../utils/audio';
 import { AvatarWithFrame, setStoredFrame } from '../utils/frames';
 import { announceBreakthrough } from '../utils/heavenlyDaoBot';
+import { TribulationModal } from './TribulationModal';
+import { MeditationDais } from './cultivation/MeditationDais';
+import { AlchemySection } from './cultivation/AlchemySection';
+import { ArtifactsSection } from './cultivation/ArtifactsSection';
+import { SectsSection } from './cultivation/SectsSection';
 import {
   X,
   Sparkles,
@@ -34,6 +39,9 @@ import {
   Crown,
   Check,
   Lock,
+  Swords,
+  Compass,
+  Users,
 } from 'lucide-react';
 
 interface CultivationModalProps {
@@ -61,10 +69,11 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   isLoggedIn = true,
   onOpenAuthModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
   const bodyRef = useRef<HTMLDivElement>(null);
   const [usePhaCanh, setUsePhaCanh] = useState(false);
   const [useHoTam, setUseHoTam] = useState(false);
+  const [isTribulationModalOpen, setIsTribulationModalOpen] = useState(false);
   const [breakthroughNotice, setBreakthroughNotice] = useState<{
     success: boolean;
     message: string;
@@ -104,6 +113,13 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, onClose]);
+
+  // Âm hưởng tiên đạo: Tiếng chuông cổ ngân vang khi mở Động Phủ
+  useEffect(() => {
+    if (isOpen) {
+      soundFx.playAncientBell();
+    }
+  }, [isOpen]);
 
   // 2-hour countdown timer calculation
   useEffect(() => {
@@ -270,7 +286,13 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         <div className={`relative shrink-0 px-6 py-5 bg-gradient-to-r ${currentRealm.bgGradient} border-b border-amber-500/30 flex items-center justify-between`}>
           <div className="flex items-center gap-4">
             <div className="relative shrink-0">
-              <AvatarWithFrame icon={userAvatar} frameId={userFrame} size="lg" />
+              <AvatarWithFrame
+                icon={userAvatar}
+                frameId={userFrame}
+                size="lg"
+                realmIndex={state.realmIndex}
+                showRealmAura={true}
+              />
               <span className="absolute -bottom-1 -right-1 z-20 text-base bg-slate-950/95 border border-amber-400 rounded-full px-1.5 py-0.5 shadow-lg flex items-center justify-center leading-none pointer-events-none select-none">
                 {currentRealm.icon}
               </span>
@@ -324,10 +346,13 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         {/* Tab Navigation (Fixed under header) */}
         <div className="shrink-0 flex border-b border-slate-800 bg-slate-950/60 px-6 gap-2 overflow-x-auto">
           {[
-            { id: 'overview', label: 'Linh Đài Tu Luyện', icon: Sparkles },
+            { id: 'overview', label: 'Động Phủ Tu Tiên', icon: Sparkles },
+            { id: 'alchemy', label: 'Luyện Đan Phòng', icon: Flame },
+            { id: 'artifacts', label: 'Pháp Bảo & Tâm Pháp', icon: Swords },
+            { id: 'sects', label: 'Tông Môn & Linh Mạch', icon: Users },
             { id: 'checkin', label: 'Điểm Danh Hàng Ngày', icon: CalendarCheck },
             { id: 'quests', label: 'Nhiệm Vụ Hàng Ngày', icon: Award },
-            { id: 'realms', label: '12 Cảnh Giới Tiên Lộ', icon: Flame },
+            { id: 'realms', label: '12 Cảnh Giới Tiên Lộ', icon: Compass },
             { id: 'history', label: 'Ký Sự Đạo Lộ', icon: Scroll },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -336,8 +361,11 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`relative flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all shrink-0 ${
+                onClick={() => {
+                  soundFx.playGuzhengNote();
+                  setActiveTab(tab.id as any);
+                }}
+                className={`relative flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all shrink-0 cursor-pointer ${
                   isActive
                     ? 'border-amber-400 text-amber-300 bg-amber-500/5'
                     : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
@@ -358,12 +386,26 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* Bàn Tọa Thiền Trung Tâm (Immersive Central Meditation Dais) */}
+              <MeditationDais
+                state={state}
+                username={username}
+                userAvatar={userAvatar}
+                userFrame={userFrame}
+                onOpenTribulation={() => setIsTribulationModalOpen(true)}
+                onEquipFrame={() => {
+                  onSelectFrame?.(currentRealm.frameId);
+                  setStoredFrame(currentRealm.frameId);
+                  soundFx.playSuccess();
+                }}
+              />
+
               {/* Daily Check-in Quick Bar if not claimed */}
               {!hasCheckedInToday && (
                 <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/15 to-purple-500/15 border border-amber-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-amber-500/25 border border-amber-400/60 flex items-center justify-center text-lg shrink-0">
-                      📅
+                      ������
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -537,19 +579,37 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                       </label>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                    <div className="flex flex-col gap-3 pt-2">
                       <div className="text-xs text-rose-300 flex items-center gap-1.5">
                         <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
                         <span>Đột phá thất bại nếu không dùng Hộ Tâm Đan sẽ bị đánh bật về <strong>Tầng 7 (Hậu Kỳ)</strong>!</span>
                       </div>
 
-                      <button
-                        onClick={handleBreakthrough}
-                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 hover:brightness-110 active:scale-95 shadow-[0_0_20px_rgba(245,158,11,0.5)] transition-all flex items-center justify-center gap-2"
-                      >
-                        <Zap className="w-4 h-4 fill-slate-950" />
-                        Tiến Hành Độ Kiếp ({Math.min(100, currentRealm.baseBreakthroughRate + (usePhaCanh ? 15 : 0))}%)
-                      </button>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
+                        <button
+                          id="btn-fast-breakthrough"
+                          type="button"
+                          onClick={handleBreakthrough}
+                          className="px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-slate-600 transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                          title="Độ kiếp nhanh dựa trên xác suất may rủi cơ bản"
+                        >
+                          <span>🎲 Độ Kiếp Nhanh ({Math.min(100, currentRealm.baseBreakthroughRate + (usePhaCanh ? 15 : 0))}%)</span>
+                        </button>
+
+                        <button
+                          id="btn-interactive-tribulation"
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            setIsTribulationModalOpen(true);
+                          }}
+                          className="px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 hover:from-amber-400 hover:to-yellow-200 text-slate-950 shadow-[0_0_20px_rgba(251,191,36,0.6)] hover:shadow-[0_0_30px_rgba(251,191,36,0.85)] transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer animate-pulse"
+                          title="Vượt qua các đợt sấm kiếp bằng tốc độ gõ phím để đạt 100% tỷ lệ thành công"
+                        >
+                          <Zap className="w-4 h-4 fill-slate-950 text-slate-950" />
+                          <span>⚡ Nghênh Đón Lôi Kiếp (Luyện Phím • 100% Phi Thăng)</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -697,6 +757,21 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ALCHEMY SANCTUARY TAB */}
+          {activeTab === 'alchemy' && (
+            <AlchemySection state={state} onUpdateState={onUpdateState} />
+          )}
+
+          {/* ARTIFACTS & MANTRA TAB */}
+          {activeTab === 'artifacts' && (
+            <ArtifactsSection state={state} onUpdateState={onUpdateState} />
+          )}
+
+          {/* SECTS & GUILD TAB */}
+          {activeTab === 'sects' && (
+            <SectsSection state={state} onUpdateState={onUpdateState} username={username} />
           )}
 
           {/* DAILY CHECK-IN TAB */}
@@ -1246,6 +1321,27 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Interactive Tribulation Mini-game Modal */}
+      <TribulationModal
+        isOpen={isTribulationModalOpen}
+        onClose={() => setIsTribulationModalOpen(false)}
+        cultivationState={state}
+        usePhaCanh={usePhaCanh}
+        useHoTam={useHoTam}
+        onBreakthroughComplete={(result) => {
+          onUpdateState(result.updatedState);
+          setBreakthroughNotice({ success: result.success, message: result.message });
+          if (result.success && result.unlockedFrameId) {
+            onSelectFrame?.(result.unlockedFrameId);
+            setStoredFrame(result.unlockedFrameId);
+          }
+        }}
+        userAvatar={userAvatar}
+        userFrame={userFrame}
+        username={username || 'Đạo Hữu'}
+        onSelectFrame={onSelectFrame}
+      />
     </div>
   );
 };

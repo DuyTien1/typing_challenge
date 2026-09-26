@@ -26,6 +26,7 @@ export interface MatchRecord {
   timestamp: number;
   mode: string;
   modeId: string;
+  subMode?: string;
   difficulty?: string;
   wpm: number;
   accuracy: number;
@@ -293,6 +294,7 @@ export function generateTypingAdvice(record: Partial<MatchRecord>): {
 export function addMatchRecord(record: {
   mode: string;
   modeId: string;
+  subMode?: string;
   difficulty?: string;
   wpm: number;
   accuracy: number;
@@ -350,6 +352,7 @@ export function addMatchRecord(record: {
     timestamp: Date.now(),
     mode: record.mode,
     modeId: record.modeId,
+    subMode: record.subMode,
     difficulty: record.difficulty,
     wpm: Math.max(0, Math.round(record.wpm || 0)),
     accuracy: Math.max(0, Math.min(100, Math.round(record.accuracy ?? 100))),
@@ -446,6 +449,70 @@ export function getModeIcon(modeId: string): string {
     default:
       return '⌨️';
   }
+}
+
+/**
+ * Nhận diện chính xác thể loại từ vựng của ván đấu (Numpad/Số, Tiếng Anh, Không Dấu, Có Dấu)
+ * Hỗ trợ nhận diện toàn diện cả chế độ Outplay Yourself (với các subMode numpad_number, numpad_fullsize...)
+ * cũng như kiểm tra trực tiếp chữ ký số/từ vựng thực tế trong promptWords / mistakes / wordLogs.
+ */
+export function detectMatchCategory(
+  match?: MatchRecord | null,
+  modeOverride?: string
+): {
+  isNumberMode: boolean;
+  isEnMode: boolean;
+  isViNoDauMode: boolean;
+  resolvedModeId: 'numpad' | 'en' | 'vi_nodau' | 'vi_dau';
+} {
+  const activeMode = String(modeOverride || match?.subMode || match?.modeId || match?.mode || '').toLowerCase();
+  const diff = String(match?.difficulty || '').toLowerCase();
+
+  // Kiểm tra mẫu từ vựng thực tế của ván đấu để bóc tách chính xác ngay cả khi ván đấu cũ chưa lưu subMode
+  const sampleWords: string[] = [
+    ...(match?.promptWords?.slice(0, 15) || []),
+    ...(match?.wordLogs?.slice(0, 15).map((l) => l.word) || []),
+    ...(match?.mistakes?.slice(0, 10).map((m) => m.original) || []),
+  ]
+    .filter(Boolean)
+    .map((w) => String(w).trim());
+
+  const numWordsCount = sampleWords.filter((w) => /^[\d+\-*/=.]+$/.test(w)).length;
+  const hasStrongNumberSignature = sampleWords.length > 0 && numWordsCount / sampleWords.length >= 0.35;
+
+  const isNumberMode =
+    activeMode === 'numpad' ||
+    activeMode === 'number' ||
+    activeMode.includes('numpad') ||
+    activeMode.includes('number') ||
+    activeMode.includes('số') ||
+    diff === 'number' ||
+    diff === 'fullsize' ||
+    hasStrongNumberSignature;
+
+  const isEnMode =
+    !isNumberMode &&
+    (activeMode === 'en' ||
+      activeMode.includes('tiếng anh') ||
+      activeMode.includes('english') ||
+      (sampleWords.length >= 5 && sampleWords.every((w) => /^[a-zA-Z',.\-!?]+$/.test(w))));
+
+  const isViNoDauMode =
+    !isNumberMode &&
+    !isEnMode &&
+    (activeMode === 'vi_nodau' ||
+      activeMode.includes('không dấu') ||
+      activeMode.includes('nodau'));
+
+  const resolvedModeId: 'numpad' | 'en' | 'vi_nodau' | 'vi_dau' = isNumberMode
+    ? 'numpad'
+    : isEnMode
+    ? 'en'
+    : isViNoDauMode
+    ? 'vi_nodau'
+    : 'vi_dau';
+
+  return { isNumberMode, isEnMode, isViNoDauMode, resolvedModeId };
 }
 
 export interface AiPersonalizedAnalysis {

@@ -11,6 +11,19 @@
   --typing-font: 'JetBrains Mono', monospace;
 }
 
+@keyframes tribulationScreenShake {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-3px, 2px) rotate(-0.5deg); }
+  40% { transform: translate(3px, -2px) rotate(0.5deg); }
+  60% { transform: translate(-2px, -1px) rotate(-0.3deg); }
+  80% { transform: translate(2px, 1px) rotate(0.3deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.animate-tribulation-shake {
+  animation: tribulationScreenShake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
 /* Caret Contraction & Expansion (No blinking, shrinks to center and expands back out) */
 @keyframes caretContractExpand {
   0%, 100% {
@@ -639,6 +652,152 @@ input[type="number"]::-webkit-outer-spin-button:hover {
 
 .animate-boss-smoke {
   animation: bossSmokePulse 2s ease-in-out infinite;
+}
+
+/* === 12 HÀO QUANG CẢNH GIỚI TU TIÊN (XIANXIA REALM AURAS) === */
+@keyframes xianxiaAuraRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes xianxiaAuraPulse {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.08); }
+}
+
+@keyframes xianxiaChaoticSwirl {
+  0% { transform: rotate(0deg) scale(1); filter: hue-rotate(0deg); }
+  50% { transform: rotate(180deg) scale(1.1); filter: hue-rotate(180deg); }
+  100% { transform: rotate(360deg) scale(1); filter: hue-rotate(360deg); }
+}
+
+@keyframes lightningStrikeFlash {
+  0%, 100% { opacity: 0; }
+  10%, 25% { opacity: 0.85; background-color: rgba(255, 255, 255, 0.4); }
+  15% { opacity: 0.2; }
+  20% { opacity: 0.95; background-color: rgba(254, 240, 138, 0.5); }
+  35% { opacity: 0; }
+}
+
+@keyframes swordSlashGlow {
+  0% { transform: translateX(-100%) rotate(45deg); opacity: 0; }
+  50% { opacity: 1; filter: drop-shadow(0 0 15px #facc15); }
+  100% { transform: translateX(200%) rotate(45deg); opacity: 0; }
+}
+
+.tribulation-flash-screen {
+  animation: lightningStrikeFlash 0.6s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+
+/* Base Halo Ring Container */
+.realm-aura-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.realm-aura-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* 0. Luyện Khí Kỳ - Thanh Mộc Khí Tức */
+.realm-aura-0 {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(5, 150, 105, 0.15) 60%, transparent 80%);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+  animation: xianxiaAuraPulse 3s ease-in-out infinite;
+}
+
+/* 1. Trúc Cơ Kỳ - Lam Thủy Đạo Cơ */
+.realm-aura-1 {
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.5) 0%, rgba(14, 165, 233, 0.2) 65%, transparent 85%);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.55), inset 0 0 8px rgba(6, 182, 212, 0.25);
+  animation: xianxiaAuraPulse 2.8s ease-in-out infinite;
+}
+
+/* 2. Kết Đan Kỳ - Kim Đan Cửu Chuyển */
+.realm-aura-2 {
+  background: conic-gradient(from 0deg, rgba(251, 191, 36, 0.7), rgba(245, 158, 11, 0.4), rgba(252, 211, 77, 0.8), rgba(251, 191, 36, 0.7));
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.65), 0 0 30px rgba(245, 158, 11, 0.3);
+  animation: xianxiaAuraRotate 8s linear infinite;
+  filter: blur(2.5px);
+}
+
+/* 3. Nguyên Anh Kỳ - Tử Phủ Chân Thần */
+.realm-aura-3 {
+  background: conic-gradient(from 180deg, rgba(168, 85, 247, 0.8), rgba(217, 70, 239, 0.5), rgba(192, 132, 252, 0.85), rgba(168, 85, 247, 0.8));
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.7), 0 0 35px rgba(217, 70, 239, 0.4);
+  animation: xianxiaAuraRotate 7s linear infinite;
+  filter: blur(2.5px);
+}
+
+/* 4. Hóa Thần Kỳ - Tinh Thần Ý Cảnh */
+.realm-aura-4 {
+  background: conic-gradient(from 90deg, rgba(99, 102, 241, 0.85), rgba(56, 189, 248, 0.6), rgba(129, 140, 248, 0.9), rgba(99, 102, 241, 0.85));
+  box-shadow: 0 0 22px rgba(99, 102, 241, 0.75), 0 0 40px rgba(56, 189, 248, 0.45);
+  animation: xianxiaAuraRotate 6s linear infinite;
+  filter: blur(3px);
+}
+
+/* 5. Luyện Hư Kỳ - Hư Không Vô Cực */
+.realm-aura-5 {
+  background: radial-gradient(circle, rgba(203, 213, 225, 0.7) 0%, rgba(71, 85, 105, 0.4) 60%, rgba(15, 23, 42, 0.9) 100%);
+  box-shadow: 0 0 24px rgba(226, 232, 240, 0.65), 0 0 42px rgba(148, 163, 184, 0.4);
+  animation: xianxiaAuraPulse 2.4s ease-in-out infinite;
+  filter: blur(2px);
+}
+
+/* 6. Hợp Thể Kỳ - Lôi Đình Tẩy Lễ */
+.realm-aura-6 {
+  background: conic-gradient(from 45deg, #facc15, #ea580c, #fef08a, #facc15);
+  box-shadow: 0 0 25px rgba(250, 204, 21, 0.85), 0 0 45px rgba(234, 88, 12, 0.55);
+  animation: xianxiaAuraRotate 4.5s linear infinite;
+  filter: blur(3px);
+}
+
+/* 7. Đại Thừa Kỳ - Thái Dương Chí Tôn */
+.realm-aura-7 {
+  background: conic-gradient(from 0deg, #f97316, #ef4444, #fbbf24, #f97316);
+  box-shadow: 0 0 28px rgba(249, 115, 22, 0.9), 0 0 50px rgba(239, 68, 68, 0.6);
+  animation: xianxiaAuraRotate 4s linear infinite;
+  filter: blur(3.5px);
+}
+
+/* 8. Độ Kiếp Kỳ - Cửu Sắc Thiên Lôi */
+.realm-aura-8 {
+  background: conic-gradient(from 0deg, #f43f5e, #a855f7, #38bdf8, #facc15, #f43f5e);
+  box-shadow: 0 0 30px rgba(244, 63, 94, 0.95), 0 0 55px rgba(168, 85, 247, 0.7);
+  animation: xianxiaAuraRotate 3.2s linear infinite;
+  filter: blur(3.5px);
+}
+
+/* 9. Kim Tiên - Kim Thân Bất Hủ */
+.realm-aura-9 {
+  background: conic-gradient(from 0deg, #fde047, #f59e0b, #ffffff, #fde047);
+  box-shadow: 0 0 32px rgba(253, 224, 71, 1), 0 0 60px rgba(245, 158, 11, 0.8), inset 0 0 15px rgba(255, 255, 255, 0.8);
+  animation: xianxiaAuraRotate 3s linear infinite;
+  filter: blur(3.5px);
+}
+
+/* 10. Đại La Tiên - Vạn Pháp Thời Không */
+.realm-aura-10 {
+  background: conic-gradient(from 0deg, #e879f9, #6366f1, #38bdf8, #f43f5e, #e879f9);
+  box-shadow: 0 0 35px rgba(232, 121, 249, 1), 0 0 65px rgba(99, 102, 241, 0.8);
+  animation: xianxiaAuraRotate 2.5s linear infinite;
+  filter: blur(4px);
+}
+
+/* 11. Thiên Tôn - Hỗn Độn Vô Thượng Thần Hoàng */
+.realm-aura-11 {
+  background: conic-gradient(from 0deg, #fbbf24, #ef4444, #8b5cf6, #06b6d4, #10b981, #ffffff, #fbbf24);
+  box-shadow: 0 0 40px rgba(251, 191, 36, 1), 0 0 75px rgba(239, 68, 68, 0.9), 0 0 100px rgba(139, 92, 246, 0.6);
+  animation: xianxiaChaoticSwirl 4s linear infinite;
+  filter: blur(4px);
 }
 
 

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MysteryWordItem, Player, MysteryWordGameStats, MysteryWordRoundResult } from '../types';
 import { soundFx } from '../utils/audio';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
+import { loadStoredCultivationState } from '../utils/cultivation';
+import { getStoredFrame } from '../utils/frames';
+import { ArtifactInputVfxFrame } from './vfx/ArtifactInputVfxFrame';
 import { Lightbulb, Clock, Trophy, ArrowRight, MousePointerClick, Flag, RotateCcw, Home, AlertTriangle } from 'lucide-react';
 
 interface MysteryWordArenaProps {
@@ -36,6 +39,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   const [currentRound, setCurrentRound] = useState(1);
   const [revealedChars, setRevealedChars] = useState<(string | null)[]>([]);
   const [guessInput, setGuessInput] = useState('');
+  const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number>(0);
   const [roundTimeLeft, setRoundTimeLeft] = useState(roundDurationSec);
   const [isRoundSolved, setIsRoundSolved] = useState(false);
   const [solvedMessage, setSolvedMessage] = useState<string | null>(null);
@@ -663,50 +667,61 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
           }}
           className="max-w-md mx-auto flex items-center gap-2"
         >
-          <input
-            id="input-mystery-guess"
-            ref={inputRef}
-            type="text"
-            value={guessInput}
-            onChange={(e) => {
-              if (isSurrendered) return;
-              setGuessInput(e.target.value);
-              setIsTyping(true);
-              if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
-              typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
-            }}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={(e) => {
-              if (isSurrendered) return;
-              isComposingRef.current = false;
-              setGuessInput(e.currentTarget.value);
-              setIsTyping(true);
-              if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
-              typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
-            }}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            disabled={isRoundSolved || isSurrendered || hasFinishedGame}
-            readOnly={isSurrendered || hasFinishedGame}
-            placeholder={
-              hasFinishedGame
-                ? "🏁 Bạn đã hoàn thành tất cả câu đố! Đang theo dõi các đối thủ còn lại..."
-                : isSurrendered
-                ? "Bạn đã đầu hàng. Đang theo dõi các người chơi khác..."
-                : isRoundSolved
-                ? "Vòng này đã giải xong! Đang chuyển vòng..."
-                : "Nhập phán đoán của bạn và bấm Enter..."
-            }
-            className={`flex-1 min-w-0 h-12 px-4 rounded-xl bg-slate-950 border ${
-              isSurrendered
-                ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
-                : 'border-purple-500/50 text-white'
-            } font-medium text-base outline-none focus:ring-2 focus:ring-purple-400`}
-            autoComplete="off"
-            spellCheck="false"
-          />
+          <div className="flex-1 min-w-0">
+            <ArtifactInputVfxFrame
+              userFrame={players.find((p) => p.id === currentPlayerId)?.frame || getStoredFrame()}
+              cultivationState={loadStoredCultivationState()}
+              isTyping={guessInput.length > 0}
+              lastKeystroke={lastKeystrokeTime}
+            >
+              <input
+                id="input-mystery-guess"
+                ref={inputRef}
+                type="text"
+                value={guessInput}
+                onChange={(e) => {
+                  if (isSurrendered) return;
+                  setGuessInput(e.target.value);
+                  setLastKeystrokeTime(performance.now());
+                  setIsTyping(true);
+                  if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+                  typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
+                }}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={(e) => {
+                  if (isSurrendered) return;
+                  isComposingRef.current = false;
+                  setGuessInput(e.currentTarget.value);
+                  setLastKeystrokeTime(performance.now());
+                  setIsTyping(true);
+                  if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
+                  typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
+                }}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                disabled={isRoundSolved || isSurrendered || hasFinishedGame}
+                readOnly={isSurrendered || hasFinishedGame}
+                placeholder={
+                  hasFinishedGame
+                    ? "🏁 Bạn đã hoàn thành tất cả câu đố! Đang theo dõi các đối thủ còn lại..."
+                    : isSurrendered
+                    ? "Bạn đã đầu hàng. Đang theo dõi các người chơi khác..."
+                    : isRoundSolved
+                    ? "Vòng này đã giải xong! Đang chuyển vòng..."
+                    : "Nhập phán đoán của bạn và bấm Enter..."
+                }
+                className={`w-full h-12 px-4 rounded-xl bg-slate-950/90 border ${
+                  isSurrendered
+                    ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
+                    : 'border-slate-800 text-white'
+                } font-medium text-base outline-none focus:ring-1 focus:ring-purple-400`}
+                autoComplete="off"
+                spellCheck="false"
+              />
+            </ArtifactInputVfxFrame>
+          </div>
           <button
             id="btn-submit-mystery-guess"
             type="submit"

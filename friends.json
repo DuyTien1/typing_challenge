@@ -1,0 +1,37 @@
+{
+  "friendships": [
+    {
+      "id": "fs_seed_1",
+      "user1Id": "usr_admin_default",
+      "user2Id": "thuc_son_5",
+      "intimacy": 650,
+      "isDaoLu": false,
+      "daoLuTitle": "",
+      "lastGiftTeaDate": {},
+      "lastGuidedDate": {},
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    },
+    {
+      "id": "fs_seed_2",
+      "user1Id": "usr_admin_default",
+      "user2Id": "thuc_son_4",
+      "intimacy": 2200,
+      "isDaoLu": false,
+      "daoLuTitle": "Kim Lan Chi Giao",
+      "lastGiftTeaDate": {},
+      "lastGuidedDate": {},
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    }
+  ],
+  "requests": [
+    {
+      "id": "req_seed_1",
+      "fromUserId": "thuc_son_1",
+      "toUserId": "usr_admin_default",
+      "message": "Bái kiến Đạo Hữu, nghe danh đã lâu, mong được kết bái giao lưu đạo pháp gõ phím!",
+      "createdAt": 1700000000000
+    }
+  ]
+}

@@ -16,6 +16,11 @@ import {
   UserAccount,
   BestWpmRecord,
   HeavenlyDaoDecree,
+  HerbType,
+  ChatChannel,
+  ChatCardType,
+  ChatCardData,
+  FriendRecord,
 } from './types';
 import { Header } from './components/Header';
 import { LobbyView } from './components/LobbyView';
@@ -27,11 +32,31 @@ import { NgauHungArena } from './components/NgauHungArena';
 import { GameOverModal } from './components/GameOverModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
 import { ChatDrawer } from './components/ChatDrawer';
+import { FriendsModal } from './components/FriendsModal';
 import { ModalContainer } from './components/ModalContainer';
 import { HeavenlyTickerBanner } from './components/HeavenlyTickerBanner';
 import { HeavenlyChronicleModal } from './components/HeavenlyChronicleModal';
 import { DaoDecreeModal } from './components/DaoDecreeModal';
-import { announcePenalty, announceRecord, announceBossKill, announceBreakthrough, subscribeToDaoDecrees } from './utils/heavenlyDaoBot';
+import { BanPenaltyModal } from './components/BanPenaltyModal';
+import { useChatEngine } from './hooks/useChatEngine';
+import { useCultivationEngine } from './hooks/useCultivationEngine';
+import { useRoomEngine } from './hooks/useRoomEngine';
+import { 
+  announcePenalty, 
+  announceRecord, 
+  announceBossKill, 
+  announceBreakthrough, 
+  subscribeToDaoDecrees,
+  announceLinhLungCheer,
+  announceLinhLungCommentary,
+} from './utils/heavenlyDaoBot';
+import {
+  checkClientBanStatus,
+  getStoredBanInfo,
+  saveStoredBanInfo,
+  executeBanPenalty,
+  syncServerBanStatus,
+} from './utils/banManager';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
 import { resolveBestWpmRecord, isOutplayMode } from './components/WpmRecordBadge';
 import { fetchCurrentUser, logoutUser, updateUserProfile } from './utils/auth';
@@ -61,6 +86,7 @@ import {
   submitScoreToLeaderboard,
   adminUpdateLeaderboard,
   adminResetLeaderboard,
+  fetchFriendsList,
 } from './utils/roomManager';
 import {
   getLeaderboardSync,
@@ -358,6 +384,41 @@ export default function App() {
     return Number(localStorage.getItem('fasttyping_games_count')) || 0;
   });
 
+  const [userFrame, setUserFrame] = useState<string>(() => getStoredFrame());
+
+  // Unique Player ID per tab/session to guarantee distinct players across multiple tabs
+  const [currentUserId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'usr_default';
+    let id = sessionStorage.getItem('fasttyping_player_id');
+    if (!id) {
+      id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      sessionStorage.setItem('fasttyping_player_id', id);
+    }
+    return id;
+  });
+
+  // Unique Tab ID per page instance in memory
+  const [currentTabId] = useState<string>(() => {
+    return 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+  });
+
+  // Persistent device ID across all tabs
+  const [deviceId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'dev_default';
+    try {
+      let id = localStorage.getItem('fasttyping_device_id');
+      if (!id) {
+        id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        localStorage.setItem('fasttyping_device_id', id);
+      }
+      return id;
+    } catch {
+      return 'dev_fallback';
+    }
+  });
+
+  const awardMatchHarvestRef = useRef<any>(null);
+
   // Session Statistics for Realtime HUD (In-Memory Room Session Tracking - Cleared on room exit or page reload)
   const [conditionStats, setConditionStats] = useState<Record<string, { lastWpm: number; bestWpm: number }>>({});
   const [lastGameWpm, setLastGameWpm] = useState<number>(0);
@@ -395,6 +456,36 @@ export default function App() {
   }, [difficulty]);
   const [playType, setPlayType] = useState<'solo' | 'multiplayer'>('multiplayer');
 
+  // Ban & Penalty Enforcement State (Bàn Cổ Thần Thức)
+  const [clientBanStatus, setClientBanStatus] = useState(() => checkClientBanStatus());
+  const [isBanModalOpen, setIsBanModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const updateBan = async () => {
+      const myUsername = currentUserRef.current?.username || usernameRef.current;
+      const myUserId = currentUserRef.current?.id;
+      if (myUsername) {
+        try {
+          const srvStatus = await syncServerBanStatus(myUsername, myUserId);
+          if (srvStatus.isBanned && isMounted) {
+            setClientBanStatus(checkClientBanStatus());
+            return;
+          }
+        } catch {}
+      }
+      if (isMounted) {
+        setClientBanStatus(checkClientBanStatus());
+      }
+    };
+    updateBan();
+    const interval = setInterval(updateBan, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Match History state & tracking
   const [matchHistory, setMatchHistory] = useState<MatchRecord[]>(() => getStoredMatchHistory());
   const currentMatchRecordedRef = useRef<boolean>(false);
@@ -411,6 +502,8 @@ export default function App() {
   const recordCurrentMatch = useCallback((data: {
     modeId: string;
     mode?: string;
+    subMode?: string;
+    difficulty?: string;
     wpm: number;
     accuracy: number;
     result: MatchResult;
@@ -425,6 +518,7 @@ export default function App() {
     wordLogs?: import('./utils/matchHistory').MatchWordLog[];
     keystrokes?: import('./utils/matchHistory').MatchReplayEvent[];
     chartData?: PerformanceChartPoint[];
+    maxCombo?: number;
   }) => {
     if (currentMatchRecordedRef.current) return;
     currentMatchRecordedRef.current = true;
@@ -438,7 +532,8 @@ export default function App() {
     const newRecord = addMatchRecord({
       mode: data.mode || getFriendlyModeName(data.modeId),
       modeId: data.modeId,
-      difficulty,
+      subMode: data.subMode,
+      difficulty: data.difficulty || difficulty,
       wpm: data.wpm,
       accuracy: data.accuracy,
       result: data.result,
@@ -467,40 +562,16 @@ export default function App() {
     // QUY TẮC: Chế độ Khách (chưa đăng nhập) TUYỆT ĐỐI KHÔNG ĐƯỢC THƯỞNG TU VI
     const userNow = currentUserRef.current;
     if (isActuallyCompleted && userNow) {
-      setCultivationState((prev) => {
-        const cultRes = addTuViFromMatch(prev, {
-          wpm: data.wpm,
-          accuracy: data.accuracy,
-          mode: (data.modeId as GameMode) || 'vi_dau',
-          score: data.score,
-        });
-        saveStoredCultivationState(cultRes.updatedState);
-
-        // Đột phá cảnh giới hoặc thăng tầng Tu Vi: Huyền Thiên Khí Linh phát chiếu thư dị tượng
-        if (cultRes.leveledUp) {
-          const currentRealm = XIANXIA_REALMS[cultRes.updatedState.realmIndex];
-          announceBreakthrough(
-            userNow.displayName || userNow.username,
-            currentRealm?.name || 'Tu Chân',
-            getSubStage(cultRes.updatedState.tier),
-            cultRes.updatedState.tier
-          ).then((dec) => {
-            setActiveDaoDecreePopup(dec);
-          }).catch(() => {});
-        }
-
-        const token = sessionStorage.getItem('fasttyping_token');
-        if (token) {
-          fetch('/api/cultivation', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ cultivation: cultRes.updatedState }),
-          }).catch(() => {});
-        }
-        return cultRes.updatedState;
+      const currentList = playersRef.current && playersRef.current.length > 0 ? playersRef.current : players;
+      awardMatchHarvestRef.current?.({
+        modeId: data.modeId,
+        wpm: data.wpm,
+        accuracy: data.accuracy,
+        score: data.score,
+        maxCombo: data.maxCombo,
+        currentUser: userNow,
+        players: currentList,
+        friendsList,
       });
     }
 
@@ -707,7 +778,6 @@ export default function App() {
 
   // Modals
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMatchHistoryOpen, setIsMatchHistoryOpen] = useState(false);
@@ -716,105 +786,215 @@ export default function App() {
   const [isOnlineUsersOpen, setIsOnlineUsersOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalInitialTab, setAuthModalInitialTab] = useState<'login' | 'register'>('login');
+  const [isFriendsOpen, setIsFriendsOpen] = useState<boolean>(false);
+  const [friendRequestsCount, setFriendRequestsCount] = useState<number>(0);
+  const [friendsList, setFriendsList] = useState<FriendRecord[]>([]);
+  const [friendInviteToast, setFriendInviteToast] = useState<{
+    id: string;
+    type: 'room_invite' | 'friend_request' | 'tea_gift' | 'guidance' | 'daolu';
+    fromUser?: any;
+    fromName?: string;
+    roomId?: string;
+    mode?: string;
+    tuViBonus?: number;
+    message?: string;
+    friendshipId?: string;
+  } | null>(null);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => checkIsAdmin());
-  const [kickedNotice, setKickedNotice] = useState<string | null>(null);
-  const [isCultivationOpen, setIsCultivationOpen] = useState(false);
   const [isHeavenlyChronicleOpen, setIsHeavenlyChronicleOpen] = useState(false);
   const [activeDaoDecreePopup, setActiveDaoDecreePopup] = useState<HeavenlyDaoDecree | null>(null);
-  const [cultivationState, setCultivationState] = useState<CultivationState>(() => loadStoredCultivationState());
 
-  // Lắng nghe Thiên Đạo Chiếu Thư theo thời gian thực:
-  // Nếu chiếu thư sắc phong người chơi hiện tại (đột phá, kỷ lục, săn boss), bật Popup Chúc Mừng Độc Bản
+  // 1. CULTIVATION ENGINE (Hệ thống Tu Tiên & Thăng Hoa Cảnh Giới)
+  const {
+    cultivationState,
+    setCultivationState,
+    cultivationStateRef,
+    isCultivationOpen,
+    setIsCultivationOpen,
+    isTribulationOpen,
+    setIsTribulationOpen,
+    cultivationMatchHarvest,
+    setCultivationMatchHarvest,
+    awardMatchHarvest,
+    addDirectTuVi,
+    openCultivation,
+    closeCultivation,
+    openTribulation,
+    closeTribulation,
+  } = useCultivationEngine({
+    onBreakthroughNotice: (dec) => setActiveDaoDecreePopup(dec),
+  });
+  awardMatchHarvestRef.current = awardMatchHarvest;
+
+  // Me player factory for room & multiplayer synchronization
+  const createMePlayer = useCallback((): Player => {
+    const realm = XIANXIA_REALMS[cultivationState.realmIndex] || XIANXIA_REALMS[0];
+    return {
+      id: currentUserId,
+      username: username,
+      icon: avatar,
+      frame: userFrame,
+      showcaseAchievements: currentUser?.showcaseAchievements || getShowcaseAchievements(),
+      cultivation: {
+        level: cultivationState.level,
+        realmIndex: cultivationState.realmIndex,
+        tier: cultivationState.tier,
+        realmName: realm.name,
+        subStage: getSubStage(cultivationState.tier),
+        thoNguyen: cultivationState.thoNguyen,
+        maxThoNguyen: cultivationState.maxThoNguyen,
+      },
+      bestWpm: bestWpm,
+      bestWpmRecord: bestWpmRecord || undefined,
+      totalGames: totalGames,
+      progress: 0,
+      wpm: 0,
+      score: 0,
+      errors: 0,
+      correctChars: 0,
+      isFinished: false,
+      isSurrendered: false,
+      isAFK: false,
+    };
+  }, [currentUserId, username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUser, cultivationState]);
+
+  // Ref for launching game callback to avoid circular reference
+  const handleLaunchGameRef = useRef<any>(null);
+
+  // 2. ROOM ENGINE (Hệ thống Phòng thi đấu & WebSocket/SSE)
+  const {
+    currentRoomId,
+    setCurrentRoomId,
+    isRoomHost,
+    setIsRoomHost,
+    isJoinModalOpen,
+    setIsJoinModalOpen,
+    targetJoinMode,
+    setTargetJoinMode,
+    kickedNotice,
+    setKickedNotice,
+    players,
+    setPlayers,
+    playersRef,
+    currentMatchIdRef,
+    metaRef,
+    handleCreateRoom: engineCreateRoom,
+    handleJoinExistingRoom: engineJoinRoom,
+    handleQuickJoinRoom: engineQuickJoinRoom,
+    handleLeaveRoom,
+    handleAddBot,
+    handleRemoveBot,
+    handleTransferHost,
+    handleKickPlayer,
+    sendProgress,
+    updatePlayers,
+  } = useRoomEngine({
+    currentUserId,
+    currentUser,
+    username,
+    avatar,
+    userFrame,
+    bestWpm,
+    bestWpmRecord,
+    totalGames,
+    isAdmin,
+    deviceId,
+    currentTabId,
+    gameState,
+    gameMode,
+    difficulty,
+    createMePlayer,
+    onGameStateChange: setGameState,
+    onGameModeChange: setGameMode,
+    onDifficultyChange: (diff) => {
+      setDifficulty(diff);
+      difficultyRef.current = diff;
+    },
+    onChatMessage: (msg) => appendChatMessage(msg),
+    onRecordMatch: (data) => recordCurrentMatch(data),
+    onLaunchGame: (isSolo, mode, words, mystery, matchId) => {
+      handleLaunchGameRef.current?.(isSolo, mode, words, mystery, matchId);
+    },
+    onBossVictoryChange: setIsBossVictory,
+  });
+
+  // 3. CHAT ENGINE (Hệ thống Chat đa kênh & Tin nhắn mật đàm)
+  const {
+    chatMessages,
+    setChatMessages,
+    isChatOpen,
+    setIsChatOpen,
+    activeChannel: chatInitialChannel,
+    setActiveChannel: setChatInitialChannel,
+    whisperTargetUser: chatWhisperTarget,
+    setWhisperTargetUser: setChatWhisperTarget,
+    unreadChatCount,
+    setUnreadChatCount,
+    appendChatMessage,
+    handleSendMessage,
+    openWhisperWith,
+    openChat,
+    closeChat,
+    toggleChat,
+  } = useChatEngine({
+    currentUsername: username,
+    currentUserAvatar: avatar,
+    currentUserFrame: userFrame,
+    currentUserId: currentUser?.id || currentUserId,
+    currentRealmName: XIANXIA_REALMS[cultivationState.realmIndex]?.name,
+    currentRealmIcon: XIANXIA_REALMS[cultivationState.realmIndex]?.icon,
+    currentSectId: cultivationState?.sectId,
+    currentSectTag: cultivationState?.sectTag,
+    currentRoomId,
+    isAdmin,
+  });
+
+  // Đồng bộ danh sách Đạo Hữu và thông tin Đạo Lữ
+  useEffect(() => {
+    if (currentUser) {
+      fetchFriendsList().then((res) => {
+        if (res && res.success && res.friends) {
+          setFriendsList(res.friends);
+        }
+      }).catch(() => {});
+    } else {
+      setFriendsList([]);
+    }
+  }, [currentUser, isFriendsOpen]);
+
+  // Lắng nghe Thiên Đạo Chiếu Thư theo thời gian thực
   useEffect(() => {
     const unsub = subscribeToDaoDecrees((decree) => {
-      const myUsername = currentUserRef.current?.username || usernameRef.current;
-      const myDisplayName = currentUserRef.current?.displayName || myUsername;
-      if (
-        decree.targetUser &&
-        myUsername &&
-        (decree.targetUser.toLowerCase() === myUsername.toLowerCase() ||
-          decree.targetUser.toLowerCase() === myDisplayName.toLowerCase()) &&
-        (decree.eventType === 'breakthrough' || decree.eventType === 'record' || decree.eventType === 'boss_kill')
-      ) {
-        setActiveDaoDecreePopup(decree);
+      const myUsername = currentUserRef.current?.username || usernameRef.current || '';
+      const myDisplayName = currentUserRef.current?.displayName || myUsername || '';
+      const targetUser = String(decree.targetUser || '').toLowerCase();
+      const isTargetMe =
+        Boolean(targetUser) &&
+        Boolean(myUsername) &&
+        (targetUser === myUsername.toLowerCase() ||
+          targetUser === myDisplayName.toLowerCase());
+
+      if (isTargetMe) {
+        if (decree.eventType === 'penalty') {
+          const reason = decree.content || 'Bàn Cổ Thần Thức phát hiện bất thường tốc độ gõ phím / Nghi vấn Auto Macro';
+          saveStoredBanInfo(Date.now() + 2 * 60 * 60 * 1000, reason);
+          const newStatus = checkClientBanStatus();
+          setClientBanStatus(newStatus);
+          setIsBanModalOpen(true);
+          soundFx.playError();
+          handleReturnToLobby();
+        } else if (
+          decree.eventType === 'breakthrough' ||
+          decree.eventType === 'record' ||
+          decree.eventType === 'boss_kill'
+        ) {
+          setActiveDaoDecreePopup(decree);
+        }
       }
     });
     return () => unsub();
   }, []);
-
-  // Process cultivation lifespan and inactivity decay
-  useEffect(() => {
-    const res = processCultivationDecay(cultivationState);
-    if (
-      res.updatedState.thoNguyen !== cultivationState.thoNguyen ||
-      res.updatedState.exp !== cultivationState.exp ||
-      res.updatedState.realmIndex !== cultivationState.realmIndex
-    ) {
-      setCultivationState(res.updatedState);
-      saveStoredCultivationState(res.updatedState);
-    }
-
-    // Periodic check every 60s for 2-hour thọ nguyên decay
-    const interval = setInterval(() => {
-      setCultivationState((prev) => {
-        const checkRes = processCultivationDecay(prev);
-        if (
-          checkRes.updatedState.thoNguyen !== prev.thoNguyen ||
-          checkRes.updatedState.exp !== prev.exp
-        ) {
-          saveStoredCultivationState(checkRes.updatedState);
-          return checkRes.updatedState;
-        }
-        return prev;
-      });
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Auto-dismiss notification after 7s
-  useEffect(() => {
-    if (!kickedNotice) return;
-    const timer = setTimeout(() => {
-      setKickedNotice(null);
-    }, 7000);
-    return () => clearTimeout(timer);
-  }, [kickedNotice]);
-
-  // Unique Player ID per tab/session to guarantee distinct players across multiple tabs
-  const [currentUserId] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'usr_default';
-    let id = sessionStorage.getItem('fasttyping_player_id');
-    if (!id) {
-      id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-      sessionStorage.setItem('fasttyping_player_id', id);
-    }
-    return id;
-  });
-
-  // Unique Tab ID per page instance in memory (guaranteed unique for every tab even if cloned or incognito)
-  const [currentTabId] = useState<string>(() => {
-    return 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
-  });
-
-  // Persistent device ID across all tabs of this browser to guarantee 1 human user = 1 online count
-  const [deviceId] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'dev_default';
-    try {
-      let id = localStorage.getItem('fasttyping_device_id');
-      if (!id) {
-        id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-        localStorage.setItem('fasttyping_device_id', id);
-      }
-      return id;
-    } catch {
-      return 'dev_fallback';
-    }
-  });
-
-  // Track the current active match ID to prevent auto-relaunching when returning to waiting room
-  const currentMatchIdRef = useRef<string | null>(null);
 
   // Real Online Presence & Server-wide Leaderboard (Zero mock data, backed by IndexedDB)
   const [onlineCount, setOnlineCount] = useState<number>(1);
@@ -838,9 +1018,7 @@ export default function App() {
     });
   }, []);
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-
-  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết (thời điểm & chế độ) cho chế độ Outplay Yourself
+  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết cho Outplay Yourself
   useEffect(() => {
     const resolved = resolveBestWpmRecord({
       bestWpm,
@@ -862,7 +1040,6 @@ export default function App() {
         } catch {}
       }
     } else if (bestWpmRecord && !isOutplayMode(bestWpmRecord.mode)) {
-      // Dọn dẹp bản ghi cũ nếu thuộc chế độ multiplayer
       setBestWpmRecord(null);
       setBestWpm(0);
       try {
@@ -872,69 +1049,7 @@ export default function App() {
     }
   }, [bestWpm, bestWpmRecord, highScores, username, matchHistory]);
 
-  // Deduplication helper to prevent double chat in all channels (Global & Room)
-  const appendChatMessage = useCallback((newMsg: ChatMessage) => {
-    setChatMessages((prev) => {
-      // 1. Direct ID deduplication
-      if (prev.some((m) => m.id === newMsg.id)) {
-        return prev;
-      }
-      // 2. Strict content deduplication: same user, channel, message within 4 seconds window
-      const isDuplicate = prev.some(
-        (m) =>
-          m.username === newMsg.username &&
-          m.channel === newMsg.channel &&
-          m.message.trim() === newMsg.message.trim() &&
-          Math.abs(m.timestamp - newMsg.timestamp) < 4000
-      );
-      if (isDuplicate) {
-        return prev;
-      }
-      return [...prev, newMsg];
-    });
-  }, []);
-
-  // Players list & Room Management
-  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
-  const [isRoomHost, setIsRoomHost] = useState(true);
-  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-  const [targetJoinMode, setTargetJoinMode] = useState<GameMode>('vi_dau');
-  const [userFrame, setUserFrame] = useState<string>(() => getStoredFrame());
-
-  // Presence metadata synchronization
-  const metaRef = useRef({
-    username,
-    avatar,
-    frame: userFrame,
-    bestWpm,
-    bestWpmRecord: bestWpmRecord || undefined,
-    totalGames,
-    currentRoomId,
-    currentMode: gameMode,
-    status: (gameState === 'lobby' ? 'lobby' : (gameState === 'waiting_room' ? 'waiting_room' : (gameMode === 'outplay' ? 'outplay' : 'playing'))) as 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover',
-    isAdmin,
-    deviceId,
-  });
-
-  useEffect(() => {
-    const newStatus = (gameState === 'lobby' ? 'lobby' : (gameState === 'waiting_room' ? 'waiting_room' : (gameMode === 'outplay' ? 'outplay' : 'playing'))) as 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
-    metaRef.current = {
-      username,
-      avatar,
-      frame: userFrame,
-      bestWpm,
-      bestWpmRecord: bestWpmRecord || undefined,
-      totalGames,
-      currentRoomId,
-      currentMode: gameMode,
-      status: newStatus,
-      isAdmin,
-      deviceId,
-    };
-    sendPresencePing(currentTabId, currentUser?.id || currentUserId, metaRef.current);
-  }, [username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentRoomId, gameMode, gameState, isAdmin, currentTabId, currentUserId, currentUser, deviceId]);
-
-  // Realtime Global Chat, Presence & Server Leaderboard Synchronization
+  // Realtime Global Chat, Presence & Server Leaderboard Synchronization (WebSocket / SSE)
   useEffect(() => {
     const unsubscribeGlobalChat = subscribeToGlobalChat(
       (newMsg) => {
@@ -960,59 +1075,66 @@ export default function App() {
       },
       currentUser?.id || currentUserId,
       currentTabId,
-      () => metaRef.current
+      () => metaRef.current,
+      (ev: any) => {
+        if (!ev) return;
+        if (ev.type === 'friend_requests_count') {
+          setFriendRequestsCount(ev.count || 0);
+        } else if (ev.type === 'friend_request_received') {
+          setFriendRequestsCount((prev) => prev + 1);
+          setFriendInviteToast({
+            id: `fr_${Date.now()}`,
+            type: 'friend_request',
+            fromUser: ev.fromUser,
+            message: ev.message,
+          });
+          soundFx.playKeyClick();
+        } else if (ev.type === 'room_invite') {
+          setFriendInviteToast({
+            id: `ri_${Date.now()}`,
+            type: 'room_invite',
+            fromUser: ev.fromUser,
+            roomId: ev.roomId,
+            mode: ev.mode,
+          });
+          soundFx.playWhisperPing();
+        } else if (ev.type === 'tea_gift_received') {
+          const bonus = ev.tuViBonus || 50;
+          setFriendInviteToast({
+            id: `tg_${Date.now()}`,
+            type: 'tea_gift',
+            fromName: ev.fromName || 'Đạo Hữu',
+            tuViBonus: bonus,
+          });
+          addDirectTuVi(bonus);
+          soundFx.playVictory();
+        } else if (ev.type === 'mentor_guidance_received') {
+          const bonus = ev.tuViBonus || 30;
+          setFriendInviteToast({
+            id: `mg_${Date.now()}`,
+            type: 'guidance',
+            fromName: ev.fromName || 'Tiền Bối',
+            tuViBonus: bonus,
+          });
+          addDirectTuVi(bonus);
+          soundFx.playVictory();
+        } else if (ev.type === 'daolu_proposal_received') {
+          setFriendInviteToast({
+            id: `dl_${Date.now()}`,
+            type: 'daolu',
+            fromName: ev.fromName || 'Đạo Hữu',
+            friendshipId: ev.friendshipId,
+          });
+          soundFx.playVictory();
+        } else if (ev.type === 'daolu_ceremony_complete') {
+          soundFx.playVictory();
+        }
+      }
     );
     return () => {
       unsubscribeGlobalChat();
     };
-  }, [appendChatMessage, currentUserId, currentUser, currentTabId]);
-
-  const createMePlayer = useCallback((): Player => ({
-    id: currentUserId,
-    username: username,
-    icon: avatar,
-    frame: userFrame,
-    showcaseAchievements: currentUser?.showcaseAchievements || getShowcaseAchievements(),
-    bestWpm: bestWpm,
-    bestWpmRecord: bestWpmRecord || undefined,
-    totalGames: totalGames,
-    progress: 0,
-    wpm: 0,
-    score: 0,
-    errors: 0,
-    correctChars: 0,
-    isFinished: false,
-    isSurrendered: false,
-    isAFK: false,
-  }), [currentUserId, username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUser]);
-
-  // Initial players: ONLY current user, NO automatic bots!
-  const [players, setPlayers] = useState<Player[]>([
-    {
-      id: currentUserId,
-      username: username,
-      icon: avatar,
-      frame: getStoredFrame(),
-      showcaseAchievements: getShowcaseAchievements(),
-      bestWpm: bestWpm,
-      bestWpmRecord: bestWpmRecord || undefined,
-      totalGames: totalGames,
-      progress: 0,
-      wpm: 0,
-      score: 0,
-      errors: 0,
-      correctChars: 0,
-      isFinished: false,
-      isSurrendered: false,
-      isAFK: false,
-    },
-  ]);
-
-  // Sync user changes to players list
-  const playersRef = useRef(players);
-  useEffect(() => {
-    playersRef.current = players;
-  }, [players]);
+  }, [appendChatMessage, currentUserId, currentUser, currentTabId, addDirectTuVi, metaRef, setChatMessages]);
 
   useEffect(() => {
     currentUserRef.current = currentUser;
@@ -1037,243 +1159,18 @@ export default function App() {
     initThemeAndFont();
   }, []);
 
-  useEffect(() => {
-    setPlayers((prev) =>
-      prev.map((p) =>
-        p.id === currentUserId
-          ? { ...p, username, icon: avatar, frame: userFrame, bestWpm, bestWpmRecord: bestWpmRecord || undefined, totalGames }
-          : p
-      )
-    );
-  }, [username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUserId]);
-
-  // Realtime cross-device & cross-tab synchronization for Rooms
-  useEffect(() => {
-    if ((gameState !== 'waiting_room' && gameState !== 'playing' && gameState !== 'gameover') || !currentRoomId) return;
-
-    // Realtime cross-device & cross-tab synchronization for Rooms & Room Chat
-    fetchChatMessages('room', currentRoomId).then((msgs) => {
-      msgs.forEach((m) => appendChatMessage(m));
-    });
-
-    const unsubscribe = subscribeToRoom(
-      currentRoomId,
-      (updatedRoom) => {
-        if (!updatedRoom) {
-          // Room was closed or all players left
-          if (gameState === 'waiting_room' || gameState === 'gameover') {
-            setCurrentRoomId(null);
-            setGameState('lobby');
-          }
-          return;
-        }
-
-        if (gameState === 'waiting_room' || gameState === 'gameover') {
-          // Kiểm tra xem người chơi có bị đá khỏi phòng không
-          const meInRoom = updatedRoom.players?.find((p) => p.id === currentUserId);
-          if (gameState === 'waiting_room' && !meInRoom) {
-            soundFx.playError();
-            setCurrentRoomId(null);
-            setGameState('lobby');
-            setKickedNotice('Bạn đã bị chủ phòng mời ra khỏi phòng.');
-            return;
-          }
-
-          setPlayers((currentPlayers) => {
-            if (
-              currentPlayers.length === updatedRoom.players.length &&
-              currentPlayers.every((cp, i) => {
-                const up = updatedRoom.players[i];
-                return (
-                  up &&
-                  cp.id === up.id &&
-                  cp.username === up.username &&
-                  cp.icon === up.icon &&
-                  cp.frame === up.frame &&
-                  cp.isBot === up.isBot &&
-                  cp.inMatch === up.inMatch &&
-                  cp.progress === up.progress &&
-                  cp.wpm === up.wpm &&
-                  cp.isFinished === up.isFinished &&
-                  cp.isSurrendered === up.isSurrendered
-                );
-              })
-            ) {
-              return currentPlayers;
-            }
-            return updatedRoom.players;
-          });
-          setIsRoomHost(updatedRoom.hostId === currentUserId);
-          if (updatedRoom.mode && updatedRoom.mode !== gameModeRef.current) {
-            setGameMode(updatedRoom.mode);
-            gameModeRef.current = updatedRoom.mode;
-          }
-          if (updatedRoom.difficulty && updatedRoom.difficulty !== difficultyRef.current) {
-            setDifficulty(updatedRoom.difficulty);
-            difficultyRef.current = updatedRoom.difficulty;
-          }
-
-          // Kiểm tra xem người chơi hiện tại có thực sự đang trong trạng thái thi đấu (inMatch: true)
-          // và có phải trận đấu MỚI (khác matchId) do chủ phòng vừa phát động không
-          const isNewMatch = Boolean(
-            updatedRoom.matchId && updatedRoom.matchId !== currentMatchIdRef.current
-          );
-
-          // Chỉ khởi chạy vào game khi chủ phòng phát động trận đấu MỚI và người chơi này có inMatch: true!
-          // Nếu người chơi đã đầu hàng trở về phòng chờ (inMatch: false), giữ nguyên ở phòng chờ.
-          if (
-            gameState === 'waiting_room' &&
-            updatedRoom.status === 'playing' &&
-            isNewMatch &&
-            meInRoom?.inMatch
-          ) {
-            currentMatchIdRef.current = updatedRoom.matchId || null;
-            handleLaunchGame(
-              false,
-              updatedRoom.mode,
-              updatedRoom.words,
-              updatedRoom.mysteryWords,
-              updatedRoom.matchId
-            );
-          }
-        } else if (gameState === 'playing') {
-          // Khi phòng được thông báo kết thúc (status: finished):
-          if (updatedRoom.status === 'finished') {
-            setPlayers((prev) => {
-              const me = prev.find((p) => p.id === currentUserId);
-              return updatedRoom.players.map((remoteP) => {
-                if (remoteP.id === currentUserId) {
-                  return {
-                    ...remoteP,
-                    progress: me?.progress ?? remoteP.progress,
-                    wpm: me?.wpm ?? remoteP.wpm,
-                    correctChars: me?.correctChars ?? remoteP.correctChars,
-                    errors: me?.errors ?? remoteP.errors,
-                    isFinished: me?.isFinished ?? remoteP.isFinished,
-                    isSurrendered: me?.isSurrendered ?? remoteP.isSurrendered,
-                    score: me?.score ?? remoteP.score,
-                    chartData: me?.chartData ?? remoteP.chartData,
-                    ghostDiff: me?.ghostDiff ?? remoteP.ghostDiff,
-                    lastWpm: me?.lastWpm ?? remoteP.lastWpm,
-                    sessionBestWpm: me?.sessionBestWpm ?? remoteP.sessionBestWpm,
-                  };
-                }
-                return remoteP;
-              });
-            });
-            if (gameMode === 'san_boss') {
-              setIsBossVictory(false);
-            }
-            const meInUpdated = updatedRoom.players.find((p) => p.id === currentUserId);
-            const isSurr = meInUpdated?.isSurrendered || false;
-            // Chỉ được tính là hoàn thành ván đấu nếu người chơi đã hoàn thành toàn bộ bài thi (isFinished === true) và không đầu hàng
-            const isFinishedMatch = !!meInUpdated?.isFinished && !isSurr;
-            const rivals = updatedRoom.players.filter((p) => p.id !== currentUserId && !p.isSurrendered);
-            const isTop = rivals.every((r) => (r.wpm || 0) <= (meInUpdated?.wpm || 0));
-            const result: MatchResult = isSurr ? 'Đầu hàng' : (isTop ? 'Thắng' : 'Thua');
-            recordCurrentMatch({
-              modeId: gameMode,
-              wpm: meInUpdated?.wpm || 0,
-              accuracy: meInUpdated?.accuracy ?? 100,
-              result,
-              score: meInUpdated?.score,
-              isCompleted: isFinishedMatch,
-            });
-            if (result === 'Thắng' && isFinishedMatch) {
-              soundFx.playVictory();
-            } else if (isSurr) {
-              soundFx.playError();
-            }
-            setGameState('gameover');
-            return;
-          }
-
-          // Live match synchronization: update other players' progress bars, WPM, and surrender state
-          // Lấy danh sách từ updatedRoom.players để cập nhật cả các trường hợp người chơi out/rời phòng
-          let shouldEndGame = false;
-          setPlayers((prev) => {
-            const me = prev.find((p) => p.id === currentUserId);
-            const synced = updatedRoom.players.map((remoteP) => {
-              if (remoteP.id === currentUserId) {
-                return {
-                  ...remoteP,
-                  progress: me?.progress ?? remoteP.progress,
-                  wpm: me?.wpm ?? remoteP.wpm,
-                  correctChars: me?.correctChars ?? remoteP.correctChars,
-                  errors: me?.errors ?? remoteP.errors,
-                  isFinished: me?.isFinished ?? remoteP.isFinished,
-                  isSurrendered: me?.isSurrendered ?? remoteP.isSurrendered,
-                  score: me?.score ?? remoteP.score,
-                  chartData: me?.chartData ?? remoteP.chartData,
-                  ghostDiff: me?.ghostDiff ?? remoteP.ghostDiff,
-                  lastWpm: me?.lastWpm ?? remoteP.lastWpm,
-                  sessionBestWpm: me?.sessionBestWpm ?? remoteP.sessionBestWpm,
-                };
-              }
-              return remoteP;
-            });
-
-            // Kiểm tra nếu không còn người chơi thực nào đang chơi (tất cả đã đầu hàng, hoàn thành, hoặc out)
-            const activeHumanPlayers = synced.filter(
-              (p) => !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
-            );
-            if (activeHumanPlayers.length === 0) {
-              shouldEndGame = true;
-            }
-
-            playersRef.current = synced;
-            return synced;
-          });
-
-          if (shouldEndGame) {
-            if (currentRoomId) {
-              markRoomFinished(currentRoomId);
-            }
-            if (gameMode === 'san_boss') {
-              setIsBossVictory(false);
-            }
-            soundFx.playVictory();
-            setGameState('gameover');
-          }
-        }
-      },
-      (roomMsg) => {
-        appendChatMessage(roomMsg);
-      },
-      (kickedPlayerId, kickedUsername) => {
-        if (kickedPlayerId === currentUserId) {
-          soundFx.playError();
-          setCurrentRoomId(null);
-          setGameState('lobby');
-          setKickedNotice('Bạn đã bị chủ phòng mời ra khỏi phòng.');
-        } else {
-          setKickedNotice(`${kickedUsername || 'Một người chơi'} đã bị chủ phòng mời rời khỏi phòng.`);
-        }
-      }
-    );
-
-    return () => unsubscribe();
-  }, [gameState, currentRoomId, currentUserId, appendChatMessage]);
-
-  // Clean up player from room when tab is closed or navigated away
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (currentRoomId) {
-        leaveRoom(currentRoomId, currentUserId);
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [currentRoomId, currentUserId]);
-
   // Global Escape key listener: quickly closes any active modal, panel, or drawer
   useEffect(() => {
     const handleGlobalEscape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
 
       // Close open modals/drawers in top-to-bottom priority
+      if (isFriendsOpen) {
+        e.preventDefault();
+        soundFx.playKeyClick();
+        setIsFriendsOpen(false);
+        return;
+      }
       if (isChatOpen) {
         e.preventDefault();
         soundFx.playKeyClick();
@@ -1349,8 +1246,41 @@ export default function App() {
     isLeaderboardOpen,
     isAdminOpen,
     isProfileOpen,
+    isFriendsOpen,
     kickedNotice,
   ]);
+
+  // Phím tắt toàn năng (Power-user Shortcuts: Ctrl+K / F2 mở Sổ Tay Đạo Hữu, Enter mở Chat ở Sảnh Chờ)
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      // 1. Ctrl + K hoặc F2: Bật nhanh Sổ Tay Đạo Hữu
+      if ((e.key === 'F2' || ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K'))) && !e.shiftKey) {
+        e.preventDefault();
+        soundFx.playKeyClick();
+        setIsFriendsOpen((prev) => !prev);
+        return;
+      }
+
+      // 2. Enter: Mở nhanh khung chat khi đang ở sảnh chờ hoặc phòng chờ (khi không focus vào ô nhập liệu)
+      if (e.key === 'Enter' && !isInput && (gameState === 'lobby' || gameState === 'waiting_room')) {
+        e.preventDefault();
+        soundFx.playKeyClick();
+        setIsChatOpen(true);
+        setTimeout(() => {
+          document.getElementById('input-chat-message')?.focus();
+        }, 80);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalShortcuts);
+    };
+  }, [gameState]);
 
   // Handle Mode Change
   const handleSelectMode = (newMode: GameMode) => {
@@ -1390,127 +1320,15 @@ export default function App() {
     }
   };
 
-  // Bot Management - Host adds/removes bots manually as needed (randomized and non-duplicate)
-  const handleAddBot = useCallback(() => {
-    // Chế độ ngẫu hứng, đoán chữ và săn boss không cho phép thêm bot
-    if (gameMode === 'ngau_hung' || gameMode === 'doan_chu' || gameMode === 'san_boss') return;
-    if (players.length >= 8) return;
-
-    const existingNames = new Set(players.map((p) => p.username.toLowerCase()));
-    const existingIcons = new Set(players.map((p) => p.icon));
-
-    // Lọc ra các bot chưa có trong phòng để đảm bảo chọn ngẫu nhiên nhưng không trùng lặp
-    let availableTemplates = BOT_NAMES.filter(
-      (b) => !existingNames.has(b.name.toLowerCase()) && !existingIcons.has(b.icon)
-    );
-
-    // Nếu các icon bị trùng nhưng tên chưa trùng:
-    if (availableTemplates.length === 0) {
-      availableTemplates = BOT_NAMES.filter((b) => !existingNames.has(b.name.toLowerCase()));
-    }
-
-    // Chọn ngẫu nhiên 1 template trong danh sách chưa trùng
-    const botTemplate = availableTemplates.length > 0
-      ? availableTemplates[Math.floor(Math.random() * availableTemplates.length)]
-      : BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
-
-    // Đảm bảo tên duy nhất tuyệt đối nếu có trường hợp trùng
-    let botUsername = botTemplate.name;
-    let counter = 2;
-    while (existingNames.has(botUsername.toLowerCase())) {
-      botUsername = `${botTemplate.name}_${counter}`;
-      counter++;
-    }
-
-    // Chọn khung viền ngẫu nhiên không trùng nếu có thể
-    const allFrames = ['default', 'flame', 'lightning', 'cosmic', 'matrix', 'arcane', 'dragon'];
-    const existingFrames = new Set(players.map((p) => p.frame).filter(Boolean));
-    const availableFrames = allFrames.filter((f) => !existingFrames.has(f));
-    const chosenFrame = availableFrames.length > 0
-      ? availableFrames[Math.floor(Math.random() * availableFrames.length)]
-      : allFrames[Math.floor(Math.random() * allFrames.length)];
-
-    const randomVariance = Math.floor(Math.random() * 7) - 3;
-    const targetWpm = Math.max(50, botTemplate.wpm + randomVariance);
-
-    const newBot: Player = {
-      id: `bot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      username: botUsername,
-      icon: botTemplate.icon,
-      frame: chosenFrame,
-      bestWpm: targetWpm + Math.floor(Math.random() * 6 + 2),
-      totalGames: Math.floor(Math.random() * 40 + 15),
-      progress: 0,
-      wpm: 0,
-      score: 0,
-      errors: 0,
-      correctChars: 0,
-      isFinished: false,
-      isSurrendered: false,
-      isAFK: false,
-      isBot: true,
-      botTargetWpm: targetWpm,
-    };
-
-    soundFx.playKeyClick();
-    const updated = [...players, newBot];
-    setPlayers(updated);
-    if (currentRoomId) {
-      updateRoomPlayers(currentRoomId, updated);
-    }
-  }, [gameMode, players, currentRoomId]);
-
-  const handleRemoveBot = useCallback(() => {
-    const lastBotIdx = [...players].reverse().findIndex((p) => p.isBot);
-    if (lastBotIdx === -1) return;
-    const actualIdx = players.length - 1 - lastBotIdx;
-    const updated = players.filter((_, i) => i !== actualIdx);
-    soundFx.playKeyClick();
-    setPlayers(updated);
-    if (currentRoomId) {
-      updateRoomPlayers(currentRoomId, updated);
-    }
-  }, [players, currentRoomId]);
-
-  // Nhường quyền chủ phòng: người được chọn lên Slot 1, chủ cũ chuyển vào slot người kia để lại
-  const handleTransferHost = async (targetPlayerId: string) => {
-    if (!currentRoomId || !isRoomHost) return;
-    const targetIdx = players.findIndex((p) => p.id === targetPlayerId);
-    const hostIdx = players.findIndex((p) => p.id === currentUserId);
-    if (targetIdx === -1) return;
-
-    const targetPlayer = players[targetIdx];
-    if (targetPlayer.isBot) return;
-
-    // Optimistic local update
-    const updated = [...players];
-    const effectiveHostIdx = hostIdx !== -1 ? hostIdx : 0;
-    const oldHostPlayer = updated[effectiveHostIdx];
-    updated[0] = targetPlayer;
-    updated[targetIdx] = oldHostPlayer;
-    setPlayers(updated);
-    setIsRoomHost(false);
-
-    soundFx.playKeyClick();
-    await transferRoomHost(currentRoomId, targetPlayerId, currentUserId);
-  };
-
-  // Đá người chơi hoặc bot khỏi phòng
-  const handleKickPlayer = async (targetPlayerId: string) => {
-    if (!currentRoomId || !isRoomHost) return;
-    const targetPlayer = players.find((p) => p.id === targetPlayerId);
-    if (!targetPlayer) return;
-
-    // Optimistic local update
-    const updated = players.filter((p) => p.id !== targetPlayerId);
-    setPlayers(updated);
-
-    soundFx.playError();
-    await kickRoomPlayer(currentRoomId, targetPlayerId, currentUserId);
-  };
-
   // Trigger modal when user selects a multiplayer mode
   const handleJoinWaitingRoom = (modeOverride?: GameMode) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
     const chosenMode = modeOverride || gameMode;
     soundFx.playKeyClick();
     handleSelectMode(chosenMode);
@@ -1520,11 +1338,14 @@ export default function App() {
 
   // Modal Action 1: Tạo phòng mới
   const handleModalCreateNewRoom = async (mode: GameMode) => {
-    const me = createMePlayer();
-    const newRoom = await createNewRoom(mode, me, false, difficulty);
-    setCurrentRoomId(newRoom.id);
-    setIsRoomHost(true);
-    setPlayers([me]); // 0 bots, only host!
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
+    await engineCreateRoom(mode, difficulty);
     setGameMode(mode);
     setPlayType('multiplayer');
     setGameState('waiting_room');
@@ -1533,14 +1354,17 @@ export default function App() {
 
   // Modal Action 2: Vào phòng đã có bằng mã
   const handleModalJoinExistingRoom = async (code: string, mode: GameMode) => {
-    const me = createMePlayer();
-    const result = await joinExistingRoom(code, me, mode);
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return { success: false, error: `Tài khoản đang chịu án phạt từ Bàn Cổ Thần Thức (${ban.formatted}).` };
+    }
+    const result = await engineJoinRoom(code, mode);
     if (!result.success || !result.room) {
       return { success: false, error: result.error || 'Phòng không tồn tại hoặc không thể tham gia.' };
     }
-    setCurrentRoomId(result.room.id);
-    setIsRoomHost(Boolean(result.isHost));
-    setPlayers(result.room.players);
     setGameMode(result.room.mode as GameMode);
     if (result.room.difficulty) {
       const diff = result.room.difficulty as DifficultyLevel;
@@ -1555,11 +1379,14 @@ export default function App() {
 
   // Modal Action 3: Vào phòng nhanh (tự động ghép hoặc tạo mới)
   const handleModalQuickJoinRoom = async (mode: GameMode) => {
-    const me = createMePlayer();
-    const result = await quickJoinOrCreateRoom(mode, me, difficulty);
-    setCurrentRoomId(result.room.id);
-    setIsRoomHost(Boolean(result.isHost));
-    setPlayers(result.room.players);
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
+    const result = await engineQuickJoinRoom(mode, difficulty);
     setGameMode(result.room.mode as GameMode);
     if (result.room.difficulty) {
       const diff = result.room.difficulty as DifficultyLevel;
@@ -1579,6 +1406,14 @@ export default function App() {
     sharedMysteryWords?: MysteryWordItem[],
     matchIdOverride?: string
   ) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      handleReturnToLobby();
+      return;
+    }
     const isSolo = isSoloOverride !== undefined ? isSoloOverride : playType === 'solo';
     const targetMode = modeOverride || gameMode;
 
@@ -1706,6 +1541,13 @@ export default function App() {
 
   // Start Solo game directly (No waiting room, no other players or bots, no countdown)
   const handleStartSoloGame = (modeOverride?: GameMode) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
     const targetMode = modeOverride || (gameMode === 'outplay' ? 'outplay' : gameMode);
     setGameMode(targetMode);
     setPlayType('solo');
@@ -1729,6 +1571,14 @@ export default function App() {
 
   // Alias for backward compatibility / restarting
   const handleStartGame = () => {
+    setCultivationMatchHarvest(null);
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
     if (playType === 'solo' || gameMode === 'outplay') {
       handleStartSoloGame(gameMode);
     } else {
@@ -1738,14 +1588,38 @@ export default function App() {
 
   // Match History Actions: Practice Mistakes & Challenge Retry
   const handlePracticeMistakes = (mistakeWords: string[], modeOverride?: GameMode) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
     if (!mistakeWords || mistakeWords.length === 0) return;
     let practiceList: string[] = [];
-    while (practiceList.length < 25) {
-      practiceList.push(...mistakeWords);
+    if (mistakeWords.length >= 20) {
+      practiceList = mistakeWords.slice(0, 30);
+    } else {
+      while (practiceList.length < 25) {
+        practiceList.push(...mistakeWords);
+      }
+      practiceList = practiceList.slice(0, 30);
     }
-    practiceList = practiceList.slice(0, 30);
-    const targetMode = modeOverride || 'vi_dau';
+
+    let targetMode = modeOverride || 'vi_dau';
+    const hasNumbers = practiceList.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
+    if (hasNumbers) {
+      targetMode = 'numpad';
+    } else if (targetMode === 'san_boss' || targetMode === 'doan_chu' || targetMode === 'ngau_hung' || targetMode === 'outplay') {
+      const isEn = practiceList.every((w) => /^[a-zA-Z',.\-!?]+$/.test(w.trim()));
+      targetMode = isEn ? 'en' : 'vi_dau';
+    }
+
     setGameMode(targetMode);
+    gameModeRef.current = targetMode;
+    const defaultDiff = targetMode === 'numpad' ? 'number' : 'normal';
+    setDifficulty(defaultDiff);
+    difficultyRef.current = defaultDiff;
     setPlayType('solo');
     setPlayers([
       {
@@ -1766,6 +1640,13 @@ export default function App() {
   };
 
   const handleRetryMatch = (record: MatchRecord) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
     const retryWords = record.promptWords || record.wordLogs?.map((w) => w.word);
     const targetMode = (record.modeId as GameMode) || 'vi_dau';
     setGameMode(targetMode);
@@ -1885,6 +1766,8 @@ export default function App() {
         isCorrect: boolean;
       }[];
       promptWords?: string[];
+      outplaySubMode?: any;
+      maxCombo?: number;
     }
   ) => {
     // Validate anti-cheat with true elapsed duration
@@ -1898,12 +1781,36 @@ export default function App() {
       : 0;
     const accuracy = Math.max(0, Math.min(100, Math.round((correctChars / Math.max(1, correctChars + errors * 5)) * 100)));
 
-    // Huyền Thiên Khí Linh trừng phạt gian lận nếu phát hiện can thiệp tà pháp / macro
+    // Bàn Cổ Thần Thức trừng phạt gian lận nếu phát hiện can thiệp tà pháp / macro / bất thường
     if (!validation.isValid) {
-      announcePenalty(
-        currentUser?.username || username,
-        validation.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro'
-      ).catch(() => {});
+      const banReason = validation.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro';
+      const myUser = currentUser?.username || username;
+
+      // 1. Lưu án phạt 2 giờ (2h) ngay lập tức trên máy người chơi
+      saveStoredBanInfo(Date.now() + 2 * 60 * 60 * 1000, banReason);
+      const newBanStatus = checkClientBanStatus();
+      setClientBanStatus(newBanStatus);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+
+      // 2. Bàn Cổ Thần Thức phát chiếu thư thông báo toàn cõi và trừ tu vi
+      announcePenalty(myUser, banReason).catch(() => {});
+
+      // 3. Gửi lệnh cấm lên Server để khóa phòng & bảng vàng
+      executeBanPenalty({
+        username: myUser,
+        userId: currentUser?.id,
+        reason: banReason,
+      }).catch(() => {});
+
+      // 4. Nếu đang trong phòng thi đấu, lập tức rời phòng và đá về Sảnh chính (Lobby)
+      if (currentRoomId) {
+        leaveRoom(currentRoomId, currentUserId);
+        setCurrentRoomId(null);
+        setIsRoomHost(false);
+      }
+      setGameState('lobby');
+      return;
     }
 
     // Update Session stats
@@ -2012,6 +1919,24 @@ export default function App() {
           saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
         }
       });
+
+      // Khí linh Linh Lung Tiên Đồng cổ vũ và bình phẩm sôi nổi sau trận đấu
+      if (verifiedWpm >= 80 || accuracy === 100) {
+        announceLinhLungCheer(
+          currentUser?.displayName || currentUser?.username || username,
+          verifiedWpm,
+          accuracy,
+          getFriendlyModeName(gameMode)
+        ).catch(() => {});
+      } else if (errors >= 7) {
+        announceLinhLungCommentary({
+          username: currentUser?.displayName || currentUser?.username || username,
+          wpm: verifiedWpm,
+          accuracy,
+          modeName: getFriendlyModeName(gameMode),
+          errors,
+        }).catch(() => {});
+      }
     }
 
     // Ghi nhận trận đấu vào lịch sử đấu
@@ -2032,8 +1957,36 @@ export default function App() {
       isCorrect: k.isCorrect,
     }));
 
+    let matchSubMode: string | undefined = undefined;
+    let matchDifficulty = difficulty;
+    let matchModeName: string | undefined = undefined;
+
+    if (gameMode === 'outplay') {
+      const activeSub = extraStats?.outplaySubMode;
+      matchSubMode = activeSub;
+      if (activeSub === 'numpad_number') {
+        matchDifficulty = 'number';
+        matchModeName = 'Outplay Yourself (Numpad Số)';
+      } else if (activeSub === 'numpad_fullsize') {
+        matchDifficulty = 'fullsize';
+        matchModeName = 'Outplay Yourself (Numpad Phép tính)';
+      } else if (activeSub === 'vi_nodau') {
+        matchDifficulty = 'normal';
+        matchModeName = 'Outplay Yourself (Không dấu)';
+      } else if (activeSub === 'en') {
+        matchDifficulty = 'normal';
+        matchModeName = 'Outplay Yourself (Tiếng Anh)';
+      } else if (activeSub === 'vi_dau') {
+        matchDifficulty = 'normal';
+        matchModeName = 'Outplay Yourself (Có dấu)';
+      }
+    }
+
     recordCurrentMatch({
       modeId: gameMode,
+      mode: matchModeName,
+      subMode: matchSubMode,
+      difficulty: matchDifficulty,
       wpm: verifiedWpm,
       accuracy,
       result: matchResult,
@@ -2048,6 +2001,7 @@ export default function App() {
       wordLogs: extraStats?.wordResults,
       keystrokes: replayKeystrokes,
       chartData: extraStats?.chartData,
+      maxCombo: extraStats?.maxCombo,
     });
 
     // Kiểm tra xem trong phòng multiplayer còn đối thủ thực nào đang tiếp tục thi đấu không:
@@ -2299,6 +2253,14 @@ export default function App() {
 
   // Return to waiting room after match completion or rematch click
   const handleBackToWaitingRoom = () => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      handleReturnToLobby();
+      return;
+    }
     setNewlyUnlockedAchievements([]);
     if (currentRoomId) {
       updatePlayerRoomStatus(currentRoomId, currentUserId, {
@@ -2328,6 +2290,42 @@ export default function App() {
     // Vẫn giữ người chơi ở giao diện tổng kết (gameState === 'gameover'), không tự ý đẩy về lobby
   };
 
+  // Global Power-User Shortcuts:
+  // - Tab + Enter: Vào chơi lại ngay lập tức sau khi kết thúc trận (ở GameOverModal)
+  // - Ctrl + K or F2: Bật nhanh Sổ Tay Đạo Hữu
+  // - Enter: Mở nhanh khung chat khi đang ở sảnh chờ (lobby hoặc waiting_room)
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isInputFocused =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.isContentEditable);
+
+      // 1. Ctrl + K or F2: Bật nhanh Sổ Tay Đạo Hữu
+      if ((e.ctrlKey && (e.key === 'k' || e.key === 'K')) || e.key === 'F2') {
+        e.preventDefault();
+        soundFx.playKeyClick();
+        setIsFriendsOpen((prev) => !prev);
+        return;
+      }
+
+      // 2. Enter: Mở nhanh khung chat khi đang ở sảnh chờ
+      if (e.key === 'Enter' && !isInputFocused) {
+        if (gameState === 'lobby' || gameState === 'waiting_room') {
+          e.preventDefault();
+          soundFx.playKeyClick();
+          setIsChatOpen(true);
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [gameState]);
+
   const handleUpdateConditionStats = (conditionKey: string, lastWpm: number, bestWpm: number) => {
     setConditionStats((prev) => ({
       ...prev,
@@ -2337,36 +2335,12 @@ export default function App() {
     setSessionBestWpm(bestWpm);
   };
 
-  // Chat message send
-  const handleSendMessage = async (messageText: string, channel: 'global' | 'room') => {
-    const msgId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticMsg: ChatMessage = {
-      id: msgId,
-      username,
-      avatar,
-      frame: userFrame,
-      message: messageText,
-      timestamp: Date.now(),
-      channel,
-      roomId: channel === 'room' ? (currentRoomId || undefined) : undefined,
-      isAdmin,
-    };
-    appendChatMessage(optimisticMsg);
-
-    try {
-      await sendChatMessage({
-        id: msgId,
-        username,
-        avatar,
-        frame: userFrame,
-        message: messageText,
-        channel,
-        roomId: channel === 'room' ? (currentRoomId || undefined) : undefined,
-        isAdmin,
-      });
-    } catch (err) {
-      console.error('Failed to send chat message:', err);
-    }
+  const handleAcceptBattleChallenge = async (challenge: ChatCardData) => {
+    if (!challenge.challengeRoomId) return;
+    soundFx.playVictory();
+    setIsChatOpen(false);
+    const targetMode = (challenge.challengeMode as GameMode) || 'vi_dau';
+    await handleModalJoinExistingRoom(challenge.challengeRoomId, targetMode);
   };
 
   // Auth Success & Logout Handlers
@@ -2380,7 +2354,7 @@ export default function App() {
     setUserFrame(userFrameChoice);
     setStoredFrame(userFrameChoice);
 
-    const isUserAdmin = Boolean(user.isAdmin || user.username.toLowerCase() === 'admin');
+    const isUserAdmin = Boolean(user?.isAdmin || String(user?.username || '').toLowerCase() === 'admin');
     setIsAdmin(isUserAdmin);
     setAdminStatus(isUserAdmin);
 
@@ -2767,6 +2741,8 @@ export default function App() {
         onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
         onOpenMatchHistory={() => setIsMatchHistoryOpen(true)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
+        onOpenFriends={() => setIsFriendsOpen(true)}
+        friendRequestsCount={friendRequestsCount}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenProfile={() => {
           setProfileInitialTab('profile');
@@ -2800,6 +2776,9 @@ export default function App() {
         onGoHome={handleReturnToLobby}
         activeModeName={getModeTitle()}
         onOpenHeavenlyChronicle={() => setIsHeavenlyChronicleOpen(true)}
+        isBanned={clientBanStatus.isBanned}
+        bannedRemainingFormatted={clientBanStatus.formatted}
+        onOpenBanModal={() => setIsBanModalOpen(true)}
       />
 
       {/* Heavenly Ticker Banner (Chiếu Thư Thiên Đạo & Sấm Truyền Khí Linh) */}
@@ -2845,6 +2824,9 @@ export default function App() {
             onSelectMode={handleSelectMode}
             onStartSoloGame={handleStartSoloGame}
             onJoinWaitingRoom={handleJoinWaitingRoom}
+            isBanned={clientBanStatus.isBanned}
+            bannedRemainingFormatted={clientBanStatus.formatted}
+            onOpenBanModal={() => setIsBanModalOpen(true)}
             hasAnyModalOpen={
               isLeaderboardOpen ||
               isChatOpen ||
@@ -2882,6 +2864,8 @@ export default function App() {
             onChangeUsername={handleChangeUsername}
             highScores={highScores}
             isAdmin={isAdmin}
+            friendsList={friendsList}
+            onOpenFriends={() => setIsFriendsOpen(true)}
           />
         )}
 
@@ -2947,6 +2931,8 @@ export default function App() {
                     localStorage.setItem('fasttyping_outplay_custom_wpm', newWpm.toString());
                   } catch {}
                 }}
+                daoLuPartnerName={friendsList.find((f) => f.isDaoLu)?.username}
+                daoLuPartnerId={friendsList.find((f) => f.isDaoLu)?.userId}
               />
             )}
 
@@ -3045,6 +3031,15 @@ export default function App() {
                         saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
                       }
                     });
+
+                    if (finalScore >= 80) {
+                      announceLinhLungCheer(
+                        currentUser?.displayName || currentUser?.username || username,
+                        finalScore,
+                        100,
+                        'Đoán Chữ Thần Tốc'
+                      ).catch(() => {});
+                    }
                   }
 
                   const rivals = currentList.filter((p) => p.id !== currentUserId && !p.isSurrendered);
@@ -3143,6 +3138,15 @@ export default function App() {
                         saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
                       }
                     });
+
+                    if (finalScore >= 100) {
+                      announceLinhLungCheer(
+                        currentUser?.displayName || currentUser?.username || username,
+                        finalScore,
+                        100,
+                        'Ngẫu Hứng (Rush)'
+                      ).catch(() => {});
+                    }
                   }
 
                   const rivals = currentList.filter((p) => p.id !== currentUserId && !p.isSurrendered);
@@ -3217,6 +3221,7 @@ export default function App() {
             mysteryWordStats={mysteryWordStats}
             bossBattleStats={bossBattleStats}
             cultivationState={cultivationState}
+            cultivationMatchResult={cultivationMatchHarvest}
             onOpenCultivation={() => {
               if (!currentUser) {
                 soundFx.playKeyClick();
@@ -3245,12 +3250,160 @@ export default function App() {
           currentUsername={username}
           currentUserAvatar={avatar}
           currentUserFrame={userFrame}
+          currentUserId={currentUser?.id || currentUserId}
           currentRoomId={currentRoomId}
+          currentSectId={cultivationState?.sectId}
+          currentSectName={cultivationState?.sectName}
+          currentSectTag={cultivationState?.sectTag}
+          currentRealmName={XIANXIA_REALMS[cultivationState.realmIndex]?.name}
+          currentRealmIcon={XIANXIA_REALMS[cultivationState.realmIndex]?.icon}
+          bestWpm={bestWpm}
+          bestWpmRecord={bestWpmRecord}
+          cultivationState={cultivationState}
           isAdmin={isAdmin}
           onSendMessage={handleSendMessage}
           onClearChat={handleClearChat}
           onClose={() => setIsChatOpen(false)}
+          onOpenCultivation={() => {
+            if (!currentUser) {
+              soundFx.playKeyClick();
+              setAuthModalInitialTab('login');
+              setIsAuthModalOpen(true);
+              return;
+            }
+            setIsCultivationOpen(true);
+          }}
+          onAcceptBattleChallenge={handleAcceptBattleChallenge}
+          initialChannel={chatInitialChannel}
+          initialWhisperTarget={chatWhisperTarget || undefined}
+          onOpenFriends={() => setIsFriendsOpen(true)}
         />
+      )}
+
+      {/* Sổ Tay Đạo Hữu & Kết Bái Đạo Lữ Modal */}
+      <FriendsModal
+        isOpen={isFriendsOpen}
+        onClose={() => setIsFriendsOpen(false)}
+        currentUser={currentUser}
+        currentRoomId={currentRoomId}
+        currentMode={gameMode}
+        onOpenWhisperChat={(targetUsername, targetUserId) => {
+          setChatWhisperTarget({ username: targetUsername, userId: targetUserId });
+          setChatInitialChannel('whisper');
+          setIsFriendsOpen(false);
+          setIsChatOpen(true);
+        }}
+        onChallengeFriend={(friend) => {
+          setChatWhisperTarget({ username: friend.username, userId: friend.userId });
+          setChatInitialChannel('whisper');
+          setIsFriendsOpen(false);
+          setIsChatOpen(true);
+        }}
+      />
+
+      {/* Toast Lời Mời Vào Phòng Thi Đấu / Tương Tác Đạo Hữu */}
+      {friendInviteToast && (
+        <div
+          id="friend-invite-toast"
+          className="fixed bottom-6 right-6 z-50 max-w-sm w-full p-4 rounded-2xl bg-slate-900/98 border-2 border-emerald-500/80 shadow-2xl backdrop-blur-xl animate-slideInRight text-left space-y-3"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="text-xs font-black uppercase text-emerald-400 flex items-center gap-1.5">
+              <span>
+                {friendInviteToast.type === 'room_invite'
+                  ? '⚔️ LỜI MỜI THI ĐẤU'
+                  : friendInviteToast.type === 'tea_gift'
+                  ? '🍵 NGỘ ĐẠO TRÀ'
+                  : friendInviteToast.type === 'guidance'
+                  ? '🎓 CHỈ ĐIỂM BÀN PHÍM'
+                  : friendInviteToast.type === 'daolu'
+                  ? '🌸 ĐẠO LỮ KẾT DUYÊN'
+                  : '🤝 LỜI MỜI KẾT BẠN'}
+              </span>
+            </span>
+            <button
+              onClick={() => setFriendInviteToast(null)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-xs text-slate-200">
+            {friendInviteToast.type === 'room_invite' && (
+              <>
+                Đạo hữu <strong className="text-amber-300">{friendInviteToast.fromUser?.displayName || friendInviteToast.fromUser?.username}</strong> mời bạn tham gia phòng thi đấu <strong className="text-sky-300">{friendInviteToast.roomId}</strong>!
+              </>
+            )}
+            {friendInviteToast.type === 'friend_request' && (
+              <>
+                Đạo hữu <strong className="text-amber-300">{friendInviteToast.fromUser?.displayName || friendInviteToast.fromUser?.username}</strong> vừa gửi lời mời kết bái đạo hữu tới bạn!
+              </>
+            )}
+            {friendInviteToast.type === 'tea_gift' && (
+              <>
+                Đạo hữu <strong className="text-amber-300">{friendInviteToast.fromName}</strong> vừa dâng tặng 1 chén Ngộ Đạo Trà! (+{friendInviteToast.tuViBonus} Tu Vi)
+              </>
+            )}
+            {friendInviteToast.type === 'guidance' && (
+              <>
+                Tiền bối <strong className="text-amber-300">{friendInviteToast.fromName}</strong> vừa truyền thụ công lực chỉ điểm bàn phím! (+{friendInviteToast.tuViBonus} Tu Vi)
+              </>
+            )}
+            {friendInviteToast.type === 'daolu' && (
+              <>
+                Đạo hữu <strong className="text-pink-300">{friendInviteToast.fromName}</strong> vừa gửi lời cầu hôn Kết Duyên Đạo Lữ kèm Tín Vật Định Tình!
+              </>
+            )}
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            {friendInviteToast.type === 'room_invite' && friendInviteToast.roomId && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const targetRoom = friendInviteToast.roomId!;
+                  const targetMode = (friendInviteToast.mode as GameMode) || 'vi_dau';
+                  setFriendInviteToast(null);
+                  soundFx.playVictory();
+                  await handleModalJoinExistingRoom(targetRoom, targetMode);
+                }}
+                className="flex-1 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
+              >
+                Vào Phòng Ngay
+              </button>
+            )}
+            {friendInviteToast.type === 'friend_request' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFriendInviteToast(null);
+                  setIsFriendsOpen(true);
+                }}
+                className="flex-1 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
+              >
+                Mở Sổ Tay Duyệt
+              </button>
+            )}
+            {friendInviteToast.type === 'daolu' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFriendInviteToast(null);
+                  setIsFriendsOpen(true);
+                }}
+                className="flex-1 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
+              >
+                Xem Khế Ước Kết Duyên
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setFriendInviteToast(null)}
+              className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs cursor-pointer"
+            >
+              Bỏ Qua
+            </button>
+          </div>
+        </div>
       )}
 
       {/* All Auxiliary Modals bundled into code-split Lazy Container */}
@@ -3345,6 +3498,15 @@ export default function App() {
         }}
       />
 
+      {/* Bàn Cổ Thần Thức - Án Phạt Cấm Đấu Modal */}
+      <BanPenaltyModal
+        isOpen={isBanModalOpen}
+        onClose={() => setIsBanModalOpen(false)}
+        bannedUntil={getStoredBanInfo()?.bannedUntil || (Date.now() + 2 * 3600 * 1000)}
+        reason={clientBanStatus.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro'}
+        username={currentUser?.username || username}
+      />
+
       {/* Toast thông báo thành tựu mới dạng góc màn hình, hiển thị tuần tự từng thành tựu tránh giật lag */}
       <NewAchievementBannerToast
         achievements={newlyUnlockedAchievements}
@@ -3357,16 +3519,18 @@ export default function App() {
         }}
       />
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/60 py-3 px-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>FastTyping Challenge • Đấu trường gõ phím Tiếng Việt thời gian thực</span>
-          <span className="flex items-center gap-2 text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            copyright Nguyễn Duy Tiến - niTe
-          </span>
-        </div>
-      </footer>
+      {/* Footer - Tự động ẩn trên mobile dọc và khi mở Chat hoặc Sổ Tay để tránh che khuất bàn phím ảo */}
+      {!(isChatOpen || isFriendsOpen) && (
+        <footer className="border-t border-slate-800/80 bg-slate-950/60 py-3 px-4 text-center text-xs text-slate-500 hidden sm:block">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>FastTyping Challenge • Đấu trường gõ phím Tiếng Việt thời gian thực</span>
+            <span className="flex items-center gap-2 text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              copyright Nguyễn Duy Tiến - niTe
+            </span>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GameMode, DifficultyLevel, Player, HighScoreRecord } from '../types';
+import { GameMode, DifficultyLevel, Player, HighScoreRecord, FriendRecord } from '../types';
 import { soundFx } from '../utils/audio';
 import { AvatarTitleFrame, getPlayerTitle } from '../utils/titles';
 import { getAchievementById } from '../utils/achievements';
+import { XIANXIA_REALMS } from '../utils/cultivation';
 import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 import { HostPlayerActionModal } from './HostPlayerActionModal';
+import { inviteFriendToRoom, fetchFriendsList } from '../utils/roomManager';
 import { 
   Users, 
   ArrowLeft, 
@@ -23,7 +25,10 @@ import {
   Clock,
   Shield,
   RotateCcw,
-  Bot
+  Bot,
+  Heart,
+  Send,
+  X
 } from 'lucide-react';
 
 interface WaitingRoomViewProps {
@@ -48,6 +53,8 @@ interface WaitingRoomViewProps {
   hostId?: string;
   onTransferHost?: (targetPlayerId: string) => void;
   onKickPlayer?: (targetPlayerId: string) => void;
+  friendsList?: FriendRecord[];
+  onOpenFriends?: () => void;
 }
 
 interface PlayerSpeech {
@@ -89,6 +96,8 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   hostId,
   onTransferHost,
   onKickPlayer,
+  friendsList,
+  onOpenFriends,
 }) => {
   const [playerSpeeches, setPlayerSpeeches] = useState<Record<string, PlayerSpeech>>({});
   const [lastCheerTime, setLastCheerTime] = useState(0);
@@ -96,6 +105,46 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   const [, setTick] = useState(0);
   const [inspectedPlayer, setInspectedPlayer] = useState<Player | null>(null);
   const [actionMenuPlayer, setActionMenuPlayer] = useState<Player | null>(null);
+  const [isInviteFriendsOpen, setIsInviteFriendsOpen] = useState(false);
+  const [friendsData, setFriendsData] = useState<FriendRecord[]>(friendsList || []);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+  const [invitedFriendIds, setInvitedFriendIds] = useState<Record<string, boolean>>({});
+  const [inviteToast, setInviteToast] = useState<string | null>(null);
+
+  // Sync / fetch friends list
+  useEffect(() => {
+    if (friendsList && friendsList.length > 0) {
+      setFriendsData(friendsList);
+    }
+  }, [friendsList]);
+
+  const loadFriendsToInvite = async () => {
+    setIsLoadingFriends(true);
+    try {
+      const data = await fetchFriendsList();
+      if (data && data.success && data.friends) {
+        setFriendsData(data.friends);
+      }
+    } catch {}
+    setIsLoadingFriends(false);
+  };
+
+  const handle1ClickInvite = async (friend: FriendRecord) => {
+    soundFx.playWhisperPing();
+    setInvitedFriendIds((prev) => ({ ...prev, [friend.userId]: true }));
+    setInviteToast(`Đã gửi thư mời @${friend.username} vào phòng!`);
+    setTimeout(() => setInviteToast(null), 3500);
+
+    try {
+      await inviteFriendToRoom(friend.userId, activeRoomId, mode);
+    } catch {}
+  };
+
+  // Detect Dao Lu Couple in room
+  const daoLuPartner = friendsData.find((f) => f.isDaoLu);
+  const isCoupleInRoom = !!daoLuPartner && players.some(
+    (p) => p.id === daoLuPartner.userId || p.username.toLowerCase() === daoLuPartner.username.toLowerCase()
+  );
 
   // Compute active room ID & Host status: nếu chủ phòng bị xóa/thay đổi thì slot kế tiếp được đôn lên làm chủ phòng
   const firstHumanId = players.find((p) => !p.isBot)?.id || players[0]?.id;
@@ -463,8 +512,22 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
           </div>
         </div>
 
-        {/* Status Pills */}
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+        {/* Status Pills & Invite Action */}
+        <div className="flex items-center flex-wrap gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playKeyClick();
+              setIsInviteFriendsOpen(true);
+              loadFriendsToInvite();
+            }}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/40 text-pink-300 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+            title="Mời nhanh các đạo hữu đang online vào phòng thi đấu"
+          >
+            <UserPlus className="w-3.5 h-3.5 text-pink-400" />
+            <span>Mời bạn bè đang rảnh</span>
+          </button>
+
           <div className="px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700 text-xs text-slate-300 flex items-center gap-2 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>{players.length}/{maxSlots} Người chơi</span>
@@ -476,6 +539,35 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Invite Toast Notice */}
+      {inviteToast && (
+        <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-bounce">
+          <span>✨</span>
+          <span>{inviteToast}</span>
+        </div>
+      )}
+
+      {/* Song Tu Đạo Lữ (Couple Gameplay Buff) Active Banner */}
+      {isCoupleInRoom && (
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-pink-950/80 via-purple-950/70 to-pink-950/80 border-2 border-pink-500/50 shadow-[0_0_25px_rgba(244,114,182,0.3)] flex items-center justify-between gap-3 animate-pulse">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl animate-bounce">💖</span>
+            <div>
+              <div className="text-xs font-black text-pink-300 flex items-center gap-2">
+                <span>HIỆU ỨNG SONG TU ĐẠO LỮ [TÂM ĐẦU Ý HỢP]</span>
+                <span className="px-2 py-0.5 rounded-full bg-pink-500/30 text-[10px] text-pink-200 border border-pink-400/60 font-bold">
+                  ĐANG KÍCH HOẠT
+                </span>
+              </div>
+              <p className="text-[11px] text-pink-200/80 mt-0.5">
+                Đạo Lữ <strong className="text-pink-300">@{daoLuPartner?.username}</strong> cùng chung chiến tuyến! Thưởng <strong>+15% Tu Vi</strong> sau trận & <strong>+10% Tốc độ hồi phục Linh Lực</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="text-2xl hidden sm:block">✨💍✨</div>
+        </div>
+      )}
 
       {/* Difficulty Switcher (Host only settings) */}
       {difficulties.length > 1 && (
@@ -792,6 +884,17 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                               </span>
                             )}
 
+                            {/* Cảnh Giới Tu Tiên */}
+                            {p.cultivation && (
+                              <span
+                                className="text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-500/40 bg-gradient-to-r from-amber-950/60 to-yellow-950/40 text-amber-300 shrink-0 leading-none flex items-center gap-1 shadow-sm"
+                                title={`${p.cultivation.realmName} Tầng ${p.cultivation.tier} (${p.cultivation.subStage}) • Cấp ${p.cultivation.level}/1000`}
+                              >
+                                <span className="leading-none text-[10px]">{XIANXIA_REALMS[p.cultivation.realmIndex]?.icon || '⚡'}</span>
+                                <span>{p.cultivation.realmName} T{p.cultivation.tier}</span>
+                              </span>
+                            )}
+
                             {/* Người chơi thường nếu không có danh hiệu đặc biệt, không phải bot */}
                             {!p.isBot && !playerTitle && (
                               p.isLoggedIn ? (
@@ -1054,6 +1157,120 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         highScores={highScores || {}}
         isAdminUser={Boolean(isAdmin)}
       />
+
+      {/* 1-Click Invite Friends Modal */}
+      {isInviteFriendsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-pink-500/20 border border-pink-400/40 flex items-center justify-center text-pink-300">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Mời Bạn Bè Đang Rảnh</h3>
+                  <p className="text-[11px] text-slate-400">1 chạm gửi thư mời vào phòng {activeRoomId}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsInviteFriendsOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2.5 flex-1 custom-scrollbar">
+              {isLoadingFriends ? (
+                <div className="text-center py-8 text-xs text-slate-500 italic">
+                  Đang dò tìm đạo hữu đang online...
+                </div>
+              ) : friendsData.length === 0 ? (
+                <div className="text-center py-8 space-y-2">
+                  <p className="text-xs text-slate-400">Chưa có đạo hữu nào kết bái hoặc đang rảnh.</p>
+                  {onOpenFriends && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInviteFriendsOpen(false);
+                        onOpenFriends();
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-pink-500/20 text-pink-300 text-xs font-bold border border-pink-400/40 cursor-pointer"
+                    >
+                      Mở Sổ Tay Kết Bái Thêm
+                    </button>
+                  )}
+                </div>
+              ) : (
+                friendsData.map((f) => {
+                  const isInvited = !!invitedFriendIds[f.userId];
+                  const isInThisRoom = players.some((p) => p.id === f.userId || p.username.toLowerCase() === f.username.toLowerCase());
+                  const isOnline = f.status === 'online';
+
+                  return (
+                    <div
+                      key={f.friendshipId || f.userId}
+                      className="p-2.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-2xl shrink-0">{f.avatar || '🦊'}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black text-white truncate">{f.displayName || f.username}</span>
+                            {f.isDaoLu && (
+                              <span className="text-[10px] text-pink-400 font-bold flex items-center gap-0.5">
+                                <Heart className="w-2.5 h-2.5 fill-pink-400" /> Đạo Lữ
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                            <span>{isOnline ? 'Đang ở Sảnh' : f.status === 'in_match' ? 'Đang thi đấu' : 'Ngoại tuyến'}</span>
+                            {f.realmName && <span>• {f.realmName}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        {isInThisRoom ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-bold text-emerald-300">
+                            Đã ở phòng
+                          </span>
+                        ) : isInvited ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-400">
+                            Đã mời ✓
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handle1ClickInvite(f)}
+                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white text-xs font-black shadow-md cursor-pointer transition-all active:scale-95 flex items-center gap-1"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>Mời</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-800 bg-slate-950/60 flex justify-between items-center text-[11px] text-slate-400 px-4">
+              <span>Đạo Lữ vào phòng sẽ kích hoạt Song Tu Buff!</span>
+              <button
+                type="button"
+                onClick={() => setIsInviteFriendsOpen(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

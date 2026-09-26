@@ -6,6 +6,7 @@ import { normalizeChartTimeline } from '../utils/chartHelper';
 import { MonkeytypeCaret } from './MonkeytypeCaret';
 import { GhostCaret } from './GhostCaret';
 import { CustomNumberInput } from './CustomNumberInput';
+import { LiveWpmSparkline } from './LiveWpmSparkline';
 import {
   OutplayPaceMode,
   OutplaySubMode,
@@ -16,6 +17,9 @@ import {
   mapLinearCharToWord,
 } from '../utils/outplayGhost';
 import { generateOutplayWords } from '../data/wordBanks';
+import { loadStoredCultivationState } from '../utils/cultivation';
+import { getStoredFrame } from '../utils/frames';
+import { ArtifactInputVfxFrame } from './vfx/ArtifactInputVfxFrame';
 import { 
   RotateCcw, 
   Flag, 
@@ -67,6 +71,8 @@ interface TypingArenaProps {
         isCorrect: boolean;
       }[];
       promptWords?: string[];
+      outplaySubMode?: OutplaySubMode;
+      maxCombo?: number;
     }
   ) => void;
   onSurrender: () => void;
@@ -84,6 +90,8 @@ interface TypingArenaProps {
   onPaceModeChange?: (newPace: OutplayPaceMode) => void;
   savedCustomWpm?: number;
   onCustomWpmChange?: (newWpm: number) => void;
+  daoLuPartnerName?: string;
+  daoLuPartnerId?: string;
 }
 
 const VOCAB_OPTIONS: { id: OutplaySubMode; label: string; flag: string }[] = [
@@ -101,6 +109,95 @@ const GHOST_OPTIONS: { id: OutplayPaceMode; label: string }[] = [
   { id: 'off', label: 'Tắt Ghost' },
 ];
 
+export type CharacterStatus =
+  | 'pending'
+  | 'current-active'
+  | 'correct'
+  | 'incorrect'
+  | 'composing'
+  | 'past-correct'
+  | 'past-incorrect';
+
+interface CharacterItemProps {
+  char: string;
+  charIdx: number;
+  status: CharacterStatus;
+}
+
+export const CharacterItem = React.memo<CharacterItemProps>(
+  ({ char, charIdx, status }) => {
+    let color = 'var(--theme-sub, #64748b)';
+    let fontWeight = '400';
+    let textDecoration = 'none';
+    let opacity = '1';
+    let textShadow = 'none';
+    let backgroundColor: string | undefined = undefined;
+
+    switch (status) {
+      case 'past-correct':
+        color = 'var(--theme-sub, #64748b)';
+        opacity = '0.55';
+        break;
+      case 'past-incorrect':
+        color = 'var(--theme-error, #ef4444)';
+        opacity = '0.75';
+        textDecoration = 'line-through';
+        break;
+      case 'correct':
+        color = 'var(--theme-text, #f8fafc)';
+        fontWeight = '700';
+        textShadow = '0 0 4px var(--theme-main, rgba(251,191,36,0.6))';
+        break;
+      case 'composing':
+        // Đang trong tiến trình ghép dấu Telex / VNI (IME buffer)
+        color = '#fde047';
+        fontWeight = '600';
+        textDecoration = 'none';
+        backgroundColor = 'rgba(253, 224, 71, 0.2)';
+        break;
+      case 'incorrect':
+        color = 'var(--theme-error, #ef4444)';
+        fontWeight = '700';
+        textDecoration = 'underline';
+        break;
+      case 'current-active':
+        color = 'var(--theme-main, #fbbf24)';
+        fontWeight = '600';
+        break;
+      case 'pending':
+      default:
+        color = 'var(--theme-sub, #64748b)';
+        break;
+    }
+
+    return (
+      <span
+        data-char-idx={charIdx}
+        style={{
+          color,
+          fontWeight,
+          textDecoration,
+          opacity,
+          textShadow,
+          backgroundColor,
+        }}
+        className={`relative tracking-wide transition-colors duration-75 ${
+          backgroundColor ? 'px-0.5 rounded' : ''
+        }`}
+      >
+        {char}
+      </span>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.char === next.char &&
+      prev.charIdx === next.charIdx &&
+      prev.status === next.status
+    );
+  }
+);
+
 interface WordItemProps {
   word: string;
   absIdx: number;
@@ -109,6 +206,7 @@ interface WordItemProps {
   isPast: boolean;
   currentInput: string;
   pastTypedWord?: string;
+  isComposing?: boolean;
 }
 
 const WordItem = React.memo<WordItemProps>(
@@ -120,66 +218,44 @@ const WordItem = React.memo<WordItemProps>(
     isPast,
     currentInput,
     pastTypedWord,
+    isComposing = false,
   }) => {
     return (
       <div
         data-word-idx={absIdx}
-        className={`relative h-[48px] flex items-center whitespace-nowrap select-none ${
+        className={`relative h-[48px] flex items-center whitespace-nowrap select-none transition-all duration-150 ${
           isCurrent ? 'z-10' : ''
         }`}
       >
         {word.split('').map((char, charIdx) => {
-          let color = 'var(--theme-sub, #64748b)';
-          let fontWeight = '400';
-          let textDecoration = 'none';
-          let opacity = '1';
-          let textShadow = 'none';
+          let charStatus: CharacterStatus = 'pending';
 
           if (isPast) {
-            if (status === 'correct') {
-              color = 'var(--theme-sub, #64748b)';
-              opacity = '0.55';
-            } else {
-              color = 'var(--theme-error, #ef4444)';
-              opacity = '0.75';
-              textDecoration = 'line-through';
-            }
+            charStatus = status === 'correct' ? 'past-correct' : 'past-incorrect';
           } else if (isCurrent) {
-            const typedChar = currentInput[charIdx];
-            const isTyped = charIdx < currentInput.length;
-            if (isTyped) {
+            if (charIdx < currentInput.length) {
+              const typedChar = currentInput[charIdx];
               if (typedChar === char) {
-                color = 'var(--theme-text, #f8fafc)';
-                fontWeight = '700';
-                textShadow = '0 0 4px var(--theme-main, rgba(251,191,36,0.6))';
+                charStatus = 'correct';
+              } else if (isComposing) {
+                charStatus = 'composing';
               } else {
-                color = 'var(--theme-error, #ef4444)';
-                fontWeight = '700';
-                textDecoration = 'underline';
+                charStatus = 'incorrect';
               }
             } else if (charIdx === currentInput.length) {
-              color = 'var(--theme-main, #fbbf24)';
-              fontWeight = '600';
+              charStatus = 'current-active';
             } else {
-              color = 'var(--theme-sub, #64748b)';
+              charStatus = 'pending';
             }
           }
 
           return (
-            <span
+            <CharacterItem
               key={charIdx}
-              data-char-idx={charIdx}
-              style={{
-                color,
-                fontWeight,
-                textDecoration,
-                opacity,
-                textShadow,
-              }}
-              className="relative tracking-wide transition-colors duration-75"
-            >
-              {char}
-            </span>
+              char={char}
+              charIdx={charIdx}
+              status={charStatus}
+            />
           );
         })}
 
@@ -218,6 +294,7 @@ const WordItem = React.memo<WordItemProps>(
     if (prev.status !== next.status) return false;
     if (prev.word !== next.word) return false;
     if (prev.isPast !== next.isPast) return false;
+    if (prev.isComposing !== next.isComposing) return false;
     if (prev.pastTypedWord !== next.pastTypedWord) return false;
     if (next.isCurrent) {
       return prev.currentInput === next.currentInput;
@@ -225,6 +302,108 @@ const WordItem = React.memo<WordItemProps>(
     return true;
   }
 );
+
+interface CompetitorLaneProps {
+  player: Player;
+  isMe: boolean;
+  isDaoLuCouple?: boolean;
+}
+
+const CompetitorLane = React.memo<CompetitorLaneProps>(
+  ({ player: p, isMe, isDaoLuCouple }) => {
+    const isSurrendered = !!p.isSurrendered;
+    const isFinished = !!p.isFinished;
+    return (
+      <div 
+        className={`relative flex items-center gap-3 transition-all duration-300 ${
+          isSurrendered ? 'opacity-40 grayscale' : isFinished ? 'opacity-100' : ''
+        }`}
+      >
+        <div className="w-28 text-[11px] font-bold truncate text-right flex items-center justify-end gap-1">
+          {isSurrendered && <span title="Đã đầu hàng">🏳️</span>}
+          {isFinished && <span title="Đã về đích" className="text-emerald-400 font-bold">🏁</span>}
+          {isDaoLuCouple && <span title="Song Tu Đạo Lữ [Tâm Đầu Ý Hợp]">💖</span>}
+          <span className={isSurrendered ? 'line-through text-slate-500' : isFinished ? 'text-emerald-400 font-bold' : isDaoLuCouple ? 'text-pink-300 font-bold' : 'text-slate-300'}>
+            {p.username}
+          </span>
+          {isMe && <span className="text-amber-400 font-bold">*</span>}
+        </div>
+        <div 
+          className={`flex-1 h-7 bg-slate-950/80 rounded-lg border relative overflow-hidden flex items-center px-1 transition-colors ${
+            isSurrendered 
+              ? 'border-slate-800 bg-slate-900/40' 
+              : isFinished 
+              ? 'border-emerald-500/50 bg-emerald-950/20' 
+              : isDaoLuCouple
+              ? 'border-pink-500/50 bg-pink-950/20'
+              : 'border-slate-800/80'
+          }`}
+        >
+          {/* Track Progress Fill */}
+          <div
+            className={`h-full rounded-md transition-all duration-300 ${
+              isSurrendered
+                ? 'bg-slate-700/50 border-r border-slate-600 opacity-50'
+                : isFinished
+                ? 'bg-gradient-to-r from-emerald-500/20 via-emerald-400/30 to-emerald-400/40 border-r-2 border-emerald-400'
+                : isMe
+                ? 'bg-gradient-to-r from-amber-500/20 via-amber-400/30 to-amber-400/40 border-r-2 border-amber-400'
+                : isDaoLuCouple
+                ? 'bg-gradient-to-r from-pink-500/20 via-purple-500/30 to-pink-500/40 border-r-2 border-pink-400'
+                : 'bg-slate-800/40 border-r border-slate-600/60'
+            }`}
+            style={{ width: `${Math.min(100, Math.max(2, isFinished ? 100 : p.progress))}%` }}
+          />
+
+          {/* Player Avatar positioned on track */}
+          <div
+            className={`absolute top-1/2 -translate-y-1/2 transition-all duration-300 text-lg flex items-center ${
+              isSurrendered ? 'filter grayscale opacity-40' : ''
+            }`}
+            style={{
+              left: `calc(${Math.min(95, Math.max(2, isFinished ? 100 : p.progress))}% - 14px)`,
+            }}
+          >
+            <div className={isDaoLuCouple ? 'relative flex items-center justify-center p-0.5 rounded-full ring-2 ring-pink-400 shadow-[0_0_12px_rgba(244,114,182,0.85)] animate-pulse' : ''}>
+              <span>{p.icon}</span>
+              {isDaoLuCouple && (
+                <span className="absolute -top-2.5 -right-1.5 text-[10px] drop-shadow">💖</span>
+              )}
+            </div>
+          </div>
+
+          {/* Finish line marker */}
+          <div className="absolute right-2 text-xs opacity-60">🏁</div>
+        </div>
+
+        <div className="w-24 text-right font-mono text-[11px]">
+          {isSurrendered ? (
+            <span className="text-[10px] font-bold text-rose-400/90 tracking-tight">
+              ĐẦU HÀNG
+            </span>
+          ) : isFinished ? (
+            <div className="flex flex-col items-end leading-tight">
+              <span className="text-[10px] font-black text-emerald-400 tracking-tight flex items-center gap-0.5">
+                VỀ ĐÍCH
+              </span>
+              <span className="text-[10px] text-slate-300 font-mono font-bold">
+                {p.wpm} <span className="text-[9px] text-slate-500">WPM</span>
+              </span>
+            </div>
+          ) : (
+            <>
+              <span className={`font-bold ${isMe ? 'text-amber-400' : 'text-slate-300'}`}>
+                {p.wpm}
+              </span>
+              <span className="text-[10px] text-slate-500 ml-0.5">WPM</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+);
+CompetitorLane.displayName = 'CompetitorLane';
 
 export const TypingArena: React.FC<TypingArenaProps> = ({
   words,
@@ -248,6 +427,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   onPaceModeChange,
   savedCustomWpm,
   onCustomWpmChange,
+  daoLuPartnerName,
+  daoLuPartnerId,
 }) => {
   // Outplay Mode Persistent Settings (Monkeytype Architecture)
   const [outplaySubMode, setOutplaySubMode] = useState<OutplaySubMode>(() => {
@@ -394,8 +575,23 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     if (!isOutplay) {
       setActiveWords(words);
       setWordStatuses(new Array(words.length).fill('pending'));
+      setCurrentWordIndex(0);
+      setCurrentInput('');
+      setCorrectChars(0);
+      setTotalErrors(0);
+      setTimeLeft(duration);
+      setCombo(0);
+      setMaxCombo(0);
+      setLiveConsistency(100);
+      setHasStartedTyping(false);
+      setCaretPos(null);
+      isFinishedRef.current = false;
+      wordHistoryRef.current = [];
+      keystrokesRef.current = [];
+      performanceTimelineRef.current = [];
+      startTimePerfRef.current = performance.now();
     }
-  }, [words, isOutplay]);
+  }, [words, isOutplay, duration]);
 
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentInput, setCurrentInput] = useState('');
@@ -407,6 +603,37 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const [timeLeft, setTimeLeft] = useState(effectiveDuration);
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
+  const maxComboRef = useRef(0);
+  const firstErrorAutoCorrectedRef = useRef(false);
+
+  // VFX State for footer indicator
+  const [vfxEnabled, setVfxEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('fasttyping_vfx_enabled');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleVfxMaster = () => {
+    soundFx.playKeyClick(false);
+    const next = !vfxEnabled;
+    setVfxEnabled(next);
+    try {
+      localStorage.setItem('fasttyping_vfx_enabled', String(next));
+      window.dispatchEvent(new Event('fasttyping_vfx_changed'));
+    } catch {}
+  };
+
+  const cultState = useMemo(() => {
+    try {
+      return loadStoredCultivationState();
+    } catch {
+      return null;
+    }
+  }, []);
+  const equippedArtifact = cultState?.artifacts?.equipped;
   const [liveConsistency, setLiveConsistency] = useState(100);
   const [cheatWarning, setCheatWarning] = useState<string | null>(null);
 
@@ -429,6 +656,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Monkeytype Caret State & Focus
   const [caretPos, setCaretPos] = useState<{ x: number; y: number; height?: number } | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number>(0);
   const [isFocused, setIsFocused] = useState(true);
   const typingTimeoutRef = useRef<number | null>(null);
 
@@ -479,6 +707,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Line scrolling offset for Virtual 3-Line System
   const [lineOffsetY, setLineOffsetY] = useState(0);
+  const [isComposingState, setIsComposingState] = useState(false);
 
   // Refs
   const isComposingRef = useRef(false);
@@ -661,12 +890,61 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }, 50);
   }, []);
 
+  // Central Reset Handler for Solo Modes (Outplay and Solo Normal Race)
+  const handleResetGame = useCallback(() => {
+    soundFx.playKeyClick(false);
+    if (isOutplay) {
+      handleResetOutplay();
+    } else if (!isMultiplayer) {
+      if (onRestart) {
+        onRestart();
+      }
+      setCurrentWordIndex(0);
+      setCurrentInput('');
+      setWordStatuses(new Array(words.length).fill('pending'));
+      setCorrectChars(0);
+      setTotalErrors(0);
+      setTimeLeft(duration);
+      setCombo(0);
+      setMaxCombo(0);
+      setLiveConsistency(100);
+      setHasStartedTyping(false);
+      setCaretPos(null);
+      isFinishedRef.current = false;
+      wordHistoryRef.current = [];
+      keystrokesRef.current = [];
+      performanceTimelineRef.current = [];
+      startTimePerfRef.current = performance.now();
+    }
+    setTimeout(() => {
+      // Do not steal focus if an external modal is open or if user is focusing another input
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isOtherInputFocused =
+        activeEl &&
+        activeEl !== inputRef.current &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'SELECT' ||
+          activeEl.isContentEditable);
+      const isModalOpen = Boolean(
+        document.getElementById('auth_modal_backdrop') ||
+        document.getElementById('auth_modal_container') ||
+        document.querySelector('dialog[open], [role="dialog"]') ||
+        activeEl?.closest('#auth_modal_backdrop, #auth_modal_container, dialog, [role="dialog"], form, [class*="fixed inset-0"]')
+      );
+      if (!isOtherInputFocused && !isModalOpen) {
+        inputRef.current?.focus();
+        setIsFocused(true);
+      }
+    }, 50);
+  }, [isOutplay, isMultiplayer, handleResetOutplay, onRestart, words.length, duration]);
+
   // Initial focus on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Keyboard shortcut listener: Esc opens surrender modal, Enter confirms; Esc cancels; auto focus
+  // Keyboard shortcut listener: Esc opens surrender modal, Enter confirms; Esc cancels; Tab / Alt+R resets solo; auto focus
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
       // If user is editing the custom ghost WPM input, do not steal or intercept keystrokes!
@@ -706,7 +984,64 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         return;
       }
 
-      // 2. Modal is NOT open: Esc to trigger surrender modal
+      // Detect if user is focused on or interacting with another input/form field or any open modal
+      const target = e.target as HTMLElement | null;
+      const activeEl = document.activeElement as HTMLElement | null;
+
+      const isOtherInputFocused =
+        (activeEl &&
+          activeEl !== inputRef.current &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.tagName === 'SELECT' ||
+            activeEl.isContentEditable ||
+            activeEl.getAttribute('role') === 'textbox')) ||
+        (target &&
+          target !== inputRef.current &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable ||
+            target.getAttribute('role') === 'textbox'));
+
+      const isModalOpenOrActive =
+        Boolean(
+          document.getElementById('auth_modal_backdrop') ||
+          document.getElementById('auth_modal_container') ||
+          document.querySelector(
+            'dialog[open], [role="dialog"], [data-modal="true"], #appearance-modal-overlay, #cultivation-modal, #avatar-custom-modal, #avatar-select-category-modal'
+          )
+        ) ||
+        Boolean(
+          activeEl?.closest(
+            '#auth_modal_backdrop, #auth_modal_container, dialog, [role="dialog"], form, [class*="fixed inset-0"]'
+          ) ||
+          target?.closest(
+            '#auth_modal_backdrop, #auth_modal_container, dialog, [role="dialog"], form, [class*="fixed inset-0"]'
+          )
+        );
+
+      // If user is interacting with an input/form control or any open modal (such as AuthModal for login/register),
+      // DO NOT intercept shortcuts or Tab navigation, allowing browser to switch fields cleanly!
+      if (isOtherInputFocused || isModalOpenOrActive) {
+        return;
+      }
+
+      // 2. Solo Mode Reset shortcut (Tab, Alt+R, or Ctrl+Enter)
+      if (
+        e.key === 'Tab' || 
+        (e.altKey && (e.key === 'r' || e.key === 'R')) ||
+        ((e.ctrlKey || e.metaKey) && e.key === 'Enter')
+      ) {
+        if (isOutplay || !isMultiplayer) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleResetGame();
+          return;
+        }
+      }
+
+      // 3. Modal is NOT open: Esc to trigger surrender modal
       if (e.key === 'Escape') {
         if (!isPlayerSurrendered && timeLeft > 0) {
           e.preventDefault();
@@ -716,7 +1051,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         }
       }
 
-      // 3. Auto focus input on typing if not surrendered and not interacting with form controls or dropdowns
+      // 4. Auto focus input on typing if not surrendered and not interacting with form controls or dropdowns
       if (
         !isPlayerSurrendered &&
         !isVocabOpen &&
@@ -741,7 +1076,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
     window.addEventListener('keydown', handleWindowKeyDown, true);
     return () => window.removeEventListener('keydown', handleWindowKeyDown, true);
-  }, [showSurrenderModal, isPlayerSurrendered, timeLeft, openSurrenderModal, confirmSurrender, cancelSurrender, isVocabOpen, isGhostOpen]);
+  }, [showSurrenderModal, isPlayerSurrendered, timeLeft, openSurrenderModal, confirmSurrender, cancelSurrender, isVocabOpen, isGhostOpen, isOutplay, isMultiplayer, handleResetGame]);
 
   // Refs to hold latest values for finish callback safely without triggering render-phase updates
   const isFinishedRef = useRef(false);
@@ -909,6 +1244,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
           chartData: normalizedChart,
           wordResults,
           promptWords: effectiveWords.slice(0, Math.max(10, currentWordIndex + 1)),
+          outplaySubMode: isOutplay ? outplaySubMode : undefined,
+          maxCombo: Math.max(maxComboRef.current, combo),
           ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
             ghostWpm,
             wpmDiff: finalWpm - ghostWpm,
@@ -1169,7 +1506,19 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       setTimeout(() => setCheatWarning(null), 3000);
     }
 
-    const isCorrect = validation.isCorrect;
+    let isCorrect = validation.isCorrect;
+
+    // Tam Pháp: Cửu Chuyển Hồi Xuân Tầng 9 [Sinh Sinh Bất Tức]
+    // Tự động đả thông và sửa lỗi gõ đầu tiên trong mỗi hiệp đấu!
+    const isCuuChuyenT9 =
+      cultState?.tamPhap?.equipped === 'cuu_chuyen' &&
+      (cultState.tamPhap.levels?.cuu_chuyen ?? 1) >= 9;
+    if (!isCorrect && isCuuChuyenT9 && !firstErrorAutoCorrectedRef.current) {
+      firstErrorAutoCorrectedRef.current = true;
+      isCorrect = true;
+      soundFx.playGuzhengNote(3);
+    }
+
     const newStatuses = [...wordStatuses];
     newStatuses[currentWordIndex] = isCorrect ? 'correct' : 'incorrect';
     setWordStatuses(newStatuses);
@@ -1183,11 +1532,12 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       newCorrectChars += addedChars; // +1 space
       newCombo += 1;
       if (newCombo > maxCombo) setMaxCombo(newCombo);
+      maxComboRef.current = Math.max(maxComboRef.current, newCombo);
       soundFx.playWordComplete();
     } else {
+      soundFx.playError();
       newErrors += 1;
       newCombo = 0;
-      soundFx.playError();
       recordTimelinePoint(undefined, true);
     }
 
@@ -1288,6 +1638,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         chartData: normalizedChart,
         wordResults,
         promptWords: effectiveWords.slice(0, Math.max(10, nextIndex)),
+        outplaySubMode: isOutplay ? outplaySubMode : undefined,
+        maxCombo: Math.max(maxComboRef.current, newCombo),
         ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
           ghostWpm,
           wpmDiff: liveWpm - ghostWpm,
@@ -1336,11 +1688,18 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Composition API Listeners (Vietnamese IME)
   const handleCompositionStart = () => {
     isComposingRef.current = true;
+    setIsComposingState(true);
     startTypingIfNeeded();
+  };
+
+  const handleCompositionUpdate = () => {
+    if (!isComposingRef.current) isComposingRef.current = true;
+    if (!isComposingState) setIsComposingState(true);
   };
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
     isComposingRef.current = false;
+    setIsComposingState(false);
     startTypingIfNeeded();
     const val = e.currentTarget.value;
     setCurrentInput(val);
@@ -1352,6 +1711,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     });
 
     setIsTyping(true);
+    setLastKeystrokeTime(performance.now());
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
 
@@ -1363,6 +1723,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     if (isUserFinished || isPlayerSurrendered || timeLeft <= 0) return;
     const val = e.target.value;
     const now = performance.now();
+    setLastKeystrokeTime(now);
 
     // Outplay mode: Start timer immediately on first character!
     startTypingIfNeeded();
@@ -1427,6 +1788,20 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Backspace key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Solo Mode: Tab, Alt+R, or Ctrl+Enter quickly restarts the game (at any time)
+    if (
+      e.key === 'Tab' || 
+      (e.altKey && (e.key === 'r' || e.key === 'R')) ||
+      ((e.ctrlKey || e.metaKey) && e.key === 'Enter')
+    ) {
+      if (isOutplay || !isMultiplayer) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleResetGame();
+        return;
+      }
+    }
+
     if (isUserFinished || isPlayerSurrendered || timeLeft <= 0) {
       e.preventDefault();
       return;
@@ -1965,90 +2340,39 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             </div>
           </div>
 
+          {/* Song Tu Đạo Lữ (Couple Gameplay Buff) Active in Race */}
+          {(() => {
+            const isDaoLuInRoom = !!daoLuPartnerName && players.some(
+              (p) => (daoLuPartnerId && p.id === daoLuPartnerId) || p.username.toLowerCase() === daoLuPartnerName.toLowerCase()
+            );
+            if (!isDaoLuInRoom) return null;
+            return (
+              <div className="flex items-center justify-between px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-pink-950/60 via-purple-950/50 to-pink-950/60 border border-pink-500/40 text-[11px] text-pink-300 font-semibold shadow-sm animate-pulse">
+                <div className="flex items-center gap-2">
+                  <span className="animate-bounce">💖</span>
+                  <span>Song Tu Đạo Lữ cùng <strong className="text-pink-200">@{daoLuPartnerName}</strong> • Hiệu ứng [Tâm Đầu Ý Hợp] kích hoạt (+15% Tu Vi sau trận)</span>
+                </div>
+                <span className="text-[10px] font-mono text-pink-400 font-bold hidden sm:inline">✨ TÂM ĐẦU Ý HỢP ✨</span>
+              </div>
+            );
+          })()}
+
           {/* Lanes */}
           <div className="space-y-2 pt-1">
             {players.map((p) => {
               const isMe = p.id === currentPlayerId;
-              const isSurrendered = !!p.isSurrendered;
-              const isFinished = !!p.isFinished;
+              const isPartner = !!daoLuPartnerName && ((daoLuPartnerId && p.id === daoLuPartnerId) || p.username.toLowerCase() === daoLuPartnerName.toLowerCase());
+              const isDaoLuCouple = isMe || isPartner;
+              const hasDaoLuInRoom = !!daoLuPartnerName && players.some(
+                (pl) => (daoLuPartnerId && pl.id === daoLuPartnerId) || pl.username.toLowerCase() === daoLuPartnerName.toLowerCase()
+              );
               return (
-                <div 
+                <CompetitorLane 
                   key={p.id} 
-                  className={`relative flex items-center gap-3 transition-all duration-300 ${
-                    isSurrendered ? 'opacity-40 grayscale' : isFinished ? 'opacity-100' : ''
-                  }`}
-                >
-                  <div className="w-28 text-[11px] font-bold truncate text-right flex items-center justify-end gap-1">
-                    {isSurrendered && <span title="Đã đầu hàng">🏳️</span>}
-                    {isFinished && <span title="Đã về đích" className="text-emerald-400 font-bold">🏁</span>}
-                    <span className={isSurrendered ? 'line-through text-slate-500' : isFinished ? 'text-emerald-400 font-bold' : 'text-slate-300'}>
-                      {p.username}
-                    </span>
-                    {isMe && <span className="text-amber-400 font-bold">*</span>}
-                  </div>
-                  <div 
-                    className={`flex-1 h-7 bg-slate-950/80 rounded-lg border relative overflow-hidden flex items-center px-1 transition-colors ${
-                      isSurrendered 
-                        ? 'border-slate-800 bg-slate-900/40' 
-                        : isFinished 
-                        ? 'border-emerald-500/50 bg-emerald-950/20' 
-                        : 'border-slate-800/80'
-                    }`}
-                  >
-                    {/* Track Progress Fill */}
-                    <div
-                      className={`h-full rounded-md transition-all duration-300 ${
-                        isSurrendered
-                          ? 'bg-slate-700/50 border-r border-slate-600 opacity-50'
-                          : isFinished
-                          ? 'bg-gradient-to-r from-emerald-500/20 via-emerald-400/30 to-emerald-400/40 border-r-2 border-emerald-400'
-                          : isMe
-                          ? 'bg-gradient-to-r from-amber-500/20 via-amber-400/30 to-amber-400/40 border-r-2 border-amber-400'
-                          : 'bg-slate-800/40 border-r border-slate-600/60'
-                      }`}
-                      style={{ width: `${Math.min(100, Math.max(2, isFinished ? 100 : p.progress))}%` }}
-                    />
-
-                    {/* Player Avatar positioned on track */}
-                    <div
-                      className={`absolute top-1/2 -translate-y-1/2 transition-all duration-300 text-lg flex items-center ${
-                        isSurrendered ? 'filter grayscale opacity-40' : ''
-                      }`}
-                      style={{
-                        left: `calc(${Math.min(95, Math.max(2, isFinished ? 100 : p.progress))}% - 14px)`,
-                      }}
-                    >
-                      <span>{p.icon}</span>
-                    </div>
-
-                    {/* Finish line marker */}
-                    <div className="absolute right-2 text-xs opacity-60">🏁</div>
-                  </div>
-
-                  <div className="w-24 text-right font-mono text-[11px]">
-                    {isSurrendered ? (
-                      <span className="text-[10px] font-bold text-rose-400/90 tracking-tight">
-                        ĐẦU HÀNG
-                      </span>
-                    ) : isFinished ? (
-                      <div className="flex flex-col items-end leading-tight">
-                        <span className="text-[10px] font-black text-emerald-400 tracking-tight flex items-center gap-0.5">
-                          VỀ ĐÍCH
-                        </span>
-                        <span className="text-[10px] text-slate-300 font-mono font-bold">
-                          {p.wpm} <span className="text-[9px] text-slate-500">WPM</span>
-                        </span>
-                      </div>
-                    ) : (
-                      <>
-                        <span className={`font-bold ${isMe ? 'text-amber-400' : 'text-slate-300'}`}>
-                          {p.wpm}
-                        </span>
-                        <span className="text-[10px] text-slate-500 ml-0.5">WPM</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+                  player={p} 
+                  isMe={isMe} 
+                  isDaoLuCouple={hasDaoLuInRoom && isDaoLuCouple} 
+                />
               );
             })}
           </div>
@@ -2110,6 +2434,21 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         </div>
       </div>
 
+      {/* 5. Live WPM Sparkline (Biểu đồ sóng nhỏ hiển thị nhịp gõ burst speed tức thời theo từng giây) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm shadow-md">
+        <div className="flex items-center gap-2 text-xs text-slate-300">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+          </span>
+          <span className="font-bold text-amber-400">Nhịp Gõ Tức Thời (Live Sparkline):</span>
+          <span className="text-[11px] text-slate-400 hidden md:inline">
+            Sóng đo tốc độ bứt phá (burst) & ổn định theo từng giây thi đấu
+          </span>
+        </div>
+        <LiveWpmSparkline timeline={performanceTimelineRef.current} currentWpm={liveWpm} />
+      </div>
+
       {/* Anti-Cheat Warning Toast */}
       {cheatWarning && (
         <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/60 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 animate-bounce">
@@ -2118,13 +2457,76 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         </div>
       )}
 
+      {/* VẠN ĐẠO QUY TÔNG: Trạng thái Nhập Định Đốn Ngộ & Bản Mệnh Pháp Bảo */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        {/* Chuỗi Bạo Kích Tu Vi (Combo Streak - Kiếm Ý Huỳnh Triệt) */}
+        {combo >= 50 ? (
+          <div className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 via-yellow-400/20 to-orange-500/20 border border-amber-400/60 shadow-[0_0_15px_rgba(251,191,36,0.4)] flex items-center gap-2 text-amber-300 font-bold animate-pulse">
+            <span className="text-base">{combo >= 200 ? '🔥' : combo >= 100 ? '⚡' : '✨'}</span>
+            <span>
+              {combo >= 200
+                ? `[NHẬP ĐỊNH ĐỐN NGỘ • ĐẠI VIÊN MÃN] Chuỗi ${combo} từ! Tu Vi x2.0!`
+                : combo >= 100
+                ? `[NHẬP ĐỊNH ĐỐN NGỘ • TRUNG GIAI] Chuỗi ${combo} từ! Tu Vi x1.5!`
+                : `[NHẬP ĐỊNH ĐỐN NGỘ • SƠ GIAI] Chuỗi ${combo} từ! Tu Vi x1.2!`}
+            </span>
+          </div>
+        ) : (
+          <div className="text-slate-400 font-medium text-[11px] flex items-center gap-1.5">
+            <span>Kiếm Ý Huỳnh Triệt:</span>
+            <span className="font-mono font-bold text-amber-400">{combo}</span>
+            <span className="text-slate-500">(Combo 50/100/200 kích hoạt Đốn Ngộ x1.2/1.5/2.0 Tu Vi)</span>
+          </div>
+        )}
+
+        {/* Bản Mệnh Pháp Bảo & Tâm Pháp Huy Hiệu & Buff Hoạt Hóa */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {equippedArtifact && (
+            <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-amber-500/40 text-amber-300 font-semibold text-[11px] flex items-center gap-1.5 shadow-sm">
+              <span>
+                {equippedArtifact === 'thanh_van_kiem'
+                  ? '⚔️ Thanh Vân Kiếm'
+                  : equippedArtifact === 'hao_thien_kinh'
+                  ? '🪞 Hạo Thiên Kính'
+                  : equippedArtifact === 'cuu_pham_lien'
+                  ? '🪷 Cửu Phẩm Hắc Liên'
+                  : '🪓 Bàn Cổ Khai Thiên Phủ'}
+              </span>
+            </div>
+          )}
+          {cultState?.tamPhap?.equipped && (
+            <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-cyan-500/40 text-cyan-300 font-semibold text-[11px] flex items-center gap-1.5 shadow-sm">
+              <span>
+                {cultState.tamPhap.equipped === 'than_hanh'
+                  ? `🗡️ Thần Hành Quyết (Tầng ${cultState.tamPhap.levels?.than_hanh || 1})`
+                  : cultState.tamPhap.equipped === 'bat_dong'
+                  ? `🛡️ Bất Động Thuật (Tầng ${cultState.tamPhap.levels?.bat_dong || 1})`
+                  : `⚡ Cửu Chuyển Hồi Xuân (Tầng ${cultState.tamPhap.levels?.cuu_chuyen || 1})`}
+              </span>
+            </div>
+          )}
+          {(cultState?.activeBuffs?.dinhTamMatchesRemaining || 0) > 0 && (
+            <div className="px-2 py-0.5 rounded-lg bg-indigo-950/60 border border-indigo-500/50 text-indigo-300 font-bold text-[10px] flex items-center gap-1 shadow-sm">
+              <span>🧘</span>
+              <span>Định Tâm Đan (-50% phạt lỗi)</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Virtual 3-Line System Display Container (Monkeytype 3-Line Viewport) */}
       <div 
         onClick={handleArenaClick}
-        className="p-6 rounded-2xl border shadow-2xl relative overflow-hidden cursor-text transition-colors duration-200"
+        className={`p-6 rounded-2xl border shadow-2xl relative overflow-hidden cursor-text transition-all duration-300 ${
+          combo >= 100
+            ? 'ring-2 ring-amber-400/80 shadow-[0_0_30px_rgba(251,191,36,0.35)]'
+            : combo >= 50
+            ? 'ring-1 ring-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.2)]'
+            : ''
+        }`}
         style={{
           backgroundColor: 'var(--theme-card, #131722)',
-          borderColor: 'var(--theme-border, #1e293b)',
+          borderColor: combo >= 50 ? '#fbbf24' : 'var(--theme-border, #1e293b)',
         }}
       >
         {/* Multiplayer In-Room 3s Countdown Overlay */}
@@ -2212,59 +2614,75 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                 isPast={absIdx < currentWordIndex}
                 currentInput={absIdx === currentWordIndex ? currentInput : ''}
                 pastTypedWord={wordHistoryRef.current[absIdx]?.typedWord}
+                isComposing={absIdx === currentWordIndex && isComposingState}
               />
             ))}
           </div>
         </div>
 
-        {/* Controlled Hidden/Focused Input with Composition API */}
-        <div className="mt-5 pt-4 border-t border-slate-800 flex items-center gap-3">
-          <div className="flex-1 relative">
-            <input
-              id="typing-input-box"
-              ref={inputRef}
-              type="text"
-              value={currentInput}
-              disabled={isUserFinished || isPlayerSurrendered || timeLeft <= 0 || inRoomCountdown !== null}
-              onChange={handleInputChange}
-              onKeyDown={handleInputKeyDown}
-              onCompositionStart={handleCompositionStart}
-              onCompositionEnd={handleCompositionEnd}
-              onFocus={() => setIsFocused(true)}
-              onBlur={(e) => {
-                const related = e.relatedTarget as HTMLElement | null;
-                if (related && related.closest('select, button, input')) {
-                  return;
+        {/* Controlled Hidden/Focused Input with Composition API & Canvas VFX Engine */}
+        <div className="mt-5 pt-4 border-t border-slate-800 flex flex-nowrap items-center gap-2 sm:gap-3">
+          <div className="flex-1 min-w-0 flex items-center h-12">
+            <ArtifactInputVfxFrame
+              artifact={equippedArtifact}
+              userFrame={players.find((p) => p.id === currentPlayerId)?.frame || getStoredFrame()}
+              cultivationState={loadStoredCultivationState()}
+              wpm={liveWpm}
+              combo={combo}
+              isTyping={isTyping}
+              isError={currentInput.length > 0 && !(effectiveWords[currentWordIndex] || '').startsWith(currentInput)}
+              lastKeystroke={lastKeystrokeTime}
+              showSelector={false}
+              className="w-full h-12"
+            >
+              <input
+                id="typing-input-box"
+                ref={inputRef}
+                type="text"
+                value={currentInput}
+                disabled={isUserFinished || isPlayerSurrendered || timeLeft <= 0 || inRoomCountdown !== null}
+                onChange={handleInputChange}
+                onKeyDown={handleInputKeyDown}
+                onCompositionStart={handleCompositionStart}
+                onCompositionUpdate={handleCompositionUpdate}
+                onCompositionEnd={handleCompositionEnd}
+                onFocus={() => setIsFocused(true)}
+                onBlur={(e) => {
+                  const related = e.relatedTarget as HTMLElement | null;
+                  if (related && related.closest('select, button, input')) {
+                    return;
+                  }
+                  if (hasStartedTyping && timeLeft > 0) {
+                    setIsFocused(false);
+                  }
+                }}
+                onPaste={(e) => e.preventDefault()}
+                placeholder={
+                  isUserFinished
+                    ? `🏁 Bạn đã về đích thành công! Đang trực tiếp theo dõi ${remainingActiveCount} đấu thủ còn lại...`
+                    : isPlayerSurrendered
+                    ? "Bạn đã đầu hàng ván đấu này. Nhấn Tab để làm lại ván mới..."
+                    : inRoomCountdown !== null
+                    ? `Trận đấu sẽ bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
+                    : isOutplay && !hasStartedTyping
+                    ? "Gõ phím bất kỳ để bắt đầu tính giờ..."
+                    : "Nhập chữ ở đây và bấm Cách (Space) để qua từ..."
                 }
-                if (hasStartedTyping && timeLeft > 0) {
-                  setIsFocused(false);
-                }
-              }}
-              onPaste={(e) => e.preventDefault()}
-              placeholder={
-                isUserFinished
-                  ? `🏁 Bạn đã về đích thành công! Đang trực tiếp theo dõi ${remainingActiveCount} đấu thủ còn lại...`
-                  : isPlayerSurrendered
-                  ? "Bạn đã đầu hàng ván đấu này."
-                  : inRoomCountdown !== null
-                  ? `Trận đấu sẽ bắt đầu sau ${inRoomCountdown === 0 ? 'giây lát' : `${inRoomCountdown}s`}...`
-                  : isOutplay && !hasStartedTyping
-                  ? "Gõ phím bất kỳ để bắt đầu tính giờ..."
-                  : "Nhập chữ ở đây và bấm Cách (Space) để qua từ..."
-              }
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck="false"
-              className="w-full h-12 px-4 rounded-xl bg-slate-950 border border-amber-500/50 text-white font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-2 focus:ring-amber-400/60 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
-            />
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+                className="block w-full h-12 px-4 rounded-xl bg-slate-950/90 border border-slate-800 text-white font-['JetBrains_Mono',monospace] text-base sm:text-lg outline-none focus:ring-1 focus:ring-amber-400/50 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed transition-all box-border m-0 leading-none"
+              />
+            </ArtifactInputVfxFrame>
           </div>
 
-          {/* Action buttons - Harmonized h-12 height */}
-          {isOutplay && (
+          {/* Action buttons - Strictly aligned h-12 height */}
+          {(isOutplay || !isMultiplayer) && (
             <button
               id="btn-arena-restart"
               type="button"
+              tabIndex={-1}
               disabled={isMultiplayer && isUserFinished}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -2272,42 +2690,59 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 if (isMultiplayer && isUserFinished) return;
-                handleResetOutplay();
-                inputRef.current?.focus();
-                setIsFocused(true);
+                handleResetGame();
               }}
-              title="Gõ lại từ đầu"
-              className="h-12 w-12 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Làm lại ván mới từ đầu (Phím tắt: Tab hoặc Alt+R)"
+              className="h-12 px-3 sm:px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm active:scale-95 box-border m-0 leading-none select-none"
             >
-              <RotateCcw className="w-5 h-5" />
+              <RotateCcw className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="hidden sm:inline whitespace-nowrap">Làm Lại</span>
+              <kbd className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900/90 border border-slate-700 text-amber-300 shadow-xs">Tab</kbd>
             </button>
           )}
 
           {isUserFinished ? (
-            <div className="h-12 px-3 sm:px-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 select-none">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span className="hidden sm:inline">Đã Về Đích</span>
+            <div className="h-12 px-3 sm:px-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 select-none box-border m-0 leading-none">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="hidden sm:inline whitespace-nowrap">Đã Về Đích</span>
             </div>
           ) : (
             <button
               id="btn-arena-surrender"
               type="button"
+              tabIndex={-1}
               onClick={openSurrenderModal}
               disabled={isPlayerSurrendered || timeLeft <= 0}
-              title="Đầu hàng (Phím tắt: Esc)"
-              className="h-12 px-3 sm:px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Đầu hàng ván đấu này (Phím tắt: Esc)"
+              className="h-12 px-3 sm:px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 box-border m-0 leading-none select-none"
             >
-              <Flag className="w-4 h-4" />
-              <span className="hidden sm:inline">Đầu Hàng (Esc)</span>
+              <Flag className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline whitespace-nowrap">Đầu Hàng</span>
+              <kbd className="hidden md:inline-block text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-950/80 border border-rose-800/60 text-rose-300">Esc</kbd>
             </button>
           )}
         </div>
 
-        {/* Engine indicators footer */}
+        {/* Engine indicators footer with VFX Toggle Button */}
         <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
           <span className="flex items-center gap-1 text-emerald-400">
             <Sparkles className="w-3 h-3" /> Virtual 3-Line Engine • 0% Drop-Frame
           </span>
+
+          <button
+            id="btn-toggle-vfx-footer"
+            type="button"
+            onClick={handleToggleVfxMaster}
+            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+              vfxEnabled
+                ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 shadow-sm'
+                : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-300'
+            }`}
+            title="Bật/Tắt hiệu ứng Canvas VFX"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>VFX: {vfxEnabled ? 'BẬT' : 'TẮT'}</span>
+          </button>
         </div>
       </div>
 
@@ -2334,7 +2769,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>{isMultiplayer ? 'Đấu Lại (Về Phòng Chờ)' : 'Chơi Ván Mới'}</span>
+              <span>{isMultiplayer ? 'Đấu Lại (Về Phòng Chờ)' : 'Chơi Ván Mới (Phím Tab)'}</span>
             </button>
             {onHome && (
               <button
@@ -2365,12 +2800,21 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                       liveWpm,
                       isOutplay ? sessionBestWpm : undefined
                     );
+                    const wordResults = effectiveWords.slice(0, currentWordIndex + (currentInput.trim() ? 1 : 0)).map((w, idx) => ({
+                      word: w,
+                      typed: wordHistoryRef.current[idx]?.typedWord ?? (idx === currentWordIndex ? currentInput.trim() : ''),
+                      isCorrect: wordHistoryRef.current[idx]?.isCorrect ?? false,
+                    }));
                     onFinish(correctChars, totalErrors, keystrokesRef.current, liveConsistency, {
                       lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
                       sessionBestWpm: isOutplay ? sessionBestWpm : undefined,
                       finalWpm: liveWpm,
                       elapsedSeconds,
                       chartData: normalizedChart,
+                      wordResults,
+                      promptWords: effectiveWords.slice(0, Math.max(10, currentWordIndex + 1)),
+                      outplaySubMode: isOutplay ? outplaySubMode : undefined,
+                      maxCombo: Math.max(maxComboRef.current, combo),
                     });
                   }
                 }}

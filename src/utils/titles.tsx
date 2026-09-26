@@ -144,17 +144,21 @@ export function getPlayerTitle(
   isAdminUser: boolean,
   isCurrentPlayer: boolean
 ): PlayerTitle | null {
+  if (!player) return null;
+  const pName = String(player.username || '').trim().toLowerCase();
+
   // 1. Current user logged in as Admin, or player named 'admin' / 'administrator'
-  if ((isCurrentPlayer && isAdminUser) || player.username.toLowerCase() === 'admin' || player.username.toLowerCase() === 'quantrivien') {
+  if ((isCurrentPlayer && isAdminUser) || pName === 'admin' || pName === 'quantrivien') {
     return ADMIN_TITLE;
   }
 
   // 2. Check if player username matches any top 1 in highScores
+  if (!pName || !highScores) return null;
   for (const [modeKey, record] of Object.entries(highScores)) {
     if (
       record &&
-      ((record.username && record.username.trim().toLowerCase() === player.username.trim().toLowerCase()) ||
-        (record.displayName && record.displayName.trim().toLowerCase() === player.username.trim().toLowerCase()))
+      ((record.username && record.username.trim().toLowerCase() === pName) ||
+        (record.displayName && record.displayName.trim().toLowerCase() === pName))
     ) {
       const template = CHAMPION_TITLES[modeKey];
       if (template) {
@@ -243,6 +247,14 @@ export const AvatarTitleFrame: React.FC<{
   const [isHovered, setIsHovered] = useState(false);
   const title = getPlayerTitle(player, highScores, isAdminUser, isCurrentPlayer);
 
+  // Extract cultivation realmIndex for aura
+  const effectiveRealmIdx =
+    typeof player.cultivation?.realmIndex === 'number'
+      ? player.cultivation.realmIndex
+      : isCurrentPlayer
+      ? loadStoredCultivationState().realmIndex
+      : undefined;
+
   // Effective frame: prioritize user-selected player.frame, fallback to champion frame for top players, admin_gold for admin, or default
   const effectiveFrame =
     player.frame && player.frame !== 'default'
@@ -257,7 +269,12 @@ export const AvatarTitleFrame: React.FC<{
         onClick={onClick}
         className="relative cursor-pointer transition-transform hover:scale-105 select-none"
       >
-        <AvatarWithFrame icon={player.icon} frameId={effectiveFrame} size={size} />
+        <AvatarWithFrame
+          icon={player.icon}
+          frameId={effectiveFrame}
+          size={size}
+          realmIndex={effectiveRealmIdx}
+        />
       </div>
     );
   }
@@ -291,9 +308,14 @@ export const AvatarTitleFrame: React.FC<{
         />
       )}
 
-      {/* Main Avatar with chosen frame */}
+      {/* Main Avatar with chosen frame and Realm Aura */}
       <div className="relative transition-all duration-200 group-hover:scale-105 z-10">
-        <AvatarWithFrame icon={player.icon} frameId={effectiveFrame} size={size} />
+        <AvatarWithFrame
+          icon={player.icon}
+          frameId={effectiveFrame}
+          size={size}
+          realmIndex={effectiveRealmIdx}
+        />
 
         {/* Top-Right Badge/Insignia */}
         <div

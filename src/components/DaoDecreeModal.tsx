@@ -35,6 +35,21 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
     }
   }, [isOpen, decree]);
 
+  // Listen to Escape key to quickly close Khí Linh decree notification
+  useEffect(() => {
+    if (!isOpen || !decree) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        soundFx.playKeyClick();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, decree, onClose]);
+
   if (!isOpen || !decree) return null;
 
   const isBreakthrough = decree.eventType === 'breakthrough';
@@ -106,7 +121,15 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-300">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-300"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          soundFx.playKeyClick();
+          onClose();
+        }
+      }}
+    >
       {/* Background Floating Aura & Lightning Particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center">
         <div className={`w-[600px] h-[600px] rounded-full bg-gradient-to-tr ${theme.borderGlow} opacity-20 blur-3xl animate-pulse`} />
@@ -118,17 +141,18 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
       {/* Main Celestial Scroll Frame */}
       <div className="relative w-full max-w-xl mx-auto rounded-3xl p-1 bg-gradient-to-b from-amber-400/80 via-purple-500/60 to-amber-600/80 shadow-2xl shadow-amber-500/30">
         <div className="relative rounded-[22px] bg-gradient-to-b from-[#181126] via-[#120e1e] to-[#0c0a14] border border-amber-300/40 p-6 sm:p-8 overflow-hidden text-center text-slate-100">
-          {/* Close button */}
+          {/* Close button with Esc badge */}
           <button
             type="button"
             onClick={() => {
               soundFx.playKeyClick();
               onClose();
             }}
-            className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
-            title="Đóng chiếu thư"
+            className="absolute top-4 right-4 py-1 px-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700/60 shadow-sm"
+            title="Đóng chiếu thư nhanh (phím Esc)"
           >
             <X className="w-4 h-4" />
+            <kbd className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900/90 border border-slate-700 text-amber-300">Esc</kbd>
           </button>
 
           {/* Top Imperial Seal / Bagua Emblem */}
@@ -200,6 +224,7 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
             >
               <CheckCircle2 className="w-4 h-4" />
               <span>Khấu Tạ Thiên Đạo (Lĩnh Chiếu)</span>
+              <kbd className="hidden sm:inline-block ml-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/20 text-slate-900 border border-amber-900/20">Esc</kbd>
             </button>
 
             {onOpenChronicle && (

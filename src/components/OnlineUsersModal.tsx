@@ -137,10 +137,10 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
     return users.filter((user) => {
       // Search text match
       if (q) {
-        const matchName = user.username.toLowerCase().includes(q);
-        const matchId = user.userId.toLowerCase().includes(q);
-        const matchRoom = user.currentRoomId?.toLowerCase().includes(q);
-        const matchIp = user.ip?.toLowerCase().includes(q);
+        const matchName = user.username ? user.username.toLowerCase().includes(q) : false;
+        const matchId = user.userId ? user.userId.toLowerCase().includes(q) : false;
+        const matchRoom = user.currentRoomId ? user.currentRoomId.toLowerCase().includes(q) : false;
+        const matchIp = user.ip ? user.ip.toLowerCase().includes(q) : false;
         if (!matchName && !matchId && !matchRoom && !matchIp) {
           return false;
         }

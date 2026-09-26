@@ -1,5 +1,7 @@
-import { MatchRecord, MistakeDetail } from './matchHistory';
+import { MatchRecord, MistakeDetail, detectMatchCategory } from './matchHistory';
 import { CultivationState, XIANXIA_REALMS } from './cultivation';
+import { CLUSTER_DICTIONARY } from './aiPersonalizedDrill';
+import { BIG_WORD_BANKS, BIG_WORD_BANKS_VI_NODAU } from '../data/wordBanks';
 
 export interface KeystrokeErrorPattern {
   id: string;
@@ -73,6 +75,10 @@ export interface HeavenlyDaoAnalysisResult {
     step3: { title: string; desc: string };
   };
   practiceWords: string[];
+  targetedMistakes?: string[];
+  targetedClusters?: string[];
+  practiceDrillTitle?: string;
+  practiceDrillNote?: string;
 }
 
 /**
@@ -279,6 +285,340 @@ export function analyzeErrorTimingFromMatches(matches: MatchRecord[]): {
 }
 
 /**
+ * Trình sinh bài tập chuyên biệt hóa giải tâm ma dựa trên chính các từ gõ sai thực tế
+ * Khắc phục tình trạng chỉ dựa đơn thuần vào chế độ chơi.
+ */
+export function generateDaoSpecializedDrillWords(
+  matches: MatchRecord[],
+  selectedMatch?: MatchRecord | null,
+  modeOverride?: string
+): {
+  practiceWords: string[];
+  targetedMistakes: string[];
+  targetedClusters: string[];
+  drillTitle: string;
+  drillNote: string;
+} {
+  const category = detectMatchCategory(selectedMatch || matches[0], modeOverride);
+  const isNumberMode = category.isNumberMode;
+  const isEnMode = category.isEnMode;
+  const isViNoDauMode = category.isViNoDauMode;
+
+  // 1. Thu thập toàn bộ từ gõ sai thực tế
+  // Ưu tiên cao nhất là trận đấu được chọn, tiếp đến là 20 ván trong lịch sử
+  const targetedRecords = selectedMatch
+    ? [selectedMatch, ...matches.filter((m) => m.id !== selectedMatch.id)]
+    : matches;
+
+  const mistakesMap: Record<string, { original: string; typed: string; count: number }> = {};
+  const errorKeysMap: Record<string, number> = {};
+  const wrongWordFrequency: Record<string, number> = {};
+
+  targetedRecords.forEach((rec, recIdx) => {
+    // Trọng số gấp đôi cho trận đang chọn xem
+    const weight = recIdx === 0 && selectedMatch ? 2 : 1;
+
+    if (rec.mistakes && rec.mistakes.length > 0) {
+      rec.mistakes.forEach((m) => {
+        const orig = String(m.original || '').trim();
+        const typ = String(m.typed || '').trim();
+        if (orig) {
+          const k = `${orig}__${typ}`;
+          if (!mistakesMap[k]) {
+            mistakesMap[k] = { original: orig, typed: typ, count: m.count * weight };
+          } else {
+            mistakesMap[k].count += m.count * weight;
+          }
+          wrongWordFrequency[orig] = (wrongWordFrequency[orig] || 0) + (m.count * weight);
+        }
+      });
+    }
+
+    if (rec.wordLogs && rec.wordLogs.length > 0) {
+      rec.wordLogs.forEach((log) => {
+        if (!log.isCorrect && log.word) {
+          const orig = String(log.word).trim();
+          const typ = String(log.typed || '').trim();
+          if (orig) {
+            const k = `${orig}__${typ}`;
+            if (!mistakesMap[k]) {
+              mistakesMap[k] = { original: orig, typed: typ, count: 1 * weight };
+            } else {
+              mistakesMap[k].count += 1 * weight;
+            }
+            wrongWordFrequency[orig] = (wrongWordFrequency[orig] || 0) + 1 * weight;
+          }
+        }
+      });
+    }
+
+    if (rec.commonErrorKeys && rec.commonErrorKeys.length > 0) {
+      rec.commonErrorKeys.forEach((k) => {
+        const char = String(k.key || '').toLowerCase();
+        if (char) {
+          errorKeysMap[char] = (errorKeysMap[char] || 0) + (k.count * weight);
+        }
+      });
+    }
+
+    if (rec.slowestWord && rec.slowestWord.word) {
+      const sw = String(rec.slowestWord.word).trim();
+      if (sw) {
+        wrongWordFrequency[sw] = (wrongWordFrequency[sw] || 0) + 1 * weight;
+      }
+    }
+  });
+
+  const rawMistakeWords = Object.entries(wrongWordFrequency)
+    .sort((a, b) => b[1] - a[1])
+    .map(([w]) => w)
+    .filter((w) => Boolean(w && w.length >= 1));
+
+  // 2. Chế độ Bàn Phím Số (Number / Numpad)
+  if (isNumberMode) {
+    const numericMistakes = rawMistakeWords
+      .map((w) => w.replace(/[^\d+\-*/=.]/g, ''))
+      .filter((w) => w.length >= 1 && /\d/.test(w));
+
+    const numericKeys = Object.entries(errorKeysMap)
+      .map(([k, c]) => ({ key: k, count: c }))
+      .filter(({ key }) => /[\d+\-*/=.]/.test(key))
+      .sort((a, b) => b.count - a.count);
+
+    const targetedDigits = new Set<string>();
+    numericKeys.slice(0, 5).forEach((k) => targetedDigits.add(k.key));
+    numericMistakes.forEach((m) => {
+      for (const ch of m) {
+        if (/\d/.test(ch)) targetedDigits.add(ch);
+      }
+    });
+
+    const numberPool = [
+      '1024', '58008', '2026', '9876', '1234', '5050', '31415', '92653',
+      '7410', '8520', '9630', '4567', '7890', '13579', '24680', '9988',
+      '1122', '3344', '7700', '4040', '8080', '1995', '2000', '2025',
+      '128', '256', '512', '1000', '9999', '8888', '7777', '6543', '2109'
+    ];
+
+    const resultWords: string[] = [];
+    // Ưu tiên 1: Đưa các chuỗi số bị gõ sai trực tiếp vào đầu và lặp lại để tạo phản xạ
+    numericMistakes.forEach((num) => {
+      if (!resultWords.includes(num)) {
+        resultWords.push(num);
+      }
+    });
+
+    if (numericMistakes.length > 0 && numericMistakes.length < 5) {
+      numericMistakes.forEach((num) => {
+        resultWords.push(num);
+      });
+    }
+
+    // Ưu tiên 2: Bổ sung các chuỗi số chứa các chữ số mà người chơi hay bấm trượt
+    const candidateNums = numberPool.filter((n) =>
+      Array.from(targetedDigits).some((d) => n.includes(d))
+    );
+    candidateNums.forEach((n) => {
+      if (!resultWords.includes(n) && resultWords.length < 28) {
+        resultWords.push(n);
+      }
+    });
+
+    numberPool.forEach((n) => {
+      if (!resultWords.includes(n) && resultWords.length < 30) {
+        resultWords.push(n);
+      }
+    });
+
+    const targetedDigitsList = Array.from(targetedDigits).slice(0, 6);
+    return {
+      practiceWords: resultWords.slice(0, 30),
+      targetedMistakes: numericMistakes.slice(0, 8),
+      targetedClusters: targetedDigitsList.length > 0
+        ? targetedDigitsList.map((d) => `Phím số ${d}`)
+        : ['Hàng số 7-8-9', 'Phím 5 định vị', 'Phím 0'],
+      drillTitle: numericMistakes.length > 0
+        ? `Bài Tập Đặc Trị ${numericMistakes.length} Chuỗi Số Sai Numpad`
+        : `Bài Tập Định Vị & Bứt Tốc Bàn Phím Số`,
+      drillNote: numericMistakes.length > 0
+        ? `Luyện tập chuyên sâu các chuỗi số bạn từng gõ sai [${numericMistakes.slice(0, 5).join(', ')}] và rèn luyện cảm giác xúc giác phím.`
+        : `Luyện tập chuyển động ngón tay tới các phím số xa và cố định phím 5 có gờ làm mốc.`,
+    };
+  }
+
+  // 3. Chế độ Tiếng Anh (English)
+  if (isEnMode) {
+    const enMistakes = rawMistakeWords.map((w) => w.toLowerCase());
+    const resultWords: string[] = [];
+
+    enMistakes.forEach((w) => {
+      if (!resultWords.includes(w)) resultWords.push(w);
+    });
+    if (enMistakes.length > 0 && enMistakes.length < 5) {
+      enMistakes.forEach((w) => resultWords.push(w));
+    }
+
+    const hardEn = BIG_WORD_BANKS.en.hard;
+    hardEn.forEach((w) => {
+      if (!resultWords.includes(w) && resultWords.length < 30) {
+        resultWords.push(w);
+      }
+    });
+
+    return {
+      practiceWords: resultWords.slice(0, 30),
+      targetedMistakes: enMistakes.slice(0, 8),
+      targetedClusters: ['Chính tả từ sai', 'Tổ hợp phụ âm kép', 'Độ trễ phản xạ phím'],
+      drillTitle: enMistakes.length > 0
+        ? `Bài Tập Đặc Trị ${enMistakes.length} Từ Tiếng Anh Sai`
+        : `Bài Tập Tôi Luyện Tốc Độ Tiếng Anh Nâng Cao`,
+      drillNote: enMistakes.length > 0
+        ? `Tập trung khắc phục chính xác các từ bạn đã gõ sai [${enMistakes.slice(0, 4).join(', ')}] để định hình trí nhớ cơ bắp.`
+        : `Các từ tiếng Anh có độ phức tạp cao nhằm thử thách phản xạ gõ mười ngón.`,
+    };
+  }
+
+  // 4. Chế độ Tiếng Việt Không Dấu (vi_nodau)
+  if (isViNoDauMode) {
+    const vnNoDauMistakes = rawMistakeWords.map((w) => w.toLowerCase());
+    const resultWords: string[] = [];
+
+    vnNoDauMistakes.forEach((w) => {
+      if (!resultWords.includes(w)) resultWords.push(w);
+    });
+    if (vnNoDauMistakes.length > 0 && vnNoDauMistakes.length < 5) {
+      vnNoDauMistakes.forEach((w) => resultWords.push(w));
+    }
+
+    BIG_WORD_BANKS_VI_NODAU.hard.forEach((w) => {
+      if (!resultWords.includes(w) && resultWords.length < 30) {
+        resultWords.push(w);
+      }
+    });
+
+    return {
+      practiceWords: resultWords.slice(0, 30),
+      targetedMistakes: vnNoDauMistakes.slice(0, 8),
+      targetedClusters: ['Phụ âm ghép không dấu', 'Chuyển ngón tốc độ cao', 'Nhịp gõ liên hồi'],
+      drillTitle: vnNoDauMistakes.length > 0
+        ? `Bài Tập Đặc Trị ${vnNoDauMistakes.length} Từ Sai Không Dấu`
+        : `Bài Tập Bứt Tốc Tiếng Việt Không Dấu`,
+      drillNote: vnNoDauMistakes.length > 0
+        ? `Tập trung gõ chuẩn xác các từ [${vnNoDauMistakes.slice(0, 4).join(', ')}] trước khi đẩy tốc độ WPM lên cực hạn.`
+        : `Luyện tập các tổ hợp ký tự không dấu có tốc độ lướt phím cao.`,
+    };
+  }
+
+  // 5. Chế độ Tiếng Việt Có Dấu Chuẩn (vi_dau, san_boss, doan_chu, ngau_hung, outplay)
+  // Phân tích chuyên sâu các cụm âm và dấu thanh Telex/VNI của các từ sai
+  const viMistakes = rawMistakeWords.filter((w) => !/^\d+$/.test(w));
+  const detectedClusters = new Set<string>();
+  const detectedClusterLabels = new Set<string>();
+
+  viMistakes.forEach((w) => {
+    const lower = w.toLowerCase();
+    for (const [clusterKey, clusterInfo] of Object.entries(CLUSTER_DICTIONARY)) {
+      if (clusterKey.startsWith('pinky_') || clusterKey.startsWith('tone_')) {
+        continue;
+      }
+      if (lower.includes(clusterKey)) {
+        detectedClusters.add(clusterKey);
+        detectedClusterLabels.add(clusterInfo.label);
+      }
+    }
+
+    // Nhận diện dấu thanh khó
+    if (/[ãẽĩõũỹẫẵễỗữỹđ]/.test(lower) || lower.includes('nghĩ') || lower.includes('cũng') || lower.includes('mỗi') || lower.includes('nữa')) {
+      detectedClusters.add('tone_nga');
+      detectedClusterLabels.add(CLUSTER_DICTIONARY['tone_nga'].label);
+    }
+    if (/[ạẹịọụỵặậệộự]/.test(lower) || lower.includes('định') || lower.includes('trọng') || lower.includes('nghiệp')) {
+      detectedClusters.add('tone_nang');
+      detectedClusterLabels.add(CLUSTER_DICTIONARY['tone_nang'].label);
+    }
+    if (lower.includes('p')) {
+      detectedClusters.add('pinky_p');
+      detectedClusterLabels.add(CLUSTER_DICTIONARY['pinky_p'].label);
+    }
+    if (lower.includes('q')) {
+      detectedClusters.add('pinky_q');
+      detectedClusterLabels.add(CLUSTER_DICTIONARY['pinky_q'].label);
+    }
+  });
+
+  const resultWords: string[] = [];
+
+  // Ưu tiên 1: ĐƯA CHÍNH XÁC CÁC TỪ NGƯỜI CHƠI ĐÃ GÕ SAI VÀO BÀI TẬP!
+  viMistakes.forEach((w) => {
+    if (!resultWords.includes(w)) {
+      resultWords.push(w);
+    }
+  });
+
+  // Nếu người chơi có ít hơn 6 từ sai, lặp lại các từ sai ở các vị trí khác nhau để củng cố trí nhớ cơ bắp
+  if (viMistakes.length > 0 && viMistakes.length <= 5) {
+    viMistakes.forEach((w) => {
+      resultWords.push(w);
+    });
+  }
+
+  // Ưu tiên 2: Bổ sung các từ có CÙNG CỤM PHÍM / CÙNG ÂM TIẾT YẾU với từ sai
+  detectedClusters.forEach((cKey) => {
+    const clusterData = CLUSTER_DICTIONARY[cKey];
+    if (clusterData && clusterData.words) {
+      clusterData.words.forEach((w) => {
+        if (!resultWords.includes(w) && resultWords.length < 28) {
+          resultWords.push(w);
+        }
+      });
+    }
+  });
+
+  // Ưu tiên 3: Nếu vẫn chưa đủ hoặc người chơi KHÔNG CÓ LỖI SAI (100% chuẩn xác),
+  // bổ sung các từ tinh hoa bứt phá cảnh giới từ BIG_WORD_BANKS.vi_dau.hard
+  const fallbackDifficultWords = [
+    'khoảnh', 'nghiêng', 'khuếch', 'nghiệp', 'chuyển', 'tuyệt', 'khuyên', 'truyền',
+    'quyết', 'chuộng', 'hoảng', 'nghiêm', 'nghiệm', 'quang', 'phương', 'hướng',
+    'khoảnh', 'ngoéo', 'quỳnh', 'nguyệt', 'duyên', 'bàn', 'phím', 'chiến', 'thắng'
+  ];
+
+  fallbackDifficultWords.forEach((w) => {
+    if (!resultWords.includes(w) && resultWords.length < 30) {
+      resultWords.push(w);
+    }
+  });
+
+  while (resultWords.length < 25) {
+    const filler = ['kiên', 'trì', 'phản', 'xạ', 'tinh', 'chuẩn', 'đột', 'phá'];
+    for (const f of filler) {
+      if (resultWords.length >= 25) break;
+      resultWords.push(f);
+    }
+  }
+
+  const targetedMistakes = viMistakes.slice(0, 10);
+  const targetedClusters = Array.from(detectedClusterLabels).slice(0, 4);
+
+  const isFlawless = targetedMistakes.length === 0;
+
+  const drillTitle = isFlawless
+    ? 'Bài Tập Bứt Phá Giới Hạn Cực Hạn (100% Chuẩn Xác)'
+    : `Bài Tập Đặc Trị ${targetedMistakes.length} Từ Sai: ${targetedClusters.slice(0, 2).join(' & ') || 'Tổ Hợp Phím Yếu'}`;
+
+  const drillNote = isFlawless
+    ? 'Đạo hữu đã xuất chiêu tuyệt đối chuẩn xác! Thiên Đạo đề cử các từ có độ trễ chuyển ngón phức tạp nhất để đẩy WPM vượt ngưỡng bình cảnh.'
+    : `Thiên Đạo đã bóc tách ${targetedMistakes.length} từ sai trong trận đấu [${targetedMistakes.slice(0, 4).join(', ')}${targetedMistakes.length > 4 ? ', ...' : ''}] và đan xen các từ cùng cấu trúc âm tiết để khắc chế triệt để tâm ma.`;
+
+  return {
+    practiceWords: resultWords.slice(0, 30),
+    targetedMistakes,
+    targetedClusters,
+    drillTitle,
+    drillNote,
+  };
+}
+
+/**
  * Sinh phân tích fallback thông minh chuẩn phong vị Tiên hiệp kết hợp Khoa học Đánh máy
  */
 export function generateHeuristicDaoAnalysis(
@@ -320,17 +660,8 @@ export function generateHeuristicDaoAnalysis(
   const overallPercentile = Math.round((speedPercentile + accPercentile + consistencyPercentile + recoveryPercentile) / 4);
 
   // Detect mode from selectedMatch or history
-  const activeModeId = selectedMatch?.modeId || (matches[0]?.modeId) || 'vi_dau';
-  const isNumberMode =
-    activeModeId === 'numpad' ||
-    activeModeId === 'number' ||
-    activeModeId.includes('number') ||
-    activeModeId.includes('numpad') ||
-    activeModeId.includes('số') ||
-    selectedMatch?.difficulty === 'number' ||
-    selectedMatch?.difficulty === 'fullsize';
-  const isEnMode = activeModeId === 'en';
-  const isViNoDauMode = activeModeId === 'vi_nodau';
+  const category = detectMatchCategory(selectedMatch || matches[0]);
+  const isNumberMode = category.isNumberMode;
 
   // Error Patterns
   const errorPatterns: KeystrokeErrorPattern[] = isNumberMode
@@ -411,6 +742,9 @@ export function generateHeuristicDaoAnalysis(
   const realmName = cultivation?.realmName || bracket.name.split(' (')[0];
   const tier = cultivation?.tier || 3;
   const subStage = cultivation?.subStage || 'Sơ Kỳ';
+
+  // TẠO BÀI TẬP CHUYÊN BIỆT ĐẶC TRỊ CHO TỪ SAI THỰC TẾ
+  const specializedDrill = generateDaoSpecializedDrillWords(matches, selectedMatch, category.resolvedModeId);
 
   return {
     success: true,
@@ -547,29 +881,11 @@ export function generateHeuristicDaoAnalysis(
             desc: 'Thực hành đều đặn 15 phút với bài tập cá nhân hóa do Thiên Đạo AI sinh ra để tái lập trình phản xạ cho các ngón tay yếu.',
           },
         },
-    practiceWords: isNumberMode
-      ? [
-          '1024', '58008', '2026', '9876', '1234', '5050', '31415', '92653',
-          '7410', '8520', '9630', '4567', '7890', '13579', '24680', '9988',
-          '1122', '3344', '7700', '4040', '8080', '1995', '2000', '2025'
-        ]
-      : isEnMode
-      ? [
-          'rhythm', 'queue', 'strength', 'synergy', 'awkward', 'beautiful', 'keyboard',
-          'practice', 'accuracy', 'mastery', 'challenge', 'experience', 'quick', 'flight',
-          'balance', 'control', 'fingers', 'velocity', 'precision', 'focus', 'reflexes'
-        ]
-      : isViNoDauMode
-      ? [
-          'nghieng', 'khoang', 'chuyen', 'tuyet', 'khuyen', 'nghiep', 'truyen', 'quyet',
-          'xoay', 'thoat', 'khoanh', 'quynh', 'nguyet', 'duyen', 'ban', 'phim',
-          'toc', 'do', 'chinh', 'xac', 'chien', 'thang', 'ren', 'luyen', 'ky', 'nang'
-        ]
-      : [
-          'nghiêng', 'khoảnh', 'khắc', 'chuyển', 'hóa', 'tuyệt', 'kỹ', 'phản', 'xạ',
-          'đột', 'phá', 'cảnh', 'giới', 'đạo', 'tâm', 'kiên', 'định', 'thần', 'thức',
-          'nhịp', 'nhàng', 'chuỗi', 'ngọc', 'lưu', 'tinh', 'quang', 'minh', 'tiên', 'thiên', 'phù'
-        ],
+    practiceWords: specializedDrill.practiceWords,
+    targetedMistakes: specializedDrill.targetedMistakes,
+    targetedClusters: specializedDrill.targetedClusters,
+    practiceDrillTitle: specializedDrill.drillTitle,
+    practiceDrillNote: specializedDrill.drillNote,
   };
 }
 
@@ -581,6 +897,10 @@ export async function fetchHeavenlyDaoAnalysis(
   cultivation?: CultivationState | null,
   selectedMatch?: MatchRecord | null
 ): Promise<HeavenlyDaoAnalysisResult> {
+  const category = detectMatchCategory(selectedMatch || matches[0]);
+  const activeModeId = category.resolvedModeId;
+  const specializedDrill = generateDaoSpecializedDrillWords(matches, selectedMatch, activeModeId);
+
   try {
     const res = await fetch('/api/ai/heavenly-dao-analysis', {
       method: 'POST',
@@ -589,6 +909,8 @@ export async function fetchHeavenlyDaoAnalysis(
         matches: matches.slice(0, 20),
         cultivation: cultivation || null,
         selectedMatch: selectedMatch || null,
+        mistakes: specializedDrill.targetedMistakes,
+        mode: activeModeId,
       }),
     });
 
@@ -598,7 +920,47 @@ export async function fetchHeavenlyDaoAnalysis(
 
     const data = await res.json();
     if (data && data.success) {
-      return data;
+      // Đảm bảo bài tập thực hành luôn gắn kết chặt chẽ với các từ sai thực tế của người chơi
+      let enrichedWords = Array.isArray(data.practiceWords) ? data.practiceWords : [];
+
+      // Khi ở chế độ số, bắt buộc làm sạch toàn bộ ký tự chữ/dấu tiếng Việt
+      if (category.isNumberMode) {
+        enrichedWords = enrichedWords
+          .map((w: any) => String(w).trim().replace(/[^\d+\-*/=.]/g, ''))
+          .filter((w: string) => w.length >= 1 && /\d/.test(w));
+        if (enrichedWords.length < 20) {
+          enrichedWords = specializedDrill.practiceWords;
+        }
+      }
+
+      // Nếu backend trả về mảng rỗng hoặc thiếu từ sai thực tế, hòa trộn ngay các từ sai vào
+      if (specializedDrill.targetedMistakes.length > 0) {
+        const missingMistakes = specializedDrill.targetedMistakes.filter(
+          (m) => !enrichedWords.some((w: string) => w.toLowerCase() === m.toLowerCase())
+        );
+        if (missingMistakes.length > 0 || enrichedWords.length < 20) {
+          enrichedWords = [
+            ...specializedDrill.targetedMistakes,
+            ...enrichedWords.filter((w: string) => !specializedDrill.targetedMistakes.includes(w)),
+            ...specializedDrill.practiceWords.filter(
+              (w) => !enrichedWords.includes(w) && !specializedDrill.targetedMistakes.includes(w)
+            ),
+          ].slice(0, 30);
+        }
+      }
+
+      if (enrichedWords.length < 20) {
+        enrichedWords = specializedDrill.practiceWords;
+      }
+
+      return {
+        ...data,
+        practiceWords: enrichedWords,
+        targetedMistakes: data.targetedMistakes || specializedDrill.targetedMistakes,
+        targetedClusters: data.targetedClusters || specializedDrill.targetedClusters,
+        practiceDrillTitle: data.practiceDrillTitle || specializedDrill.drillTitle,
+        practiceDrillNote: data.practiceDrillNote || specializedDrill.drillNote,
+      };
     }
     throw new Error('Dữ liệu phân tích Thiên Đạo không hợp lệ');
   } catch (err) {
@@ -606,3 +968,4 @@ export async function fetchHeavenlyDaoAnalysis(
     return generateHeuristicDaoAnalysis(matches, cultivation, selectedMatch);
   }
 }
+

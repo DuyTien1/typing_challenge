@@ -4,6 +4,11 @@ import { soundFx } from '../utils/audio';
 import { CHAMPION_TITLES, ADMIN_TITLE } from '../utils/titles';
 import { CultivationState } from '../utils/cultivation';
 import { AdminCultivationTab } from './AdminCultivationTab';
+import { AdminDashboardTab } from './admin/AdminDashboardTab';
+import { AdminUsersTab } from './admin/AdminUsersTab';
+import { AdminRoomsTab } from './admin/AdminRoomsTab';
+import { AdminBroadcastTab } from './admin/AdminBroadcastTab';
+import { AdminBackupTab } from './admin/AdminBackupTab';
 import { CustomNumberInput } from './CustomNumberInput';
 import { CustomCheckbox } from './CustomCheckbox';
 import { 
@@ -25,7 +30,12 @@ import {
   Check,
   Keyboard,
   HelpCircle,
-  Hash
+  Hash,
+  Activity,
+  Users,
+  Radio,
+  FileDown,
+  Database
 } from 'lucide-react';
 
 export const POOL_OPTIONS: {
@@ -86,7 +96,18 @@ interface AdminModalProps {
   onSyncAchievements?: (unlockedIds: string[]) => void;
 }
 
-type AdminTab = 'basic' | 'ngau_hung' | 'doan_chu' | 'san_boss' | 'titles' | 'tu_tien';
+type AdminTab = 
+  | 'dashboard'
+  | 'users'
+  | 'rooms'
+  | 'broadcast'
+  | 'basic' 
+  | 'ngau_hung' 
+  | 'doan_chu' 
+  | 'san_boss' 
+  | 'titles' 
+  | 'tu_tien'
+  | 'backup';
 type BasicSubTab = 'all' | 'vi_dau' | 'vi_nodau' | 'en' | 'numpad';
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -96,6 +117,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onLogout,
   config,
   onUpdateConfig,
+  onClearChat,
   onResetLeaderboard,
   onClose,
   highScores = {},
@@ -112,7 +134,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [savedNotice, setSavedNotice] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<AdminTab>('basic');
+  const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [basicSubTab, setBasicSubTab] = useState<BasicSubTab>('all');
   const [selectedBossDiff, setSelectedBossDiff] = useState<'normal' | 'hard' | 'hell'>('normal');
   const [selectedDoanChuDiff, setSelectedDoanChuDiff] = useState<'normal' | 'hard' | 'legendary'>('normal');
@@ -565,8 +587,82 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <div className="flex-1 flex flex-col overflow-hidden">
             
             {/* Main Tabs Navigation Bar */}
-            <div className="flex items-center gap-1.5 p-2 bg-slate-950 border-b border-slate-800 overflow-x-auto shrink-0">
+            <div className="flex items-center gap-1.5 p-2 bg-slate-950 border-b border-slate-800 overflow-x-auto shrink-0 scrollbar-thin">
               
+              {/* Tab 0: Tổng Quan Realtime */}
+              <button
+                id="tab-admin-dashboard"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('dashboard');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'dashboard'
+                    ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>Tổng Quan</span>
+              </button>
+
+              {/* Tab: Quản Lý Người Chơi */}
+              <button
+                id="tab-admin-users"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('users');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'users'
+                    ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/30 ring-1 ring-amber-300'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Người Chơi</span>
+              </button>
+
+              {/* Tab: Phòng Thi Đấu */}
+              <button
+                id="tab-admin-rooms"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('rooms');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'rooms'
+                    ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30 ring-1 ring-sky-300'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Swords className="w-3.5 h-3.5" />
+                <span>Phòng Đấu</span>
+              </button>
+
+              {/* Tab: Chiếu Thư & Chat */}
+              <button
+                id="tab-admin-broadcast"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('broadcast');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'broadcast'
+                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-1 ring-rose-300'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Radio className="w-3.5 h-3.5" />
+                <span>Chiếu Thư & Chat</span>
+              </button>
+
+              <div className="h-4 w-px bg-slate-800 shrink-0 mx-0.5" />
+
               {/* Tab 1: Chế độ Cơ Bản */}
               <button
                 id="tab-admin-basic"
@@ -575,14 +671,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   soundFx.playKeyClick();
                   setActiveTab('basic');
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                   activeTab === 'basic'
-                    ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/30 ring-1 ring-amber-300'
+                    ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/30 ring-1 ring-amber-300'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
-                <span>Chế Độ Cơ Bản (4 Màn)</span>
+                <span>Cơ Bản (4 Màn)</span>
               </button>
 
               {/* Tab 2: Ngẫu Hứng */}
@@ -593,14 +689,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   soundFx.playKeyClick();
                   setActiveTab('ngau_hung');
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                   activeTab === 'ngau_hung'
                     ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/30 ring-1 ring-orange-300'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <Zap className="w-3.5 h-3.5" />
-                <span>Ngẫu Hứng (Rush)</span>
+                <span>Ngẫu Hứng</span>
               </button>
 
               {/* Tab 3: Đoán Chữ */}
@@ -611,14 +707,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   soundFx.playKeyClick();
                   setActiveTab('doan_chu');
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                   activeTab === 'doan_chu'
                     ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/30 ring-1 ring-purple-300'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <HelpCircle className="w-3.5 h-3.5" />
-                <span>Đoán Chữ (Mystery)</span>
+                <span>Đoán Chữ</span>
               </button>
 
               {/* Tab 4: Săn Boss (Raid) */}
@@ -629,15 +725,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   soundFx.playKeyClick();
                   setActiveTab('san_boss');
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                   activeTab === 'san_boss'
                     ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 ring-1 ring-red-300'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <Swords className="w-3.5 h-3.5" />
-                <span>Săn Boss (Raid)</span>
+                <span>Săn Boss</span>
               </button>
+
+              <div className="h-4 w-px bg-slate-800 shrink-0 mx-0.5" />
 
               {/* Tab 5: Bảng Vàng & Danh Hiệu */}
               <button
@@ -647,14 +745,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   soundFx.playKeyClick();
                   setActiveTab('titles');
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                   activeTab === 'titles'
-                    ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/30 ring-1 ring-amber-200'
+                    ? 'bg-amber-300 text-black shadow-lg shadow-amber-300/30 ring-1 ring-amber-200'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <Award className="w-3.5 h-3.5" />
-                <span>Bảng Vàng & Danh Hiệu</span>
+                <span>Bảng Vàng</span>
               </button>
 
               {/* Tab 6: Tu Tiên (Cảnh Giới & Thành Tựu) */}
@@ -665,14 +763,32 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   soundFx.playKeyClick();
                   setActiveTab('tu_tien');
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                   activeTab === 'tu_tien'
                     ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-emerald-400 text-black shadow-lg shadow-amber-500/30 ring-1 ring-amber-300'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Tu Tiên & Cảnh Giới</span>
+                <span>Tu Tiên</span>
+              </button>
+
+              {/* Tab 7: Sao Lưu & Phục Hồi */}
+              <button
+                id="tab-admin-backup"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('backup');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'backup'
+                    ? 'bg-sky-400 text-black shadow-lg shadow-sky-400/30 ring-1 ring-sky-200'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                <span>Sao Lưu</span>
               </button>
             </div>
 
@@ -693,6 +809,46 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
             {/* Tab Contents Viewport */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+
+              {/* ========================================================================= */}
+              {/* TAB 0: TỔNG QUAN REALTIME & TELEMETRY */}
+              {/* ========================================================================= */}
+              {activeTab === 'dashboard' && (
+                <AdminDashboardTab
+                  onNavigateTab={setActiveTab}
+                  onClearChat={onClearChat}
+                  showToast={showToast}
+                />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB: QUẢN LÝ NGƯỜI CHƠI & BÀN CỔ PHẠT */}
+              {/* ========================================================================= */}
+              {activeTab === 'users' && (
+                <AdminUsersTab
+                  currentUsername={currentUsername}
+                  showToast={showToast}
+                />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB: GIÁM SÁT PHÒNG THI ĐẤU TRỰC TUYẾN */}
+              {/* ========================================================================= */}
+              {activeTab === 'rooms' && (
+                <AdminRoomsTab
+                  showToast={showToast}
+                />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB: CHIẾU THƯ & KIỂM DUYỆT CHAT */}
+              {/* ========================================================================= */}
+              {activeTab === 'broadcast' && (
+                <AdminBroadcastTab
+                  onClearChat={onClearChat}
+                  showToast={showToast}
+                />
+              )}
 
               {/* ========================================================================= */}
               {/* TAB 1: CHẾ ĐỘ CƠ BẢN (Gộp 4 chế độ: vi_dau, vi_nodau, en, numpad) */}
@@ -2049,6 +2205,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   onSyncAchievements={onSyncAchievements}
                   currentUsername={currentUsername}
                   currentUser={currentUser}
+                  showToast={showToast}
+                />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 7: SAO LƯU & PHỤC HỒI DỮ LIỆU */}
+              {/* ========================================================================= */}
+              {activeTab === 'backup' && (
+                <AdminBackupTab
+                  config={editableConfig}
+                  defaultConfig={defaultConfig}
+                  onUpdateConfig={setEditableConfig}
+                  onResetLeaderboard={onResetLeaderboard}
+                  highScores={editableHighScores}
                   showToast={showToast}
                 />
               )}
