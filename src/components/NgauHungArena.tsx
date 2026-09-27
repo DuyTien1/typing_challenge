@@ -35,11 +35,12 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   onHome,
   isMultiplayer = false,
 }) => {
+  const validIntermissionDuration = Math.max(1, Math.round(intermissionDurationSec || 3));
   const [currentRound, setCurrentRound] = useState(1);
   const [inRoomCountdown, setInRoomCountdown] = useState<number | null>(3);
   const [roundTimeLeft, setRoundTimeLeft] = useState(roundDurationSec);
   const [isIntermission, setIsIntermission] = useState(false);
-  const [intermissionLeft, setIntermissionLeft] = useState(intermissionDurationSec);
+  const [intermissionLeft, setIntermissionLeft] = useState(validIntermissionDuration);
   const [inputVal, setInputVal] = useState('');
   const [lastKeystrokeTime, setLastKeystrokeTime] = useState<number>(0);
   const [userFinishedThisRound, setUserFinishedThisRound] = useState(false);
@@ -51,6 +52,13 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   const showSurrenderModalRef = useRef(false);
   const finishersRef = useRef<string[]>([]);
   const roundHandledForRef = useRef<number>(0);
+
+  // Sync ref when currentRound is 1 (new game/restart)
+  useEffect(() => {
+    if (currentRound === 1) {
+      roundHandledForRef.current = 0;
+    }
+  }, [currentRound]);
 
   // Performance & capability stats tracking
   const historyRef = useRef<NgauHungRoundResult[]>([]);
@@ -76,6 +84,9 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         roundStartTimeRef.current = performance.now();
         roundErrorsRef.current = 0;
         setInRoomCountdown(null);
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
       }, 700);
       return () => clearTimeout(timer);
     }
@@ -102,15 +113,15 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     showSurrenderModalRef.current = false;
     setShowSurrenderModal(false);
     setTimeout(() => {
-      if (!isSurrendered) {
+      if (!isSurrendered && inRoomCountdown === null) {
         inputRef.current?.focus();
       }
     }, 50);
-  }, [isSurrendered]);
+  }, [isSurrendered, inRoomCountdown]);
 
   // Auto focus & global keypress capture with Esc + Enter surrender
   useEffect(() => {
-    if (!isSurrendered) {
+    if (!isSurrendered && inRoomCountdown === null) {
       inputRef.current?.focus();
     }
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -141,9 +152,10 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         }
       }
 
-      // 3. Auto focus input (only when not surrendered)
+      // 3. Auto focus input (only when countdown finished and not surrendered)
       if (
         !isSurrendered &&
+        inRoomCountdown === null &&
         document.activeElement !== inputRef.current &&
         !['Tab', 'Alt', 'Control', 'Meta', 'Escape'].includes(e.key) &&
         !e.metaKey &&
@@ -212,14 +224,15 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
       setHasFinishedGame(true);
       onFinishGame(stats);
     } else {
+      const validSec = Math.max(1, Math.round(intermissionDurationSec || 3));
+      setIntermissionLeft(validSec);
       setIsIntermission(true);
-      setIntermissionLeft(intermissionDurationSec);
     }
   }, [currentRound, totalRounds, intermissionDurationSec, onFinishGame, roundDurationSec, words]);
 
-  // Round Active Countdown: đếm ngược thời gian vòng chơi, khi hết giờ thì gọi endCurrentRound
+  // Round Active Countdown: đếm ngược thời gian vòng chơi
   useEffect(() => {
-    if (inRoomCountdown !== null || isIntermission) return;
+    if (inRoomCountdown !== null || isIntermission || hasFinishedGame) return;
 
     if (!isSurrendered) {
       inputRef.current?.focus();
@@ -228,8 +241,6 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     const timer = setInterval(() => {
       setRoundTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(timer);
-          endCurrentRound();
           return 0;
         }
         return prev - 1;
@@ -237,29 +248,22 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [currentRound, isIntermission, inRoomCountdown, isSurrendered, endCurrentRound]);
+  }, [currentRound, isIntermission, inRoomCountdown, isSurrendered, hasFinishedGame]);
 
-  // Intermission Countdown (Đếm ngược 3s nghỉ trước khi qua màn mới)
-  // Khi kết thúc 3s nghỉ: đồng thời chuyển sang vòng mới và reset TOÀN BỘ state vòng chơi
+  // Khi hết giờ vòng chơi (roundTimeLeft === 0): kết thúc vòng đấu hiện tại
   useEffect(() => {
-    if (!isIntermission) return;
+    if (roundTimeLeft === 0 && !isIntermission && inRoomCountdown === null && !hasFinishedGame) {
+      endCurrentRound();
+    }
+  }, [roundTimeLeft, isIntermission, inRoomCountdown, hasFinishedGame, endCurrentRound]);
+
+  // Intermission Countdown (Đếm ngược thời gian nghỉ giải lao trước khi qua vòng mới)
+  useEffect(() => {
+    if (!isIntermission || hasFinishedGame) return;
 
     const intTimer = setInterval(() => {
       setIntermissionLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(intTimer);
-          // Hết 3s nghỉ giải lao: chuyển sang vòng mới và đồng thời reset toàn bộ state cho vòng mới
-          setCurrentRound((r) => r + 1);
-          setIsIntermission(false);
-          setIntermissionLeft(intermissionDurationSec);
-          setRoundTimeLeft(roundDurationSec);
-          setUserFinishedThisRound(false);
-          setRoundPlacement(null);
-          setRoundFinishers([]);
-          finishersRef.current = [];
-          setInputVal('');
-          roundStartTimeRef.current = performance.now();
-          roundErrorsRef.current = 0;
           return 0;
         }
         return prev - 1;
@@ -267,7 +271,32 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
     }, 1000);
 
     return () => clearInterval(intTimer);
-  }, [isIntermission, intermissionDurationSec, roundDurationSec]);
+  }, [isIntermission, hasFinishedGame]);
+
+  // Khi bộ đếm chuyển vòng về 0 (intermissionLeft === 0): chuyển sang vòng mới và reset toàn bộ state
+  useEffect(() => {
+    if (isIntermission && intermissionLeft === 0 && !hasFinishedGame) {
+      const nextIntermissionSec = Math.max(1, Math.round(intermissionDurationSec || 3));
+      soundFx.playCountdown(true);
+      setCurrentRound((r) => r + 1);
+      setIsIntermission(false);
+      setIntermissionLeft(nextIntermissionSec);
+      setRoundTimeLeft(roundDurationSec);
+      setUserFinishedThisRound(false);
+      setRoundPlacement(null);
+      setRoundFinishers([]);
+      finishersRef.current = [];
+      setInputVal('');
+      roundStartTimeRef.current = performance.now();
+      roundErrorsRef.current = 0;
+
+      setTimeout(() => {
+        if (!isSurrendered) {
+          inputRef.current?.focus();
+        }
+      }, 50);
+    }
+  }, [isIntermission, intermissionLeft, hasFinishedGame, intermissionDurationSec, roundDurationSec, isSurrendered]);
 
   // Multiplayer: Kiểm tra nếu tất cả người chơi thực đã hoàn thành khi người dùng hiện tại đã xong
   useEffect(() => {
@@ -412,9 +441,13 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          <div className="h-9 flex items-center gap-1.5 font-mono text-sm text-slate-300 bg-slate-950/60 px-3 rounded-xl border border-slate-800 shrink-0">
-            <Clock className="w-4 h-4 text-amber-400" />
-            <span>{isIntermission ? `Nghỉ: ${intermissionLeft}s` : `${roundTimeLeft}s`}</span>
+          <div className={`h-9 flex items-center gap-1.5 font-mono text-sm px-3 rounded-xl border shrink-0 transition-all ${
+            isIntermission 
+              ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 ring-2 ring-amber-500/30' 
+              : 'bg-slate-950/60 border-slate-800 text-slate-300'
+          }`}>
+            <Clock className={`w-4 h-4 ${isIntermission ? 'text-amber-300 animate-spin' : 'text-amber-400'}`} />
+            <span>{isIntermission ? `Chuyển vòng: ${intermissionLeft}s` : `${roundTimeLeft}s`}</span>
           </div>
 
           {!isSurrendered && onSurrender && (
@@ -518,14 +551,14 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
       >
         {/* Đếm ngược 3s trước khi bắt đầu chơi */}
         {inRoomCountdown !== null && (
-          <div className="absolute inset-0 z-20 bg-[#141824]/95 backdrop-blur-sm flex flex-col items-center justify-center select-none animate-fadeIn">
+          <div className="absolute inset-0 z-50 bg-[#141824] flex flex-col items-center justify-center select-none animate-fadeIn">
             <div
               key={inRoomCountdown}
               className="text-7xl sm:text-8xl font-black text-amber-400 font-['JetBrains_Mono',monospace] animate-ping drop-shadow-[0_0_25px_rgba(251,191,36,0.6)]"
             >
               {inRoomCountdown === 0 ? 'BẮT ĐẦU!' : inRoomCountdown}
             </div>
-            <div className="mt-4 text-slate-300 text-sm font-semibold tracking-wider uppercase flex items-center gap-2">
+            <div className="mt-5 text-slate-300 text-sm font-semibold tracking-wider uppercase flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400 animate-bounce" />
               <span>{inRoomCountdown === 0 ? 'Vào vòng 1 ngay!' : 'Chuẩn bị phím...'}</span>
             </div>
@@ -533,14 +566,59 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         )}
 
         {isIntermission ? (
-          <div className="py-8 space-y-3">
-            <div className="text-2xl font-black text-amber-400 font-['JetBrains_Mono',monospace] animate-pulse">
-              Nghỉ giải lao: {intermissionLeft}s...
+          <div className="py-6 space-y-4 animate-in fade-in zoom-in duration-200">
+            {/* Round result banner */}
+            {userFinishedThisRound ? (
+              <div className="text-base sm:text-lg font-bold text-emerald-400 flex items-center justify-center gap-2 animate-bounce">
+                <Trophy className="w-5 h-5 text-yellow-400" />
+                <span>
+                  {roundPlacement === 1 ? '🥇 Xuất sắc! Bạn về đích Hạng 1 (+3 điểm)!' :
+                   roundPlacement === 2 ? '🥈 Tuyệt vời! Bạn về đích Hạng 2 (+2 điểm)!' :
+                   roundPlacement === 3 ? '🥉 Tốt lắm! Bạn về đích Hạng 3 (+1 điểm)!' :
+                   `Bạn đã hoàn thành vòng #${currentRound}!`}
+                </span>
+              </div>
+            ) : (
+              <div className="text-sm sm:text-base font-bold text-rose-400 flex items-center justify-center gap-2">
+                <Clock className="w-4 h-4 text-rose-400" />
+                <span>Hết thời gian vòng #{currentRound}!</span>
+              </div>
+            )}
+
+            {/* Target word from previous round */}
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
+              <span>Từ vừa thi đấu:</span>
+              <span className="px-3 py-1 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono font-bold text-base tracking-wide">
+                {targetWord}
+              </span>
             </div>
-            <p className="text-xs text-slate-400 font-medium">Vòng mới sẽ tự động bắt đầu ngay sau khi hết 3s nghỉ!</p>
+
+            {/* Transition countdown box */}
+            <div className="max-w-md mx-auto p-4 rounded-2xl bg-slate-950/80 border border-amber-500/30 shadow-lg space-y-2">
+              <div className="flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider text-amber-400">
+                <Zap className="w-4 h-4 text-amber-400 animate-bounce" />
+                <span>Chuẩn Bị Sang Vòng {currentRound + 1} / {totalRounds}</span>
+              </div>
+
+              <div className="text-4xl sm:text-5xl font-black text-amber-400 font-mono tracking-tight animate-pulse drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]">
+                {intermissionLeft > 0 ? `${intermissionLeft}s` : 'VÀO!'}
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-2">
+                <div 
+                  className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all duration-1000 ease-linear rounded-full"
+                  style={{ width: `${Math.max(0, Math.min(100, (intermissionLeft / validIntermissionDuration) * 100))}%` }}
+                />
+              </div>
+
+              <p className="text-[11px] text-slate-400 pt-1">
+                Tự động bắt đầu vòng mới khi đồng hồ đếm ngược kết thúc.
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-6 relative">
+          <div className={`space-y-6 relative transition-opacity duration-200 ${inRoomCountdown !== null ? 'invisible opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <div className="text-4xl sm:text-5xl font-black font-['JetBrains_Mono',monospace] tracking-wider py-4 flex items-center justify-center">
               <span
                 data-ngauhung-word="true"

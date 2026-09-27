@@ -47,17 +47,6 @@ export const MeditationDais: React.FC<MeditationDaisProps> = ({
     <div className="relative p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border border-amber-500/40 shadow-2xl overflow-hidden text-center select-none">
       {/* Dynamic Realm Mist Particles Background */}
       <div className={`absolute inset-0 bg-gradient-radial ${currentAuraGradient} pointer-events-none opacity-70 blur-xl animate-pulse`} />
-      
-      {/* Spinning Bát Quái Trigram Dais Circle */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 sm:w-80 h-72 sm:h-80 pointer-events-none opacity-20">
-        <svg viewBox="0 0 100 100" className="w-full h-full animate-[spin_50s_linear_infinite]">
-          <circle cx="50" cy="50" r="46" fill="none" stroke="#fbbf24" strokeWidth="0.8" strokeDasharray="3 3" />
-          <circle cx="50" cy="50" r="38" fill="none" stroke="#fbbf24" strokeWidth="0.5" />
-          <path d="M50 4 A46 46 0 0 1 50 96 A23 23 0 0 1 50 50 A23 23 0 0 0 50 4 Z" fill="none" stroke="#fbbf24" strokeWidth="0.8" />
-          <circle cx="50" cy="27" r="4" fill="#fbbf24" opacity="0.6" />
-          <circle cx="50" cy="73" r="4" fill="#fbbf24" opacity="0.6" />
-        </svg>
-      </div>
 
       {/* Floating Header Badges */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 mb-6">
@@ -86,13 +75,24 @@ export const MeditationDais: React.FC<MeditationDaisProps> = ({
       <div className="relative z-10 flex flex-col items-center justify-center my-4">
         {/* Layered Sacred Lotus & Halo Rings */}
         <div className="relative flex items-center justify-center">
-          {/* Pulsing Spirit Aura Ring */}
-          <div className="absolute -inset-6 rounded-full border border-amber-400/30 animate-[spin_20s_linear_infinite] pointer-events-none" />
-          <div className="absolute -inset-10 rounded-full border border-dashed border-amber-500/20 animate-[spin_35s_linear_infinite_reverse] pointer-events-none" />
-          <div className="absolute -inset-3 rounded-full bg-gradient-to-t from-amber-500/20 via-yellow-400/10 to-transparent blur-md pointer-events-none" />
+          {/* Spinning Bát Quái Trigram Dais Circle - Centered directly behind the player's avatar */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 sm:w-72 h-64 sm:h-72 pointer-events-none opacity-25 z-0">
+            <svg viewBox="0 0 100 100" className="w-full h-full animate-[spin_50s_linear_infinite]">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="#fbbf24" strokeWidth="0.8" strokeDasharray="3 3" />
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#fbbf24" strokeWidth="0.5" />
+              <path d="M50 4 A46 46 0 0 1 50 96 A23 23 0 0 1 50 50 A23 23 0 0 0 50 4 Z" fill="none" stroke="#fbbf24" strokeWidth="0.8" />
+              <circle cx="50" cy="27" r="4" fill="#fbbf24" opacity="0.6" />
+              <circle cx="50" cy="73" r="4" fill="#fbbf24" opacity="0.6" />
+            </svg>
+          </div>
+
+          {/* Pulsing Spirit Aura Rings (Centered directly with Avatar) */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border border-amber-400/30 animate-[spin_20s_linear_infinite] pointer-events-none z-0" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full border border-dashed border-amber-500/20 animate-[spin_35s_linear_infinite_reverse] pointer-events-none z-0" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-t from-amber-500/25 via-yellow-400/15 to-transparent blur-md pointer-events-none z-0" />
 
           {/* Avatar Component */}
-          <div className="relative transform hover:scale-105 transition-transform duration-300">
+          <div className="relative z-10 transform hover:scale-105 transition-transform duration-300">
             <AvatarWithFrame
               icon={userAvatar}
               frameId={userFrame}
@@ -101,7 +101,7 @@ export const MeditationDais: React.FC<MeditationDaisProps> = ({
               showRealmAura={true}
             />
             {/* Meditating Lotus Base Platform Icon */}
-            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-slate-950/90 border border-amber-400 text-xs font-bold text-amber-300 shadow-lg flex items-center gap-1">
+            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-slate-950/95 border border-amber-400 text-xs font-bold text-amber-300 shadow-lg flex items-center gap-1 z-20 whitespace-nowrap">
               <span>🪷</span>
               <span className="text-[10px] uppercase font-mono tracking-wider">Tọa Thiền</span>
             </div>

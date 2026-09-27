@@ -99,6 +99,44 @@ export interface ServerHighScoreRecord {
   timestamp: number;
   avatar?: string;
   frame?: string;
+  accuracy?: number;
+  isVerified?: boolean;
+}
+
+export interface ServerLeaderboardEntry {
+  rank: number;
+  userId?: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  frame?: string;
+  wpm: number;
+  score: number;
+  errors: number;
+  accuracy: number;
+  consistency?: number;
+  timestamp: number;
+  isVerified?: boolean;
+  realmName?: string;
+  realmIcon?: string;
+  level?: number;
+  sectName?: string;
+  sectTag?: string;
+  keyboardSwitch?: string;
+}
+
+export interface ServerMultiLeaderboard {
+  highScores: Record<string, ServerHighScoreRecord | null>;
+  rankings: Record<
+    string,
+    {
+      daily: ServerLeaderboardEntry[];
+      weekly: ServerLeaderboardEntry[];
+      all_time: ServerLeaderboardEntry[];
+    }
+  >;
+  lastResetDate: string; // YYYY-MM-DD
+  lastResetWeek: string; // YYYY-Wxx
 }
 
 export interface ServerUserRecord {

@@ -55,6 +55,8 @@ interface CultivationModalProps {
   onSelectFrame?: (frameId: string) => void;
   isLoggedIn?: boolean;
   onOpenAuthModal?: () => void;
+  onStartSectBoss?: (sectId: string, sectName: string) => void;
+  onStartSectTournament?: (sectId: string, sectName: string) => void;
 }
 
 export const CultivationModal: React.FC<CultivationModalProps> = ({
@@ -68,6 +70,8 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   onSelectFrame,
   isLoggedIn = true,
   onOpenAuthModal,
+  onStartSectBoss,
+  onStartSectTournament,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -212,7 +216,8 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         username || 'Đạo Hữu',
         realmObj.name,
         getSubStage(result.updatedState.tier),
-        result.updatedState.tier
+        result.updatedState.tier,
+        true
       ).catch(() => {});
       if (result.unlockedFrameId) {
         onSelectFrame?.(result.unlockedFrameId);
@@ -405,7 +410,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                 <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/15 to-purple-500/15 border border-amber-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-amber-500/25 border border-amber-400/60 flex items-center justify-center text-lg shrink-0">
-                      ������
+                      📅
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -771,7 +776,15 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
 
           {/* SECTS & GUILD TAB */}
           {activeTab === 'sects' && (
-            <SectsSection state={state} onUpdateState={onUpdateState} username={username} />
+            <SectsSection
+              state={state}
+              onUpdateState={onUpdateState}
+              username={username}
+              userAvatar={userAvatar}
+              userFrame={userFrame}
+              onStartSectBoss={onStartSectBoss}
+              onStartSectTournament={onStartSectTournament}
+            />
           )}
 
           {/* DAILY CHECK-IN TAB */}
@@ -1138,7 +1151,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                 <div>
                   <h3 className="text-sm font-bold text-amber-300">Tu Luyện Hàng Ngày</h3>
                   <p className="text-xs text-slate-400">
-                    Hoàn thành bài tập gõ mỗi ngày để ngưng tụ Tu Vi và Đan Dược kéo dài thọ mệnh. Tự động làm mới lúc 00:00!
+                    Hoàn thành bài tập gõ mỗi ngày để ngưng tụ Tu Vi tinh thuần. Tự động làm mới lúc 00:00!
                   </p>
                 </div>
                 <div className="text-right">
@@ -1169,16 +1182,10 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">{quest.desc}</p>
                         <div className="flex items-center gap-3 mt-2 text-xs">
-                          <span className="text-amber-400 font-bold">+{quest.rewardExp} Tu Vi</span>
-                          {quest.rewardPill === 'thoNguyen' && (
-                            <span className="text-rose-300">+1 Thọ Nguyên Đan</span>
-                          )}
-                          {quest.rewardPill === 'phaCanh' && (
-                            <span className="text-amber-300">+1 Phá Cảnh Đan</span>
-                          )}
-                          {quest.rewardPill === 'hoTam' && (
-                            <span className="text-sky-300">+1 Hộ Tâm Đan</span>
-                          )}
+                          <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                            +{quest.rewardExp} Tu Vi
+                          </span>
                         </div>
                       </div>
 

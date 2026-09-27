@@ -15,6 +15,8 @@ import {
   ActivePresenceSession,
   ServerFriendshipRecord,
   ServerFriendRequestRecord,
+  ServerMultiLeaderboard,
+  ServerLeaderboardEntry,
 } from './server/types';
 import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
 
@@ -37,60 +39,171 @@ const globalChatMessages: ServerChatMessage[] = [
 
 const roomChatMessages = new Map<string, ServerChatMessage[]>();
 
-// Real Leaderboard Storage (Persistent to leaderboard.json)
+// Real Leaderboard Storage (Persistent to leaderboard.json with Multi-Period & Top 20)
 const LEADERBOARD_FILE = path.join(process.cwd(), 'leaderboard.json');
 
-function loadLeaderboardFromFile(): Record<string, ServerHighScoreRecord | null> {
+export function getVietnamDateStr(): string {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const vnTime = new Date(utc + 7 * 3600000);
+  return vnTime.toISOString().slice(0, 10);
+}
+
+export function getVietnamWeekStr(): string {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const vnTime = new Date(utc + 7 * 3600000);
+  const d = new Date(Date.UTC(vnTime.getFullYear(), vnTime.getMonth(), vnTime.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNo < 10 ? '0' : ''}${weekNo}`;
+}
+
+const VALID_LEADERBOARD_MODES = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'ngau_hung', 'doan_chu', 'san_boss'];
+
+function createEmptyLeaderboardData(): ServerMultiLeaderboard {
+  const highScores: Record<string, ServerHighScoreRecord | null> = {};
+  const rankings: Record<string, { daily: ServerLeaderboardEntry[]; weekly: ServerLeaderboardEntry[]; all_time: ServerLeaderboardEntry[] }> = {};
+  for (const m of VALID_LEADERBOARD_MODES) {
+    highScores[m] = null;
+    rankings[m] = { daily: [], weekly: [], all_time: [] };
+  }
+  return {
+    highScores,
+    rankings,
+    lastResetDate: getVietnamDateStr(),
+    lastResetWeek: getVietnamWeekStr(),
+  };
+}
+
+function loadLeaderboardFromFile(): ServerMultiLeaderboard {
+  const empty = createEmptyLeaderboardData();
   try {
     if (fs.existsSync(LEADERBOARD_FILE)) {
       const content = fs.readFileSync(LEADERBOARD_FILE, 'utf-8');
       const data = JSON.parse(content);
       if (data && typeof data === 'object') {
-        const clean: Record<string, ServerHighScoreRecord | null> = {
-          vi_dau: null,
-          vi_nodau: null,
-          en: null,
-          numpad: null,
-          ngau_hung: null,
-          doan_chu: null,
-          san_boss: null,
-        };
         const mockNames = new Set(['GiaCátGõ', 'LướtGió', 'QuickFox', 'KếToánViên', 'ChớpNhoáng', 'ThámTửPhím', 'DũngSĩRồng', 'PhímThần_VN']);
+
+        // Check if file is already multi-period structure
+        if (data.rankings && typeof data.rankings === 'object') {
+          for (const m of VALID_LEADERBOARD_MODES) {
+            if (data.highScores && data.highScores[m]) {
+              const hs = data.highScores[m];
+              if (hs && hs.username && !mockNames.has(hs.username.trim())) {
+                empty.highScores[m] = {
+                  ...hs,
+                  displayName: hs.displayName || hs.username,
+                };
+              }
+            }
+            if (data.rankings[m]) {
+              const filterValid = (arr: any[]): ServerLeaderboardEntry[] =>
+                (Array.isArray(arr) ? arr : [])
+                  .filter((e) => e && e.username && !mockNames.has(e.username.trim()))
+                  .map((e, idx) => ({
+                    ...e,
+                    rank: idx + 1,
+                    displayName: e.displayName || e.username,
+                  }));
+
+              empty.rankings[m] = {
+                daily: filterValid(data.rankings[m].daily),
+                weekly: filterValid(data.rankings[m].weekly),
+                all_time: filterValid(data.rankings[m].all_time),
+              };
+            }
+          }
+          empty.lastResetDate = data.lastResetDate || getVietnamDateStr();
+          empty.lastResetWeek = data.lastResetWeek || getVietnamWeekStr();
+          return empty;
+        }
+
+        // Legacy format migration
         for (const [key, value] of Object.entries(data)) {
-          const rec = value as ServerHighScoreRecord | null;
-          if (rec && typeof rec === 'object' && rec.username && !mockNames.has(rec.username.trim())) {
-            clean[key] = {
-              ...rec,
-              displayName: rec.displayName || rec.username,
-            };
+          if (VALID_LEADERBOARD_MODES.includes(key) && value && typeof value === 'object') {
+            const rec = value as ServerHighScoreRecord;
+            if (rec.username && !mockNames.has(rec.username.trim())) {
+              const cleaned: ServerHighScoreRecord = {
+                ...rec,
+                displayName: rec.displayName || rec.username,
+              };
+              empty.highScores[key] = cleaned;
+              empty.rankings[key].all_time.push({
+                rank: 1,
+                userId: rec.userId,
+                username: rec.username,
+                displayName: rec.displayName || rec.username,
+                avatar: rec.avatar || '⚡',
+                frame: rec.frame || 'default',
+                wpm: rec.wpm || 0,
+                score: rec.score || 0,
+                errors: rec.errors || 0,
+                accuracy: rec.accuracy || 98,
+                timestamp: rec.timestamp || Date.now(),
+                isVerified: true,
+              });
+            }
           }
         }
-        return clean;
+        return empty;
       }
     }
   } catch (err) {
     console.error('Error reading leaderboard file:', err);
   }
-  return {
-    vi_dau: null,
-    vi_nodau: null,
-    en: null,
-    numpad: null,
-    ngau_hung: null,
-    doan_chu: null,
-    san_boss: null,
-  };
+  return empty;
 }
 
-let serverHighScores = loadLeaderboardFromFile();
+let serverLeaderboardData = loadLeaderboardFromFile();
+let serverHighScores = serverLeaderboardData.highScores;
+
+function checkLeaderboardResets(): boolean {
+  const todayStr = getVietnamDateStr();
+  const thisWeekStr = getVietnamWeekStr();
+  let changed = false;
+
+  // 1. Daily reset at 00:00 GMT+7
+  if (serverLeaderboardData.lastResetDate !== todayStr) {
+    for (const m of VALID_LEADERBOARD_MODES) {
+      serverLeaderboardData.rankings[m].daily = [];
+      // Keep today's top 1 in sync:
+      serverLeaderboardData.highScores[m] = null;
+    }
+    serverLeaderboardData.lastResetDate = todayStr;
+    changed = true;
+  }
+
+  // 2. Weekly reset
+  if (serverLeaderboardData.lastResetWeek !== thisWeekStr) {
+    for (const m of VALID_LEADERBOARD_MODES) {
+      serverLeaderboardData.rankings[m].weekly = [];
+    }
+    serverLeaderboardData.lastResetWeek = thisWeekStr;
+    changed = true;
+  }
+
+  if (changed) {
+    saveLeaderboardToFile();
+    broadcastLeaderboard();
+  }
+  return changed;
+}
 
 function saveLeaderboardToFile() {
   try {
-    fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(serverHighScores, null, 2), 'utf-8');
+    fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(serverLeaderboardData, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error saving leaderboard file:', err);
   }
 }
+
+// Background check for 00:00 midnight reset every 30 seconds
+setInterval(() => {
+  checkLeaderboardResets();
+}, 30000);
 
 // User Account Storage (Persistent to users.json - no external database required)
 const USERS_FILE = path.join(process.cwd(), 'users.json');
@@ -1597,7 +1710,28 @@ setInterval(() => {
 }, 60000);
 
 function broadcastLeaderboard() {
-  const payload = `data: ${JSON.stringify({ type: 'leaderboard_updated', highScores: serverHighScores })}\n\n`;
+  const payload = `data: ${JSON.stringify({
+    type: 'leaderboard_updated',
+    highScores: serverLeaderboardData.highScores,
+    rankings: serverLeaderboardData.rankings,
+    lastResetDate: serverLeaderboardData.lastResetDate,
+    lastResetWeek: serverLeaderboardData.lastResetWeek,
+  })}\n\n`;
+  for (const client of Array.from(sseGlobalChatClients)) {
+    try {
+      client.write(payload);
+    } catch {
+      sseGlobalChatClients.delete(client);
+      sseGlobalClients.delete(client);
+    }
+  }
+}
+
+function broadcastBreakingRecord(record: any) {
+  const payload = `data: ${JSON.stringify({
+    type: 'breaking_record',
+    record,
+  })}\n\n`;
   for (const client of Array.from(sseGlobalChatClients)) {
     try {
       client.write(payload);
@@ -1892,9 +2026,37 @@ function startRoomBots(roomId: string) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // In production (e.g. Render), respect assigned process.env.PORT, otherwise default to 3000 for local dev
+  const PORT = process.env.NODE_ENV === 'production'
+    ? (Number(process.env.PORT) || 3000)
+    : 3000;
 
-  app.use(express.json());
+  app.set('trust proxy', 1);
+
+  // Increase payload limit to 50MB to prevent PayloadTooLargeError on Render / production
+  // Supports large profiles, match histories, leaderboards, custom avatars, and system backups
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Gracefully handle PayloadTooLargeError and invalid JSON syntax from body-parser
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
+      res.status(413).json({
+        success: false,
+        error: 'Dung lượng yêu cầu quá lớn (Payload Too Large). Giới hạn tối đa là 50MB.',
+        message: 'Dữ liệu vượt quá dung lượng cho phép.',
+      });
+      return;
+    }
+    if (err instanceof SyntaxError && 'body' in err) {
+      res.status(400).json({
+        success: false,
+        error: 'Dữ liệu JSON gửi lên không đúng định dạng.',
+      });
+      return;
+    }
+    next(err);
+  });
 
   // === AUTHENTICATION API ROUTES (users.json persistence) ===
 
@@ -3360,9 +3522,7 @@ async function startServer() {
           (cleanName && r.toUsername && r.toUsername.toLowerCase() === cleanName) ||
           (cleanName && r.toUserId && r.toUserId.toLowerCase() === cleanName)
       ).length;
-      if (pendingCount > 0) {
-        res.write(`data: ${JSON.stringify({ type: 'friend_requests_count', count: pendingCount })}\n\n`);
-      }
+      res.write(`data: ${JSON.stringify({ type: 'friend_requests_count', count: pendingCount })}\n\n`);
     }
 
     // Keep-alive heartbeat every 15s
@@ -3944,16 +4104,47 @@ async function startServer() {
         friendName: authUser.displayName || authUser.username,
       });
 
+      // Tính số lượng lời mời còn lại cho người vừa duyệt
+      const myId = authUser.id;
+      const myName = String(authUser.username || '').toLowerCase();
+      const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) => {
+        const toId = String(r.toUserId || '').toLowerCase();
+        const toUname = String(r.toUsername || '').toLowerCase();
+        return r.toUserId === myId || (myName && toId === myName) || (myName && toUname === myName);
+      }).length;
+
+      broadcastToUser(authUser.id, {
+        type: 'friend_requests_count',
+        count: remainingPendingCount,
+      });
+
       res.json({
         success: true,
         message: 'Đã chấp thuận kết bái đạo hữu thành công!',
+        remainingCount: remainingPendingCount,
       });
     } else {
       serverFriendRequests.delete(requestId);
       saveFriendsToFile();
+
+      // Tính số lượng lời mời còn lại cho người vừa từ chối
+      const myId = authUser.id;
+      const myName = String(authUser.username || '').toLowerCase();
+      const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) => {
+        const toId = String(r.toUserId || '').toLowerCase();
+        const toUname = String(r.toUsername || '').toLowerCase();
+        return r.toUserId === myId || (myName && toId === myName) || (myName && toUname === myName);
+      }).length;
+
+      broadcastToUser(authUser.id, {
+        type: 'friend_requests_count',
+        count: remainingPendingCount,
+      });
+
       res.json({
         success: true,
         message: 'Đã từ chối lời mời kết bạn.',
+        remainingCount: remainingPendingCount,
       });
     }
   });
@@ -4957,6 +5148,193 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     });
   });
 
+  // GET /api/admin/user-stats: Dedicated real-time player telemetry, match counts, and ban monitor
+  app.get('/api/admin/user-stats', (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    cleanStaleSessions();
+
+    const now = Date.now();
+
+    // 1. Realtime Active Players Breakdown & List
+    const activeUsersMap = new Map<string, any>();
+    let inMatchCount = 0;
+    let inRoomWaitingCount = 0;
+    let inLobbyCount = 0;
+
+    for (const session of activePresenceSessions.values()) {
+      let roomInfo: any = null;
+      let userState: 'in_match' | 'in_room' | 'in_lobby' = 'in_lobby';
+
+      if (session.currentRoomId) {
+        const norm = normalizeRoomCode(session.currentRoomId);
+        const r = rooms.get(norm);
+        if (r) {
+          const playerInRoom = r.players.find((p) => p.id === session.userId);
+          if (r.status === 'playing') {
+            userState = 'in_match';
+          } else {
+            userState = 'in_room';
+          }
+          roomInfo = {
+            roomId: r.id,
+            mode: r.mode,
+            modeName: getModeDisplayName(r.mode),
+            roomStatus: r.status,
+            isHost: r.hostId === session.userId,
+            playerCount: r.players.length,
+            playerWpm: playerInRoom?.wpm || 0,
+            playerProgress: playerInRoom?.progress || 0,
+          };
+        }
+      }
+
+      const key = getUniqueUserKey(session);
+      if (!activeUsersMap.has(key)) {
+        activeUsersMap.set(key, {
+          userId: session.userId,
+          username: session.username,
+          avatar: session.avatar || '👤',
+          frame: session.frame || 'default',
+          bestWpm: session.bestWpm || 0,
+          totalGames: session.totalGames || 0,
+          currentRoomId: session.currentRoomId || null,
+          currentMode: session.currentMode || 'solo',
+          userState,
+          roomInfo,
+          browser: session.browser || 'Web',
+          device: session.device || 'Desktop',
+          connectedAt: session.connectedAt || now,
+          lastSeen: session.lastSeen || now,
+          isAdmin: Boolean(session.isAdmin),
+        });
+
+        if (userState === 'in_match') inMatchCount++;
+        else if (userState === 'in_room') inRoomWaitingCount++;
+        else inLobbyCount++;
+      } else {
+        const existing = activeUsersMap.get(key)!;
+        if (session.currentRoomId && !existing.currentRoomId) {
+          existing.currentRoomId = session.currentRoomId;
+          existing.roomInfo = roomInfo;
+          existing.userState = userState;
+        }
+        if (session.lastSeen > existing.lastSeen) {
+          existing.lastSeen = session.lastSeen;
+          if (session.username && !session.username.startsWith('Khách ')) {
+            existing.username = session.username;
+          }
+        }
+      }
+    }
+
+    const activePlayersList = Array.from(activeUsersMap.values()).sort((a, b) => b.lastSeen - a.lastSeen);
+    const realtimeActivePlayersCount = activePlayersList.length;
+
+    // 2. Total Matches Played Across Entire System
+    let totalMatchesPlayed = 0;
+    let highestUserMatches = 0;
+    let topMatchesPlayer: { username: string; totalGames: number; bestWpm: number; avatar: string } | null = null;
+    const userMatchRankings: Array<{ id: string; username: string; avatar: string; frame: string; totalGames: number; bestWpm: number; realmName?: string }> = [];
+
+    for (const u of serverUsers.values()) {
+      const games = Number(u.totalGames || 0);
+      totalMatchesPlayed += games;
+      userMatchRankings.push({
+        id: u.id,
+        username: u.username,
+        avatar: u.avatar || '👤',
+        frame: u.frame || 'default',
+        totalGames: games,
+        bestWpm: u.bestWpm || 0,
+        realmName: (u.cultivation as any)?.currentRealm?.name || 'Luyện Khí Kỳ',
+      });
+      if (games > highestUserMatches) {
+        highestUserMatches = games;
+        topMatchesPlayer = {
+          username: u.username,
+          totalGames: games,
+          bestWpm: u.bestWpm || 0,
+          avatar: u.avatar || '👤',
+        };
+      }
+    }
+
+    userMatchRankings.sort((a, b) => b.totalGames - a.totalGames);
+
+    // 3. Currently Banned Accounts Monitor
+    const bannedAccountsList: Array<{
+      username: string;
+      userId?: string;
+      reason: string;
+      bannedAt: number;
+      bannedUntil: number;
+      remainingMinutes: number;
+      isPermanent: boolean;
+      avatar?: string;
+    }> = [];
+
+    const seenBannedUsernames = new Set<string>();
+
+    for (const b of serverBans.values()) {
+      if (b && b.bannedUntil > now) {
+        const lower = b.username.toLowerCase();
+        if (!seenBannedUsernames.has(lower)) {
+          seenBannedUsernames.add(lower);
+          const rem = Math.max(0, Math.ceil((b.bannedUntil - now) / 60000));
+          const uRecord = getUserByUsername(b.username);
+          bannedAccountsList.push({
+            username: b.username,
+            userId: b.userId || uRecord?.id,
+            reason: b.reason || 'Vi phạm điều lệ Đạo Giới',
+            bannedAt: b.bannedAt || now,
+            bannedUntil: b.bannedUntil,
+            remainingMinutes: rem,
+            isPermanent: rem > 500000,
+            avatar: uRecord?.avatar || '⚠️',
+          });
+        }
+      }
+    }
+
+    bannedAccountsList.sort((a, b) => b.remainingMinutes - a.remainingMinutes);
+    const currentBannedCount = bannedAccountsList.length;
+
+    // 4. Overall Aggregate Telemetry
+    const totalRegisteredUsers = serverUsers.size;
+    const avgMatchesPerUser = totalRegisteredUsers > 0 ? Math.round((totalMatchesPlayed / totalRegisteredUsers) * 10) / 10 : 0;
+    const activeRatePercent = totalRegisteredUsers > 0 ? Math.min(100, Math.round((realtimeActivePlayersCount / totalRegisteredUsers) * 1000) / 10) : 0;
+    const bannedRatePercent = totalRegisteredUsers > 0 ? Math.min(100, Math.round((currentBannedCount / totalRegisteredUsers) * 1000) / 10) : 0;
+
+    res.json({
+      success: true,
+      timestamp: now,
+      realtimeActivePlayers: {
+        count: realtimeActivePlayersCount,
+        inMatch: inMatchCount,
+        inRoomWaiting: inRoomWaitingCount,
+        inLobby: inLobbyCount,
+        totalConnections: activePresenceSessions.size,
+        activeRooms: rooms.size,
+        players: activePlayersList,
+      },
+      totalMatches: {
+        count: totalMatchesPlayed,
+        avgPerUser: avgMatchesPerUser,
+        topMatchesPlayer,
+        topRankings: userMatchRankings.slice(0, 10),
+      },
+      bannedAccounts: {
+        count: currentBannedCount,
+        bannedRatePercent,
+        list: bannedAccountsList,
+      },
+      summary: {
+        totalRegisteredUsers,
+        activeRatePercent,
+      },
+    });
+  });
+
   // GET /api/admin/users: Complete list of registered users with full telemetry
   app.get('/api/admin/users', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -5941,11 +6319,14 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     });
   });
 
-  // GET /api/leaderboard: Get real server-wide high scores
+  // GET /api/leaderboard: Get real server-wide high scores with multi-period Top 20
   app.get('/api/leaderboard', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    checkLeaderboardResets();
+
     const enrichedScores: Record<string, ServerHighScoreRecord | null> = {};
-    for (const [key, val] of Object.entries(serverHighScores)) {
+    for (const [key, rawVal] of Object.entries(serverLeaderboardData.highScores)) {
+      const val = rawVal as ServerHighScoreRecord | null;
       if (val) {
         let user: ServerUserRecord | null = null;
         if (val.userId && serverUsers.has(val.userId)) {
@@ -5961,11 +6342,77 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         enrichedScores[key] = null;
       }
     }
-    res.json({ success: true, highScores: enrichedScores });
+
+    res.json({
+      success: true,
+      highScores: enrichedScores,
+      rankings: serverLeaderboardData.rankings,
+      lastResetDate: serverLeaderboardData.lastResetDate,
+      lastResetWeek: serverLeaderboardData.lastResetWeek,
+    });
   });
 
-  // POST /api/leaderboard: Submit real score achieved by player
+  // Helper function to update and sort a ranking list (keeps Top 20)
+  function updatePeriodRankingList(
+    list: ServerLeaderboardEntry[],
+    entry: ServerLeaderboardEntry,
+    isScoreMode: boolean
+  ): { rank: number; isBetter: boolean } {
+    const existingIdx = list.findIndex(
+      (item) =>
+        (item.userId && entry.userId && item.userId === entry.userId) ||
+        (item.username && entry.username && item.username.toLowerCase() === entry.username.toLowerCase())
+    );
+
+    let isBetter = true;
+    if (existingIdx !== -1) {
+      const old = list[existingIdx];
+      if (isScoreMode) {
+        isBetter = entry.score > old.score || (entry.score === old.score && entry.errors < old.errors);
+      } else {
+        isBetter = entry.wpm > old.wpm || (entry.wpm === old.wpm && entry.errors < old.errors);
+      }
+      if (isBetter) {
+        list[existingIdx] = { ...entry };
+      }
+    } else {
+      list.push({ ...entry });
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      if (isScoreMode) {
+        if (b.score !== a.score) return b.score - a.score;
+      } else {
+        if (b.wpm !== a.wpm) return b.wpm - a.wpm;
+      }
+      if (a.errors !== b.errors) return a.errors - b.errors;
+      if ((b.accuracy || 100) !== (a.accuracy || 100)) return (b.accuracy || 100) - (a.accuracy || 100);
+      return a.timestamp - b.timestamp;
+    });
+
+    // Re-index ranks and cap to top 20
+    let userRank = -1;
+    for (let i = 0; i < list.length; i++) {
+      list[i].rank = i + 1;
+      if (
+        (list[i].userId && entry.userId && list[i].userId === entry.userId) ||
+        (list[i].username && entry.username && list[i].username.toLowerCase() === entry.username.toLowerCase())
+      ) {
+        userRank = i + 1;
+      }
+    }
+
+    if (list.length > 20) {
+      list.splice(20);
+    }
+
+    return { rank: userRank, isBetter };
+  }
+
+  // POST /api/leaderboard: Submit real score achieved by player (Top 20 + Multi-period)
   app.post('/api/leaderboard', (req, res) => {
+    checkLeaderboardResets();
     const {
       mode,
       username,
@@ -5973,12 +6420,15 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       wpm = 0,
       score = 0,
       errors = 0,
+      accuracy = 100,
+      consistency,
       avatar,
       frame,
       isSurrendered,
       isCompleted = true,
       roomId,
       playerId,
+      keyboardSwitch,
     } = req.body;
 
     const validModes = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'ngau_hung', 'doan_chu', 'san_boss'];
@@ -5994,7 +6444,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         success: false,
         isNewRecord: false,
         error: `Tài khoản đang chịu án phạt từ Bàn Cổ Thần Thức (Cấm thi đấu 2 giờ). Thời gian thụ án còn lại: ${banCheck.remainingMinutes} phút! Điểm số không được ghi nhận lên Bảng Vàng!`,
-        highScores: serverHighScores,
+        highScores: serverLeaderboardData.highScores,
+        rankings: serverLeaderboardData.rankings,
       });
       return;
     }
@@ -6008,8 +6459,9 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         success: false,
         isGuest: true,
         isNewRecord: false,
-        error: 'Người chơi đang ở chế độ Khách (chưa đăng nhập hoặc chưa xác thực Gmail). Điểm số không được ghi nhận lên Bảng Vàng. Hãy đăng nhập tài khoản để xác lập kỷ lục!',
-        highScores: serverHighScores,
+        error: 'Người chơi đang ở chế độ Khách (chưa đăng nhập hoặc chưa xác thực). Điểm số không được ghi nhận lên Bảng Vàng. Hãy đăng nhập tài khoản để xác lập kỷ lục!',
+        highScores: serverLeaderboardData.highScores,
+        rankings: serverLeaderboardData.rankings,
       });
       return;
     }
@@ -6020,7 +6472,21 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         success: false,
         isNewRecord: false,
         error: 'Ván đấu không trọn vẹn hoặc người chơi đã đầu hàng / rời phòng. Điểm không đủ điều kiện lên Bảng Vàng.',
-        highScores: serverHighScores,
+        highScores: serverLeaderboardData.highScores,
+        rankings: serverLeaderboardData.rankings,
+      });
+      return;
+    }
+
+    // 3. ĐIỀU KIỆN CHÍNH XÁC TỐI THIỂU: ĐỘ CHÍNH XÁC PHẢI TỪ 92% TRỞ LÊN
+    const numAccuracy = Math.max(0, Math.min(100, Math.round(Number(accuracy ?? 100))));
+    if (numAccuracy < 92) {
+      res.json({
+        success: false,
+        isNewRecord: false,
+        error: `Độ chính xác hiện tại (${numAccuracy}%) chưa đạt điều kiện tối thiểu của Bảng Vàng (≥ 92%). Hãy rèn luyện thêm để vươn tới chuẩn mực cao hơn!`,
+        highScores: serverLeaderboardData.highScores,
+        rankings: serverLeaderboardData.rankings,
       });
       return;
     }
@@ -6031,13 +6497,13 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       const room = rooms.get(norm);
       if (room) {
         const roomPlayer = room.players.find((p) => p.id === playerId);
-        // Nếu người chơi không còn trong phòng (out phòng) hoặc đã bị đánh dấu đầu hàng: từ chối ghi nhận
         if (!roomPlayer || roomPlayer.isSurrendered) {
           res.json({
             success: false,
             isNewRecord: false,
             error: 'Người chơi đã đầu hàng hoặc rời phòng trong ván đấu này. Điểm không đủ điều kiện lên Bảng Vàng.',
-            highScores: serverHighScores,
+            highScores: serverLeaderboardData.highScores,
+            rankings: serverLeaderboardData.rankings,
           });
           return;
         }
@@ -6049,62 +6515,256 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     const numWpm = Math.max(0, Math.round(Number(wpm) || 0));
     const numScore = Math.max(0, Math.round(Number(score) || 0));
     const numErrors = Math.max(0, Math.round(Number(errors) || 0));
+    const numConsistency = typeof consistency === 'number' ? Math.max(0, Math.min(100, Math.round(consistency))) : undefined;
 
-    const currentRecord = serverHighScores[mode];
-    let isBetter = false;
+    // Xác thực tính tự nhiên của nhịp gõ (Anti-cheat verification check)
+    const isScoreMode = mode === 'ngau_hung' || mode === 'doan_chu' || mode === 'san_boss';
+    const isVerifiedRhythm = numAccuracy >= 92 && (isScoreMode ? numScore <= 50000 : numWpm <= 300);
 
-    if (mode === 'ngau_hung' || mode === 'doan_chu' || mode === 'san_boss') {
-      // Points or damage based
-      if (!currentRecord) {
-        isBetter = numScore > 0;
-      } else {
-        isBetter = numScore > currentRecord.score || (numScore === currentRecord.score && numErrors < currentRecord.errors);
-      }
-    } else {
-      // WPM speed based
-      if (!currentRecord) {
-        isBetter = numWpm > 0;
-      } else {
-        isBetter = numWpm > currentRecord.wpm || (numWpm === currentRecord.wpm && numErrors < currentRecord.errors);
-      }
+    const cult = authenticatedUser.cultivation || {};
+    const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+    const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+    const sectName = cult.sect?.name || cult.sectName || undefined;
+    const sectTag = cult.sect?.tag || cult.sectTag || undefined;
+    const effectiveSwitch = String(keyboardSwitch || (authenticatedUser as any).keyboardSwitch || 'Cherry MX Blue Clicky').slice(0, 40);
+
+    // Cập nhật switch bàn phím vào tài khoản người chơi nếu có
+    if (keyboardSwitch && !(authenticatedUser as any).keyboardSwitch) {
+      (authenticatedUser as any).keyboardSwitch = effectiveSwitch;
+      serverUsers.set(authenticatedUser.id, authenticatedUser);
+      saveUsersToFile();
     }
 
-    if (isBetter) {
-      serverHighScores[mode] = {
+    const entry: ServerLeaderboardEntry = {
+      rank: 1,
+      userId: authenticatedUser.id,
+      username: authenticatedUser.username || cleanUsername,
+      displayName: cleanDisplayName,
+      avatar: avatar || authenticatedUser.avatar || '⚡',
+      frame: frame || authenticatedUser.frame || 'default',
+      wpm: numWpm,
+      score: numScore,
+      errors: numErrors,
+      accuracy: numAccuracy,
+      consistency: numConsistency,
+      timestamp: Date.now(),
+      isVerified: isVerifiedRhythm,
+      realmName: realmMeta.name,
+      realmIcon: realmMeta.icon,
+      level: Number(cult.level) || 1,
+      sectName,
+      sectTag,
+      keyboardSwitch: effectiveSwitch,
+    };
+
+    if (!serverLeaderboardData.rankings[mode]) {
+      serverLeaderboardData.rankings[mode] = { daily: [], weekly: [], all_time: [] };
+    }
+
+    // Update Daily, Weekly, All-Time
+    const dailyResult = updatePeriodRankingList(serverLeaderboardData.rankings[mode].daily, entry, isScoreMode);
+    const weeklyResult = updatePeriodRankingList(serverLeaderboardData.rankings[mode].weekly, entry, isScoreMode);
+    const allTimeResult = updatePeriodRankingList(serverLeaderboardData.rankings[mode].all_time, entry, isScoreMode);
+
+    // Check if new Top 1 record for the day or all-time
+    const currentTop1 = serverLeaderboardData.highScores[mode];
+    let isNewTop1 = false;
+    if (isScoreMode) {
+      isNewTop1 = !currentTop1 || numScore > currentTop1.score || (numScore === currentTop1.score && numErrors < currentTop1.errors);
+    } else {
+      isNewTop1 = !currentTop1 || numWpm > currentTop1.wpm || (numWpm === currentTop1.wpm && numErrors < currentTop1.errors);
+    }
+
+    if (isNewTop1) {
+      serverLeaderboardData.highScores[mode] = {
         username: authenticatedUser.username || cleanUsername,
         displayName: cleanDisplayName,
         userId: authenticatedUser.id,
         wpm: numWpm,
         score: numScore,
         errors: numErrors,
+        accuracy: numAccuracy,
+        isVerified: isVerifiedRhythm,
         timestamp: Date.now(),
         avatar: avatar || authenticatedUser.avatar || '⚡',
         frame: frame || authenticatedUser.frame || 'default',
       };
-      saveLeaderboardToFile();
-      broadcastLeaderboard();
+    }
 
-      // Linh Lung Tiên Đồng (Chưởng Quản Phong Thần Bảng) phát chiếu thư toàn server & bình phẩm sôi nổi
+    saveLeaderboardToFile();
+    broadcastLeaderboard();
+
+    // Nếu vừa xô đổ kỷ lục trong ngày (Top 1):
+    // Phát Chiếu Thư Toàn Server & Kích hoạt Thông Báo Lượn Sóng Kim Sắc (Breaking Record Ticker)
+    if (isNewTop1 && (dailyResult.rank === 1 || allTimeResult.rank === 1)) {
       const modeDisplayName = getModeDisplayName(mode);
-      const isBossOrScoreMode = mode === 'san_boss' || mode === 'ngau_hung' || mode === 'doan_chu';
-      const recordMetric = isBossOrScoreMode ? `${numScore.toLocaleString()} điểm` : `${numWpm} WPM`;
+      const recordMetric = isScoreMode ? `${numScore.toLocaleString()} Điểm` : `${numWpm} WPM`;
+
+      broadcastBreakingRecord({
+        username: authenticatedUser.username || cleanUsername,
+        displayName: cleanDisplayName,
+        mode,
+        modeName: modeDisplayName,
+        wpm: numWpm,
+        score: numScore,
+        errors: numErrors,
+        accuracy: numAccuracy,
+        avatar: avatar || authenticatedUser.avatar || '⚡',
+        frame: frame || authenticatedUser.frame || 'default',
+        timestamp: Date.now(),
+      });
+
       broadcastHeavenlyDaoEvent({
         title: 'PHONG THẦN ĐĂNG ĐỈNH',
         eventType: 'record',
         targetUser: cleanDisplayName,
         wpm: numWpm,
-        accuracy: 100,
-        content: `Phong Thần Bảng rung chuyển! Đạo hữu @${cleanDisplayName} vừa xuất chiêu thần tốc đạt ${recordMetric} tại chế độ ${modeDisplayName}, chính thức ghi danh Đệ Nhất Bảng Vàng! Mau mau bái phục nào! 🪷🎉`,
+        accuracy: numAccuracy,
+        content: `⚡ Phong Thần Bảng rung chuyển! Đạo hữu @${cleanDisplayName} vừa xô đổ kỷ lục hôm nay chế độ ${modeDisplayName} với thành tích siêu việt ${recordMetric}! Hãy mau mau kính phục Đệ Nhất Bảng Vàng! 👑🪷`,
         highlightText: `${cleanDisplayName} đạt ${recordMetric}`,
         personaId: 'linh_lung',
         generateAiPoem: true,
       });
+    }
 
-      res.json({ success: true, isNewRecord: true, highScores: serverHighScores });
+    res.json({
+      success: true,
+      isNewRecord: isNewTop1,
+      userRank: {
+        daily: dailyResult.rank,
+        weekly: weeklyResult.rank,
+        allTime: allTimeResult.rank,
+      },
+      highScores: serverLeaderboardData.highScores,
+      rankings: serverLeaderboardData.rankings,
+    });
+  });
+
+  // POST /api/leaderboard/claim-reward: Nhận phần thưởng Đăng Đỉnh mùa giải (Daily/Weekly Season Rewards)
+  app.post('/api/leaderboard/claim-reward', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập để nhận Phần Thưởng Đăng Đỉnh!' });
       return;
     }
 
-    res.json({ success: true, isNewRecord: false, highScores: serverHighScores });
+    checkLeaderboardResets();
+    const todayStr = getVietnamDateStr();
+    const userLower = (user.username || '').toLowerCase();
+    const userId = user.id;
+
+    if ((user as any).lastRewardClaimDate === todayStr) {
+      res.status(400).json({ success: false, error: 'Hôm nay đạo hữu đã nhận phần thưởng Đăng Đỉnh rồi! Hãy tiếp tục thi đấu để nhận thưởng vào 00:00 ngày mai!' });
+      return;
+    }
+
+    // Quét thứ hạng cao nhất của người chơi trong các chế độ
+    let bestDailyRank = 999;
+    let bestWeeklyRank = 999;
+    let bestModeName = 'Chiến Trường Tốc Ký';
+
+    for (const m of VALID_LEADERBOARD_MODES) {
+      const dailyList = serverLeaderboardData.rankings[m]?.daily || [];
+      const dIdx = dailyList.findIndex((e) => (e.userId && e.userId === userId) || (e.username && e.username.toLowerCase() === userLower));
+      if (dIdx !== -1 && dIdx + 1 < bestDailyRank) {
+        bestDailyRank = dIdx + 1;
+        bestModeName = getModeDisplayName(m);
+      }
+
+      const weeklyList = serverLeaderboardData.rankings[m]?.weekly || [];
+      const wIdx = weeklyList.findIndex((e) => (e.userId && e.userId === userId) || (e.username && e.username.toLowerCase() === userLower));
+      if (wIdx !== -1 && wIdx + 1 < bestWeeklyRank) {
+        bestWeeklyRank = wIdx + 1;
+      }
+    }
+
+    const minRank = Math.min(bestDailyRank, bestWeeklyRank);
+    if (minRank > 10) {
+      res.status(400).json({
+        success: false,
+        error: 'Hiện tại đạo hữu chưa lọt vào Top 10 của bất kỳ chế độ nào trong hôm nay hoặc tuần này! Hãy thi đấu để ghi danh vào Bảng Vàng nhận thưởng!',
+      });
+      return;
+    }
+
+    if (!user.cultivation) {
+      user.cultivation = {
+        level: 1,
+        realmIndex: 0,
+        tier: 1,
+        exp: 0,
+        maxExp: 100,
+        thoNguyen: 240,
+        maxThoNguyen: 240,
+        linhThach: 100,
+      };
+    }
+
+    let rewardStones = 150;
+    let rewardExp = 300;
+    let rewardTitle = 'Kiên Trì Dũng Giả';
+    let rewardFrame = 'default';
+    let rewardDesc = '';
+
+    if (minRank === 1) {
+      rewardStones = 500;
+      rewardExp = 1200;
+      rewardTitle = 'Kim Bảng Trạng Nguyên';
+      rewardFrame = 'frame_kim_bang';
+      rewardDesc = `🥇 Quán Quân Đăng Đỉnh Top 1 ${bestModeName}! Ban tặng danh hiệu Hoàng Kim [Kim Bảng Trạng Nguyên], Khung Avatar Độc Quyền [Kim Bảng Chi Chủ], +500 Linh Thạch và +1200 Tu Vi!`;
+    } else if (minRank <= 3) {
+      rewardStones = 300;
+      rewardExp = 800;
+      rewardTitle = minRank === 2 ? 'Bảng Nhãn Tinh Anh' : 'Thám Hoa Kiên Cường';
+      rewardFrame = minRank === 2 ? 'silver' : 'bronze';
+      rewardDesc = `🥈 Bảng Nhãn / Thám Hoa Top ${minRank} ${bestModeName}! Ban tặng danh hiệu [${rewardTitle}], +300 Linh Thạch và +800 Tu Vi!`;
+    } else {
+      rewardStones = 150;
+      rewardExp = 500;
+      rewardTitle = 'Thập Đại Cường Giả';
+      rewardDesc = `🏅 Thập Đại Cao Thủ Top ${minRank} ${bestModeName}! Ban tặng Hộp Quà Đan Dược Tu Vi, +150 Linh Thạch và +500 Tu Vi!`;
+    }
+
+    user.cultivation.linhThach = (Number(user.cultivation.linhThach) || 0) + rewardStones;
+    user.cultivation.exp = (Number(user.cultivation.exp) || 0) + rewardExp;
+
+    if (!user.cultivation.historyLog) user.cultivation.historyLog = [];
+    user.cultivation.historyLog.unshift(`🎁 [PHẦN THƯỞNG ĐĂNG ĐỈNH] ${rewardDesc}`);
+    if (user.cultivation.historyLog.length > 20) user.cultivation.historyLog.pop();
+
+    if (rewardFrame && rewardFrame !== 'default') {
+      user.frame = rewardFrame;
+    }
+
+    (user as any).lastRewardClaimDate = todayStr;
+    user.updatedAt = Date.now();
+    serverUsers.set(user.id, user);
+    saveUsersToFile();
+
+    // Chiếu thư Linh Lung Tiên Đồng chúc mừng
+    broadcastHeavenlyDaoEvent({
+      title: 'ĐĂNG ĐỈNH BAN THƯỞNG',
+      eventType: 'announcement',
+      targetUser: user.displayName || user.username,
+      content: `🌸 ${user.displayName || user.username} vừa nhận Phần Thưởng Đăng Đỉnh Mùa Giải (${minRank === 1 ? 'Quán Quân Top 1' : `Hạng #${minRank}`})! Linh thạch dồi dào, tu vi đại tiến!`,
+      personaId: 'linh_lung',
+    });
+
+    res.json({
+      success: true,
+      message: rewardDesc,
+      reward: {
+        rank: minRank,
+        title: rewardTitle,
+        frame: rewardFrame,
+        spiritStones: rewardStones,
+        exp: rewardExp,
+      },
+      cultivation: user.cultivation,
+      user: sanitizeUser(user),
+    });
   });
 
   // POST /api/leaderboard/admin-update: Admin updates high scores
@@ -6123,13 +6783,30 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
           sanitized[k] = null;
         }
       }
-      serverHighScores = { ...serverHighScores, ...sanitized };
+      serverLeaderboardData.highScores = { ...serverLeaderboardData.highScores, ...sanitized };
       saveLeaderboardToFile();
       broadcastLeaderboard();
-      res.json({ success: true, highScores: serverHighScores });
+      res.json({ success: true, highScores: serverLeaderboardData.highScores });
       return;
     }
     res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
+  });
+
+  // POST /api/leaderboard/admin-reset: Admin resets leaderboard
+  app.post('/api/leaderboard/admin-reset', (req, res) => {
+    const { mode } = req.body || {};
+    if (mode && VALID_LEADERBOARD_MODES.includes(mode)) {
+      serverLeaderboardData.highScores[mode] = null;
+      serverLeaderboardData.rankings[mode] = { daily: [], weekly: [], all_time: [] };
+    } else {
+      for (const m of VALID_LEADERBOARD_MODES) {
+        serverLeaderboardData.highScores[m] = null;
+        serverLeaderboardData.rankings[m] = { daily: [], weekly: [], all_time: [] };
+      }
+    }
+    saveLeaderboardToFile();
+    broadcastLeaderboard();
+    res.json({ success: true, highScores: serverLeaderboardData.highScores, rankings: serverLeaderboardData.rankings });
   });
 
   // Helper fallback practice word builder

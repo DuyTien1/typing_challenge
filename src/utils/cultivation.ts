@@ -1220,7 +1220,7 @@ export function getLevelForRealmAndTier(realmIndex: number, tier: number): numbe
 }
 
 /**
- * Create default Daily Quests
+ * Create default Daily Quests (Chỉ thưởng Tu Vi, không thưởng đan dược)
  */
 export function createDefaultDailyQuests(): CultivationDailyQuest[] {
   return [
@@ -1229,7 +1229,6 @@ export function createDefaultDailyQuests(): CultivationDailyQuest[] {
       name: 'Tọa Thiền Nhập Định',
       desc: 'Hoàn thành 1 bài thi đấu bất kỳ để ngưng tụ khí huyết',
       rewardExp: 300,
-      rewardPill: 'thoNguyen',
       progress: 0,
       target: 1,
       isCompleted: false,
@@ -1240,7 +1239,6 @@ export function createDefaultDailyQuests(): CultivationDailyQuest[] {
       name: 'Bách Phát Bách Trúng',
       desc: 'Đạt độ chính xác ≥ 96% trong 1 trận đấu để rèn luyện tâm kiếm',
       rewardExp: 450,
-      rewardPill: 'thoNguyen',
       progress: 0,
       target: 1,
       isCompleted: false,
@@ -1251,7 +1249,6 @@ export function createDefaultDailyQuests(): CultivationDailyQuest[] {
       name: 'Lôi Đình Xuất Kích',
       desc: 'Đạt WPM ≥ 50 trong 1 trận đấu để bứt phá tốc độ',
       rewardExp: 350,
-      rewardPill: 'hoTam',
       progress: 0,
       target: 1,
       isCompleted: false,
@@ -1262,7 +1259,6 @@ export function createDefaultDailyQuests(): CultivationDailyQuest[] {
       name: 'Trảm Yêu Phục Ma',
       desc: 'Tham gia 1 trận Săn Boss, Đoán Chữ hoặc Ngẫu Hứng',
       rewardExp: 500,
-      rewardPill: 'phaCanh',
       progress: 0,
       target: 1,
       isCompleted: false,
@@ -1415,7 +1411,10 @@ export function loadStoredCultivationState(): CultivationState {
         parsed.dailyQuestsDate === today && Array.isArray(parsed.dailyQuests) && parsed.dailyQuests.length === 4
           ? parsed.dailyQuests.map((q) => {
               const def = createDefaultDailyQuests().find((d) => d.id === q.id);
-              return def ? { ...q, rewardExp: def.rewardExp } : q;
+              // Đảm bảo không còn đan dược trong nhiệm vụ hàng ngày (chỉ thưởng Tu Vi)
+              const cleanQ = { ...q };
+              delete (cleanQ as { rewardPill?: string }).rewardPill;
+              return def ? { ...cleanQ, rewardExp: def.rewardExp } : cleanQ;
             })
           : createDefaultDailyQuests(),
       dailyQuestsDate: today,
@@ -1949,79 +1948,74 @@ export function addTuViFromMatch(
   }
 
   // === 4. THU THẬP KỲ HOA DỊ THẢO THEO MA TRẬN CHUYÊN BIỆT (HERB MATRIX) ===
+  // Tỷ lệ rớt dược liệu đã được giảm cân bằng để dược thảo trở nên quý giá và ý nghĩa hơn
   const droppedHerbs: HerbType[] = [];
   const baseLinhThach = Math.round((12 + Math.floor(match.wpm / 8)) * linhThachMultiplier);
   const linhThachGained = Math.max(5, baseLinhThach);
   updated.linhThach = (updated.linhThach || 0) + linhThachGained;
 
   const currentHerbs = { ...(updated.herbs || { uLan: 0, huyetTinh: 0, hoaAnh: 0, huyenThiet: 0, longTu: 0 }) };
-  const ngungThanBonusRate = hasNgungThan ? 0.2 : 0;
+  const ngungThanBonusRate = hasNgungThan ? 0.20 : 0;
 
-  // Cơ Duyên Khí Vận: KHAI THẦN NHÃN (Combo > 100 hoặc Accuracy 100%)
-  const isKhaiThanNhan = (maxCombo >= 100) || (match.accuracy >= 100);
-  if (isKhaiThanNhan) {
+  // Cơ Duyên Khí Vận: KHAI THẦN NHÃN (Combo >= 100 từ hoặc Chuẩn Xác 100% với WPM >= 60)
+  const isKhaiThanNhan = (maxCombo >= 100) || (match.accuracy >= 100 && match.wpm >= 60);
+  if (isKhaiThanNhan && Math.random() < (0.35 + ngungThanBonusRate)) {
     const rarePool: HerbType[] = ['longTu', 'hoaAnh', 'huyenThiet'];
     const chosenRare = rarePool[Math.floor(Math.random() * rarePool.length)];
     currentHerbs[chosenRare] = (currentHerbs[chosenRare] || 0) + 1;
     droppedHerbs.push(chosenRare);
     const reasonText = maxCombo >= 100 ? `Combo ${maxCombo} từ` : 'Chuẩn Xác 100%';
-    const ktnNotice = `👁️ [KHAI THẦN NHÃN] Cơ duyên bùng nổ (${reasonText})! Chắc chắn thu hoạch linh thảo Cực Phẩm [${HERBS_CONFIGS[chosenRare]?.name}]!`;
+    const ktnNotice = `👁️ [KHAI THẦN NHÃN] Cơ duyên bùng nổ (${reasonText})! Thu hoạch linh thảo Cực Phẩm [${HERBS_CONFIGS[chosenRare]?.name}]!`;
     updated.historyLog = [ktnNotice, ...updated.historyLog.slice(0, 19)];
   }
 
-  // 1. Chế độ Tiếng Việt có dấu / Dài: Xác suất cao rơi Thiên Niên U Lan & Long Tu Thảo
+  // 1. Chế độ Tiếng Việt có dấu / Dài: Rơi Thiên Niên U Lan (~20%) & Long Tu Thảo (~6%)
   if (match.mode === 'vi_dau' || match.mode === 'vi_nodau') {
-    if (Math.random() < 0.70 + ngungThanBonusRate) {
+    if (Math.random() < 0.20 + ngungThanBonusRate) {
       currentHerbs.uLan = (currentHerbs.uLan || 0) + 1;
       droppedHerbs.push('uLan');
     }
-    if (Math.random() < 0.30 + ngungThanBonusRate) {
+    if (Math.random() < 0.06 + ngungThanBonusRate) {
       currentHerbs.longTu = (currentHerbs.longTu || 0) + 1;
       droppedHerbs.push('longTu');
     }
   }
 
-  // 2. Chế độ Tiếng Anh / Tốc độ cao (WPM > 90): Rơi Huyết Tinh Thảo (nuôi dưỡng huyết khí, tăng Tu Vi)
+  // 2. Chế độ Tiếng Anh / Tốc độ cao (WPM > 90): Rơi Huyết Tinh Thảo (~20%)
   if (match.mode === 'en' || match.wpm > 90) {
-    if (Math.random() < 0.75 + ngungThanBonusRate) {
+    if (Math.random() < 0.20 + ngungThanBonusRate) {
       currentHerbs.huyetTinh = (currentHerbs.huyetTinh || 0) + 1;
       droppedHerbs.push('huyetTinh');
     }
   }
 
-  // 3. Chế độ Bàn phím số (Numpad) / Đoán Chữ: Rơi Huyền Thiết Tinh Hoa & Hóa Anh Quả
+  // 3. Chế độ Bàn phím số (Numpad) / Đoán Chữ: Rơi Huyền Thiết Tinh Hoa (~16%) & Hóa Anh Quả (~10%)
   if (match.mode === 'numpad' || match.mode === 'doan_chu') {
-    if (Math.random() < 0.60 + ngungThanBonusRate) {
+    if (Math.random() < 0.16 + ngungThanBonusRate) {
       currentHerbs.huyenThiet = (currentHerbs.huyenThiet || 0) + 1;
       droppedHerbs.push('huyenThiet');
     }
-    if (Math.random() < 0.45 + ngungThanBonusRate) {
+    if (Math.random() < 0.10 + ngungThanBonusRate) {
       currentHerbs.hoaAnh = (currentHerbs.hoaAnh || 0) + 1;
       droppedHerbs.push('hoaAnh');
     }
   }
 
-  // Săn Boss / Ngẫu Hứng / Outplay
+  // 4. Săn Boss / Ngẫu Hứng / Outplay (~20% rơi ngẫu nhiên, ~8% rơi Long Tu Thảo khi Săn Boss)
   if (match.mode === 'san_boss' || match.mode === 'ngau_hung' || match.mode === 'outplay') {
-    if (Math.random() < 0.65) {
+    if (Math.random() < 0.20 + ngungThanBonusRate) {
       const gPool: HerbType[] = ['uLan', 'huyetTinh', 'hoaAnh'];
       const g = gPool[Math.floor(Math.random() * gPool.length)];
       currentHerbs[g] = (currentHerbs[g] || 0) + 1;
       droppedHerbs.push(g);
     }
-    if (match.mode === 'san_boss' && Math.random() < 0.35 + ngungThanBonusRate) {
+    if (match.mode === 'san_boss' && Math.random() < 0.08 + ngungThanBonusRate) {
       currentHerbs.longTu = (currentHerbs.longTu || 0) + 1;
       droppedHerbs.push('longTu');
     }
   }
 
-  // Luôn đảm bảo người chơi nhận tối thiểu 1 thảo dược cơ bản mỗi ván
-  if (droppedHerbs.length === 0) {
-    const fallbackHerb: HerbType = match.wpm >= 75 ? 'huyetTinh' : 'uLan';
-    currentHerbs[fallbackHerb] = (currentHerbs[fallbackHerb] || 0) + 1;
-    droppedHerbs.push(fallbackHerb);
-  }
-
+  // Cập nhật dược thảo (đã loại bỏ fallback ép buộc 100% rơi dược liệu mỗi ván)
   updated.herbs = currentHerbs;
 
   // === 5. CẬP NHẬT NHIỆM VỤ HÀNG NGÀY ===
@@ -2262,14 +2256,6 @@ export function claimDailyQuestReward(
 
   expGained = targetQuest.rewardExp;
   updated.exp = Math.min(updated.maxExp, updated.exp + expGained);
-
-  if (targetQuest.rewardPill) {
-    const pill = targetQuest.rewardPill;
-    updated.pillCount = {
-      ...updated.pillCount,
-      [pill]: updated.pillCount[pill] + 1,
-    };
-  }
 
   updated.dailyQuests = updated.dailyQuests.map((q) =>
     q.id === questId ? { ...q, isClaimed: true } : q

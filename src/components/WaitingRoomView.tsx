@@ -303,7 +303,8 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   const emptySlotsCount = Math.max(0, maxSlots - players.length);
 
   // Comprehensive Keyboard Shortcuts in Waiting Room:
-  // - Enter / Space: Start Match (Host only)
+  // - Ctrl + Enter: Start Match (Host only)
+  // - Enter: Open Chat
   // - Esc / Backspace / H: Return to Lobby / Leave Room
   // - 1 - 7: Switch Game Mode (Host only)
   // - Arrow Left / Right / Up / Down / D / Tab: Switch Difficulty (Host only)
@@ -337,10 +338,11 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         return;
       }
 
-      // 3. START MATCH: Enter or Space (Host only)
-      if (e.key === 'Enter' || e.key === ' ') {
+      // 3. START MATCH: Ctrl + Enter (Host only)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         if (userIsHost) {
           e.preventDefault();
+          e.stopPropagation();
           soundFx.playCountdown(true);
           onStartGame();
           return;
@@ -714,12 +716,12 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     onStartGame();
                   }}
                   className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all hover:scale-102 active:scale-98 cursor-pointer shrink-0 whitespace-nowrap"
-                  title="Bắt đầu trận đấu ngay (Phím tắt: Enter hoặc Space)"
+                  title="Bắt đầu trận đấu ngay (Phím tắt: Ctrl + Enter)"
                 >
                   <Play className="w-3.5 h-3.5 fill-black" />
                   <span>BẮT ĐẦU TRẬN ĐẤU</span>
                   <kbd className="px-1.5 py-0.5 rounded bg-amber-600/30 border border-amber-600/40 text-black text-[10px] font-mono font-bold">
-                    Enter
+                    Ctrl + Enter
                   </kbd>
                 </button>
               </div>
@@ -1093,10 +1095,14 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3.5 gap-y-2 text-[11px]">
           {userIsHost && (
             <div className="flex items-center gap-1.5">
-              <kbd className="px-1.5 py-0.5 rounded bg-amber-500 text-black font-bold font-mono text-[10px]">Enter</kbd>
+              <kbd className="px-1.5 py-0.5 rounded bg-amber-500 text-black font-bold font-mono text-[10px]">Ctrl + Enter</kbd>
               <span className="text-slate-300">Bắt đầu trận</span>
             </div>
           )}
+          <div className="flex items-center gap-1.5">
+            <kbd className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 font-bold font-mono text-[10px]">Enter</kbd>
+            <span className="text-slate-300">Mở Chat</span>
+          </div>
           <div className="flex items-center gap-1.5">
             <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold font-mono text-[10px]">Esc / H</kbd>
             <span className="text-slate-300">Rời phòng</span>

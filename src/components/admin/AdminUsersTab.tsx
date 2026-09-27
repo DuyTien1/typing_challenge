@@ -69,7 +69,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/users');
+      const res = await fetch(`/api/admin/users?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.users)) {
@@ -92,23 +98,52 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     if (!selectedUser || !actionType) return;
     soundFx.playKeyClick();
 
+    const targetUser = selectedUser;
+    const currentAction = actionType;
+    const targetUserId = targetUser.id;
+    const targetUsername = targetUser.username;
+
+    // Immediately close modal
+    setActionType(null);
+    setSelectedUser(null);
+
+    // INSTANT OPTIMISTIC UI UPDATE:
+    // If deleting, immediately remove user from local state so it vanishes in 0ms!
+    if (currentAction === 'delete') {
+      setUsers((prev) => prev.filter((u) => u.id !== targetUserId && u.username.toLowerCase() !== targetUsername.toLowerCase()));
+    } else if (currentAction === 'ban') {
+      setUsers((prev) => prev.map((u) => {
+        if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
+          return { ...u, isBanned: true, remainingMinutes: banDurationMinutes, banReason };
+        }
+        return u;
+      }));
+    } else if (currentAction === 'reward') {
+      setUsers((prev) => prev.map((u) => {
+        if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
+          return { ...u, spiritStones: (u.spiritStones || 0) + rewardStones };
+        }
+        return u;
+      }));
+    }
+
     try {
       let body: any = {
-        action: actionType,
-        username: selectedUser.username,
-        userId: selectedUser.id,
+        action: currentAction,
+        username: targetUsername,
+        userId: targetUserId,
       };
 
-      if (actionType === 'ban') {
+      if (currentAction === 'ban') {
         body.durationMs = banDurationMinutes * 60 * 1000;
         body.reason = banReason;
-      } else if (actionType === 'reward') {
+      } else if (currentAction === 'reward') {
         body.spiritStones = rewardStones;
         body.exp = rewardExp;
-      } else if (actionType === 'reset_pwd') {
+      } else if (currentAction === 'reset_pwd') {
         body.action = 'reset_password';
         body.newPassword = newPasswordInput;
-      } else if (actionType === 'delete') {
+      } else if (currentAction === 'delete') {
         body.action = 'delete';
       }
 
@@ -120,22 +155,27 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
       const data = await res.json();
       if (data.success) {
-        soundFx.playCorrect();
-        showToast(data.message || (actionType === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${selectedUser.username}` : 'Thao tác thành công!'));
-        setActionType(null);
-        setSelectedUser(null);
+        soundFx.playSuccess();
+        showToast(data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${targetUsername}` : 'Thao tác thành công!'));
+        // Sync with backend to ensure perfect consistency
         fetchUsers();
       } else {
-        soundFx.playWrong();
+        soundFx.playError();
         showToast(data.error || 'Thao tác thất bại');
+        // Rollback state by re-fetching
+        fetchUsers();
       }
     } catch {
       showToast('Lỗi kết nối máy chủ khi thực thi hành động');
+      fetchUsers();
     }
   };
 
   const handleUnban = async (u: AdminUserData) => {
     soundFx.playKeyClick();
+    // Instant optimistic update
+    setUsers((prev) => prev.map((item) => (item.id === u.id ? { ...item, isBanned: false, remainingMinutes: 0 } : item)));
+
     try {
       const res = await fetch('/api/admin/users/action', {
         method: 'POST',
@@ -144,19 +184,24 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        soundFx.playCorrect();
+        soundFx.playSuccess();
         showToast(data.message || `Đã gỡ cấm cho ${u.username}!`);
         fetchUsers();
       } else {
         showToast(data.error || 'Lỗi khi gỡ cấm');
+        fetchUsers();
       }
     } catch {
       showToast('Lỗi khi kết nối máy chủ');
+      fetchUsers();
     }
   };
 
   const handleToggleAdmin = async (u: AdminUserData) => {
     soundFx.playKeyClick();
+    // Instant optimistic update
+    setUsers((prev) => prev.map((item) => (item.id === u.id ? { ...item, isAdmin: !item.isAdmin } : item)));
+
     try {
       const res = await fetch('/api/admin/users/action', {
         method: 'POST',
@@ -165,14 +210,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        soundFx.playCorrect();
+        soundFx.playSuccess();
         showToast(data.message || 'Thay đổi quyền thành công!');
         fetchUsers();
       } else {
         showToast(data.error || 'Không thể thay đổi quyền');
+        fetchUsers();
       }
     } catch {
       showToast('Lỗi khi thay đổi quyền quản trị');
+      fetchUsers();
     }
   };
 

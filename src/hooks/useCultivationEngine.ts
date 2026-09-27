@@ -125,7 +125,8 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
           userNow.displayName || userNow.username,
           currentRealm?.name || 'Tu Chân',
           getSubStage(cultRes.updatedState.tier),
-          cultRes.updatedState.tier
+          cultRes.updatedState.tier,
+          false
         )
           .then((dec) => {
             if (onBreakthroughNoticeRef.current) {

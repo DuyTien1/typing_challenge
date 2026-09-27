@@ -35,17 +35,37 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
     }
   }, [isOpen, decree]);
 
-  // Listen to Escape key to quickly close Khí Linh decree notification
+  // Bắt và cô lập toàn bộ sự kiện bàn phím khi Bảng Thiên Địa Dị Tượng đang mở
+  // Người chơi bắt buộc phải nhấn phím Esc hoặc click button Lĩnh Chiếu mới đóng bảng và thao tác tiếp được
   useEffect(() => {
     if (!isOpen || !decree) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Phím Esc: Đóng nhanh bảng dị tượng
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         soundFx.playKeyClick();
         onClose();
+        return;
+      }
+
+      // 2. Chặn toàn bộ phím khác (Enter, Space, Tab, r,...) không cho lọt xuống GameOverModal hay các view nền
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (
+        e.key === 'Enter' ||
+        e.key === ' ' ||
+        e.key === 'Tab' ||
+        e.key === 'r' ||
+        e.key === 'R' ||
+        e.key === 'Backspace'
+      ) {
+        e.preventDefault();
       }
     };
+
+    // Dùng capture phase (true) để chặn sự kiện từ gốc cây DOM trước bất kỳ listener nào khác
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, decree, onClose]);
@@ -124,10 +144,8 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-300"
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          soundFx.playKeyClick();
-          onClose();
-        }
+        // Chặn nổi bọt sự kiện click ra các lớp bên dưới
+        e.stopPropagation();
       }}
     >
       {/* Background Floating Aura & Lightning Particles */}

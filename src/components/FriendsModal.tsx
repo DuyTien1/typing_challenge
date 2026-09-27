@@ -38,6 +38,8 @@ interface FriendsModalProps {
   currentUser: UserAccount | null;
   currentRoomId?: string | null;
   currentMode?: string;
+  initialTab?: 'friends' | 'requests' | 'search' | 'daolu';
+  onPendingRequestsCountChange?: (count: number) => void;
   onOpenWhisperChat?: (targetUsername: string, targetUserId: string) => void;
   onChallengeFriend?: (friend: FriendRecord) => void;
 }
@@ -48,6 +50,8 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   currentUser,
   currentRoomId,
   currentMode,
+  initialTab,
+  onPendingRequestsCountChange,
   onOpenWhisperChat,
   onChallengeFriend,
 }) => {
@@ -80,7 +84,9 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       const data = await fetchFriendsList(currentUser.id);
       if (data && data.success) {
         setFriends(data.friends || []);
-        setPendingRequests(data.pendingRequests || []);
+        const nextPending = data.pendingRequests || [];
+        setPendingRequests(nextPending);
+        onPendingRequestsCountChange?.(nextPending.length);
       }
     } catch {
       // ignore
@@ -90,10 +96,15 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && currentUser) {
-      loadData();
+    if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
+      if (currentUser) {
+        loadData();
+      }
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, initialTab]);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setActionNotice({ text, type });
@@ -122,6 +133,13 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const handleRespondRequest = async (requestId: string, action: 'accept' | 'reject') => {
     soundFx.playKeyClick();
+    // Optimistic removal so badge and list update immediately
+    setPendingRequests((prev) => {
+      const next = prev.filter((r) => r.id !== requestId);
+      onPendingRequestsCountChange?.(next.length);
+      return next;
+    });
+
     const res = await respondFriendRequest(requestId, action);
     if (res.success) {
       if (action === 'accept') {
@@ -134,6 +152,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     } else {
       soundFx.playError();
       showToast(res.error || 'Có lỗi xảy ra', 'error');
+      loadData();
     }
   };
 

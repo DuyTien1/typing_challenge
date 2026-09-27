@@ -37,59 +37,100 @@ interface TribulationWave {
   isInnerDemon?: boolean;
 }
 
-// Bộ khẩu quyết cổ phong Tiên Hiệp theo cảnh giới
+// Bộ khẩu quyết cổ phong Tiên Hiệp theo cảnh giới - Toàn bộ chuyển thành Thiên Lôi Thần Số (Numbers only)
 const MANTRA_DATABASE: Record<number, { title: string; waves: { mantra: string; meaning: string; time: number; isInnerDemon?: boolean }[] }> = {
   0: {
     title: 'Tam Cửu Lôi Kiếp (3 Đợt Sấm)',
     waves: [
-      { mantra: 'Thiên lôi thối thể', meaning: 'Mượn sấm sét rèn luyện gân cốt', time: 7.5 },
-      { mantra: 'Đạo cốt sơ thành', meaning: 'Xương tủy hóa ngọc, mở rộng kinh mạch', time: 7.5 },
-      { mantra: 'Đúc vững đạo cơ', meaning: 'Ngưng tụ linh khí thành dịch nhập đan điền', time: 8.0 },
+      { mantra: '39281', meaning: 'Thiên lôi thối thể', time: 7.5 },
+      { mantra: '84019', meaning: 'Đạo cốt sơ thành', time: 7.5 },
+      { mantra: '725193', meaning: 'Đúc vững đạo cơ', time: 8.0 },
     ],
   },
   1: {
     title: 'Tứ Cửu Lôi Kiếp (4 Đợt Sấm)',
     waves: [
-      { mantra: 'Tam muội chân hỏa', meaning: 'Thắp sáng đan hỏa trong thần khuyết', time: 7.5 },
-      { mantra: 'Khí tụ đan điền', meaning: 'Vạn đạo linh lưu quy về một mối', time: 7.5 },
-      { mantra: 'Đan đạo cửu chuyển', meaning: 'Tôi luyện đan hoàn chín lần biến hóa', time: 8.0 },
-      { mantra: 'Nghịch thiên kết đan', meaning: 'Phá toái phàm căn, ngưng tụ kim đan', time: 8.0 },
+      { mantra: '482019', meaning: 'Tam muội chân hỏa', time: 7.5 },
+      { mantra: '739105', meaning: 'Khí tụ đan điền', time: 7.5 },
+      { mantra: '2948103', meaning: 'Đan đạo cửu chuyển', time: 8.0 },
+      { mantra: '8501924', meaning: 'Nghịch thiên kết đan', time: 8.0 },
     ],
   },
   2: {
     title: 'Lục Cửu Lôi Kiếp & Tâm Ma Khảo Nghiệm (6 Đợt Sấm)',
     waves: [
-      { mantra: 'Phá toái kim đan', meaning: 'Đập nát đan điền nghênh đón tân sinh', time: 7.0 },
-      { mantra: 'Hóa sinh nguyên anh', meaning: 'Thần niệm ngưng tụ thành chân ngã', time: 7.0 },
-      { mantra: 'Tử khí đông lai', meaning: 'Hấp thu vạn dặm tử khí vào đan điền', time: 7.5 },
-      { mantra: 'Nguyên thần xuất khiếu', meaning: 'Thoát thai hoán cốt, ngự khí phi thiên', time: 7.5, isInnerDemon: true },
-      { mantra: 'Tâm ma huyễn cảnh viễn ly', meaning: 'Chém đứt chấp niệm phàm trần luân hồi', time: 8.0, isInnerDemon: true },
-      { mantra: 'Đạo tâm bất diệt vĩnh tồn', meaning: 'Bất động như sơn trước ảo cảnh thiên ma', time: 8.0, isInnerDemon: true },
+      { mantra: '6294017', meaning: 'Phá toái kim đan', time: 7.0 },
+      { mantra: '8401925', meaning: 'Hóa sinh nguyên anh', time: 7.0 },
+      { mantra: '3918204', meaning: 'Tử khí đông lai', time: 7.5 },
+      { mantra: '7401928', meaning: 'Nguyên thần xuất khiếu', time: 7.5, isInnerDemon: true },
+      { mantra: '9284017', meaning: 'Tâm ma huyễn cảnh viễn ly', time: 8.0, isInnerDemon: true },
+      { mantra: '8392017', meaning: 'Đạo tâm bất diệt vĩnh tồn', time: 8.0, isInnerDemon: true },
     ],
   },
   3: {
     title: 'Thất Cửu Lôi Kiếp & Hóa Thần Ý Cảnh (7 Đợt Sấm)',
     waves: [
-      { mantra: 'Hóa thực vi hư', meaning: 'Thần niệm hòa nhập cùng thiên địa', time: 7.0 },
-      { mantra: 'Lĩnh ngộ ý cảnh', meaning: 'Nắm bắt quy luật sinh diệt của vạn vật', time: 7.0 },
-      { mantra: 'Thiên địa đồng thọ', meaning: 'Hơi thở dung hòa cùng linh mạch chư thiên', time: 7.5 },
-      { mantra: 'Chưởng khống pháp tắc', meaning: 'Một niệm sinh lôi, một niệm hóa băng', time: 7.5 },
-      { mantra: 'Ma do tâm sinh ma diệt', meaning: 'Tâm ma hiện thế, lấy kiếm ý trảm đoạn', time: 7.5, isInnerDemon: true },
-      { mantra: 'Vạn niệm quy chân bất hoại', meaning: 'Tâm như gương sáng, bụi trần không dính', time: 7.5, isInnerDemon: true },
-      { mantra: 'Ngưng tụ hóa thần chí tôn', meaning: 'Bước chân vào hàng ngũ đại năng thượng giới', time: 8.0, isInnerDemon: true },
+      { mantra: '8392017', meaning: 'Hóa thực vi hư', time: 7.0 },
+      { mantra: '4910283', meaning: 'Lĩnh ngộ ý cảnh', time: 7.0 },
+      { mantra: '73928104', meaning: 'Thiên địa đồng thọ', time: 7.5 },
+      { mantra: '62910842', meaning: 'Chưởng khống pháp tắc', time: 7.5 },
+      { mantra: '84019273', meaning: 'Ma do tâm sinh ma diệt', time: 7.5, isInnerDemon: true },
+      { mantra: '92837401', meaning: 'Vạn niệm quy chân bất hoại', time: 7.5, isInnerDemon: true },
+      { mantra: '74910283', meaning: 'Ngưng tụ hóa thần chí tôn', time: 8.0, isInnerDemon: true },
     ],
   },
   4: {
     title: 'Bát Cửu Lôi Kiếp (8 Đợt Sấm)',
     waves: [
-      { mantra: 'Hư không vô cực', meaning: 'Siêu thoát khỏi ràng buộc vật chất không gian', time: 6.8 },
-      { mantra: 'Phá toái hư không', meaning: 'Xé rách màng ngăn cách giữa hai giới', time: 6.8 },
-      { mantra: 'Chân ngã duy nhất', meaning: 'Vạn biến bất ly kỳ tông', time: 7.0 },
-      { mantra: 'Luyện khí hóa hư', meaning: 'Dung hợp thiên địa pháp tắc vào nhục thân', time: 7.0 },
-      { mantra: 'Thái hư vô ngã vạn pháp', meaning: 'Tâm ma dụ dỗ vinh hoa ảo ảnh', time: 7.2, isInnerDemon: true },
-      { mantra: 'Đại đạo độc hành tuyệt thế', meaning: 'Một lòng hướng đạo chém tan ma chướng', time: 7.2, isInnerDemon: true },
-      { mantra: 'Vạn kiếp bất ma trường sinh', meaning: 'Tâm cảnh tĩnh lặng trước cuồng lôi', time: 7.5, isInnerDemon: true },
-      { mantra: 'Đăng phong tạo cực hư không', meaning: 'Chạm tới cảnh giới hư vô tối thượng', time: 7.5, isInnerDemon: true },
+      { mantra: '8492017', meaning: 'Hư không vô cực', time: 6.8 },
+      { mantra: '9381027', meaning: 'Phá toái hư không', time: 6.8 },
+      { mantra: '7491028', meaning: 'Chân ngã duy nhất', time: 7.0 },
+      { mantra: '8392017', meaning: 'Luyện khí hóa hư', time: 7.0 },
+      { mantra: '95820174', meaning: 'Thái hư vô ngã vạn pháp', time: 7.2, isInnerDemon: true },
+      { mantra: '84910283', meaning: 'Đại đạo độc hành tuyệt thế', time: 7.2, isInnerDemon: true },
+      { mantra: '93820174', meaning: 'Vạn kiếp bất ma trường sinh', time: 7.5, isInnerDemon: true },
+      { mantra: '82049173', meaning: 'Đăng phong tạo cực hư không', time: 7.5, isInnerDemon: true },
+    ],
+  },
+  5: {
+    title: 'Hợp Thể Thiên Kiếp (8 Đợt Sấm)',
+    waves: [
+      { mantra: '49102837', meaning: 'Nhục thân dung hợp', time: 7.0 },
+      { mantra: '73928105', meaning: 'Nguyên thần quy nhất', time: 7.0 },
+      { mantra: '82049173', meaning: 'Thần thông đại thành', time: 7.2 },
+      { mantra: '93820174', meaning: 'Đại đạo dung hợp', time: 7.2 },
+      { mantra: '84910283', meaning: 'Chém tan tâm ma', time: 7.5, isInnerDemon: true },
+      { mantra: '73928104', meaning: 'Thiên địa bất diệt', time: 7.5, isInnerDemon: true },
+      { mantra: '92837401', meaning: 'Hợp thể quy chân', time: 7.5, isInnerDemon: true },
+      { mantra: '85019284', meaning: 'Đăng phong tuyệt đỉnh', time: 8.0, isInnerDemon: true },
+    ],
+  },
+  6: {
+    title: 'Đại Thừa Thiên Kiếp (9 Đợt Sấm)',
+    waves: [
+      { mantra: '93820174', meaning: 'Thiên đạo cảm ứng', time: 7.0 },
+      { mantra: '84910273', meaning: 'Đại thừa viên mãn', time: 7.0 },
+      { mantra: '73928104', meaning: 'Khai sơn phá hải', time: 7.2 },
+      { mantra: '62910842', meaning: 'Vạn pháp quy tông', time: 7.2 },
+      { mantra: '95820173', meaning: 'Đạo tâm vững như bàn thạch', time: 7.5, isInnerDemon: true },
+      { mantra: '84019273', meaning: 'Trảm phá huyễn niệm', time: 7.5, isInnerDemon: true },
+      { mantra: '74910283', meaning: 'Thiên nhân tương ứng', time: 7.5, isInnerDemon: true },
+      { mantra: '82049173', meaning: 'Đại đạo quang minh', time: 7.8, isInnerDemon: true },
+      { mantra: '93810274', meaning: 'Đại thừa viên mãn', time: 8.0, isInnerDemon: true },
+    ],
+  },
+  7: {
+    title: 'Cửu Cửu Đại Kiếp (9 Đợt Sấm)',
+    waves: [
+      { mantra: '94820173', meaning: 'Nghịch thiên cải mệnh', time: 7.0 },
+      { mantra: '83920174', meaning: 'Chấn nhiếp càn khôn', time: 7.0 },
+      { mantra: '72910482', meaning: 'Đạo thể kim cương', time: 7.2 },
+      { mantra: '84920173', meaning: 'Vạn lôi thối hồn', time: 7.2 },
+      { mantra: '93820174', meaning: 'Bất hủ thần hồn', time: 7.5, isInnerDemon: true },
+      { mantra: '82049173', meaning: 'Tử lôi bất hoại', time: 7.5, isInnerDemon: true },
+      { mantra: '95820174', meaning: 'Thần niệm thông thiên', time: 7.5, isInnerDemon: true },
+      { mantra: '74910283', meaning: 'Đạo quả ngưng tụ', time: 7.8, isInnerDemon: true },
+      { mantra: '839102745', meaning: 'Vô thượng cảnh giới', time: 8.0, isInnerDemon: true },
     ],
   },
 };
@@ -114,12 +155,12 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     const config = MANTRA_DATABASE[cultivationState.realmIndex] || {
       title: 'Cửu Cửu Thiên Kiếp',
       waves: [
-        { mantra: 'Bàn Cổ khai thiên', meaning: 'Mượn rìu thần khai phá hồng hoang', time: 6.8 },
-        { mantra: 'Hỗn độn sơ khai', meaning: 'Hấp thu thái sơ khí tức vũ trụ', time: 6.8 },
-        { mantra: 'Âm dương quy nhất', meaning: 'Hòa quyện lưỡng nghi thành đại đạo', time: 7.0 },
-        { mantra: 'Vạn đạo thần phục', meaning: 'Uy áp trấn giữ ba ngàn thế giới', time: 7.0 },
-        { mantra: 'Siêu thoát luân hồi', meaning: 'Bước ra khỏi dòng sông thời gian', time: 7.2 },
-        { mantra: 'Đăng phong chí tôn', meaning: 'Vạn cổ trường tồn cùng nhật nguyệt', time: 7.5 },
+        { mantra: '98401928', meaning: 'Bàn Cổ khai thiên', time: 6.8 },
+        { mantra: '83920174', meaning: 'Hỗn độn sơ khai', time: 6.8 },
+        { mantra: '94820173', meaning: 'Âm dương quy nhất', time: 7.0 },
+        { mantra: '73928104', meaning: 'Vạn đạo thần phục', time: 7.0 },
+        { mantra: '84920183', meaning: 'Siêu thoát luân hồi', time: 7.2 },
+        { mantra: '95820174', meaning: 'Đăng phong chí tôn', time: 7.5 },
       ],
     };
     return config;
@@ -230,11 +271,19 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
   const currentWave = tribulationConfig.waves[currentWaveIndex] || tribulationConfig.waves[0];
   const totalWaves = tribulationConfig.waves.length;
 
-  // Auto focus input
+  // Auto focus input and ensure clean slate on each wave
   useEffect(() => {
     if (isOpen && phase === 'active') {
+      setTypedInput('');
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
       const focusTimeout = setTimeout(() => {
-        inputRef.current?.focus();
+        if (inputRef.current) {
+          inputRef.current.value = '';
+          inputRef.current.focus();
+        }
+        setTypedInput('');
       }, 50);
       return () => clearTimeout(focusTimeout);
     }
@@ -248,6 +297,9 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
       setPassedWaves([]);
       setFailedWaves([]);
       setTypedInput('');
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
       setShieldHp(100);
       setIsScreenFlashing(false);
       setSwordSlashActive(false);
@@ -260,6 +312,10 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     if (isOpen && phase === 'intro') {
       soundFx.playThunderStrike();
       const t = setTimeout(() => {
+        setTypedInput('');
+        if (inputRef.current) {
+          inputRef.current.value = '';
+        }
         setPhase('active');
         setTimeLeft(tribulationConfig.waves[0].time);
       }, 2400);
@@ -287,15 +343,26 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     };
   }, [phase, currentWaveIndex]);
 
-  // Handle typing input
+  // Handle typing input (Chỉ chấp nhận chữ số, loại bỏ hoàn toàn ký tự lạ)
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setTypedInput(value);
+    if (phase !== 'active') {
+      e.target.value = '';
+      setTypedInput('');
+      return;
+    }
+
+    const rawValue = e.target.value;
+    // Lọc duy nhất chữ số 0-9
+    const numericValue = rawValue.replace(/\D/g, '');
+    setTypedInput(numericValue);
+    if (e.target.value !== numericValue) {
+      e.target.value = numericValue;
+    }
     soundFx.playKeyClickSound();
 
     const targetMantra = currentWave.mantra;
-    // Check if fully matched (case-insensitive for convenience while strictly matching accents)
-    if (value.trim().toLowerCase() === targetMantra.toLowerCase()) {
+    // So sánh chuẩn xác dãy số thiên lôi
+    if (numericValue === targetMantra) {
       handleWaveSuccess();
     }
   };
@@ -308,13 +375,24 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     setSwordSlashActive(true);
     triggerLightningParticles(false);
 
+    // Xóa NGAY LẬP TỨC toàn bộ giá trị ô input và blur để chống dính ký tự sang đợt tiếp theo
+    setTypedInput('');
+    if (inputRef.current) {
+      inputRef.current.value = '';
+      inputRef.current.blur();
+    }
+
     const nextPassed = [...passedWaves, currentWaveIndex];
     setPassedWaves(nextPassed);
     setPhase('wave_result');
 
     setTimeout(() => {
       setSwordSlashActive(false);
+      // Xóa triệt để lại một lần nữa trước khi chuyển đợt
       setTypedInput('');
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
 
       if (currentWaveIndex + 1 < totalWaves) {
         setCurrentWaveIndex((prev) => prev + 1);
@@ -335,6 +413,13 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     triggerLightningParticles(false);
     setTimeout(() => setIsScreenFlashing(false), 600);
 
+    // Xóa ngay giá trị input khi hết giờ
+    setTypedInput('');
+    if (inputRef.current) {
+      inputRef.current.value = '';
+      inputRef.current.blur();
+    }
+
     const damagePerWave = Math.round(100 / totalWaves);
     setShieldHp((prev) => Math.max(0, prev - damagePerWave));
 
@@ -344,6 +429,9 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
 
     setTimeout(() => {
       setTypedInput('');
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
       if (currentWaveIndex + 1 < totalWaves) {
         setCurrentWaveIndex((prev) => prev + 1);
         setTimeLeft(tribulationConfig.waves[currentWaveIndex + 1].time);
@@ -375,7 +463,8 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
           username || 'Đạo Hữu',
           nextRealm.name,
           'Sơ Kỳ',
-          1
+          1,
+          true
         ).catch(() => {});
         if (res.unlockedFrameId && onSelectFrame) {
           onSelectFrame(res.unlockedFrameId);
@@ -541,7 +630,7 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                 Lôi Vân Tụ Đỉnh • Khởi Sự Nghênh Kiếp
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
-                Thiên kiếp cuộn trào sấm sét giáng xuống! Hãy tĩnh tâm gõ chuẩn xác các câu khẩu quyết đạo pháp trong thời gian quy định để chém rách thiên lôi, chắc chắn 100% phi thăng!
+                Thiên kiếp cuộn trào sấm sét giáng xuống! Hãy nhập chuẩn xác các dãy số thiên lôi trong thời gian quy định để chém rách thiên lôi, chắc chắn 100% phi thăng!
               </p>
               <div className="pt-2 text-xs font-mono font-bold text-amber-400 animate-pulse">
                 Chuẩn bị sẵn sàng... Lôi kiếp đang hình thành!
@@ -564,37 +653,37 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
               {/* Meaning & Target */}
               <div className="text-center">
                 <span className={`text-xs font-semibold uppercase tracking-wider block mb-1 ${currentWave.isInnerDemon ? 'text-purple-300' : 'text-slate-400'}`}>
-                  {currentWave.isInnerDemon ? '⚡ Ảo Ảnh Tâm Ma Thức Hải' : 'Khẩu Quyết Đạo Pháp'} ({currentWave.meaning})
+                  {currentWave.isInnerDemon ? '⚡ Thiên Lôi Số • Tâm Ma Khảo Nghiệm' : '⚡ Thiên Lôi Thần Số'} ({currentWave.meaning})
                 </span>
-                <div className={`text-xl sm:text-2xl md:text-3xl font-black text-white tracking-wide font-mono flex items-center justify-center flex-wrap gap-1 py-3 px-4 rounded-2xl border transition-all duration-300 ${
+                <div className={`text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-widest font-mono flex items-center justify-center flex-wrap gap-2 py-3.5 px-5 rounded-2xl border transition-all duration-300 ${
                   currentWave.isInnerDemon
                     ? 'bg-purple-950/40 border-purple-500/60 shadow-[0_0_25px_rgba(147,51,234,0.3)] animate-[pulse_2s_infinite]'
-                    : 'bg-black/40 border-slate-800'
+                    : 'bg-black/50 border-amber-500/40 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
                 }`}>
                   {currentWave.mantra.split('').map((char, cIdx) => {
                     const typedChar = typedInput[cIdx];
-                    const isMatched = typedChar && typedChar.toLowerCase() === char.toLowerCase();
+                    const isMatched = typedChar === char;
                     const isCurrentCaret = typedInput.length === cIdx;
-                    const isError = typedChar && typedChar.toLowerCase() !== char.toLowerCase();
+                    const isError = typedChar && typedChar !== char;
 
                     return (
                       <span
                         key={cIdx}
-                        className={`transition-colors ${
+                        className={`inline-block px-2 py-1 rounded-lg transition-all ${
                           isMatched
                             ? currentWave.isInnerDemon
-                              ? 'text-fuchsia-300 drop-shadow-[0_0_10px_rgba(217,70,239,0.9)] font-bold'
-                              : 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)] font-bold'
+                              ? 'text-fuchsia-300 bg-fuchsia-950/40 drop-shadow-[0_0_10px_rgba(217,70,239,0.9)] font-bold scale-105'
+                              : 'text-amber-400 bg-amber-950/40 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)] font-bold scale-105'
                             : isError
-                            ? 'text-rose-500 bg-rose-950/60 px-0.5 rounded'
+                            ? 'text-rose-400 bg-rose-950/80 border border-rose-500/50 scale-105'
                             : isCurrentCaret
-                            ? `text-white border-b-2 ${currentWave.isInnerDemon ? 'border-fuchsia-400' : 'border-amber-400'} animate-pulse`
+                            ? `text-white border-b-2 ${currentWave.isInnerDemon ? 'border-fuchsia-400' : 'border-amber-400'} animate-pulse bg-white/10`
                             : currentWave.isInnerDemon
                             ? 'text-purple-400/80'
                             : 'text-slate-400'
                         }`}
                       >
-                        {char === ' ' ? '\u00A0' : char}
+                        {char}
                       </span>
                     );
                   })}
@@ -630,15 +719,50 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                 <input
                   ref={inputRef}
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={typedInput}
                   onChange={handleInputChange}
-                  placeholder="Gõ chính xác khẩu quyết phía trên..."
+                  onKeyDown={(e) => {
+                    if (phase !== 'active') {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Escape'].includes(e.key)) {
+                      return;
+                    }
+                    if (e.ctrlKey || e.metaKey) {
+                      return;
+                    }
+                    if (!/^[0-9]$/.test(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onPaste={(e) => {
+                    if (phase !== 'active') {
+                      e.preventDefault();
+                      return;
+                    }
+                    const paste = e.clipboardData.getData('text');
+                    const filtered = paste.replace(/\D/g, '');
+                    if (filtered !== paste) {
+                      e.preventDefault();
+                      const current = typedInput;
+                      const next = (current + filtered).slice(0, currentWave.mantra.length);
+                      setTypedInput(next);
+                      if (next === currentWave.mantra) {
+                        handleWaveSuccess();
+                      }
+                    }
+                  }}
+                  placeholder="Nhập dãy thiên lôi số..."
                   disabled={phase !== 'active'}
+                  readOnly={phase !== 'active'}
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck="false"
-                  className="w-full px-4 py-3 rounded-xl bg-slate-900/90 border-2 border-amber-500/60 focus:border-amber-400 text-white font-mono text-center text-lg placeholder:text-slate-500 outline-none shadow-lg shadow-amber-950/50 transition-all disabled:opacity-60"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-900/90 border-2 border-amber-500/60 focus:border-amber-400 text-amber-300 font-mono text-center text-xl sm:text-2xl tracking-widest placeholder:text-slate-500 placeholder:text-sm placeholder:tracking-normal outline-none shadow-lg shadow-amber-950/50 transition-all disabled:opacity-60"
                 />
               </div>
 

@@ -5,6 +5,7 @@ import { CHAMPION_TITLES, ADMIN_TITLE } from '../utils/titles';
 import { CultivationState } from '../utils/cultivation';
 import { AdminCultivationTab } from './AdminCultivationTab';
 import { AdminDashboardTab } from './admin/AdminDashboardTab';
+import { AdminUserStatsTab } from './admin/AdminUserStatsTab';
 import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminRoomsTab } from './admin/AdminRoomsTab';
 import { AdminBroadcastTab } from './admin/AdminBroadcastTab';
@@ -35,7 +36,8 @@ import {
   Users,
   Radio,
   FileDown,
-  Database
+  Database,
+  BarChart3
 } from 'lucide-react';
 
 export const POOL_OPTIONS: {
@@ -98,6 +100,7 @@ interface AdminModalProps {
 
 type AdminTab = 
   | 'dashboard'
+  | 'user_stats'
   | 'users'
   | 'rooms'
   | 'broadcast'
@@ -607,6 +610,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <span>Tổng Quan</span>
               </button>
 
+              {/* Tab: Thống Kê Người Dùng */}
+              <button
+                id="tab-admin-user-stats"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('user_stats');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'user_stats'
+                    ? 'bg-emerald-400 text-black shadow-lg shadow-emerald-400/30 ring-1 ring-emerald-300'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>Thống Kê Người Dùng</span>
+              </button>
+
               {/* Tab: Quản Lý Người Chơi */}
               <button
                 id="tab-admin-users"
@@ -817,6 +838,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <AdminDashboardTab
                   onNavigateTab={setActiveTab}
                   onClearChat={onClearChat}
+                  showToast={showToast}
+                />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB: THỐNG KÊ NGƯỜI DÙNG & HOẠT ĐỘNG TOÀN SERVER */}
+              {/* ========================================================================= */}
+              {activeTab === 'user_stats' && (
+                <AdminUserStatsTab
+                  onNavigateTab={setActiveTab}
                   showToast={showToast}
                 />
               )}

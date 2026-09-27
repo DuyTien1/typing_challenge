@@ -58,6 +58,8 @@ interface SectsSectionProps {
   username?: string;
   userAvatar?: string;
   userFrame?: string;
+  onStartSectBoss?: (sectId: string, sectName: string) => void;
+  onStartSectTournament?: (sectId: string, sectName: string) => void;
 }
 
 export const SectsSection: React.FC<SectsSectionProps> = ({
@@ -66,6 +68,8 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   username = 'Đạo Hữu',
   userAvatar = '⚡',
   userFrame = 'default',
+  onStartSectBoss,
+  onStartSectTournament,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'boss' | 'tournament'>('overview');
   const [sects, setSects] = useState<SectInfo[]>(() => getStoredSects());
@@ -229,6 +233,12 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   // Vây Quét Thần Thú Tông Môn
   const handleAttackBoss = () => {
     if (!mySectId || isAttackingBoss) return;
+    if (onStartSectBoss) {
+      soundFx.playSwordClash();
+      onStartSectBoss(mySectId, mySect?.name || 'Tông Môn');
+      return;
+    }
+
     setIsAttackingBoss(true);
     soundFx.playSwordClash();
 
@@ -252,6 +262,12 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   // Đóng góp điểm Đại Hội Tỷ Võ
   const handleContributeTournament = () => {
     if (!mySectId) return;
+    if (onStartSectTournament) {
+      soundFx.playGuzhengNote(2);
+      onStartSectTournament(mySectId, mySect?.name || 'Tông Môn');
+      return;
+    }
+
     soundFx.playGuzhengNote(2);
     const sampleWpm = 85;
     const res = contributeTournamentScore(state, mySectId, sampleWpm);

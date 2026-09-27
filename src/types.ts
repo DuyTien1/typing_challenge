@@ -141,6 +141,60 @@ export interface HighScoreRecord {
   timestamp: number;
   avatar?: string;
   frame?: string;
+  accuracy?: number;
+  isVerified?: boolean;
+}
+
+export type LeaderboardTimePeriod = 'daily' | 'weekly' | 'all_time';
+export type LeaderboardGroup = 'battle' | 'cultivation';
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId?: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  frame?: string;
+  wpm: number;
+  score: number;
+  errors: number;
+  accuracy: number;
+  consistency?: number;
+  timestamp: number;
+  isVerified?: boolean;
+  realmName?: string;
+  realmIcon?: string;
+  level?: number;
+  sectName?: string;
+  sectTag?: string;
+  keyboardSwitch?: string;
+  ghostRunAvailable?: boolean;
+}
+
+export interface LeaderboardMultiData {
+  highScores: Record<string, HighScoreRecord | null>;
+  rankings: Record<
+    string,
+    {
+      daily: LeaderboardEntry[];
+      weekly: LeaderboardEntry[];
+      all_time: LeaderboardEntry[];
+    }
+  >;
+  lastResetDate?: string;
+  lastResetWeek?: string;
+}
+
+export interface SeasonRewardItem {
+  id: string;
+  period: 'daily' | 'weekly';
+  rankCategory: 'top1' | 'top2_3' | 'top10';
+  rankTitle: string;
+  titleReward: string;
+  frameReward?: string;
+  spiritStones: number;
+  danDuocName?: string;
+  danDuocExp?: number;
 }
 
 export type HeavenlyDaoEventType =
@@ -541,6 +595,9 @@ export interface CultivationLeaderboardEntry {
   maxExp: number;
   thoNguyen: number;
   isRegistered?: boolean;
+  tuViScore?: number;
+  sectName?: string;
+  sectTag?: string;
 }
 
 // === VẠN ĐẠO QUY TÔNG: TÂM PHÁP, PHÁP BẢO, LUYỆN ĐAN & TÔNG MÔN ===

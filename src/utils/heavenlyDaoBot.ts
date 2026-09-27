@@ -76,6 +76,22 @@ const DEFAULT_INITIAL_DECREES: HeavenlyDaoDecree[] = [
   },
 ];
 
+export function getTierOrdinalName(tier: number): string {
+  const ordinals: Record<number, string> = {
+    1: 'Đệ Nhất Tầng',
+    2: 'Đệ Nhị Tầng',
+    3: 'Đệ Tam Tầng',
+    4: 'Đệ Tứ Tầng',
+    5: 'Đệ Ngũ Tầng',
+    6: 'Đệ Lục Tầng',
+    7: 'Đệ Thất Tầng',
+    8: 'Đệ Bát Tầng',
+    9: 'Đệ Cửu Tầng',
+    10: 'Đệ Thập Tầng (Đại Viên Mãn)',
+  };
+  return ordinals[tier] || `Đệ ${tier} Tầng`;
+}
+
 /**
  * Load decrees from localStorage or return default
  */
@@ -86,7 +102,20 @@ export function getStoredDaoDecrees(): HeavenlyDaoDecree[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        cachedDecrees = parsed.slice(0, 50);
+        // Sanitize legacy entries with hardcoded erroneous 'KỲ ĐỆ BÁT TẦNG'
+        const cleaned = parsed.map((d: HeavenlyDaoDecree) => {
+          if (d.content && (d.content.includes('KỲ ĐỆ BÁT TẦNG') || d.content.includes('ĐỆ BÁT TẦNG'))) {
+            return {
+              ...d,
+              title: d.title.includes('ĐỘ KIẾP') ? d.title : 'THIÊN ĐỊA DỊ TƯỢNG • ĐỘ KIẾP ĐẠO QUẢ',
+              content: d.content
+                .replace(/KỲ ĐỆ BÁT TẦNG/g, 'KỲ - ĐỆ NHẤT TẦNG')
+                .replace(/ĐỆ BÁT TẦNG/g, 'ĐỆ NHẤT TẦNG'),
+            };
+          }
+          return d;
+        });
+        cachedDecrees = cleaned.slice(0, 50);
         return cachedDecrees;
       }
     }
@@ -234,17 +263,27 @@ export async function announceBreakthrough(
   username: string,
   realmName: string,
   subStage: string,
-  tier: number
+  tier: number,
+  isMajorTribulation = false
 ): Promise<HeavenlyDaoDecree> {
-  const content = `Đạo khí ngút trời! Chúc mừng đạo hữu @${username} vừa vượt qua Tâm Ma Hỏa Kiếp, chính thức đột phá [${realmName.toUpperCase()} KỲ ĐỆ BÁT TẦNG - ${subStage}]! Tốc độ xuất chiêu đã đạt cảnh giới lô hỏa thuần thanh, danh chấn bát phương!`;
+  const cleanRealm = (realmName || 'Tu Chân').replace(/\s*kỳ$/i, '').trim();
+  const realmCaps = `${cleanRealm.toUpperCase()} KỲ`;
+  const tierOrdinal = getTierOrdinalName(tier);
+  const formattedRealmBadge = `${cleanRealm} Kỳ - ${tierOrdinal}`;
+
+  const isMajor = isMajorTribulation || tier === 1;
+
+  const content = isMajor
+    ? `Đạo khí ngút trời, tử khí đông lai! Chúc mừng đạo hữu @${username} vượt qua Lôi Kiếp & Tâm Ma Khảo Nghiệm, độ kiếp thành công, chính thức đăng phong [${realmCaps} - ${tierOrdinal}${subStage ? ` - ${subStage}` : ''}]! Thần thông đại triển, danh chấn cửu châu!`
+    : `Đạo khí ngút trời! Chúc mừng đạo hữu @${username} tu vi tinh tiến, chính thức đột phá [${realmCaps} - ${tierOrdinal}${subStage ? ` - ${subStage}` : ''}]! Tốc độ xuất chiêu đã đạt cảnh giới lô hỏa thuần thanh, danh chấn bát phương!`;
 
   return broadcastDaoDecree({
-    title: 'THIÊN ĐỊA DỊ TƯỢNG',
+    title: 'THIÊN ĐỊA DỊ TƯỢNG • ĐỘ KIẾP ĐẠO QUẢ',
     eventType: 'breakthrough',
     targetUser: username,
-    realmName,
+    realmName: formattedRealmBadge,
     content,
-    highlightText: `${username} đột phá ${realmName}`,
+    highlightText: `${username} đột phá ${cleanRealm} (${tierOrdinal})`,
     personaId: 'ban_co',
     generateAiPoem: true,
   });

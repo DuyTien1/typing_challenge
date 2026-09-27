@@ -42,6 +42,8 @@ interface GameOverModalProps {
   newlyUnlockedAchievements?: XianxiaAchievement[];
   onOpenProfileAchievements?: () => void;
   onOpenMatchHistory?: () => void;
+  isDaoDecreeOpen?: boolean;
+  sectMatchNotice?: string | null;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
@@ -68,6 +70,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   newlyUnlockedAchievements = [],
   onOpenProfileAchievements,
   onOpenMatchHistory,
+  isDaoDecreeOpen = false,
+  sectMatchNotice = null,
 }) => {
   const isSpecialArenaMode =
     isBossMode ||
@@ -113,6 +117,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Khi Bảng Thiên Địa Dị Tượng đang mở, cấm toàn bộ phím tắt chơi lại / về phòng
+      if (isDaoDecreeOpen) {
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
@@ -141,7 +150,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSolo, countdown, hasTimedOut, onBackToLobby, onPlayAgain]);
+  }, [isSolo, countdown, hasTimedOut, onBackToLobby, onPlayAgain, isDaoDecreeOpen]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
@@ -261,6 +270,15 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             isSolo={isSolo}
             isOutplay={isOutplay}
           />
+        )}
+
+        {/* Sect Match Notice (Vây Quét Thần Thú / Đại Hội Tỷ Võ) */}
+        {sectMatchNotice && (
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-amber-950/80 border border-amber-400/60 shadow-[0_0_25px_rgba(251,191,36,0.3)] text-amber-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 animate-fadeIn text-center">
+            <span className="text-lg">✨</span>
+            <span>{sectMatchNotice}</span>
+            <span className="text-lg">✨</span>
+          </div>
         )}
 
         {/* Harvest Card: Vạn Đạo Quy Tông Tu Tiên */}

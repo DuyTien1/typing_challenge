@@ -16,7 +16,9 @@ import {
   CultivationLeaderboardEntry, 
   SectLeaderboardEntry, 
   SectInfo, 
-  SectRole 
+  SectRole,
+  LeaderboardEntry,
+  LeaderboardMultiData
 } from '../types';
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken } from './auth';
@@ -1111,9 +1113,9 @@ export function getStoredHighScores(): Record<string, HighScoreRecord | null> {
 }
 
 /**
- * Fetch real server-wide high scores with resilient retries, timeout, and local cache fallback
+ * Fetch real server-wide high scores with multi-period Top 20
  */
-export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord | null>> {
+export async function fetchLeaderboardFull(): Promise<LeaderboardMultiData> {
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -1121,30 +1123,44 @@ export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       const res = await fetch('/api/leaderboard', {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
+        headers: { 'Cache-Control': 'no-cache' },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.success && data.highScores) {
-          // Asynchronous non-blocking save to IndexedDB (does not freeze main thread on Citrix VDI)
-          saveLeaderboardToIndexedDB(data.highScores).catch(() => {});
-          return data.highScores;
+        if (data && data.success) {
+          if (data.highScores) {
+            saveLeaderboardToIndexedDB(data.highScores).catch(() => {});
+          }
+          return {
+            highScores: data.highScores || {},
+            rankings: data.rankings || {},
+            lastResetDate: data.lastResetDate,
+            lastResetWeek: data.lastResetWeek,
+          };
         }
       }
     } catch (err: any) {
       if (attempt < maxRetries) {
-        // Exponential backoff before retry (300ms, 700ms)
         await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 350));
         continue;
       }
       console.warn('Leaderboard service currently unreachable, using local cache:', err?.message || err);
     }
   }
-  return getStoredHighScores();
+  return {
+    highScores: getStoredHighScores(),
+    rankings: {},
+  };
+}
+
+/**
+ * Fetch real server-wide high scores with resilient retries, timeout, and local cache fallback
+ */
+export async function fetchLeaderboard(): Promise<Record<string, HighScoreRecord | null>> {
+  const full = await fetchLeaderboardFull();
+  return full.highScores;
 }
 
 /**
@@ -1387,7 +1403,7 @@ export async function serverContributeToSect(amount: number): Promise<{ success:
 
 /**
  * Submit player score to server leaderboard
- * Chỉ được ghi nhận khi ván đấu diễn ra trọn vẹn, người chơi không đầu hàng hoặc out phòng
+ * Chỉ được ghi nhận khi ván đấu diễn ra trọn vẹn, không đầu hàng, không out phòng, độ chính xác >= 92%
  */
 export async function submitScoreToLeaderboard(record: {
   mode: string;
@@ -1396,13 +1412,24 @@ export async function submitScoreToLeaderboard(record: {
   wpm?: number;
   score?: number;
   errors?: number;
+  accuracy?: number;
+  consistency?: number;
   avatar?: string;
   frame?: string;
   isSurrendered?: boolean;
   isCompleted?: boolean;
   roomId?: string;
   playerId?: string;
-}): Promise<{ success: boolean; isNewRecord: boolean; highScores: Record<string, HighScoreRecord | null>; isGuest?: boolean; error?: string }> {
+  keyboardSwitch?: string;
+}): Promise<{
+  success: boolean;
+  isNewRecord: boolean;
+  highScores: Record<string, HighScoreRecord | null>;
+  rankings?: Record<string, { daily: LeaderboardEntry[]; weekly: LeaderboardEntry[]; all_time: LeaderboardEntry[] }>;
+  userRank?: { daily: number; weekly: number; allTime: number };
+  isGuest?: boolean;
+  error?: string;
+}> {
   // Chặn ngay lập tức tại client nếu người chơi đã đầu hàng hoặc ván đấu không trọn vẹn
   if (record.isSurrendered === true || record.isCompleted === false) {
     return {
@@ -1410,6 +1437,16 @@ export async function submitScoreToLeaderboard(record: {
       isNewRecord: false,
       highScores: {},
       error: 'Ván đấu không trọn vẹn hoặc người chơi đã đầu hàng/out phòng. Không đủ điều kiện lên Bảng Vàng.',
+    };
+  }
+
+  // Điều kiện tối thiểu: Độ chính xác >= 92%
+  if (record.accuracy !== undefined && record.accuracy < 92) {
+    return {
+      success: false,
+      isNewRecord: false,
+      highScores: {},
+      error: 'Độ chính xác tối thiểu phải từ 92% trở lên mới đủ điều kiện xét duyệt vào Bảng Vàng!',
     };
   }
 
@@ -1438,6 +1475,39 @@ export async function submitScoreToLeaderboard(record: {
   } catch (err) {
     console.warn('Error submitting score to leaderboard:', err);
     return { success: false, isNewRecord: false, highScores: {} };
+  }
+}
+
+/**
+ * Claim daily/weekly season reward
+ */
+export async function claimSeasonReward(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+  reward?: {
+    rank: number;
+    title: string;
+    frame: string;
+    spiritStones: number;
+    exp: number;
+  };
+  cultivation?: any;
+  user?: any;
+}> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/leaderboard/claim-reward', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
   }
 }
 
@@ -1488,7 +1558,8 @@ export function subscribeToGlobalChat(
   userId?: string,
   tabId?: string,
   getUserMeta?: () => PresenceUserMeta,
-  onFriendEvent?: (event: any) => void
+  onFriendEvent?: (event: any) => void,
+  onBreakingRecord?: (record: any) => void
 ): () => void {
   let isSubscribed = true;
   let isSseConnected = false;
@@ -1574,6 +1645,8 @@ export function subscribeToGlobalChat(
             updatePresence(ev.count);
           } else if (ev.type === 'leaderboard_updated' && ev.highScores) {
             if (onLeaderboard) onLeaderboard(ev.highScores);
+          } else if (ev.type === 'breaking_record' && ev.record) {
+            if (onBreakingRecord) onBreakingRecord(ev.record);
           } else if (ev.type === 'heavenly_dao_event' && ev.decree) {
             saveDaoDecree(ev.decree);
           } else if (

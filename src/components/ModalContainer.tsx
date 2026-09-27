@@ -103,6 +103,9 @@ export interface ModalContainerProps {
   onModalQuickJoinRoom: (mode: GameMode) => Promise<void>;
   onOpenChat: () => void;
   setNewlyUnlockedAchievements: React.Dispatch<React.SetStateAction<any[]>>;
+  onStartGhostChallenge?: (entry: any) => void;
+  onStartSectBoss?: (sectId: string, sectName: string) => void;
+  onStartSectTournament?: (sectId: string, sectName: string) => void;
 }
 
 export const ModalContainer: React.FC<ModalContainerProps> = ({
@@ -166,6 +169,9 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   onModalQuickJoinRoom,
   onOpenChat,
   setNewlyUnlockedAchievements,
+  onStartGhostChallenge,
+  onStartSectBoss,
+  onStartSectTournament,
 }) => {
   // Master Escape handler: Closes whichever modal is currently active
   React.useEffect(() => {
@@ -245,6 +251,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
             setAuthModalInitialTab('login');
             setIsAuthModalOpen(true);
           }}
+          onStartGhostChallenge={onStartGhostChallenge}
         />
       )}
 
@@ -346,6 +353,8 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           setAuthModalInitialTab('login');
           setIsAuthModalOpen(true);
         }}
+        onStartSectBoss={onStartSectBoss}
+        onStartSectTournament={onStartSectTournament}
         onUpdateState={(next) => {
           if (!currentUser) return;
           setCultivationState(next);

@@ -153,10 +153,10 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => onNavigateTab('users')}
+            onClick={() => onNavigateTab('user_stats')}
             className="mt-3 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
           >
-            <span>Quản lý người chơi</span>
+            <span>Thống kê người dùng chi tiết</span>
             <ArrowUpRight className="w-3 h-3" />
           </button>
         </div>

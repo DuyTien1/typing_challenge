@@ -127,6 +127,8 @@ import {
   processCultivationDecay,
   addTuViFromMatch,
   getSubStage,
+  attackSectWorldBoss,
+  contributeTournamentScore,
 } from './utils/cultivation';
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -455,6 +457,19 @@ export default function App() {
     difficultyRef.current = difficulty;
   }, [difficulty]);
   const [playType, setPlayType] = useState<'solo' | 'multiplayer'>('multiplayer');
+
+  // Tông Môn Match Context: Vây Quét Thần Thú hoặc Đại Hội Tỷ Võ
+  const [sectMatchNotice, setSectMatchNotice] = useState<string | null>(null);
+  const [sectMatchContext, setSectMatchContext] = useState<{
+    type: 'sect_boss' | 'sect_tournament';
+    sectId: string;
+    sectName: string;
+  } | null>(null);
+  const sectMatchContextRef = useRef<{
+    type: 'sect_boss' | 'sect_tournament';
+    sectId: string;
+    sectName: string;
+  } | null>(null);
 
   // Ban & Penalty Enforcement State (Bàn Cổ Thần Thức)
   const [clientBanStatus, setClientBanStatus] = useState(() => checkClientBanStatus());
@@ -787,6 +802,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalInitialTab, setAuthModalInitialTab] = useState<'login' | 'register'>('login');
   const [isFriendsOpen, setIsFriendsOpen] = useState<boolean>(false);
+  const [friendsInitialTab, setFriendsInitialTab] = useState<'friends' | 'requests' | 'search' | 'daolu'>('friends');
   const [friendRequestsCount, setFriendRequestsCount] = useState<number>(0);
   const [friendsList, setFriendsList] = useState<FriendRecord[]>([]);
   const [friendInviteToast, setFriendInviteToast] = useState<{
@@ -804,6 +820,15 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState<boolean>(() => checkIsAdmin());
   const [isHeavenlyChronicleOpen, setIsHeavenlyChronicleOpen] = useState(false);
   const [activeDaoDecreePopup, setActiveDaoDecreePopup] = useState<HeavenlyDaoDecree | null>(null);
+  const [breakingRecordNotice, setBreakingRecordNotice] = useState<{
+    username: string;
+    displayName: string;
+    mode: string;
+    modeName: string;
+    wpm: number;
+    score: number;
+    timestamp: number;
+  } | null>(null);
 
   // 1. CULTIVATION ENGINE (Hệ thống Tu Tiên & Thăng Hoa Cảnh Giới)
   const {
@@ -954,12 +979,14 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       fetchFriendsList().then((res) => {
-        if (res && res.success && res.friends) {
-          setFriendsList(res.friends);
+        if (res && res.success) {
+          if (res.friends) setFriendsList(res.friends);
+          setFriendRequestsCount(res.pendingRequests ? res.pendingRequests.length : 0);
         }
       }).catch(() => {});
     } else {
       setFriendsList([]);
+      setFriendRequestsCount(0);
     }
   }, [currentUser, isFriendsOpen]);
 
@@ -1129,6 +1156,14 @@ export default function App() {
         } else if (ev.type === 'daolu_ceremony_complete') {
           soundFx.playVictory();
         }
+      },
+      (record: any) => {
+        if (!record) return;
+        soundFx.playVictory();
+        setBreakingRecordNotice(record);
+        setTimeout(() => {
+          setBreakingRecordNotice((prev) => (prev && prev.timestamp === record.timestamp ? null : prev));
+        }, 14000);
       }
     );
     return () => {
@@ -1264,14 +1299,22 @@ export default function App() {
         return;
       }
 
-      // 2. Enter: Mở nhanh khung chat khi đang ở sảnh chờ hoặc phòng chờ (khi không focus vào ô nhập liệu)
-      if (e.key === 'Enter' && !isInput && (gameState === 'lobby' || gameState === 'waiting_room')) {
+      // 2. Enter (không giữ phím Ctrl/Cmd/Alt): Mở nhanh khung chat khi đang ở sảnh chờ hoặc phòng chờ
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !isInput && (gameState === 'lobby' || gameState === 'waiting_room')) {
         e.preventDefault();
         soundFx.playKeyClick();
         setIsChatOpen(true);
         setTimeout(() => {
           document.getElementById('input-chat-message')?.focus();
         }, 80);
+        return;
+      }
+
+      // 3. Ctrl + Enter: Bắt đầu trận đấu nhanh khi đang ở phòng chờ (Chủ phòng)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !isInput && gameState === 'waiting_room' && isRoomHost) {
+        e.preventDefault();
+        soundFx.playCountdown(true);
+        handleLaunchGame(false);
         return;
       }
     };
@@ -1463,6 +1506,7 @@ export default function App() {
 
     // Prepare Boss if in Săn Boss mode
     if (targetMode === 'san_boss') {
+      const isSectBoss = sectMatchContextRef.current?.type === 'sect_boss';
       const bossDiff =
         config.sanBoss.difficulties[difficulty] || config.sanBoss.difficulties.normal;
       const totalHp = isSolo
@@ -1470,7 +1514,7 @@ export default function App() {
         : bossDiff.baseHp + Math.max(0, players.length - 1) * bossDiff.hpPerPlayer;
 
       setBossState({
-        name: 'HẮC LONG MA VƯƠNG',
+        name: isSectBoss ? 'THÁI CỔ HẮC LONG (THẦN THÚ TRẤN GIỚI)' : 'HẮC LONG MA VƯƠNG',
         icon: '🐉',
         hp: totalHp,
         maxHp: totalHp,
@@ -1567,6 +1611,110 @@ export default function App() {
       },
     ]);
     handleLaunchGame(true, targetMode);
+  };
+
+  // Khởi động Vây Quét Thần Thú Trấn Giới (Săn Boss Tông Môn)
+  const handleStartSectBoss = (sectId: string, sectName: string) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
+    setIsCultivationOpen(false);
+    sectMatchContextRef.current = { type: 'sect_boss', sectId, sectName };
+    setSectMatchContext(sectMatchContextRef.current);
+    setSectMatchNotice(null);
+
+    setGameMode('san_boss');
+    gameModeRef.current = 'san_boss';
+    setDifficulty('normal');
+    difficultyRef.current = 'normal';
+    setPlayType('solo');
+    setPlayers([
+      {
+        id: currentUserId,
+        username: `${username} (${sectName})`,
+        icon: avatar,
+        progress: 0,
+        wpm: 0,
+        score: 0,
+        errors: 0,
+        correctChars: 0,
+        isFinished: false,
+        isSurrendered: false,
+        isAFK: false,
+      },
+    ]);
+    handleLaunchGame(true, 'san_boss');
+  };
+
+  // Khởi động Xuất Chiến Đại Hội Tỷ Võ Tông Môn (Thiên Cung Long Mạch)
+  const handleStartSectTournament = (sectId: string, sectName: string) => {
+    const ban = checkClientBanStatus();
+    if (ban.isBanned) {
+      setClientBanStatus(ban);
+      setIsBanModalOpen(true);
+      soundFx.playError();
+      return;
+    }
+    setIsCultivationOpen(false);
+    sectMatchContextRef.current = { type: 'sect_tournament', sectId, sectName };
+    setSectMatchContext(sectMatchContextRef.current);
+    setSectMatchNotice(null);
+
+    setGameMode('vi_dau');
+    gameModeRef.current = 'vi_dau';
+    setDifficulty('normal');
+    difficultyRef.current = 'normal';
+    setPlayType('solo');
+    setPlayers([
+      {
+        id: currentUserId,
+        username: `${username} (${sectName})`,
+        icon: avatar,
+        progress: 0,
+        wpm: 0,
+        score: 0,
+        errors: 0,
+        correctChars: 0,
+        isFinished: false,
+        isSurrendered: false,
+        isAFK: false,
+      },
+      {
+        id: 'bot_sect_1',
+        username: 'Vạn Tiên Minh • Chân Truyền',
+        icon: '⚔️',
+        progress: 0,
+        wpm: 68,
+        score: 0,
+        errors: 0,
+        correctChars: 0,
+        isFinished: false,
+        isSurrendered: false,
+        isAFK: false,
+        isBot: true,
+        botTargetWpm: 72,
+      },
+      {
+        id: 'bot_sect_2',
+        username: 'Bắc Đẩu Tông • Đại Đệ Tử',
+        icon: '⚡',
+        progress: 0,
+        wpm: 78,
+        score: 0,
+        errors: 0,
+        correctChars: 0,
+        isFinished: false,
+        isSurrendered: false,
+        isAFK: false,
+        isBot: true,
+        botTargetWpm: 84,
+      },
+    ]);
+    handleLaunchGame(true, 'vi_dau');
   };
 
   // Alias for backward compatibility / restarting
@@ -2004,6 +2152,35 @@ export default function App() {
       maxCombo: extraStats?.maxCombo,
     });
 
+    // Đóng góp điểm Đại Hội Tỷ Võ Tông Môn nếu đang thi đấu trong ngữ cảnh Tỷ Võ
+    if (sectMatchContextRef.current && sectMatchContextRef.current.type === 'sect_tournament' && !isPlayerSurrendered && verifiedWpm > 0) {
+      const { sectId, sectName } = sectMatchContextRef.current;
+      const tourneyRes = contributeTournamentScore(cultivationState, sectId, verifiedWpm);
+      setCultivationState(tourneyRes.updatedState);
+      saveStoredCultivationState(tourneyRes.updatedState);
+      if (currentUser) {
+        setCurrentUser((prev) => (prev ? { ...prev, cultivation: tourneyRes.updatedState } : prev));
+        const token = sessionStorage.getItem('fasttyping_token');
+        if (token) {
+          fetch('/api/cultivation', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ cultivation: tourneyRes.updatedState }),
+          }).catch(() => {});
+        }
+      }
+
+      const added = Math.max(10, Math.round(verifiedWpm * 0.5));
+      setSectMatchNotice(
+        tourneyRes.isLeading
+          ? `👑 [ĐẠI HỘI TỶ VÕ] Xuất sắc đạt ${verifiedWpm} WPM (+${added} điểm)! Bạn đã đưa ${sectName} vươn lên dẫn đầu và chiếm cứ THIÊN CUNG LONG MẠCH!`
+          : `🏆 [ĐẠI HỘI TỶ VÕ] Xuất chiến thành công! Tốc độ ${verifiedWpm} WPM đã đóng góp +${added} điểm chiến cho ${sectName}!`
+      );
+    }
+
     // Kiểm tra xem trong phòng multiplayer còn đối thủ thực nào đang tiếp tục thi đấu không:
     const currentList = playersRef.current && playersRef.current.length > 0 ? playersRef.current : players;
     const activeHumanCompetitors = currentList.filter(
@@ -2135,6 +2312,34 @@ export default function App() {
       isCompleted: isMatchCompleted,
     });
 
+    // Trừ huyết lượng Thần Thú Trấn Giới Tông Môn nếu đang thi đấu trong ngữ cảnh Vây Quét Thần Thú
+    if (sectMatchContextRef.current && sectMatchContextRef.current.type === 'sect_boss' && totalDmg > 0) {
+      const { sectId, sectName } = sectMatchContextRef.current;
+      const res = attackSectWorldBoss(cultivationState, sectId, totalDmg);
+      setCultivationState(res.updatedState);
+      saveStoredCultivationState(res.updatedState);
+      if (currentUser) {
+        setCurrentUser((prev) => (prev ? { ...prev, cultivation: res.updatedState } : prev));
+        const token = sessionStorage.getItem('fasttyping_token');
+        if (token) {
+          fetch('/api/cultivation', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ cultivation: res.updatedState }),
+          }).catch(() => {});
+        }
+      }
+
+      setSectMatchNotice(
+        res.bossDefeated
+          ? `🎉 [VÂY QUÉT THẦN THÚ] Bạn đã trảm sát thành công Thái Cổ Hắc Long của ${sectName}! Toàn môn nhận siêu cấp phần thưởng!`
+          : `🐉 [VÂY QUÉT THẦN THÚ] Bạn đã xuất chiêu gây ${totalDmg.toLocaleString()} sát thương lên Thần Thú Thái Cổ Hắc Long của ${sectName} (Còn ${res.remainingHp.toLocaleString()}/${res.maxHp.toLocaleString()} HP)!`
+      );
+    }
+
     soundFx.playVictory();
     setGameState('gameover');
   };
@@ -2241,6 +2446,9 @@ export default function App() {
     }
     setIsRoomHost(true);
     setNewlyUnlockedAchievements([]);
+    sectMatchContextRef.current = null;
+    setSectMatchContext(null);
+    setSectMatchNotice(null);
     setGameState('lobby');
     setConditionStats({});
     setLastGameWpm(0);
@@ -2276,6 +2484,9 @@ export default function App() {
         )
       );
     }
+    sectMatchContextRef.current = null;
+    setSectMatchContext(null);
+    setSectMatchNotice(null);
     setGameState('waiting_room');
   };
 
@@ -2312,7 +2523,7 @@ export default function App() {
       }
 
       // 2. Enter: Mở nhanh khung chat khi đang ở sảnh chờ
-      if (e.key === 'Enter' && !isInputFocused) {
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !isInputFocused) {
         if (gameState === 'lobby' || gameState === 'waiting_room') {
           e.preventDefault();
           soundFx.playKeyClick();
@@ -2703,8 +2914,30 @@ export default function App() {
     }
   };
 
+  // Khiêu Chiến Bóng Ma (Ghost Challenge): Đua cùng nhịp gõ của kỷ lục gia Bảng Vàng
+  const handleStartGhostChallenge = (entry: any) => {
+    soundFx.playVictory();
+    setIsLeaderboardOpen(false);
+    const targetWpm = entry?.wpm > 0 ? entry.wpm : (entry?.score > 0 ? Math.round(entry.score / 2) : 90);
+    setOutplayPaceMode('custom');
+    setOutplayCustomWpm(targetWpm);
+    try {
+      localStorage.setItem('fasttyping_outplay_pacemode', 'custom');
+      localStorage.setItem('fasttyping_outplay_custom_wpm', String(targetWpm));
+    } catch {}
+    setGameMode('outplay');
+    setPlayType('solo');
+    handleLaunchGame(true, 'outplay');
+  };
+
   // Mode display name helper
   const getModeTitle = () => {
+    if (sectMatchContext?.type === 'sect_boss') {
+      return '🐉 Vây Quét Thần Thú Trấn Giới';
+    }
+    if (sectMatchContext?.type === 'sect_tournament') {
+      return '🏆 Đại Hội Tỷ Võ Tông Môn';
+    }
     switch (gameMode) {
       case 'vi_dau':
         return 'Tiếng Việt Có Dấu';
@@ -2741,7 +2974,14 @@ export default function App() {
         onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
         onOpenMatchHistory={() => setIsMatchHistoryOpen(true)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
-        onOpenFriends={() => setIsFriendsOpen(true)}
+        onOpenFriends={() => {
+          if (friendRequestsCount > 0) {
+            setFriendsInitialTab('requests');
+          } else {
+            setFriendsInitialTab('friends');
+          }
+          setIsFriendsOpen(true);
+        }}
         friendRequestsCount={friendRequestsCount}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenProfile={() => {
@@ -2786,6 +3026,33 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-start gap-6">
+        {/* Breaking Record Golden Wave Ticker (Thông báo chiếu thư phá kỷ lục ngày toàn server) */}
+        {breakingRecordNotice && (
+          <div
+            id="breaking-record-banner"
+            className="w-full max-w-4xl mx-auto p-3.5 rounded-2xl bg-gradient-to-r from-amber-950 via-yellow-900 to-amber-950 border-2 border-yellow-400 shadow-2xl shadow-yellow-500/30 text-yellow-100 flex items-center justify-between gap-3 animate-pulse"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-2xl animate-bounce">👑⚡</span>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-amber-300">
+                  CHIẾU THƯ PHONG THẦN • XÔ ĐỔ KỶ LỤC TOÀN SERVER
+                </div>
+                <div className="text-xs sm:text-sm font-bold text-white truncate">
+                  Đạo hữu <span className="text-yellow-300 font-black">@{breakingRecordNotice.displayName || breakingRecordNotice.username}</span> vừa lập kỷ lục mới chế độ <span className="text-amber-400 font-black">{breakingRecordNotice.modeName}</span> với <span className="text-yellow-300 font-mono font-black">{breakingRecordNotice.score > 0 ? `${breakingRecordNotice.score.toLocaleString()} Điểm` : `${breakingRecordNotice.wpm} WPM`}</span>! 🏆
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setBreakingRecordNotice(null)}
+              className="p-1 rounded-lg bg-yellow-900/60 hover:bg-yellow-800 text-yellow-300 cursor-pointer"
+              title="Đóng thông báo"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         {/* Kicked / Host Action Notification Banner */}
         {kickedNotice && (
           <div
@@ -3239,6 +3506,8 @@ export default function App() {
             onOpenMatchHistory={() => {
               setIsMatchHistoryOpen(true);
             }}
+            isDaoDecreeOpen={Boolean(activeDaoDecreePopup)}
+            sectMatchNotice={sectMatchNotice}
           />
         )}
       </main>
@@ -3287,6 +3556,8 @@ export default function App() {
         currentUser={currentUser}
         currentRoomId={currentRoomId}
         currentMode={gameMode}
+        initialTab={friendsInitialTab}
+        onPendingRequestsCountChange={(count) => setFriendRequestsCount(count)}
         onOpenWhisperChat={(targetUsername, targetUserId) => {
           setChatWhisperTarget({ username: targetUsername, userId: targetUserId });
           setChatInitialChannel('whisper');
@@ -3376,6 +3647,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setFriendInviteToast(null);
+                  setFriendsInitialTab('requests');
                   setIsFriendsOpen(true);
                 }}
                 className="flex-1 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
@@ -3388,6 +3660,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setFriendInviteToast(null);
+                  setFriendsInitialTab('daolu');
                   setIsFriendsOpen(true);
                 }}
                 className="flex-1 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
@@ -3468,6 +3741,9 @@ export default function App() {
         onOpenMatchHistory={() => setIsMatchHistoryOpen(true)}
         onOpenChat={() => setIsChatOpen(true)}
         setNewlyUnlockedAchievements={setNewlyUnlockedAchievements}
+        onStartGhostChallenge={handleStartGhostChallenge}
+        onStartSectBoss={handleStartSectBoss}
+        onStartSectTournament={handleStartSectTournament}
       />
 
       {/* Dedicated Match History, Replay & Skill Diagnostics Modal */}
