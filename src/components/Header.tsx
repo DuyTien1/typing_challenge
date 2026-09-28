@@ -21,9 +21,27 @@ import { soundFx } from '../utils/audio';
 import { 
   UI_STYLES, 
   UIStyleId, 
-  applyUIStyle, 
-  getStoredUIStyle 
+  applyUIStyle 
 } from '../utils/themeAndFont';
+
+// Safe resolver for stored UI style across all build environments
+const getInitialHeaderUIStyle = (): UIStyleId => {
+  if (typeof window === 'undefined') return 'xianxia';
+  try {
+    const saved = localStorage.getItem('fasttyping_ui_style');
+    if (saved && UI_STYLES.some((s) => s.id === saved)) {
+      return saved as UIStyleId;
+    }
+    const savedTheme = localStorage.getItem('fasttyping_theme');
+    if (savedTheme) {
+      if (savedTheme === 'cyberpunk') return 'cyberpunk';
+      if (savedTheme === 'retro' || savedTheme === 'classic') return 'classic';
+      if (savedTheme === 'crimson' || savedTheme === 'abyss') return 'abyss';
+      if (savedTheme === 'paper_white' || savedTheme === 'minimal_mono' || savedTheme === 'minimal') return 'minimal';
+    }
+  } catch {}
+  return 'xianxia';
+};
 
 interface HeaderProps {
   username: string;
@@ -98,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
-  const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getStoredUIStyle());
+  const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getInitialHeaderUIStyle());
   const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
   const styleDropdownRef = useRef<HTMLDivElement>(null);
 

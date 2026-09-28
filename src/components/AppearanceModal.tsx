@@ -16,13 +16,31 @@ import {
   UI_STYLES,
   UIStyleId,
   applyUIStyle,
-  getStoredUIStyle,
   MONKEY_THEMES, 
   TYPING_FONTS, 
   applyThemeAndFont, 
   getStoredTheme, 
   getStoredFont 
 } from '../utils/themeAndFont';
+
+// Safe resolver for stored UI style across all build environments
+const getInitialModalUIStyle = (): UIStyleId => {
+  if (typeof window === 'undefined') return 'xianxia';
+  try {
+    const saved = localStorage.getItem('fasttyping_ui_style');
+    if (saved && UI_STYLES.some((s) => s.id === saved)) {
+      return saved as UIStyleId;
+    }
+    const savedTheme = localStorage.getItem('fasttyping_theme');
+    if (savedTheme) {
+      if (savedTheme === 'cyberpunk') return 'cyberpunk';
+      if (savedTheme === 'retro' || savedTheme === 'classic') return 'classic';
+      if (savedTheme === 'crimson' || savedTheme === 'abyss') return 'abyss';
+      if (savedTheme === 'paper_white' || savedTheme === 'minimal_mono' || savedTheme === 'minimal') return 'minimal';
+    }
+  } catch {}
+  return 'xianxia';
+};
 
 interface AppearanceModalProps {
   isOpen: boolean;
@@ -40,7 +58,7 @@ const SWITCHES: { id: SwitchType; name: string; desc: string; icon: string }[] =
 
 export const AppearanceModal: React.FC<AppearanceModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<'styles' | 'advanced'>('styles');
-  const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getStoredUIStyle());
+  const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getInitialModalUIStyle());
   const [selectedThemeId, setSelectedThemeId] = useState<string>(() => getStoredTheme());
   const [selectedFontId, setSelectedFontId] = useState<string>(() => getStoredFont());
   const [currentSwitch, setCurrentSwitch] = useState<SwitchType>(() => soundFx.getSwitchType());

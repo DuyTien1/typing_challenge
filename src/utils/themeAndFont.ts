@@ -1,3 +1,149 @@
+import { soundFx, SwitchType } from './audio';
+
+export type UIStyleId = 'xianxia' | 'classic' | 'cyberpunk' | 'minimal' | 'abyss';
+
+export interface UIStyleDefinition {
+  id: UIStyleId;
+  name: string;
+  subtitle: string;
+  tag: string;
+  icon: string;
+  desc: string;
+  sampleQuote: string;
+  bg: string;
+  cardBg: string;
+  main: string;
+  sub: string;
+  text: string;
+  error: string;
+  border: string;
+  fontId: string;
+  fontName: string;
+  fontFamily: string;
+  soundSwitch: SwitchType;
+  switchName: string;
+  borderRadius: string;
+  accentGlow: string;
+}
+
+export const UI_STYLES: UIStyleDefinition[] = [
+  {
+    id: 'xianxia',
+    name: 'Cửu Trọng Thiên Đạo',
+    subtitle: 'Tiên Hiệp • Thoát Tục',
+    tag: 'Tiên Hiệp',
+    icon: '🪷',
+    desc: 'Khí chất tu tiên phiêu dật, ngọc bích hộ thể, mây ngọc lung linh và âm mộc trúc tiên thanh tao.',
+    sampleQuote: 'Đạo khả đạo, phi thường đạo. Nhất niệm quy tông, kiếm khí phi thăng.',
+    bg: '#080d16',
+    cardBg: '#122033',
+    main: '#10b981',
+    sub: '#5c7b94',
+    text: '#f0fdf7',
+    error: '#f43f5e',
+    border: '#1d3d54',
+    fontId: 'jetbrains_mono',
+    fontName: 'JetBrains Mono',
+    fontFamily: "'JetBrains Mono', monospace",
+    soundSwitch: 'truc_tien',
+    switchName: 'Trúc Tiên Đạo 🎋',
+    borderRadius: '1rem',
+    accentGlow: '0 0 25px rgba(16, 185, 129, 0.45)',
+  },
+  {
+    id: 'classic',
+    name: 'Cố Hương Thi Viện',
+    subtitle: 'Cổ Điển • Hoài Niệm',
+    tag: 'Cổ Điển',
+    icon: '📜',
+    desc: 'Cỗ máy đánh chữ cơ khí vintage, sắc giấy da cổ ố vàng ấm cúng thập niên 70, hoài niệm và trầm mặc.',
+    sampleQuote: 'Tiếng gõ phím lách cách của cỗ máy chữ xưa ngân vang giữa trang sách ố vàng.',
+    bg: '#171412',
+    cardBg: '#26201b',
+    main: '#f59e0b',
+    sub: '#a18f80',
+    text: '#fef3c7',
+    error: '#dc2626',
+    border: '#4d3d32',
+    fontId: 'courier_prime',
+    fontName: 'Courier Prime',
+    fontFamily: "'Courier Prime', monospace",
+    soundSwitch: 'cherry_blue',
+    switchName: 'Cherry Blue Clicky 🟦',
+    borderRadius: '0.375rem',
+    accentGlow: '0 0 20px rgba(245, 158, 11, 0.4)',
+  },
+  {
+    id: 'cyberpunk',
+    name: 'Tân Thế Kỷ 2099',
+    subtitle: 'Khoa Học Viễn Tưởng • Cyber',
+    tag: 'Viễn Tưởng',
+    icon: '⚡',
+    desc: 'Thành phố tương lai ánh neon rực rỡ, màn hình Hologram, radar phi thuyền và mạch điện dạ quang sắc bén.',
+    sampleQuote: 'NEURAL LINK ESTABLISHED: OVERCLOCK 200 WPM READY FOR COMBAT.',
+    bg: '#030612',
+    cardBg: '#0d1738',
+    main: '#00f0ff',
+    sub: '#3e6280',
+    text: '#e0f7fa',
+    error: '#ff0055',
+    border: 'rgba(0, 240, 255, 0.45)',
+    fontId: 'share_tech_mono',
+    fontName: 'Share Tech Mono',
+    fontFamily: "'Share Tech Mono', monospace",
+    soundSwitch: 'cherry_red',
+    switchName: 'Cherry Red Linear 🟥',
+    borderRadius: '0.125rem',
+    accentGlow: '0 0 28px rgba(0, 240, 255, 0.6)',
+  },
+  {
+    id: 'minimal',
+    name: 'Bạch Dạ Thuần Khiết',
+    subtitle: 'Tối Giản Tinh Tế • Sắc Nét Rõ Ràng',
+    tag: 'Tối Giản',
+    icon: '⚪',
+    desc: 'Phong cách tối giản tinh tế: Nền sáng thanh lịch, thẻ nội dung nổi bật có chiều sâu, chữ và số sắc nét tương phản cao.',
+    sampleQuote: 'Sự tối giản là đỉnh cao của sự tinh tế. Tương phản sắc nét, thanh thoát lướt nhẹ từng phím bấm.',
+    bg: '#f8fafc',
+    cardBg: '#ffffff',
+    main: '#2563eb',
+    sub: '#334155',
+    text: '#0f172a',
+    error: '#dc2626',
+    border: '#cbd5e1',
+    fontId: 'inter',
+    fontName: 'Inter Sans',
+    fontFamily: "'Inter', sans-serif",
+    soundSwitch: 'topre',
+    switchName: 'Topre Capacitive 🟪',
+    borderRadius: '0.75rem',
+    accentGlow: '0 4px 14px -2px rgba(37, 99, 235, 0.15)',
+  },
+  {
+    id: 'abyss',
+    name: 'U Minh Hàn Ngục',
+    subtitle: 'Hắc Ám Ma Vực • Bàn Cổ',
+    tag: 'Hắc Ám',
+    icon: '🩸',
+    desc: 'Hầm ngục dung nham hắc ám của Bàn Cổ Thần Thức, lửa đỏ rực rỡ, uy quyền hắc thạch tối thượng kiên cường.',
+    sampleQuote: 'Cửu U hàn ngục vạn trượng ma diễm, hắc ám quy phục dưới uy áp Bàn Cổ Thần Thức.',
+    bg: '#080205',
+    cardBg: '#1c0c16',
+    main: '#ef4444',
+    sub: '#7c3743',
+    text: '#fee2e2',
+    error: '#991b1b',
+    border: '#4d1522',
+    fontId: 'fira_code',
+    fontName: 'Fira Code',
+    fontFamily: "'Fira Code', monospace",
+    soundSwitch: 'thock',
+    switchName: 'Deep Thock ⬛',
+    borderRadius: '0.5rem',
+    accentGlow: '0 0 25px rgba(239, 68, 68, 0.55)',
+  },
+];
+
 export interface MonkeyTheme {
   id: string;
   name: string;
@@ -22,6 +168,72 @@ export interface TypingFont {
 }
 
 export const MONKEY_THEMES: MonkeyTheme[] = [
+  // 5 Phong Cách Giao Diện Độc Bản chính thức
+  {
+    id: 'xianxia',
+    name: '🪷 Cửu Trọng Thiên Đạo (Tiên Hiệp)',
+    category: 'dark',
+    bg: '#080d16',
+    cardBg: '#122033',
+    main: '#10b981',
+    sub: '#5c7b94',
+    text: '#f0fdf7',
+    error: '#f43f5e',
+    border: '#1d3d54',
+    desc: 'Phong cách Tiên Hiệp: Ngọc bích hộ thể, bích ngọc các có chiều sâu, âm mộc trúc thanh tao.',
+  },
+  {
+    id: 'classic',
+    name: '📜 Cố Hương Thi Viện (Cổ Điển)',
+    category: 'dark',
+    bg: '#171412',
+    cardBg: '#26201b',
+    main: '#f59e0b',
+    sub: '#a18f80',
+    text: '#fef3c7',
+    error: '#dc2626',
+    border: '#4d3d32',
+    desc: 'Phong cách Cổ Điển: Cỗ máy đánh chữ vintage, giấy da ố vàng ấm áp, thẻ da cổ nổi bật.',
+  },
+  {
+    id: 'cyberpunk',
+    name: '⚡ Tân Thế Kỷ 2099 (Viễn Tưởng)',
+    category: 'colorful',
+    bg: '#030612',
+    cardBg: '#0d1738',
+    main: '#00f0ff',
+    sub: '#3e6280',
+    text: '#e0f7fa',
+    error: '#ff0055',
+    border: 'rgba(0, 240, 255, 0.45)',
+    desc: 'Phong cách Cyberpunk: Thành phố tương lai, đèn neon cyan rực rỡ và kính mờ Hologram nổi bật.',
+  },
+  {
+    id: 'minimal',
+    name: '⚪ Bạch Dạ Thuần Khiết (Tối Giản)',
+    category: 'light',
+    bg: '#f8fafc',
+    cardBg: '#ffffff',
+    main: '#2563eb',
+    sub: '#334155',
+    text: '#0f172a',
+    error: '#dc2626',
+    border: '#cbd5e1',
+    desc: 'Phong cách tối giản tinh tế: Nền sáng thanh lịch, thẻ nội dung nổi bật có chiều sâu, chữ và số sắc nét tương phản cao.',
+  },
+  {
+    id: 'abyss',
+    name: '🩸 U Minh Hàn Ngục (Hắc Ám)',
+    category: 'dark',
+    bg: '#080205',
+    cardBg: '#1c0c16',
+    main: '#ef4444',
+    sub: '#7c3743',
+    text: '#fee2e2',
+    error: '#991b1b',
+    border: '#4d1522',
+    desc: 'Phong cách Hắc Ám Ma Vực: Hầm ngục dung nham, lửa đỏ rực rỡ của Bàn Cổ Thần Thức.',
+  },
   {
     id: 'serika_dark',
     name: 'Serika Dark',
@@ -268,19 +480,6 @@ export const MONKEY_THEMES: MonkeyTheme[] = [
     error: '#dc2626',
     border: '#451a1a',
     desc: 'Huyết thạch đỏ rực kiên cường dành cho những chiến binh tốc độ.',
-  },
-  {
-    id: 'default_fasttyping',
-    name: 'FastTyping Gold (Mặc Định)',
-    category: 'dark',
-    bg: '#0f1117',
-    cardBg: '#131926',
-    main: '#fbbf24',
-    sub: '#475569',
-    text: '#f1f5f9',
-    error: '#f43f5e',
-    border: '#1e293b',
-    desc: 'Giao diện bóng đêm vàng kim chuẩn mực của đấu trường FastTyping.',
   },
   // === CÁC THEME NỀN TRẮNG TINH KHÔI & SÁNG (LIGHT THEMES) ===
   {
@@ -664,13 +863,79 @@ export function applyThemeAndFont(themeId: string, fontId: string) {
   root.setAttribute('data-theme-id', theme.id);
   root.setAttribute('data-theme-category', theme.category);
 
+  // If matches one of the 5 UI styles, sync data-ui-style
+  if (UI_STYLES.some((s) => s.id === theme.id)) {
+    root.setAttribute('data-ui-style', theme.id);
+    localStorage.setItem('fasttyping_ui_style', theme.id);
+  }
+
   // Store in localStorage
   localStorage.setItem('fasttyping_theme', theme.id);
   localStorage.setItem('fasttyping_font', font.id);
 }
 
+/**
+ * Apply one of the 5 Distinct UI Styles completely (Background, Cards, Font, Sound Switch, Radius, Glow)
+ */
+export function applyUIStyle(styleId: UIStyleId, autoSwitchSound = true): UIStyleDefinition {
+  const style = UI_STYLES.find((s) => s.id === styleId) || UI_STYLES[0];
+  ensureFontLoaded(style.fontId);
+
+  const root = document.documentElement;
+  root.style.setProperty('--theme-bg', style.bg);
+  root.style.setProperty('--theme-card', style.cardBg);
+  root.style.setProperty('--theme-main', style.main);
+  root.style.setProperty('--theme-sub', style.sub);
+  root.style.setProperty('--theme-text', style.text);
+  root.style.setProperty('--theme-error', style.error);
+  root.style.setProperty('--theme-border', style.border);
+  root.style.setProperty('--theme-radius', style.borderRadius);
+  root.style.setProperty('--theme-glow', style.accentGlow);
+  root.style.setProperty('--typing-font', style.fontFamily);
+
+  root.setAttribute('data-ui-style', style.id);
+  root.setAttribute('data-theme-id', style.id);
+  root.setAttribute('data-theme-category', style.id === 'minimal' ? 'light' : 'dark');
+
+  localStorage.setItem('fasttyping_ui_style', style.id);
+  localStorage.setItem('fasttyping_theme', style.id);
+  localStorage.setItem('fasttyping_font', style.fontId);
+
+  if (autoSwitchSound) {
+    try {
+      soundFx.setSwitchType(style.soundSwitch);
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ui_style_changed', { detail: style }));
+  }
+
+  return style;
+}
+
+export function getStoredUIStyle(): UIStyleId {
+  if (typeof window === 'undefined') return 'xianxia';
+  const saved = localStorage.getItem('fasttyping_ui_style');
+  if (saved && UI_STYLES.some((s) => s.id === saved)) {
+    return saved as UIStyleId;
+  }
+  const savedTheme = localStorage.getItem('fasttyping_theme');
+  if (savedTheme) {
+    if (savedTheme === 'cyberpunk') return 'cyberpunk';
+    if (savedTheme === 'retro') return 'classic';
+    if (savedTheme === 'crimson') return 'abyss';
+    if (savedTheme === 'paper_white' || savedTheme === 'minimal_mono') return 'minimal';
+  }
+  return 'xianxia';
+}
+
 export function getStoredTheme(): string {
-  return localStorage.getItem('fasttyping_theme') || 'default_fasttyping';
+  const stored = localStorage.getItem('fasttyping_theme');
+  if (!stored || stored === 'default_fasttyping') {
+    return 'xianxia';
+  }
+  return stored;
 }
 
 export function getStoredFont(): string {
@@ -678,7 +943,6 @@ export function getStoredFont(): string {
 }
 
 export function initThemeAndFont() {
-  const themeId = getStoredTheme();
-  const fontId = getStoredFont();
-  applyThemeAndFont(themeId, fontId);
+  const currentStyleId = getStoredUIStyle();
+  applyUIStyle(currentStyleId, false);
 }
