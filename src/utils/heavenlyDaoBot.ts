@@ -1,5 +1,6 @@
 import { ChatMessage, HeavenlyDaoDecree, HeavenlyDaoEventType } from '../types';
 import { sendChatMessage } from './roomManager';
+import { getStoredCachedUser } from './auth';
 
 export interface DaoBotPersona {
   id: string;
@@ -98,22 +99,41 @@ export function getTierOrdinalName(tier: number): string {
 export function getStoredDaoDecrees(): HeavenlyDaoDecree[] {
   if (cachedDecrees.length > 0) return cachedDecrees;
   try {
+    const cachedUser = getStoredCachedUser();
     const raw = localStorage.getItem(DECREES_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Sanitize legacy entries with hardcoded erroneous 'KỲ ĐỆ BÁT TẦNG'
+        // Sanitize legacy entries with hardcoded erroneous 'KỲ ĐỆ BÁT TẦNG' and resolve usernames
         const cleaned = parsed.map((d: HeavenlyDaoDecree) => {
-          if (d.content && (d.content.includes('KỲ ĐỆ BÁT TẦNG') || d.content.includes('ĐỆ BÁT TẦNG'))) {
-            return {
-              ...d,
-              title: d.title.includes('ĐỘ KIẾP') ? d.title : 'THIÊN ĐỊA DỊ TƯỢNG • ĐỘ KIẾP ĐẠO QUẢ',
-              content: d.content
+          let updated = { ...d };
+          if (updated.content && (updated.content.includes('KỲ ĐỆ BÁT TẦNG') || updated.content.includes('ĐỆ BÁT TẦNG'))) {
+            updated = {
+              ...updated,
+              title: updated.title.includes('ĐỘ KIẾP') ? updated.title : 'THIÊN ĐỊA DỊ TƯỢNG • ĐỘ KIẾP ĐẠO QUẢ',
+              content: updated.content
                 .replace(/KỲ ĐỆ BÁT TẦNG/g, 'KỲ - ĐỆ NHẤT TẦNG')
                 .replace(/ĐỆ BÁT TẦNG/g, 'ĐỆ NHẤT TẦNG'),
             };
           }
-          return d;
+
+          if (cachedUser && cachedUser.displayName && cachedUser.username && cachedUser.displayName !== cachedUser.username) {
+            const escapedU = cachedUser.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (updated.targetUser && (updated.targetUser === cachedUser.username || updated.targetUser === cachedUser.id)) {
+              updated.targetUser = cachedUser.displayName;
+            }
+            if (updated.content) {
+              updated.content = updated.content
+                .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${cachedUser.displayName}`)
+                .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), cachedUser.displayName);
+            }
+            if (updated.highlightText) {
+              updated.highlightText = updated.highlightText
+                .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${cachedUser.displayName}`)
+                .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), cachedUser.displayName);
+            }
+          }
+          return updated;
         });
         cachedDecrees = cleaned.slice(0, 50);
         return cachedDecrees;
@@ -130,8 +150,29 @@ export function getStoredDaoDecrees(): HeavenlyDaoDecree[] {
  * Save decree to local cache and trigger event
  */
 export function saveDaoDecree(decree: HeavenlyDaoDecree) {
+  let sanitizedDecree = { ...decree };
+  try {
+    const cachedUser = getStoredCachedUser();
+    if (cachedUser && cachedUser.displayName && cachedUser.username && cachedUser.displayName !== cachedUser.username) {
+      const escapedU = cachedUser.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (sanitizedDecree.targetUser && (sanitizedDecree.targetUser === cachedUser.username || sanitizedDecree.targetUser === cachedUser.id)) {
+        sanitizedDecree.targetUser = cachedUser.displayName;
+      }
+      if (sanitizedDecree.content) {
+        sanitizedDecree.content = sanitizedDecree.content
+          .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${cachedUser.displayName}`)
+          .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), cachedUser.displayName);
+      }
+      if (sanitizedDecree.highlightText) {
+        sanitizedDecree.highlightText = sanitizedDecree.highlightText
+          .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${cachedUser.displayName}`)
+          .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), cachedUser.displayName);
+      }
+    }
+  } catch {}
+
   const list = getStoredDaoDecrees();
-  const next = [decree, ...list.filter((d) => d.id !== decree.id)].slice(0, 50);
+  const next = [sanitizedDecree, ...list.filter((d) => d.id !== sanitizedDecree.id)].slice(0, 50);
   cachedDecrees = next;
   try {
     localStorage.setItem(DECREES_STORAGE_KEY, JSON.stringify(next));
@@ -142,7 +183,7 @@ export function saveDaoDecree(decree: HeavenlyDaoDecree) {
   // Dispatch global window event for reactive UI updates asynchronously so it never triggers during React render
   if (typeof window !== 'undefined') {
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent(DECREES_EVENT_NAME, { detail: decree }));
+      window.dispatchEvent(new CustomEvent(DECREES_EVENT_NAME, { detail: sanitizedDecree }));
     }, 0);
   }
 }
@@ -163,6 +204,61 @@ export function subscribeToDaoDecrees(callback: (decree: HeavenlyDaoDecree) => v
   };
 }
 
+// Client-side cache mapping usernames to display names
+const usernameToDisplayNameCache = new Map<string, string>();
+
+/**
+ * Register a player's display name corresponding to their login username
+ */
+export function registerPlayerDisplayName(username?: string, displayName?: string) {
+  if (!username) return;
+  const cleanU = username.trim().toLowerCase();
+  const cleanD = (displayName || '').trim();
+  if (cleanD && cleanD.toLowerCase() !== cleanU) {
+    usernameToDisplayNameCache.set(cleanU, cleanD);
+  }
+}
+
+export function resolvePlayerDisplayName(providedName?: string): string {
+  if (!providedName) {
+    try {
+      const cached = getStoredCachedUser();
+      return cached?.displayName || cached?.username || 'Đạo Hữu';
+    } catch {}
+    return 'Đạo Hữu';
+  }
+
+  const clean = providedName.trim();
+  const cleanLower = clean.toLowerCase();
+
+  try {
+    const cached = getStoredCachedUser();
+    if (cached) {
+      if (
+        cleanLower === (cached.username || '').toLowerCase() ||
+        cleanLower === (cached.id || '').toLowerCase()
+      ) {
+        return cached.displayName || cached.username || clean;
+      }
+    }
+  } catch {}
+
+  if (usernameToDisplayNameCache.has(cleanLower)) {
+    return usernameToDisplayNameCache.get(cleanLower)!;
+  }
+
+  // Check localStorage guest or custom display name
+  try {
+    const storedDisplay = localStorage.getItem('fasttyping_display_name');
+    const storedUsername = localStorage.getItem('fasttyping_username');
+    if (storedDisplay && storedUsername && cleanLower === storedUsername.toLowerCase()) {
+      return storedDisplay;
+    }
+  } catch {}
+
+  return clean;
+}
+
 /**
  * Broadcast a new celestial decree across the server via Global Chat and local UI
  */
@@ -181,14 +277,60 @@ export async function broadcastDaoDecree(params: {
   const id = `decree-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const persona = (params.personaId && DAO_BOT_PERSONAS[params.personaId]) || DAO_BOT_PERSONAS.huyen_thien;
 
+  let finalTargetUser = resolvePlayerDisplayName(params.targetUser);
+  let finalContent = params.content;
+  let finalHighlight = params.highlightText;
+
+  try {
+    const cached = getStoredCachedUser();
+    if (cached) {
+      const displayName = cached.displayName || cached.username;
+      if (
+        !finalTargetUser ||
+        finalTargetUser.toLowerCase() === (cached.username || '').toLowerCase() ||
+        finalTargetUser.toLowerCase() === (cached.id || '').toLowerCase()
+      ) {
+        finalTargetUser = displayName;
+      }
+      if (cached.username && displayName && cached.username.toLowerCase() !== displayName.toLowerCase()) {
+        registerPlayerDisplayName(cached.username, displayName);
+        const escapedU = cached.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        finalContent = finalContent
+          .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${displayName}`)
+          .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), displayName);
+        if (finalHighlight) {
+          finalHighlight = finalHighlight
+            .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${displayName}`)
+            .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), displayName);
+        }
+      }
+    }
+
+    // Thay thế toàn bộ các tên đăng nhập đã được ghi nhận bằng tên người chơi hiển thị
+    usernameToDisplayNameCache.forEach((displayName, uname) => {
+      const escapedU = uname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      finalContent = finalContent
+        .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${displayName}`)
+        .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), displayName);
+      if (finalHighlight) {
+        finalHighlight = finalHighlight
+          .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${displayName}`)
+          .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), displayName);
+      }
+      if (finalTargetUser && finalTargetUser.toLowerCase() === uname) {
+        finalTargetUser = displayName;
+      }
+    });
+  } catch {}
+
   const decree: HeavenlyDaoDecree = {
     id,
     title: params.title,
     eventType: params.eventType,
-    targetUser: params.targetUser,
-    content: params.content,
+    targetUser: finalTargetUser,
+    content: finalContent,
     timestamp: Date.now(),
-    highlightText: params.highlightText,
+    highlightText: finalHighlight,
     wpm: params.wpm,
     accuracy: params.accuracy,
     realmName: params.realmName,
@@ -206,6 +348,9 @@ export async function broadcastDaoDecree(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...params,
+        targetUser: finalTargetUser,
+        content: finalContent,
+        highlightText: finalHighlight,
         personaId: persona.id,
         generateAiPoem: params.generateAiPoem ?? (params.eventType === 'record' || params.eventType === 'breakthrough'),
       }),
@@ -244,14 +389,15 @@ export async function announcePenalty(
   reason: string,
   penaltyDetail = 'Phế trừ 500 Tu Vi, tịch thu Đan Dược và đày vào U Minh Hàn Ngục (Cấm thi đấu 2 giờ) để tự hối lỗi!'
 ): Promise<HeavenlyDaoDecree> {
-  const content = `Bàn Cổ Khí Tức chấn động! Nghịch đồ @${username} dám thi triển tà thuật 'Hư Không Thâu Phím' (${reason}) làm vấy bẩn Đạo Cơ! Bàn Cổ Thần Thức hạ lệnh giáng cửu trọng thiên lôi: ${penaltyDetail}`;
+  const playerName = resolvePlayerDisplayName(username);
+  const content = `Bàn Cổ Khí Tức chấn động! Nghịch đồ @${playerName} dám thi triển tà thuật 'Hư Không Thâu Phím' (${reason}) làm vấy bẩn Đạo Cơ! Bàn Cổ Thần Thức hạ lệnh giáng cửu trọng thiên lôi: ${penaltyDetail}`;
 
   return broadcastDaoDecree({
     title: 'BÀN CỔ TRỪNG PHẠT',
     eventType: 'penalty',
-    targetUser: username,
+    targetUser: playerName,
     content,
-    highlightText: `Bàn Cổ phạt ${username} (2 giờ)`,
+    highlightText: `Bàn Cổ phạt ${playerName} (2 giờ)`,
     personaId: 'ban_co',
   });
 }
@@ -266,6 +412,7 @@ export async function announceBreakthrough(
   tier: number,
   isMajorTribulation = false
 ): Promise<HeavenlyDaoDecree> {
+  const playerName = resolvePlayerDisplayName(username);
   const cleanRealm = (realmName || 'Tu Chân').replace(/\s*kỳ$/i, '').trim();
   const realmCaps = `${cleanRealm.toUpperCase()} KỲ`;
   const tierOrdinal = getTierOrdinalName(tier);
@@ -274,16 +421,16 @@ export async function announceBreakthrough(
   const isMajor = isMajorTribulation || tier === 1;
 
   const content = isMajor
-    ? `Đạo khí ngút trời, tử khí đông lai! Chúc mừng đạo hữu @${username} vượt qua Lôi Kiếp & Tâm Ma Khảo Nghiệm, độ kiếp thành công, chính thức đăng phong [${realmCaps} - ${tierOrdinal}${subStage ? ` - ${subStage}` : ''}]! Thần thông đại triển, danh chấn cửu châu!`
-    : `Đạo khí ngút trời! Chúc mừng đạo hữu @${username} tu vi tinh tiến, chính thức đột phá [${realmCaps} - ${tierOrdinal}${subStage ? ` - ${subStage}` : ''}]! Tốc độ xuất chiêu đã đạt cảnh giới lô hỏa thuần thanh, danh chấn bát phương!`;
+    ? `Đạo khí ngút trời, tử khí đông lai! Chúc mừng đạo hữu @${playerName} vượt qua Lôi Kiếp & Tâm Ma Khảo Nghiệm, độ kiếp thành công, chính thức đăng phong [${realmCaps} - ${tierOrdinal}${subStage ? ` - ${subStage}` : ''}]! Thần thông đại triển, danh chấn cửu châu!`
+    : `Đạo khí ngút trời! Chúc mừng đạo hữu @${playerName} tu vi tinh tiến, chính thức đột phá [${realmCaps} - ${tierOrdinal}${subStage ? ` - ${subStage}` : ''}]! Tốc độ xuất chiêu đã đạt cảnh giới lô hỏa thuần thanh, danh chấn bát phương!`;
 
   return broadcastDaoDecree({
     title: 'THIÊN ĐỊA DỊ TƯỢNG • ĐỘ KIẾP ĐẠO QUẢ',
     eventType: 'breakthrough',
-    targetUser: username,
+    targetUser: playerName,
     realmName: formattedRealmBadge,
     content,
-    highlightText: `${username} đột phá ${cleanRealm} (${tierOrdinal})`,
+    highlightText: `${playerName} đột phá ${cleanRealm} (${tierOrdinal})`,
     personaId: 'ban_co',
     generateAiPoem: true,
   });
@@ -299,19 +446,20 @@ export async function announceRecord(
   modeName: string,
   isTop1 = false
 ): Promise<HeavenlyDaoDecree> {
+  const playerName = resolvePlayerDisplayName(username);
   const title = isTop1 ? 'THIÊN BẢNG ĐĂNG ĐỈNH' : 'KIM BẢNG ĐỀ DANH';
   const content = isTop1
-    ? `Kiếm khí tung hoành tam thiên lý! Đạo hữu @${username} vừa xuất chiêu thần tốc đạt ${wpm} WPM (${accuracy}% Chuẩn Xác) tại chế độ ${modeName}, chính thức soán ngôi Đệ Nhất Kiếm Tôn trên Thiên Bảng!`
-    : `Kiếm khí kinh thế hãi tục! Đạo hữu @${username} vừa xuất chiêu thần tốc đạt ${wpm} WPM (${accuracy}% Chuẩn Xác) tại chế độ ${modeName}, chính thức ghi danh Bảng Vàng!`;
+    ? `Kiếm khí tung hoành tam thiên lý! Đạo hữu @${playerName} vừa xuất chiêu thần tốc đạt ${wpm} WPM (${accuracy}% Chuẩn Xác) tại chế độ ${modeName}, chính thức soán ngôi Đệ Nhất Kiếm Tôn trên Thiên Bảng!`
+    : `Kiếm khí kinh thế hãi tục! Đạo hữu @${playerName} vừa xuất chiêu thần tốc đạt ${wpm} WPM (${accuracy}% Chuẩn Xác) tại chế độ ${modeName}, chính thức ghi danh Bảng Vàng!`;
 
   return broadcastDaoDecree({
     title,
     eventType: 'record',
-    targetUser: username,
+    targetUser: playerName,
     wpm,
     accuracy,
     content,
-    highlightText: `${username} đạt ${wpm} WPM`,
+    highlightText: `${playerName} đạt ${wpm} WPM`,
     personaId: isTop1 ? 'ban_co' : 'linh_lung',
     generateAiPoem: true,
   });
@@ -325,12 +473,13 @@ export async function announceBossKill(
   bossName = 'Hắc Long Ma Vương',
   damageDealt = 1850
 ): Promise<HeavenlyDaoDecree> {
-  const content = `${bossName} gầm thét tan biến! Đại đạo hữu @${slayerName} đã tung nhát kiếm chí mạng kết liễu Ma Đầu (Gây ${damageDealt.toLocaleString()} sát thương). Toàn thể tu sĩ tham chiến được Thiên Đạo ban thưởng Đạo Hạnh phong phú!`;
+  const playerName = resolvePlayerDisplayName(slayerName);
+  const content = `${bossName} gầm thét tan biến! Đại đạo hữu @${playerName} đã tung nhát kiếm chí mạng kết liễu Ma Đầu (Gây ${damageDealt.toLocaleString()} sát thương). Toàn thể tu sĩ tham chiến được Thiên Đạo ban thưởng Đạo Hạnh phong phú!`;
 
   return broadcastDaoDecree({
     title: 'MA THẦN QUỴ PHỤC',
     eventType: 'boss_kill',
-    targetUser: slayerName,
+    targetUser: playerName,
     content,
     highlightText: `Diệt ${bossName}`,
     personaId: 'ban_co',
@@ -369,22 +518,23 @@ export async function announceLinhLungCheer(
   accuracy: number,
   modeName: string
 ): Promise<HeavenlyDaoDecree> {
+  const playerName = resolvePlayerDisplayName(username);
   const cheers = [
-    `Oa oa! Đạo hữu @${username} vừa xuất chiêu đẹp mắt tuyệt trần tại ${modeName}! Đạt ${wpm} WPM cùng ${accuracy}% chuẩn xác, kiếm khí tung hoành tựa tiên hạc lướt mây! 🪷`,
-    `Hoan hô đạo hữu @${username}! Tốc độ ${wpm} WPM tại ${modeName} mượt mà như dòng suối tiên! Tiên Đồng nhìn mà mê tít mắt, các đạo hữu khác mau mau học hỏi nha! ✨`,
-    `Kiếm pháp xuất thần! @${username} vừa hoàn thành ván đấu ${modeName} với phong độ đỉnh cao ${wpm} WPM (${accuracy}% chính xác)! Bảng Vàng lại sắp sửa đón thêm một bậc kỳ tài rồi nè! 🎉`,
-    `Chuẩn xác tuyệt luân! @${username} xuất chiêu tại ${modeName} không hề gợn một nét ngập ngừng, đạt trọn vẹn ${wpm} WPM! Tiên Đồng tặng đạo hữu một đóa hoa sen tím cát tường! 🪷`,
+    `Oa oa! Đạo hữu @${playerName} vừa xuất chiêu đẹp mắt tuyệt trần tại ${modeName}! Đạt ${wpm} WPM cùng ${accuracy}% chuẩn xác, kiếm khí tung hoành tựa tiên hạc lướt mây! 🪷`,
+    `Hoan hô đạo hữu @${playerName}! Tốc độ ${wpm} WPM tại ${modeName} mượt mà như dòng suối tiên! Tiên Đồng nhìn mà mê tít mắt, các đạo hữu khác mau mau học hỏi nha! ✨`,
+    `Kiếm pháp xuất thần! @${playerName} vừa hoàn thành ván đấu ${modeName} với phong độ đỉnh cao ${wpm} WPM (${accuracy}% chính xác)! Bảng Vàng lại sắp sửa đón thêm một bậc kỳ tài rồi nè! 🎉`,
+    `Chuẩn xác tuyệt luân! @${playerName} xuất chiêu tại ${modeName} không hề gợn một nét ngập ngừng, đạt trọn vẹn ${wpm} WPM! Tiên Đồng tặng đạo hữu một đóa hoa sen tím cát tường! 🪷`,
   ];
   const content = cheers[Math.floor(Math.random() * cheers.length)];
 
   return broadcastDaoDecree({
     title: 'LINH LUNG HOAN HÔ',
     eventType: 'guidance',
-    targetUser: username,
+    targetUser: playerName,
     wpm,
     accuracy,
     content,
-    highlightText: `Linh Lung khen ngợi ${username}`,
+    highlightText: `Linh Lung khen ngợi ${playerName}`,
     personaId: 'linh_lung',
     generateAiPoem: false,
   });
@@ -400,27 +550,28 @@ export async function announceLinhLungCommentary(params: {
   modeName: string;
   errors?: number;
 }): Promise<HeavenlyDaoDecree> {
+  const playerName = resolvePlayerDisplayName(params.username);
   let content = '';
-  const { username, wpm, accuracy, modeName, errors = 0 } = params;
+  const { wpm, accuracy, modeName, errors = 0 } = params;
 
   if (accuracy === 100) {
-    content = `Tuyệt phẩm vô khuyết! @${username} gõ ${modeName} không sai một ly (${accuracy}% chuẩn xác, ${wpm} WPM)! Đạo tâm vững như bàn thạch, Tiên Đồng khâm phục vô cùng! 🪷✨`;
+    content = `Tuyệt phẩm vô khuyết! @${playerName} gõ ${modeName} không sai một ly (${accuracy}% chuẩn xác, ${wpm} WPM)! Đạo tâm vững như bàn thạch, Tiên Đồng khâm phục vô cùng! 🪷✨`;
   } else if (errors > 8) {
-    content = `Ái chà chà! Đạo hữu @${username} thi triển chiêu thức tại ${modeName} hăng hái quá nên ngón tay hơi vấp ${errors} lần rồi kìa! Đừng vội nản lòng, buông lỏng cổ tay uống ngụm tiên trà rồi vào ván mới phục thù nha! 🍵🪷`;
+    content = `Ái chà chà! Đạo hữu @${playerName} thi triển chiêu thức tại ${modeName} hăng hái quá nên ngón tay hơi vấp ${errors} lần rồi kìa! Đừng vội nản lòng, buông lỏng cổ tay uống ngụm tiên trà rồi vào ván mới phục thù nha! 🍵🪷`;
   } else if (wpm >= 90) {
-    content = `Gió cuốn mây tan! @${username} lướt phím tại ${modeName} đạt tận ${wpm} WPM! Tốc độ này làm mặt gương Phong Thần Bảng sáng rực lên rồi kìa! ⚡🪷`;
+    content = `Gió cuốn mây tan! @${playerName} lướt phím tại ${modeName} đạt tận ${wpm} WPM! Tốc độ này làm mặt gương Phong Thần Bảng sáng rực lên rồi kìa! ⚡🪷`;
   } else {
-    content = `Trận đấu ${modeName} rất có khí thế! @${username} đạt ${wpm} WPM (${accuracy}%). Tiên Đồng mách nhỏ: cứ giữ nhịp thở đều thì ván sau chắc chắn sẽ bứt phá thêm 10 WPM nữa đó! 🪷`;
+    content = `Trận đấu ${modeName} rất có khí thế! @${playerName} đạt ${wpm} WPM (${accuracy}%). Tiên Đồng mách nhỏ: cứ giữ nhịp thở đều thì ván sau chắc chắn sẽ bứt phá thêm 10 WPM nữa đó! 🪷`;
   }
 
   return broadcastDaoDecree({
     title: 'LINH LUNG BÌNH PHẨM',
     eventType: 'guidance',
-    targetUser: username,
+    targetUser: playerName,
     wpm,
     accuracy,
     content,
-    highlightText: `Linh Lung bình phẩm ${username}`,
+    highlightText: `Linh Lung bình phẩm ${playerName}`,
     personaId: 'linh_lung',
     generateAiPoem: false,
   });

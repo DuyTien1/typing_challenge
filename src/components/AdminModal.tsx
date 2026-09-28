@@ -10,6 +10,7 @@ import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminRoomsTab } from './admin/AdminRoomsTab';
 import { AdminBroadcastTab } from './admin/AdminBroadcastTab';
 import { AdminBackupTab } from './admin/AdminBackupTab';
+import { AdminEconomyTab } from './admin/AdminEconomyTab';
 import { CustomNumberInput } from './CustomNumberInput';
 import { CustomCheckbox } from './CustomCheckbox';
 import { 
@@ -37,7 +38,8 @@ import {
   Radio,
   FileDown,
   Database,
-  BarChart3
+  BarChart3,
+  Coins
 } from 'lucide-react';
 
 export const POOL_OPTIONS: {
@@ -110,6 +112,7 @@ type AdminTab =
   | 'san_boss' 
   | 'titles' 
   | 'tu_tien'
+  | 'economy'
   | 'backup';
 type BasicSubTab = 'all' | 'vi_dau' | 'vi_nodau' | 'en' | 'numpad';
 
@@ -792,6 +795,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Tu Tiên</span>
+              </button>
+
+              {/* Tab: Kinh Tế & Phường Thị */}
+              <button
+                id="tab-admin-economy"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('economy');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'economy'
+                    ? 'bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 text-slate-950 shadow-lg shadow-amber-500/30 ring-1 ring-amber-300'
+                    : 'text-amber-400/80 hover:text-amber-300 hover:bg-slate-800/80'
+                }`}
+              >
+                <Coins className="w-3.5 h-3.5" />
+                <span>Kinh Tế & Chợ</span>
               </button>
 
               {/* Tab 7: Sao Lưu & Phục Hồi */}
@@ -2238,6 +2259,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   currentUser={currentUser}
                   showToast={showToast}
                 />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB: KINH TẾ & PHƯỜNG THỊ */}
+              {/* ========================================================================= */}
+              {activeTab === 'economy' && (
+                <AdminEconomyTab />
               )}
 
               {/* ========================================================================= */}

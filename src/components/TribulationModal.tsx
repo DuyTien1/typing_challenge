@@ -26,6 +26,7 @@ interface TribulationModalProps {
   userAvatar: string;
   userFrame: string;
   username: string;
+  displayName?: string;
   onSelectFrame?: (frameId: string) => void;
 }
 
@@ -37,100 +38,100 @@ interface TribulationWave {
   isInnerDemon?: boolean;
 }
 
-// Bộ khẩu quyết cổ phong Tiên Hiệp theo cảnh giới - Toàn bộ chuyển thành Thiên Lôi Thần Số (Numbers only)
+// Bộ khẩu quyết cổ phong Tiên Hiệp theo cảnh giới - Toàn bộ chuyển thành Thiên Lôi Thần Số (Numbers only - Tăng độ khó cao)
 const MANTRA_DATABASE: Record<number, { title: string; waves: { mantra: string; meaning: string; time: number; isInnerDemon?: boolean }[] }> = {
   0: {
     title: 'Tam Cửu Lôi Kiếp (3 Đợt Sấm)',
     waves: [
-      { mantra: '39281', meaning: 'Thiên lôi thối thể', time: 7.5 },
-      { mantra: '84019', meaning: 'Đạo cốt sơ thành', time: 7.5 },
-      { mantra: '725193', meaning: 'Đúc vững đạo cơ', time: 8.0 },
+      { mantra: '8392017', meaning: 'Thiên lôi thối thể', time: 4.8 },
+      { mantra: '49201837', meaning: 'Đạo cốt sơ thành', time: 4.6 },
+      { mantra: '739281054', meaning: 'Đúc vững đạo cơ', time: 4.6 },
     ],
   },
   1: {
     title: 'Tứ Cửu Lôi Kiếp (4 Đợt Sấm)',
     waves: [
-      { mantra: '482019', meaning: 'Tam muội chân hỏa', time: 7.5 },
-      { mantra: '739105', meaning: 'Khí tụ đan điền', time: 7.5 },
-      { mantra: '2948103', meaning: 'Đan đạo cửu chuyển', time: 8.0 },
-      { mantra: '8501924', meaning: 'Nghịch thiên kết đan', time: 8.0 },
+      { mantra: '84019253', meaning: 'Tam muội chân hỏa', time: 4.5 },
+      { mantra: '391820475', meaning: 'Khí tụ đan điền', time: 4.4 },
+      { mantra: '7401928365', meaning: 'Đan đạo cửu chuyển', time: 4.4 },
+      { mantra: '9284017362', meaning: 'Nghịch thiên kết đan', time: 4.2 },
     ],
   },
   2: {
     title: 'Lục Cửu Lôi Kiếp & Tâm Ma Khảo Nghiệm (6 Đợt Sấm)',
     waves: [
-      { mantra: '6294017', meaning: 'Phá toái kim đan', time: 7.0 },
-      { mantra: '8401925', meaning: 'Hóa sinh nguyên anh', time: 7.0 },
-      { mantra: '3918204', meaning: 'Tử khí đông lai', time: 7.5 },
-      { mantra: '7401928', meaning: 'Nguyên thần xuất khiếu', time: 7.5, isInnerDemon: true },
-      { mantra: '9284017', meaning: 'Tâm ma huyễn cảnh viễn ly', time: 8.0, isInnerDemon: true },
-      { mantra: '8392017', meaning: 'Đạo tâm bất diệt vĩnh tồn', time: 8.0, isInnerDemon: true },
+      { mantra: '629401738', meaning: 'Phá toái kim đan', time: 4.2 },
+      { mantra: '8401925163', meaning: 'Hóa sinh nguyên anh', time: 4.2 },
+      { mantra: '3918204752', meaning: 'Tử khí đông lai', time: 4.0 },
+      { mantra: '74019283651', meaning: 'Nguyên thần xuất khiếu', time: 4.0, isInnerDemon: true },
+      { mantra: '92840173628', meaning: 'Tâm ma huyễn cảnh viễn ly', time: 3.8, isInnerDemon: true },
+      { mantra: '839201746295', meaning: 'Đạo tâm bất diệt vĩnh tồn', time: 3.8, isInnerDemon: true },
     ],
   },
   3: {
     title: 'Thất Cửu Lôi Kiếp & Hóa Thần Ý Cảnh (7 Đợt Sấm)',
     waves: [
-      { mantra: '8392017', meaning: 'Hóa thực vi hư', time: 7.0 },
-      { mantra: '4910283', meaning: 'Lĩnh ngộ ý cảnh', time: 7.0 },
-      { mantra: '73928104', meaning: 'Thiên địa đồng thọ', time: 7.5 },
-      { mantra: '62910842', meaning: 'Chưởng khống pháp tắc', time: 7.5 },
-      { mantra: '84019273', meaning: 'Ma do tâm sinh ma diệt', time: 7.5, isInnerDemon: true },
-      { mantra: '92837401', meaning: 'Vạn niệm quy chân bất hoại', time: 7.5, isInnerDemon: true },
-      { mantra: '74910283', meaning: 'Ngưng tụ hóa thần chí tôn', time: 8.0, isInnerDemon: true },
+      { mantra: '8392017462', meaning: 'Hóa thực vi hư', time: 4.0 },
+      { mantra: '49102837562', meaning: 'Lĩnh ngộ ý cảnh', time: 4.0 },
+      { mantra: '73928104829', meaning: 'Thiên địa đồng thọ', time: 3.8 },
+      { mantra: '629108425193', meaning: 'Chưởng khống pháp tắc', time: 3.8 },
+      { mantra: '840192736518', meaning: 'Ma do tâm sinh ma diệt', time: 3.6, isInnerDemon: true },
+      { mantra: '9283740192837', meaning: 'Vạn niệm quy chân bất hoại', time: 3.6, isInnerDemon: true },
+      { mantra: '7491028365192', meaning: 'Ngưng tụ hóa thần chí tôn', time: 3.5, isInnerDemon: true },
     ],
   },
   4: {
     title: 'Bát Cửu Lôi Kiếp (8 Đợt Sấm)',
     waves: [
-      { mantra: '8492017', meaning: 'Hư không vô cực', time: 6.8 },
-      { mantra: '9381027', meaning: 'Phá toái hư không', time: 6.8 },
-      { mantra: '7491028', meaning: 'Chân ngã duy nhất', time: 7.0 },
-      { mantra: '8392017', meaning: 'Luyện khí hóa hư', time: 7.0 },
-      { mantra: '95820174', meaning: 'Thái hư vô ngã vạn pháp', time: 7.2, isInnerDemon: true },
-      { mantra: '84910283', meaning: 'Đại đạo độc hành tuyệt thế', time: 7.2, isInnerDemon: true },
-      { mantra: '93820174', meaning: 'Vạn kiếp bất ma trường sinh', time: 7.5, isInnerDemon: true },
-      { mantra: '82049173', meaning: 'Đăng phong tạo cực hư không', time: 7.5, isInnerDemon: true },
+      { mantra: '84920173651', meaning: 'Hư không vô cực', time: 3.8 },
+      { mantra: '938102746295', meaning: 'Phá toái hư không', time: 3.8 },
+      { mantra: '749102836518', meaning: 'Chân ngã duy nhất', time: 3.6 },
+      { mantra: '8392017462915', meaning: 'Luyện khí hóa hư', time: 3.6 },
+      { mantra: '9582017483920', meaning: 'Thái hư vô ngã vạn pháp', time: 3.5, isInnerDemon: true },
+      { mantra: '84910283756291', meaning: 'Đại đạo độc hành tuyệt thế', time: 3.5, isInnerDemon: true },
+      { mantra: '93820174629184', meaning: 'Vạn kiếp bất ma trường sinh', time: 3.4, isInnerDemon: true },
+      { mantra: '82049173651928', meaning: 'Đăng phong tạo cực hư không', time: 3.4, isInnerDemon: true },
     ],
   },
   5: {
     title: 'Hợp Thể Thiên Kiếp (8 Đợt Sấm)',
     waves: [
-      { mantra: '49102837', meaning: 'Nhục thân dung hợp', time: 7.0 },
-      { mantra: '73928105', meaning: 'Nguyên thần quy nhất', time: 7.0 },
-      { mantra: '82049173', meaning: 'Thần thông đại thành', time: 7.2 },
-      { mantra: '93820174', meaning: 'Đại đạo dung hợp', time: 7.2 },
-      { mantra: '84910283', meaning: 'Chém tan tâm ma', time: 7.5, isInnerDemon: true },
-      { mantra: '73928104', meaning: 'Thiên địa bất diệt', time: 7.5, isInnerDemon: true },
-      { mantra: '92837401', meaning: 'Hợp thể quy chân', time: 7.5, isInnerDemon: true },
-      { mantra: '85019284', meaning: 'Đăng phong tuyệt đỉnh', time: 8.0, isInnerDemon: true },
+      { mantra: '491028375629', meaning: 'Nhục thân dung hợp', time: 3.6 },
+      { mantra: '739281054829', meaning: 'Nguyên thần quy nhất', time: 3.6 },
+      { mantra: '8204917365192', meaning: 'Thần thông đại thành', time: 3.5 },
+      { mantra: '9382017462915', meaning: 'Đại đạo dung hợp', time: 3.5 },
+      { mantra: '84910283756291', meaning: 'Chém tan tâm ma', time: 3.4, isInnerDemon: true },
+      { mantra: '73928104829517', meaning: 'Thiên địa bất diệt', time: 3.4, isInnerDemon: true },
+      { mantra: '92837401928374', meaning: 'Hợp thể quy chân', time: 3.3, isInnerDemon: true },
+      { mantra: '850192847365192', meaning: 'Đăng phong tuyệt đỉnh', time: 3.3, isInnerDemon: true },
     ],
   },
   6: {
     title: 'Đại Thừa Thiên Kiếp (9 Đợt Sấm)',
     waves: [
-      { mantra: '93820174', meaning: 'Thiên đạo cảm ứng', time: 7.0 },
-      { mantra: '84910273', meaning: 'Đại thừa viên mãn', time: 7.0 },
-      { mantra: '73928104', meaning: 'Khai sơn phá hải', time: 7.2 },
-      { mantra: '62910842', meaning: 'Vạn pháp quy tông', time: 7.2 },
-      { mantra: '95820173', meaning: 'Đạo tâm vững như bàn thạch', time: 7.5, isInnerDemon: true },
-      { mantra: '84019273', meaning: 'Trảm phá huyễn niệm', time: 7.5, isInnerDemon: true },
-      { mantra: '74910283', meaning: 'Thiên nhân tương ứng', time: 7.5, isInnerDemon: true },
-      { mantra: '82049173', meaning: 'Đại đạo quang minh', time: 7.8, isInnerDemon: true },
-      { mantra: '93810274', meaning: 'Đại thừa viên mãn', time: 8.0, isInnerDemon: true },
+      { mantra: '9382017462915', meaning: 'Thiên đạo cảm ứng', time: 3.5 },
+      { mantra: '8491027365184', meaning: 'Đại thừa viên mãn', time: 3.5 },
+      { mantra: '73928104829517', meaning: 'Khai sơn phá hải', time: 3.4 },
+      { mantra: '62910842519384', meaning: 'Vạn pháp quy tông', time: 3.4 },
+      { mantra: '958201736519284', meaning: 'Đạo tâm vững như bàn thạch', time: 3.3, isInnerDemon: true },
+      { mantra: '840192736518492', meaning: 'Trảm phá huyễn niệm', time: 3.3, isInnerDemon: true },
+      { mantra: '749102836519284', meaning: 'Thiên nhân tương ứng', time: 3.2, isInnerDemon: true },
+      { mantra: '8204917365192847', meaning: 'Đại đạo quang minh', time: 3.2, isInnerDemon: true },
+      { mantra: '9381027462951839', meaning: 'Đại thừa viên mãn', time: 3.1, isInnerDemon: true },
     ],
   },
   7: {
     title: 'Cửu Cửu Đại Kiếp (9 Đợt Sấm)',
     waves: [
-      { mantra: '94820173', meaning: 'Nghịch thiên cải mệnh', time: 7.0 },
-      { mantra: '83920174', meaning: 'Chấn nhiếp càn khôn', time: 7.0 },
-      { mantra: '72910482', meaning: 'Đạo thể kim cương', time: 7.2 },
-      { mantra: '84920173', meaning: 'Vạn lôi thối hồn', time: 7.2 },
-      { mantra: '93820174', meaning: 'Bất hủ thần hồn', time: 7.5, isInnerDemon: true },
-      { mantra: '82049173', meaning: 'Tử lôi bất hoại', time: 7.5, isInnerDemon: true },
-      { mantra: '95820174', meaning: 'Thần niệm thông thiên', time: 7.5, isInnerDemon: true },
-      { mantra: '74910283', meaning: 'Đạo quả ngưng tụ', time: 7.8, isInnerDemon: true },
-      { mantra: '839102745', meaning: 'Vô thượng cảnh giới', time: 8.0, isInnerDemon: true },
+      { mantra: '94820173651842', meaning: 'Nghịch thiên cải mệnh', time: 3.4 },
+      { mantra: '83920174629158', meaning: 'Chấn nhiếp càn khôn', time: 3.4 },
+      { mantra: '729104826395184', meaning: 'Đạo thể kim cương', time: 3.3 },
+      { mantra: '849201736519284', meaning: 'Vạn lôi thối hồn', time: 3.3 },
+      { mantra: '9382017462918495', meaning: 'Bất hủ thần hồn', time: 3.2, isInnerDemon: true },
+      { mantra: '8204917365192847', meaning: 'Tử lôi bất hoại', time: 3.2, isInnerDemon: true },
+      { mantra: '9582017483920174', meaning: 'Thần niệm thông thiên', time: 3.1, isInnerDemon: true },
+      { mantra: '74910283651928473', meaning: 'Đạo quả ngưng tụ', time: 3.1, isInnerDemon: true },
+      { mantra: '83910274520938472', meaning: 'Vô thượng cảnh giới', time: 3.0, isInnerDemon: true },
     ],
   },
 };
@@ -145,6 +146,7 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
   userAvatar,
   userFrame,
   username,
+  displayName,
   onSelectFrame,
 }) => {
   const currentRealm = XIANXIA_REALMS[cultivationState.realmIndex] || XIANXIA_REALMS[0];
@@ -155,12 +157,12 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     const config = MANTRA_DATABASE[cultivationState.realmIndex] || {
       title: 'Cửu Cửu Thiên Kiếp',
       waves: [
-        { mantra: '98401928', meaning: 'Bàn Cổ khai thiên', time: 6.8 },
-        { mantra: '83920174', meaning: 'Hỗn độn sơ khai', time: 6.8 },
-        { mantra: '94820173', meaning: 'Âm dương quy nhất', time: 7.0 },
-        { mantra: '73928104', meaning: 'Vạn đạo thần phục', time: 7.0 },
-        { mantra: '84920183', meaning: 'Siêu thoát luân hồi', time: 7.2 },
-        { mantra: '95820174', meaning: 'Đăng phong chí tôn', time: 7.5 },
+        { mantra: '98401928374615', meaning: 'Bàn Cổ khai thiên', time: 3.3 },
+        { mantra: '839201746291584', meaning: 'Hỗn độn sơ khai', time: 3.3 },
+        { mantra: '948201736519284', meaning: 'Âm dương quy nhất', time: 3.2 },
+        { mantra: '7392810482951839', meaning: 'Vạn đạo thần phục', time: 3.2 },
+        { mantra: '84920183746519284', meaning: 'Siêu thoát luân hồi', time: 3.1 },
+        { mantra: '958201748392017462', meaning: 'Đăng phong chí tôn', time: 3.0 },
       ],
     };
     return config;
@@ -460,7 +462,7 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
 
       if (nextRealm) {
         announceBreakthrough(
-          username || 'Đạo Hữu',
+          displayName || username || 'Đạo Hữu',
           nextRealm.name,
           'Sơ Kỳ',
           1,

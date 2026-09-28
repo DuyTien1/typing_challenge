@@ -11,16 +11,59 @@
     "passwordHash": "c45ac5a87e2f6f1b9bc84b61cc3ff8e83711f0fabf808a4453016390b0991df1",
     "salt": "23705fec8b44e1cebe4a29079deb6f30",
     "isVerified": true,
-    "sessionTokens": [],
+    "sessionTokens": [
+      "tok_1790607681880_99b31121f62f3e541fd18d50037ba876"
+    ],
     "totalGames": 0,
     "bestWpm": 0,
     "bestWpmRecord": null,
     "matchHistory": [],
     "detailedMatchHistory": [],
-    "showcaseAchievements": [],
-    "unlockedAchievements": [],
+    "showcaseAchievements": [
+      "speed_100",
+      "pve_boss_win",
+      "pvp_first_win",
+      "hidden_top1"
+    ],
+    "unlockedAchievements": [
+      "speed_40",
+      "speed_60",
+      "speed_80",
+      "speed_100",
+      "speed_120",
+      "speed_140",
+      "speed_160",
+      "acc_95",
+      "acc_98",
+      "acc_100_once",
+      "acc_100_3x",
+      "acc_100_10x",
+      "matches_10",
+      "matches_30",
+      "matches_75",
+      "matches_150",
+      "matches_300",
+      "matches_500",
+      "pve_boss_win",
+      "pve_boss_hell",
+      "pve_mystery_word",
+      "pve_rush_high",
+      "pve_outplay_beat",
+      "numpad_intro",
+      "numpad_50",
+      "numpad_75",
+      "numpad_100",
+      "pvp_first_win",
+      "pvp_streak_3",
+      "pvp_streak_5",
+      "pvp_streak_10",
+      "hidden_night",
+      "hidden_midnight",
+      "hidden_verified_dao",
+      "hidden_top1"
+    ],
     "createdAt": 1700000000000,
-    "updatedAt": 1700000000000,
+    "updatedAt": 1790607988026,
     "cultivation": {
       "level": 1,
       "realmIndex": 0,
@@ -30,9 +73,9 @@
       "titleName": "Luyện Khí Tu Sĩ",
       "exp": 0,
       "maxExp": 138,
-      "thoNguyen": 240,
+      "thoNguyen": 228,
       "maxThoNguyen": 240,
-      "lastThoNguyenDecay": 1790521577416,
+      "lastThoNguyenDecay": 1790607977416,
       "lastCultivateTime": 1790521577416,
       "dailyExpEarned": 0,
       "dailyExpDate": "2026-09-27",
@@ -103,7 +146,7 @@
         }
       },
       "herbs": {
-        "uLan": 2,
+        "uLan": 3,
         "huyetTinh": 3,
         "hoaAnh": 1,
         "huyenThiet": 1,
@@ -144,10 +187,15 @@
         "joinedAt": 1790521577416,
         "tournamentWins": 0
       },
-      "linhThach": 150,
+      "linhThach": 970,
       "historyLog": [
+        "Đến Vạn Bảo Các dùng 30 Linh Thạch mua 1x U Lan Thảo",
         "Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)"
-      ]
+      ],
+      "shopPurchasesDate": "2026-09-28",
+      "shopPurchasesToday": {
+        "herb_ulan": 1
+      }
     }
   }
 }

@@ -223,7 +223,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         return;
       }
 
-      if (e.key === 'Enter' || e.key === ' ') {
+      if ((e.key === 'Enter' || e.key === ' ') && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         soundFx.playKeyClick();
         if (isBanned) {
@@ -267,6 +267,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">1-8</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">&larr;&rarr;&uarr;&darr;</kbd> Chọn
             <span className="text-slate-600">&bull;</span>
             <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">Enter</kbd> Vào chơi
+            <span className="text-slate-600">&bull;</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-sky-300 font-bold">Ctrl + Enter</kbd> Chat
           </span>
           <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 8 Chế độ hỗ trợ Telex / VNI

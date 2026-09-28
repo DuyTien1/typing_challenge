@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { CultivationState, saveStoredCultivationState } from '../utils/cultivation';
 import { XIANXIA_ACHIEVEMENTS } from '../utils/achievements';
-import { updateUserProfile } from '../utils/auth';
+import { updateUserProfile, getStoredAuthToken } from '../utils/auth';
 import { soundFx } from '../utils/audio';
 
 // Lazy-loaded modal components for performance and code splitting
@@ -281,10 +281,14 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
             saveStoredCultivationState(next);
             if (currentUser) {
               setCurrentUser((prev) => (prev ? { ...prev, cultivation: next } : prev));
+              const token = getStoredAuthToken();
+              const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+              if (token) headers['Authorization'] = `Bearer ${token}`;
+              if (currentUser.username) headers['x-username'] = currentUser.username;
               fetch('/api/cultivation', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cultivation: next }),
+                headers,
+                body: JSON.stringify({ cultivation: next, username: currentUser.username, userId: currentUser.id }),
               }).catch(() => {});
             }
           }}
@@ -344,6 +348,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         onClose={() => setIsCultivationOpen(false)}
         state={cultivationState}
         username={currentUser?.username || username}
+        displayName={currentUser?.displayName}
         userAvatar={avatar}
         userFrame={userFrame}
         onSelectFrame={onChangeFrame}
@@ -359,17 +364,15 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           if (!currentUser) return;
           setCultivationState(next);
           saveStoredCultivationState(next);
-          const token = sessionStorage.getItem('fasttyping_token');
-          if (token) {
-            fetch('/api/cultivation', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ cultivation: next }),
-            }).catch(() => {});
-          }
+          const token = getStoredAuthToken();
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          if (currentUser.username) headers['x-username'] = currentUser.username;
+          fetch('/api/cultivation', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ cultivation: next, username: currentUser.username, userId: currentUser.id }),
+          }).catch(() => {});
         }}
       />
 

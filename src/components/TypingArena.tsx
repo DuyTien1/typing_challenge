@@ -173,6 +173,7 @@ export const CharacterItem = React.memo<CharacterItemProps>(
     return (
       <span
         data-char-idx={charIdx}
+        data-char-status={status}
         style={{
           color,
           fontWeight,

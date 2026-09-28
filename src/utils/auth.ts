@@ -6,7 +6,13 @@ const AUTH_USER_KEY = 'fasttyping_auth_user_v1';
 export function getStoredAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
+    return (
+      localStorage.getItem(AUTH_TOKEN_KEY) ||
+      sessionStorage.getItem('fasttyping_token') ||
+      sessionStorage.getItem(AUTH_TOKEN_KEY) ||
+      localStorage.getItem('fasttyping_token') ||
+      null
+    );
   } catch {
     return null;
   }
@@ -17,9 +23,14 @@ export function setStoredAuthToken(token: string | null): void {
   try {
     if (token) {
       localStorage.setItem(AUTH_TOKEN_KEY, token);
+      sessionStorage.setItem('fasttyping_token', token);
+      sessionStorage.setItem(AUTH_TOKEN_KEY, token);
     } else {
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(AUTH_USER_KEY);
+      sessionStorage.removeItem('fasttyping_token');
+      sessionStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem('fasttyping_token');
     }
   } catch {
     // ignore

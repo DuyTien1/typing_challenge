@@ -1,14 +1,590 @@
 @import "tailwindcss";
 
 :root {
-  --theme-bg: #0f1117;
-  --theme-card: #131926;
-  --theme-main: #fbbf24;
-  --theme-sub: #64748b;
-  --theme-text: #f8fafc;
-  --theme-error: #ef4444;
-  --theme-border: #1e293b;
+  --theme-bg: #0a0e17;
+  --theme-card: #0f1a26;
+  --theme-main: #10b981;
+  --theme-sub: #476175;
+  --theme-text: #e2f1ec;
+  --theme-error: #f43f5e;
+  --theme-border: #1b3832;
+  --theme-radius: 1rem;
+  --theme-glow: 0 0 20px rgba(16, 185, 129, 0.4);
   --typing-font: 'JetBrains Mono', monospace;
+}
+
+/* Global smooth transition for UI styles & themes */
+html, body {
+  background-color: var(--theme-bg, #0a0e17);
+  color: var(--theme-text, #f8fafc);
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.25s ease, box-shadow 0.35s ease;
+}
+
+/* UI Style 1: Tiên Hiệp (Cửu Trọng Thiên Đạo) - Bích Ngọc Các nổi bật, có chiều sâu */
+[data-ui-style="xianxia"] {
+  --theme-bg: #080d16;
+  --theme-card: #122033;
+  --theme-main: #10b981;
+  --theme-sub: #5c7b94;
+  --theme-text: #f0fdf7;
+  --theme-error: #f43f5e;
+  --theme-border: #1d3d54;
+  --theme-radius: 1rem;
+  --theme-glow: 0 0 25px rgba(16, 185, 129, 0.45);
+}
+
+[data-ui-style="xianxia"] .bg-slate-900\/70,
+[data-ui-style="xianxia"] .bg-slate-900 {
+  background-color: rgba(18, 32, 51, 0.9) !important;
+  border-color: rgba(29, 61, 84, 0.9) !important;
+}
+
+/* UI Style 2: Cổ Điển (Cố Hương Thi Viện) - Bìa da thuộc & gỗ mun ấm cúng, tương phản rõ rệt */
+[data-ui-style="classic"] {
+  --theme-bg: #171412;
+  --theme-card: #26201b;
+  --theme-main: #f59e0b;
+  --theme-sub: #a18f80;
+  --theme-text: #fef3c7;
+  --theme-error: #dc2626;
+  --theme-border: #4d3d32;
+  --theme-radius: 0.375rem;
+  --theme-glow: 0 0 20px rgba(245, 158, 11, 0.4);
+}
+
+[data-ui-style="classic"] .bg-slate-900\/70,
+[data-ui-style="classic"] .bg-slate-900 {
+  background-color: rgba(38, 32, 27, 0.9) !important;
+  border-color: rgba(77, 61, 50, 0.9) !important;
+}
+
+/* UI Style 3: Khoa Học Viễn Tưởng (Tân Thế Kỷ 2099) - Kính Hologram dạ quang sắc bén */
+[data-ui-style="cyberpunk"] {
+  --theme-bg: #030612;
+  --theme-card: #0d1738;
+  --theme-main: #00f0ff;
+  --theme-sub: #3e6280;
+  --theme-text: #e0f7fa;
+  --theme-error: #ff0055;
+  --theme-border: rgba(0, 240, 255, 0.45);
+  --theme-radius: 0.125rem;
+  --theme-glow: 0 0 28px rgba(0, 240, 255, 0.6);
+}
+
+[data-ui-style="cyberpunk"] .bg-slate-900\/70,
+[data-ui-style="cyberpunk"] .bg-slate-900 {
+  background-color: rgba(13, 23, 56, 0.9) !important;
+  border-color: rgba(0, 240, 255, 0.35) !important;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.08) !important;
+}
+
+/* UI Style 4: Tối Giản Tinh Tế (Bạch Dạ Thuần Khiết) - Nền sáng sạch sẽ, thẻ nổi bật tương phản sắc nét, chống chìm hoàn toàn */
+[data-ui-style="minimal"],
+[data-theme-category="light"] {
+  --theme-bg: #f8fafc;
+  --theme-card: #ffffff;
+  --theme-main: #2563eb;
+  --theme-sub: #334155;
+  --theme-text: #0f172a;
+  --theme-error: #dc2626;
+  --theme-border: #cbd5e1;
+  --theme-radius: 0.75rem;
+  --theme-glow: 0 4px 14px -2px rgba(37, 99, 235, 0.15);
+}
+
+/* Thẻ chính, Modal, Bảng điều khiển, Hộp nội dung nổi bật có chiều sâu */
+[data-ui-style="minimal"] .bg-slate-950,
+[data-ui-style="minimal"] .bg-slate-950\/95,
+[data-ui-style="minimal"] .bg-slate-950\/90,
+[data-ui-style="minimal"] .bg-slate-950\/85,
+[data-ui-style="minimal"] .bg-slate-950\/80,
+[data-ui-style="minimal"] .bg-slate-950\/75,
+[data-ui-style="minimal"] .bg-slate-950\/70,
+[data-ui-style="minimal"] .bg-slate-950\/60,
+[data-ui-style="minimal"] .bg-slate-950\/50,
+[data-ui-style="minimal"] .bg-slate-950\/40,
+[data-ui-style="minimal"] .bg-slate-950\/30,
+[data-ui-style="minimal"] .bg-slate-900,
+[data-ui-style="minimal"] .bg-slate-900\/95,
+[data-ui-style="minimal"] .bg-slate-900\/90,
+[data-ui-style="minimal"] .bg-slate-900\/85,
+[data-ui-style="minimal"] .bg-slate-900\/80,
+[data-ui-style="minimal"] .bg-slate-900\/70,
+[data-ui-style="minimal"] .bg-slate-900\/60,
+[data-ui-style="minimal"] .bg-slate-900\/50,
+[data-ui-style="minimal"] .bg-slate-900\/40,
+[data-ui-style="minimal"] .bg-slate-900\/30,
+[data-ui-style="minimal"] .bg-slate-900\/20,
+[data-ui-style="minimal"] .bg-slate-850,
+[data-ui-style="minimal"] .bg-slate-850\/90,
+[data-ui-style="minimal"] .bg-\[\#141824\],
+[data-theme-category="light"] .bg-slate-950,
+[data-theme-category="light"] .bg-slate-950\/95,
+[data-theme-category="light"] .bg-slate-950\/90,
+[data-theme-category="light"] .bg-slate-950\/85,
+[data-theme-category="light"] .bg-slate-950\/80,
+[data-theme-category="light"] .bg-slate-950\/75,
+[data-theme-category="light"] .bg-slate-950\/70,
+[data-theme-category="light"] .bg-slate-950\/60,
+[data-theme-category="light"] .bg-slate-950\/50,
+[data-theme-category="light"] .bg-slate-950\/40,
+[data-theme-category="light"] .bg-slate-950\/30,
+[data-theme-category="light"] .bg-slate-900,
+[data-theme-category="light"] .bg-slate-900\/95,
+[data-theme-category="light"] .bg-slate-900\/90,
+[data-theme-category="light"] .bg-slate-900\/85,
+[data-theme-category="light"] .bg-slate-900\/80,
+[data-theme-category="light"] .bg-slate-900\/70,
+[data-theme-category="light"] .bg-slate-900\/60,
+[data-theme-category="light"] .bg-slate-900\/50,
+[data-theme-category="light"] .bg-slate-900\/40,
+[data-theme-category="light"] .bg-slate-900\/30,
+[data-theme-category="light"] .bg-slate-900\/20,
+[data-theme-category="light"] .bg-slate-850,
+[data-theme-category="light"] .bg-slate-850\/90,
+[data-theme-category="light"] .bg-\[\#141824\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* Thẻ phụ, ô danh sách con, khe người chơi, hộp thống kê phụ */
+[data-ui-style="minimal"] .bg-slate-800,
+[data-ui-style="minimal"] .bg-slate-800\/95,
+[data-ui-style="minimal"] .bg-slate-800\/90,
+[data-ui-style="minimal"] .bg-slate-800\/80,
+[data-ui-style="minimal"] .bg-slate-800\/70,
+[data-ui-style="minimal"] .bg-slate-800\/60,
+[data-ui-style="minimal"] .bg-slate-800\/50,
+[data-ui-style="minimal"] .bg-slate-800\/40,
+[data-ui-style="minimal"] .bg-slate-800\/30,
+[data-ui-style="minimal"] .bg-slate-700\/40,
+[data-ui-style="minimal"] .bg-slate-700\/30,
+[data-theme-category="light"] .bg-slate-800,
+[data-theme-category="light"] .bg-slate-800\/95,
+[data-theme-category="light"] .bg-slate-800\/90,
+[data-theme-category="light"] .bg-slate-800\/80,
+[data-theme-category="light"] .bg-slate-800\/70,
+[data-theme-category="light"] .bg-slate-800\/60,
+[data-theme-category="light"] .bg-slate-800\/50,
+[data-theme-category="light"] .bg-slate-800\/40,
+[data-theme-category="light"] .bg-slate-800\/30,
+[data-theme-category="light"] .bg-slate-700\/40,
+[data-theme-category="light"] .bg-slate-700\/30 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Hộp mờ đen trở thành thẻ sáng tao nhã */
+[data-ui-style="minimal"] .bg-black\/50,
+[data-ui-style="minimal"] .bg-black\/40,
+[data-ui-style="minimal"] .bg-black\/30,
+[data-ui-style="minimal"] .bg-black\/20,
+[data-theme-category="light"] .bg-black\/50,
+[data-theme-category="light"] .bg-black\/40,
+[data-theme-category="light"] .bg-black\/30,
+[data-theme-category="light"] .bg-black\/20 {
+  background-color: rgba(241, 245, 249, 0.9) !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Gradients thanh header và sảnh */
+[data-ui-style="minimal"] .from-slate-900,
+[data-ui-style="minimal"] .to-slate-900,
+[data-ui-style="minimal"] .via-\[\#131926\],
+[data-theme-category="light"] .from-slate-900,
+[data-theme-category="light"] .to-slate-900,
+[data-theme-category="light"] .via-\[\#131926\] {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-to: #f8fafc !important;
+  --tw-gradient-stops: #ffffff, #f8fafc, #ffffff !important;
+}
+
+/* Toàn bộ viền trong chế độ tối giản - sắc sảo, chống chìm */
+[data-ui-style="minimal"] .border-slate-800,
+[data-ui-style="minimal"] .border-slate-800\/80,
+[data-ui-style="minimal"] .border-slate-800\/60,
+[data-ui-style="minimal"] .border-slate-800\/40,
+[data-ui-style="minimal"] .border-slate-700,
+[data-ui-style="minimal"] .border-slate-700\/90,
+[data-ui-style="minimal"] .border-slate-700\/80,
+[data-ui-style="minimal"] .border-slate-700\/70,
+[data-ui-style="minimal"] .border-slate-700\/60,
+[data-ui-style="minimal"] .border-slate-700\/50,
+[data-ui-style="minimal"] .border-white\/10,
+[data-ui-style="minimal"] .border-white\/5,
+[data-theme-category="light"] .border-slate-800,
+[data-theme-category="light"] .border-slate-800\/80,
+[data-theme-category="light"] .border-slate-800\/60,
+[data-theme-category="light"] .border-slate-800\/40,
+[data-theme-category="light"] .border-slate-700,
+[data-theme-category="light"] .border-slate-700\/90,
+[data-theme-category="light"] .border-slate-700\/80,
+[data-theme-category="light"] .border-slate-700\/70,
+[data-theme-category="light"] .border-slate-700\/60,
+[data-theme-category="light"] .border-slate-700\/50,
+[data-theme-category="light"] .border-white\/10,
+[data-theme-category="light"] .border-white\/5 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Văn bản chính, tiêu đề, số liệu và tên người chơi */
+[data-ui-style="minimal"] .text-white,
+[data-ui-style="minimal"] .text-slate-100,
+[data-ui-style="minimal"] .text-slate-200,
+[data-theme-category="light"] .text-white,
+[data-theme-category="light"] .text-slate-100,
+[data-theme-category="light"] .text-slate-200 {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] .text-slate-300,
+[data-theme-category="light"] .text-slate-300 {
+  color: #1e293b !important;
+}
+
+/* Văn bản phụ, chú thích, gợi ý - độ tương phản cao sắc nét */
+[data-ui-style="minimal"] .text-slate-400,
+[data-ui-style="minimal"] .text-gray-400,
+[data-theme-category="light"] .text-slate-400,
+[data-theme-category="light"] .text-gray-400 {
+  color: #334155 !important;
+}
+
+[data-ui-style="minimal"] .text-slate-500,
+[data-ui-style="minimal"] .text-gray-500,
+[data-ui-style="minimal"] .text-slate-600,
+[data-theme-category="light"] .text-slate-500,
+[data-theme-category="light"] .text-gray-500,
+[data-theme-category="light"] .text-slate-600 {
+  color: #475569 !important;
+}
+
+[data-ui-style="minimal"] .text-white\/90,
+[data-ui-style="minimal"] .text-white\/80,
+[data-ui-style="minimal"] .text-white\/70,
+[data-ui-style="minimal"] .text-white\/60,
+[data-theme-category="light"] .text-white\/90,
+[data-theme-category="light"] .text-white\/80,
+[data-theme-category="light"] .text-white\/70,
+[data-theme-category="light"] .text-white\/60 {
+  color: #334155 !important;
+}
+
+/* Đảm bảo các nút có nền màu đậm (đỏ, hồng, xanh) vẫn giữ chữ trắng sắc nét */
+[data-ui-style="minimal"] .bg-red-600 .text-white,
+[data-ui-style="minimal"] .bg-red-500 .text-white,
+[data-ui-style="minimal"] .bg-rose-600 .text-white,
+[data-ui-style="minimal"] .bg-emerald-600 .text-white,
+[data-ui-style="minimal"] .bg-blue-600 .text-white,
+[data-ui-style="minimal"] .bg-indigo-600 .text-white,
+[data-ui-style="minimal"] button.bg-red-600,
+[data-ui-style="minimal"] button.bg-rose-600,
+[data-theme-category="light"] .bg-red-600 .text-white,
+[data-theme-category="light"] .bg-red-500 .text-white,
+[data-theme-category="light"] .bg-rose-600 .text-white,
+[data-theme-category="light"] .bg-emerald-600 .text-white,
+[data-theme-category="light"] .bg-blue-600 .text-white,
+[data-theme-category="light"] .bg-indigo-600 .text-white,
+[data-theme-category="light"] button.bg-red-600,
+[data-theme-category="light"] button.bg-rose-600 {
+  color: #ffffff !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Vàng / Hổ Phách */
+[data-ui-style="minimal"] .bg-amber-950\/80,
+[data-ui-style="minimal"] .bg-amber-950\/60,
+[data-ui-style="minimal"] .bg-yellow-950\/80,
+[data-ui-style="minimal"] .bg-amber-500\/10,
+[data-ui-style="minimal"] .bg-amber-500\/15,
+[data-ui-style="minimal"] .bg-amber-500\/20,
+[data-theme-category="light"] .bg-amber-950\/80,
+[data-theme-category="light"] .bg-amber-950\/60,
+[data-theme-category="light"] .bg-yellow-950\/80,
+[data-theme-category="light"] .bg-amber-500\/10,
+[data-theme-category="light"] .bg-amber-500\/15,
+[data-theme-category="light"] .bg-amber-500\/20 {
+  background-color: #fef3c7 !important;
+  border-color: #fcd34d !important;
+  color: #b45309 !important;
+}
+
+[data-ui-style="minimal"] .text-amber-300,
+[data-ui-style="minimal"] .text-amber-400,
+[data-ui-style="minimal"] .text-yellow-300,
+[data-ui-style="minimal"] .text-yellow-400,
+[data-theme-category="light"] .text-amber-300,
+[data-theme-category="light"] .text-amber-400,
+[data-theme-category="light"] .text-yellow-300,
+[data-theme-category="light"] .text-yellow-400 {
+  color: #b45309 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Xanh Dương / Trời */
+[data-ui-style="minimal"] .bg-sky-950\/80,
+[data-ui-style="minimal"] .bg-sky-950\/60,
+[data-ui-style="minimal"] .bg-sky-500\/10,
+[data-ui-style="minimal"] .bg-sky-500\/15,
+[data-ui-style="minimal"] .bg-sky-500\/20,
+[data-theme-category="light"] .bg-sky-950\/80,
+[data-theme-category="light"] .bg-sky-950\/60,
+[data-theme-category="light"] .bg-sky-500\/10,
+[data-theme-category="light"] .bg-sky-500\/15,
+[data-theme-category="light"] .bg-sky-500\/20 {
+  background-color: #e0f2fe !important;
+  border-color: #7dd3fc !important;
+  color: #0369a1 !important;
+}
+
+[data-ui-style="minimal"] .text-sky-300,
+[data-ui-style="minimal"] .text-sky-400,
+[data-theme-category="light"] .text-sky-300,
+[data-theme-category="light"] .text-sky-400 {
+  color: #0284c7 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Cyan */
+[data-ui-style="minimal"] .bg-cyan-950\/80,
+[data-ui-style="minimal"] .bg-cyan-950\/60,
+[data-ui-style="minimal"] .bg-cyan-500\/10,
+[data-ui-style="minimal"] .bg-cyan-500\/20,
+[data-theme-category="light"] .bg-cyan-950\/80,
+[data-theme-category="light"] .bg-cyan-950\/60,
+[data-theme-category="light"] .bg-cyan-500\/10,
+[data-theme-category="light"] .bg-cyan-500\/20 {
+  background-color: #cffafe !important;
+  border-color: #67e8f9 !important;
+  color: #0e7490 !important;
+}
+
+[data-ui-style="minimal"] .text-cyan-300,
+[data-ui-style="minimal"] .text-cyan-400,
+[data-theme-category="light"] .text-cyan-300,
+[data-theme-category="light"] .text-cyan-400 {
+  color: #0891b2 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Ngọc Lục Bảo (Emerald / Green) */
+[data-ui-style="minimal"] .bg-emerald-950\/80,
+[data-ui-style="minimal"] .bg-emerald-950\/60,
+[data-ui-style="minimal"] .bg-emerald-950\/50,
+[data-ui-style="minimal"] .bg-emerald-950\/40,
+[data-ui-style="minimal"] .bg-emerald-500\/10,
+[data-ui-style="minimal"] .bg-emerald-500\/20,
+[data-theme-category="light"] .bg-emerald-950\/80,
+[data-theme-category="light"] .bg-emerald-950\/60,
+[data-theme-category="light"] .bg-emerald-950\/50,
+[data-theme-category="light"] .bg-emerald-950\/40,
+[data-theme-category="light"] .bg-emerald-500\/10,
+[data-theme-category="light"] .bg-emerald-500\/20 {
+  background-color: #d1fae5 !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+
+[data-ui-style="minimal"] .text-emerald-300,
+[data-ui-style="minimal"] .text-emerald-400,
+[data-theme-category="light"] .text-emerald-300,
+[data-theme-category="light"] .text-emerald-400 {
+  color: #059669 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Hồng / Đỏ (Rose / Red) */
+[data-ui-style="minimal"] .bg-rose-950\/80,
+[data-ui-style="minimal"] .bg-rose-950\/60,
+[data-ui-style="minimal"] .bg-red-950\/80,
+[data-ui-style="minimal"] .bg-rose-500\/10,
+[data-ui-style="minimal"] .bg-rose-500\/20,
+[data-ui-style="minimal"] .bg-red-500\/10,
+[data-ui-style="minimal"] .bg-red-500\/20,
+[data-theme-category="light"] .bg-rose-950\/80,
+[data-theme-category="light"] .bg-rose-950\/60,
+[data-theme-category="light"] .bg-red-950\/80,
+[data-theme-category="light"] .bg-rose-500\/10,
+[data-theme-category="light"] .bg-rose-500\/20,
+[data-theme-category="light"] .bg-red-500\/10,
+[data-theme-category="light"] .bg-red-500\/20 {
+  background-color: #ffe4e6 !important;
+  border-color: #fda4af !important;
+  color: #be123c !important;
+}
+
+[data-ui-style="minimal"] .text-rose-300,
+[data-ui-style="minimal"] .text-rose-400,
+[data-ui-style="minimal"] .text-red-300,
+[data-ui-style="minimal"] .text-red-400,
+[data-theme-category="light"] .text-rose-300,
+[data-theme-category="light"] .text-rose-400,
+[data-theme-category="light"] .text-red-300,
+[data-theme-category="light"] .text-red-400 {
+  color: #e11d48 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Tím (Purple / Pink) */
+[data-ui-style="minimal"] .bg-purple-950\/80,
+[data-ui-style="minimal"] .bg-purple-950\/60,
+[data-ui-style="minimal"] .bg-purple-500\/10,
+[data-ui-style="minimal"] .bg-purple-500\/20,
+[data-ui-style="minimal"] .bg-pink-950\/80,
+[data-ui-style="minimal"] .bg-pink-500\/10,
+[data-ui-style="minimal"] .bg-pink-500\/20,
+[data-theme-category="light"] .bg-purple-950\/80,
+[data-theme-category="light"] .bg-purple-950\/60,
+[data-theme-category="light"] .bg-purple-500\/10,
+[data-theme-category="light"] .bg-purple-500\/20,
+[data-theme-category="light"] .bg-pink-950\/80,
+[data-theme-category="light"] .bg-pink-500\/10,
+[data-theme-category="light"] .bg-pink-500\/20 {
+  background-color: #f3e8ff !important;
+  border-color: #d8b4fe !important;
+  color: #6d28d9 !important;
+}
+
+[data-ui-style="minimal"] .text-purple-300,
+[data-ui-style="minimal"] .text-purple-400,
+[data-ui-style="minimal"] .text-pink-300,
+[data-ui-style="minimal"] .text-pink-400,
+[data-theme-category="light"] .text-purple-300,
+[data-theme-category="light"] .text-purple-400,
+[data-theme-category="light"] .text-pink-300,
+[data-theme-category="light"] .text-pink-400 {
+  color: #7c3aed !important;
+}
+
+/* Phím tắt bàn phím <kbd> nổi khối chân thực */
+[data-ui-style="minimal"] kbd,
+[data-theme-category="light"] kbd {
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Input, Textarea, Select */
+[data-ui-style="minimal"] input,
+[data-ui-style="minimal"] textarea,
+[data-ui-style="minimal"] select,
+[data-theme-category="light"] input,
+[data-theme-category="light"] textarea,
+[data-theme-category="light"] select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] input::placeholder,
+[data-ui-style="minimal"] textarea::placeholder,
+[data-theme-category="light"] input::placeholder,
+[data-theme-category="light"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Tối ưu chữ gõ trong Đấu Trường Gõ Phím (TypingArena) - Chữ rõ nét tuyệt đối */
+[data-ui-style="minimal"] [data-char-status="pending"],
+[data-theme-category="light"] [data-char-status="pending"] {
+  color: #334155 !important;
+  opacity: 1 !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="past-correct"],
+[data-theme-category="light"] [data-char-status="past-correct"] {
+  color: #475569 !important;
+  opacity: 0.85 !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="correct"],
+[data-theme-category="light"] [data-char-status="correct"] {
+  color: #2563eb !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="incorrect"],
+[data-theme-category="light"] [data-char-status="incorrect"] {
+  color: #dc2626 !important;
+  background-color: #fee2e2 !important;
+  font-weight: 700 !important;
+  border-radius: 2px !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="past-incorrect"],
+[data-theme-category="light"] [data-char-status="past-incorrect"] {
+  color: #dc2626 !important;
+  opacity: 0.9 !important;
+  text-decoration: line-through !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="current-active"],
+[data-theme-category="light"] [data-char-status="current-active"] {
+  color: #2563eb !important;
+  font-weight: 700 !important;
+}
+
+/* Con trỏ Monkeytype trong chế độ Tối Giản */
+[data-ui-style="minimal"] .monkeytype-caret,
+[data-ui-style="minimal"] .monkeytype-caret-bar,
+[data-theme-category="light"] .monkeytype-caret,
+[data-theme-category="light"] .monkeytype-caret-bar {
+  background-color: #2563eb !important;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.7) !important;
+}
+
+/* Trạng thái Hover, Phân chia danh sách và Nền mờ Modal trong chế độ Tối Giản */
+[data-ui-style="minimal"] .hover\:bg-slate-900:hover,
+[data-ui-style="minimal"] .hover\:bg-slate-850:hover,
+[data-ui-style="minimal"] .hover\:bg-slate-800:hover,
+[data-ui-style="minimal"] .hover\:bg-slate-700:hover,
+[data-theme-category="light"] .hover\:bg-slate-900:hover,
+[data-theme-category="light"] .hover\:bg-slate-850:hover,
+[data-theme-category="light"] .hover\:bg-slate-800:hover,
+[data-theme-category="light"] .hover\:bg-slate-700:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] .hover\:text-white:hover,
+[data-theme-category="light"] .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] .divide-slate-800,
+[data-ui-style="minimal"] .divide-slate-800\/80,
+[data-ui-style="minimal"] .divide-slate-700,
+[data-theme-category="light"] .divide-slate-800,
+[data-theme-category="light"] .divide-slate-800\/80,
+[data-theme-category="light"] .divide-slate-700 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Nền mờ phía sau Modal / Dialog - Đậm nét, tập trung thị giác vào thẻ */
+[data-ui-style="minimal"] .bg-slate-950\/85,
+[data-ui-style="minimal"] .bg-slate-950\/75,
+[data-theme-category="light"] .bg-slate-950\/85,
+[data-theme-category="light"] .bg-slate-950\/75 {
+  background-color: rgba(15, 23, 42, 0.55) !important;
+}
+
+/* UI Style 5: Hắc Ám Ma Vực (U Minh Hàn Ngục) - Tro tàn dung nham sắc sảo, nổi khối */
+[data-ui-style="abyss"] {
+  --theme-bg: #080205;
+  --theme-card: #1c0c16;
+  --theme-main: #ef4444;
+  --theme-sub: #7c3743;
+  --theme-text: #fee2e2;
+  --theme-error: #991b1b;
+  --theme-border: #4d1522;
+  --theme-radius: 0.5rem;
+  --theme-glow: 0 0 25px rgba(239, 68, 68, 0.55);
+}
+
+[data-ui-style="abyss"] .bg-slate-900\/70,
+[data-ui-style="abyss"] .bg-slate-900 {
+  background-color: rgba(28, 12, 22, 0.9) !important;
+  border-color: rgba(77, 21, 34, 0.9) !important;
 }
 
 @keyframes tribulationScreenShake {

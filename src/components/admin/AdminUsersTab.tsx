@@ -24,6 +24,7 @@ import { soundFx } from '../../utils/audio';
 export interface AdminUserData {
   id: string;
   username: string;
+  displayName?: string;
   email?: string;
   avatar: string;
   frame: string;
@@ -128,9 +129,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     }
 
     try {
+      const playerDisplayName = targetUser.displayName || targetUser.username;
       let body: any = {
         action: currentAction,
         username: targetUsername,
+        displayName: playerDisplayName,
         userId: targetUserId,
       };
 
@@ -156,7 +159,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       const data = await res.json();
       if (data.success) {
         soundFx.playSuccess();
-        showToast(data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${targetUsername}` : 'Thao tác thành công!'));
+        showToast(data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${playerDisplayName}` : 'Thao tác thành công!'));
         // Sync with backend to ensure perfect consistency
         fetchUsers();
       } else {
@@ -368,8 +371,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-white text-xs truncate">
-                        {u.username}
+                        {u.displayName || u.username}
                       </span>
+                      {u.displayName && u.username && u.displayName.toLowerCase() !== u.username.toLowerCase() && (
+                        <span className="text-[10px] text-slate-400 font-mono font-normal">
+                          (@{u.username})
+                        </span>
+                      )}
                       {isSelf && (
                         <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[9px] font-bold">
                           BẠN
@@ -512,10 +520,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 {actionType === 'reset_pwd' && <Key className="w-4 h-4 text-sky-400" />}
                 {actionType === 'delete' && <Trash2 className="w-4 h-4 text-rose-500" />}
                 <span>
-                  {actionType === 'ban' && `Thi Hành Phạt: ${selectedUser.username}`}
-                  {actionType === 'reward' && `Ban Thưởng: ${selectedUser.username}`}
-                  {actionType === 'reset_pwd' && `Đặt Lại Mật Khẩu: ${selectedUser.username}`}
-                  {actionType === 'delete' && `Xác Nhận Xóa Vĩnh Viễn: ${selectedUser.username}`}
+                  {actionType === 'ban' && `Thi Hành Phạt: ${selectedUser.displayName || selectedUser.username}`}
+                  {actionType === 'reward' && `Ban Thưởng: ${selectedUser.displayName || selectedUser.username}`}
+                  {actionType === 'reset_pwd' && `Đặt Lại Mật Khẩu: ${selectedUser.displayName || selectedUser.username}`}
+                  {actionType === 'delete' && `Xác Nhận Xóa Vĩnh Viễn: ${selectedUser.displayName || selectedUser.username}`}
                 </span>
               </h5>
               <button
@@ -539,7 +547,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     <span>CẢNH BÁO NGUY HIỂM TỐI CAO</span>
                   </div>
                   <p className="text-[11px] leading-relaxed text-slate-300">
-                    Bạn đang chuẩn bị thực hiện xóa vĩnh viễn tài khoản <strong className="text-white font-mono">@{selectedUser.username}</strong> ({selectedUser.email || 'Không có email'}). Thao tác này sẽ hủy bỏ toàn bộ hồ sơ trên máy chủ và <strong className="text-rose-400">KHÔNG THỂ PHỤC HỒI</strong>.
+                    Bạn đang chuẩn bị thực hiện xóa vĩnh viễn tài khoản <strong className="text-white font-mono">{selectedUser.displayName || selectedUser.username}</strong> (@{selectedUser.username}) ({selectedUser.email || 'Không có email'}). Thao tác này sẽ hủy bỏ toàn bộ hồ sơ trên máy chủ và <strong className="text-rose-400">KHÔNG THỂ PHỤC HỒI</strong>.
                   </p>
                 </div>
 

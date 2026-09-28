@@ -59,7 +59,7 @@ import {
 } from './utils/banManager';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
 import { resolveBestWpmRecord, isOutplayMode } from './components/WpmRecordBadge';
-import { fetchCurrentUser, logoutUser, updateUserProfile } from './utils/auth';
+import { fetchCurrentUser, logoutUser, updateUserProfile, getStoredAuthToken } from './utils/auth';
 import {
   createNewRoom,
   joinExistingRoom,
@@ -963,7 +963,7 @@ export default function App() {
     closeChat,
     toggleChat,
   } = useChatEngine({
-    currentUsername: username,
+    currentUsername: currentUser?.displayName || currentUser?.username || username,
     currentUserAvatar: avatar,
     currentUserFrame: userFrame,
     currentUserId: currentUser?.id || currentUserId,
@@ -1299,8 +1299,8 @@ export default function App() {
         return;
       }
 
-      // 2. Enter (không giữ phím Ctrl/Cmd/Alt): Mở nhanh khung chat khi đang ở sảnh chờ hoặc phòng chờ
-      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !isInput && (gameState === 'lobby' || gameState === 'waiting_room')) {
+      // 2. Ctrl + Enter: Mở nhanh khung chat khi đang ở sảnh chờ hoặc phòng chờ
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !isInput && (gameState === 'lobby' || gameState === 'waiting_room')) {
         e.preventDefault();
         soundFx.playKeyClick();
         setIsChatOpen(true);
@@ -1310,8 +1310,8 @@ export default function App() {
         return;
       }
 
-      // 3. Ctrl + Enter: Bắt đầu trận đấu nhanh khi đang ở phòng chờ (Chủ phòng)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !isInput && gameState === 'waiting_room' && isRoomHost) {
+      // 3. Enter (không giữ phím Ctrl/Cmd/Alt): Bắt đầu trận đấu nhanh khi đang ở phòng chờ (Chủ phòng)
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !isInput && gameState === 'waiting_room' && isRoomHost) {
         e.preventDefault();
         soundFx.playCountdown(true);
         handleLaunchGame(false);
@@ -1933,6 +1933,7 @@ export default function App() {
     if (!validation.isValid) {
       const banReason = validation.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro';
       const myUser = currentUser?.username || username;
+      const myDisplayName = currentUser?.displayName || myUser;
 
       // 1. Lưu án phạt 2 giờ (2h) ngay lập tức trên máy người chơi
       saveStoredBanInfo(Date.now() + 2 * 60 * 60 * 1000, banReason);
@@ -1942,11 +1943,12 @@ export default function App() {
       soundFx.playError();
 
       // 2. Bàn Cổ Thần Thức phát chiếu thư thông báo toàn cõi và trừ tu vi
-      announcePenalty(myUser, banReason).catch(() => {});
+      announcePenalty(myDisplayName, banReason).catch(() => {});
 
       // 3. Gửi lệnh cấm lên Server để khóa phòng & bảng vàng
       executeBanPenalty({
         username: myUser,
+        displayName: myDisplayName,
         userId: currentUser?.id,
         reason: banReason,
       }).catch(() => {});
@@ -2000,7 +2002,7 @@ export default function App() {
 
           // Huyền Thiên Khí Linh ban chiếu thư Kim Bảng Đề Danh
           announceRecord(
-            currentUser?.username || username,
+            currentUser?.displayName || currentUser?.username || username,
             verifiedWpm,
             accuracy,
             'Outplay Yourself (Solo)',
@@ -2160,15 +2162,20 @@ export default function App() {
       saveStoredCultivationState(tourneyRes.updatedState);
       if (currentUser) {
         setCurrentUser((prev) => (prev ? { ...prev, cultivation: tourneyRes.updatedState } : prev));
-        const token = sessionStorage.getItem('fasttyping_token');
-        if (token) {
+        const token = getStoredAuthToken();
+        if (token || currentUser.username) {
           fetch('/api/cultivation', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              'x-username': currentUser.username,
             },
-            body: JSON.stringify({ cultivation: tourneyRes.updatedState }),
+            body: JSON.stringify({
+              cultivation: tourneyRes.updatedState,
+              username: currentUser.username,
+              userId: currentUser.id,
+            }),
           }).catch(() => {});
         }
       }
@@ -2273,7 +2280,7 @@ export default function App() {
     if (!isPlayerSurrendered && isMatchCompleted) {
       // Huyền Thiên Khí Linh ban chiếu thư Ma Thần Quỵ Phục
       announceBossKill(
-        currentUser?.username || username,
+        currentUser?.displayName || currentUser?.username || username,
         'Hắc Long Ma Vương',
         totalDmg
       ).then((dec) => {
@@ -2320,15 +2327,20 @@ export default function App() {
       saveStoredCultivationState(res.updatedState);
       if (currentUser) {
         setCurrentUser((prev) => (prev ? { ...prev, cultivation: res.updatedState } : prev));
-        const token = sessionStorage.getItem('fasttyping_token');
-        if (token) {
+        const token = getStoredAuthToken();
+        if (token || currentUser.username) {
           fetch('/api/cultivation', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              'x-username': currentUser.username,
             },
-            body: JSON.stringify({ cultivation: res.updatedState }),
+            body: JSON.stringify({
+              cultivation: res.updatedState,
+              username: currentUser.username,
+              userId: currentUser.id,
+            }),
           }).catch(() => {});
         }
       }
@@ -2501,41 +2513,6 @@ export default function App() {
     // Vẫn giữ người chơi ở giao diện tổng kết (gameState === 'gameover'), không tự ý đẩy về lobby
   };
 
-  // Global Power-User Shortcuts:
-  // - Tab + Enter: Vào chơi lại ngay lập tức sau khi kết thúc trận (ở GameOverModal)
-  // - Ctrl + K or F2: Bật nhanh Sổ Tay Đạo Hữu
-  // - Enter: Mở nhanh khung chat khi đang ở sảnh chờ (lobby hoặc waiting_room)
-  useEffect(() => {
-    const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      const activeEl = document.activeElement as HTMLElement | null;
-      const isInputFocused =
-        activeEl &&
-        (activeEl.tagName === 'INPUT' ||
-          activeEl.tagName === 'TEXTAREA' ||
-          activeEl.isContentEditable);
-
-      // 1. Ctrl + K or F2: Bật nhanh Sổ Tay Đạo Hữu
-      if ((e.ctrlKey && (e.key === 'k' || e.key === 'K')) || e.key === 'F2') {
-        e.preventDefault();
-        soundFx.playKeyClick();
-        setIsFriendsOpen((prev) => !prev);
-        return;
-      }
-
-      // 2. Enter: Mở nhanh khung chat khi đang ở sảnh chờ
-      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !isInputFocused) {
-        if (gameState === 'lobby' || gameState === 'waiting_room') {
-          e.preventDefault();
-          soundFx.playKeyClick();
-          setIsChatOpen(true);
-          return;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalShortcuts);
-    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [gameState]);
 
   const handleUpdateConditionStats = (conditionKey: string, lastWpm: number, bestWpm: number) => {
     setConditionStats((prev) => ({
@@ -2961,7 +2938,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-slate-100 flex flex-col selection:bg-amber-400 selection:text-black">
+    <div className="min-h-screen bg-[var(--theme-bg,#0a0e17)] text-[var(--theme-text,#f8fafc)] flex flex-col selection:bg-[var(--theme-main,#10b981)] selection:text-black transition-colors duration-300">
       {/* Universal Top Header */}
       <Header
         username={username}
@@ -3760,7 +3737,7 @@ export default function App() {
       <HeavenlyChronicleModal
         isOpen={isHeavenlyChronicleOpen}
         onClose={() => setIsHeavenlyChronicleOpen(false)}
-        currentUsername={currentUser?.username || username}
+        currentUsername={currentUser?.displayName || currentUser?.username || username}
       />
 
       {/* Popup Chúc Mừng Độc Bản (Dao Decree Modal) khi đột phá hoặc đạt kỷ lục cao */}
@@ -3780,7 +3757,7 @@ export default function App() {
         onClose={() => setIsBanModalOpen(false)}
         bannedUntil={getStoredBanInfo()?.bannedUntil || (Date.now() + 2 * 3600 * 1000)}
         reason={clientBanStatus.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro'}
-        username={currentUser?.username || username}
+        username={currentUser?.displayName || currentUser?.username || username}
       />
 
       {/* Toast thông báo thành tựu mới dạng góc màn hình, hiển thị tuần tự từng thành tựu tránh giật lag */}

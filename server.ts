@@ -19,6 +19,7 @@ import {
   ServerLeaderboardEntry,
 } from './server/types';
 import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
+import { registerEconomyRoutes } from './server/economy';
 
 // In-memory rooms store
 const rooms = new Map<string, GameRoom>();
@@ -1339,6 +1340,30 @@ function getUserByUsernameOrEmail(identifier?: string): ServerUserRecord | null 
     }
   }
   return null;
+}
+
+function getUserByDisplayNameOrUsername(identifier?: string): ServerUserRecord | null {
+  if (!identifier) return null;
+  const clean = identifier.trim().toLowerCase();
+  for (const user of serverUsers.values()) {
+    if (
+      (user.displayName && user.displayName.toLowerCase() === clean) ||
+      (user.username && user.username.toLowerCase() === clean) ||
+      (user.id && user.id.toLowerCase() === clean)
+    ) {
+      return user;
+    }
+  }
+  return null;
+}
+
+function resolvePlayerDisplayName(identifier?: string): string {
+  if (!identifier) return 'Đạo Hữu';
+  const user = getUserByDisplayNameOrUsername(identifier);
+  if (user) {
+    return user.displayName || user.username || identifier;
+  }
+  return identifier;
 }
 
 function sanitizeUser(u: ServerUserRecord) {
@@ -4531,7 +4556,7 @@ async function startServer() {
 
   // Phản hồi trò chuyện tự động, hoạt bát của Linh Lung Tiên Đồng khi được gọi tên trong Chat
   async function triggerLinhLungChatReply(sender: string, userMsg: string) {
-    const cleanUser = String(sender || 'Đạo Hữu').trim();
+    const cleanUser = resolvePlayerDisplayName(sender);
     const botName = 'Linh Lung Tiên Đồng';
     const botAvatar = '🪷';
     const botFrame = 'arcane_purple';
@@ -4682,11 +4707,68 @@ Hãy đáp lại trực tiếp cho @${cleanUser}:
     const botAvatar = effectivePersona === 'ban_co' ? '⚡' : (effectivePersona === 'linh_lung' ? '🪷' : '☯️');
     const botFrame = effectivePersona === 'ban_co' ? 'dragon_dark_blood' : (effectivePersona === 'linh_lung' ? 'arcane_purple' : 'admin_gold');
 
+    // Phân giải chính xác tên người chơi hiển thị (displayName) thay vì tên đăng nhập (username)
+    let finalTargetUser = params.targetUser;
+    let finalContent = String(params.content || '');
+    let finalHighlight = params.highlightText ? String(params.highlightText) : undefined;
+
+    if (params.targetUser) {
+      const cleanTarget = String(params.targetUser).trim();
+      const user = getUserByDisplayNameOrUsername(cleanTarget);
+      if (user) {
+        const playerDisplayName = user.displayName || user.username || cleanTarget;
+        finalTargetUser = playerDisplayName;
+
+        if (user.username && playerDisplayName && user.username !== playerDisplayName) {
+          const escapedU = user.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          finalContent = finalContent
+            .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${playerDisplayName}`)
+            .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), playerDisplayName);
+          if (finalHighlight) {
+            finalHighlight = finalHighlight
+              .replace(new RegExp(`@${escapedU}\\b`, 'gi'), `@${playerDisplayName}`)
+              .replace(new RegExp(`\\b${escapedU}\\b`, 'gi'), playerDisplayName);
+          }
+        }
+      }
+    }
+
+    // Quét toàn bộ danh sách tu sĩ trên server để thay thế mọi tên đăng nhập bằng tên người chơi hiển thị
+    try {
+      for (const u of serverUsers.values()) {
+        if (u.username && u.displayName && u.username !== u.displayName) {
+          const escapedU = u.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const atRegex = new RegExp(`@${escapedU}\\b`, 'gi');
+          if (atRegex.test(finalContent)) {
+            finalContent = finalContent.replace(atRegex, `@${u.displayName}`);
+          }
+          if (finalHighlight && atRegex.test(finalHighlight)) {
+            finalHighlight = finalHighlight.replace(atRegex, `@${u.displayName}`);
+          }
+          if (u.username.length >= 3) {
+            const wordRegex = new RegExp(`\\b${escapedU}\\b`, 'gi');
+            if (wordRegex.test(finalContent)) {
+              finalContent = finalContent.replace(wordRegex, u.displayName);
+            }
+            if (finalHighlight && wordRegex.test(finalHighlight)) {
+              finalHighlight = finalHighlight.replace(wordRegex, u.displayName);
+            }
+          }
+          if (finalTargetUser && finalTargetUser.toLowerCase() === u.username.toLowerCase()) {
+            finalTargetUser = u.displayName;
+          }
+        }
+      }
+    } catch {}
+
     // Bàn Cổ Thần Thức: Khi có án phạt vi phạm, tự động thi hành cấm đấu 2 giờ (2h) và phế trừ tu vi
     if (isPenalty && params.targetUser) {
+      const cleanTarget = String(params.targetUser).trim();
+      const u = getUserByDisplayNameOrUsername(cleanTarget);
       executeApplyBan({
-        username: params.targetUser,
-        reason: params.content,
+        username: u?.username || cleanTarget,
+        userId: u?.id,
+        reason: finalContent,
         durationMs: 2 * 60 * 60 * 1000,
       });
     }
@@ -4695,10 +4777,10 @@ Hãy đáp lại trực tiếp cho @${cleanUser}:
       id: decreeId,
       title: String(params.title).slice(0, 100),
       eventType: (params.eventType as ServerDaoDecree['eventType']) || 'announcement',
-      targetUser: params.targetUser ? String(params.targetUser).slice(0, 50) : undefined,
-      content: String(params.content).slice(0, 500),
+      targetUser: finalTargetUser ? String(finalTargetUser).slice(0, 50) : undefined,
+      content: String(finalContent).slice(0, 500),
       timestamp: Date.now(),
-      highlightText: params.highlightText ? String(params.highlightText).slice(0, 100) : undefined,
+      highlightText: finalHighlight ? String(finalHighlight).slice(0, 100) : undefined,
       wpm: typeof params.wpm === 'number' ? params.wpm : undefined,
       accuracy: typeof params.accuracy === 'number' ? params.accuracy : undefined,
       realmName: params.realmName ? String(params.realmName).slice(0, 50) : undefined,
@@ -4831,17 +4913,19 @@ Yêu cầu:
 
   // POST /api/dao/penalize: Bàn Cổ Thần Thức trừng phạt trực tiếp (2 Giờ)
   app.post('/api/dao/penalize', (req, res) => {
-    const { username, userId, reason, durationMs = 2 * 60 * 60 * 1000 } = req.body;
+    const { username, displayName, userId, reason, durationMs = 2 * 60 * 60 * 1000 } = req.body;
     if (!username) {
       res.status(400).json({ success: false, error: 'Thiếu thông tin người chơi cần thụ án' });
       return;
     }
 
     const cleanUser = String(username).trim();
+    const user = getUserByDisplayNameOrUsername(cleanUser) || (userId ? serverUsers.get(userId) : null);
+    const targetPlayerName = displayName?.trim() || user?.displayName || user?.username || cleanUser;
     const cleanReason = String(reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro').trim();
     const banRecord = executeApplyBan({
-      username: cleanUser,
-      userId,
+      username: user?.username || cleanUser,
+      userId: user?.id || userId,
       reason: cleanReason,
       durationMs,
     });
@@ -4849,9 +4933,9 @@ Yêu cầu:
     const decree = broadcastHeavenlyDaoEvent({
       title: 'BÀN CỔ TRỪNG PHẠT',
       eventType: 'penalty',
-      targetUser: cleanUser,
-      content: `Bàn Cổ Khí Tức chấn động! Nghịch đồ @${cleanUser} dám thi triển tà thuật gian lận (${cleanReason})! Bàn Cổ Thần Thức hạ lệnh phế trừ 500 Tu Vi, phong ấn kinh mạch và đày vào U Minh Hàn Ngục (Cấm thi đấu 2 giờ) để tự hối lỗi!`,
-      highlightText: `Bàn Cổ phạt ${cleanUser} (2 giờ)`,
+      targetUser: targetPlayerName,
+      content: `Bàn Cổ Khí Tức chấn động! Nghịch đồ @${targetPlayerName} dám thi triển tà thuật gian lận (${cleanReason})! Bàn Cổ Thần Thức hạ lệnh phế trừ 500 Tu Vi, phong ấn kinh mạch và đày vào U Minh Hàn Ngục (Cấm thi đấu 2 giờ) để tự hối lỗi!`,
+      highlightText: `Bàn Cổ phạt ${targetPlayerName} (2 giờ)`,
       personaId: 'ban_co',
       generateAiPoem: false,
     });
@@ -4913,7 +4997,7 @@ Yêu cầu:
   // POST /api/dao/oracle: Ask Dao Bot (Gemini 3.8 Flash with Xianxia persona)
   app.post('/api/dao/oracle', async (req, res) => {
     const { question, username, personaId } = req.body;
-    const targetUser = username ? String(username).trim() : 'Đạo hữu';
+    const targetUser = resolvePlayerDisplayName(username);
     const q = question ? String(question).trim() : '';
 
     if (!q) {
@@ -5344,6 +5428,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       userList.push({
         id: u.id || id,
         username: u.username,
+        displayName: u.displayName || u.username,
         email: u.email,
         avatar: u.avatar || '👤',
         frame: u.frame || 'default',
@@ -5388,6 +5473,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     if (action === 'ban') {
       const ms = Number(durationMs) || (2 * 60 * 60 * 1000);
       const cleanReason = String(reason || 'Quyết định từ Ban Quản Trị Hệ Thống').trim();
+      const targetDisplayName = user?.displayName || req.body?.displayName || user?.username || targetUsername || 'Người chơi';
       executeApplyBan({
         username: targetUsername || user?.username || 'Người chơi',
         userId: user?.id || userId,
@@ -5397,12 +5483,12 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       broadcastHeavenlyDaoEvent({
         title: 'LỆNH TRỪNG PHẠT ADMIN',
         eventType: 'penalty',
-        targetUser: targetUsername || user?.username,
-        content: `Ban Quản Trị ra quyết định xử phạt @${targetUsername || user?.username}: ${cleanReason} (Thời hạn: ${Math.round(ms / 60000)} phút).`,
-        highlightText: `Admin phạt ${targetUsername || user?.username}`,
+        targetUser: targetDisplayName,
+        content: `Ban Quản Trị ra quyết định xử phạt @${targetDisplayName}: ${cleanReason} (Thời hạn: ${Math.round(ms / 60000)} phút).`,
+        highlightText: `Admin phạt ${targetDisplayName}`,
         personaId: 'ban_co',
       });
-      res.json({ success: true, message: `Đã cấm tài khoản ${targetUsername} thành công!` });
+      res.json({ success: true, message: `Đã cấm tài khoản ${targetDisplayName} thành công!` });
       return;
     }
 
@@ -5417,7 +5503,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         saveUsersToFile();
       }
       saveBansToFile();
-      res.json({ success: true, message: `Đã gỡ cấm cho ${targetUsername || user?.username}!` });
+      const targetDisplayName = user?.displayName || user?.username || targetUsername;
+      res.json({ success: true, message: `Đã gỡ cấm cho ${targetDisplayName}!` });
       return;
     }
 
@@ -5432,10 +5519,11 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       }
       user.isAdmin = !user.isAdmin;
       saveUsersToFile();
+      const targetDisplayName = user.displayName || user.username;
       res.json({
         success: true,
         isAdmin: user.isAdmin,
-        message: user.isAdmin ? `Đã thăng cấp ${user.username} thành Quản Trị Viên!` : `Đã hạ quyền ${user.username} về Thành Viên thường!`,
+        message: user.isAdmin ? `Đã thăng cấp ${targetDisplayName} thành Quản Trị Viên!` : `Đã hạ quyền ${targetDisplayName} về Thành Viên thường!`,
       });
       return;
     }
@@ -5446,20 +5534,22 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         return;
       }
       if (!user.cultivation) {
-        res.status(400).json({ success: false, error: 'Người chơi chưa khởi tạo dữ liệu Tu Tiên' });
-        return;
+        user.cultivation = {};
       }
       if (spiritStones) {
         user.cultivation.spiritStones = Math.max(0, (user.cultivation.spiritStones || 0) + Number(spiritStones));
+        user.cultivation.linhThach = Math.max(0, (user.cultivation.linhThach || 0) + Number(spiritStones));
       }
       if (exp) {
         user.cultivation.cultivationExp = Math.max(0, (user.cultivation.cultivationExp || 0) + Number(exp));
+        user.cultivation.exp = Math.max(0, (user.cultivation.exp || 0) + Number(exp));
       }
       saveUsersToFile();
+      const targetDisplayName = user.displayName || user.username;
       res.json({
         success: true,
         cultivation: user.cultivation,
-        message: `Đã ban thưởng tài nguyên thành công cho ${user.username}!`,
+        message: `Đã ban thưởng tài nguyên thành công cho ${targetDisplayName}!`,
       });
       return;
     }
@@ -5475,9 +5565,10 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       user.passwordHash = passwordHash;
       user.salt = salt;
       saveUsersToFile();
+      const targetDisplayName = user.displayName || user.username;
       res.json({
         success: true,
-        message: `Đã đặt lại mật khẩu cho ${user.username} thành công! Mật khẩu mới: ${newPwd}`,
+        message: `Đã đặt lại mật khẩu cho ${targetDisplayName} thành công! Mật khẩu mới: ${newPwd}`,
       });
       return;
     }
@@ -5494,6 +5585,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
 
       const deletedUsername = user.username;
       const deletedUserId = user.id;
+      const deletedDisplayName = user.displayName || user.username;
 
       // 1. Delete from serverUsers map and any residual duplicates
       serverUsers.delete(deletedUserId);
@@ -5541,13 +5633,13 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       broadcastHeavenlyDaoEvent({
         title: 'LỆNH TRẢM QUYẾT ADMIN',
         eventType: 'penalty',
-        targetUser: deletedUsername,
-        content: `Ban Quản Trị đã xóa vĩnh viễn tài khoản @${deletedUsername} khỏi hệ thống Đạo Giới.`,
-        highlightText: `Xóa vĩnh viễn @${deletedUsername}`,
+        targetUser: deletedDisplayName,
+        content: `Ban Quản Trị đã xóa vĩnh viễn tài khoản @${deletedDisplayName} khỏi hệ thống Đạo Giới.`,
+        highlightText: `Xóa vĩnh viễn @${deletedDisplayName}`,
         personaId: 'ban_co',
       });
 
-      res.json({ success: true, message: `Đã xóa vĩnh viễn tài khoản @${deletedUsername} khỏi hệ thống thành công!` });
+      res.json({ success: true, message: `Đã xóa vĩnh viễn tài khoản @${deletedDisplayName} khỏi hệ thống thành công!` });
       return;
     }
 
@@ -7928,6 +8020,9 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
     broadcastGlobalChatClear();
     res.json({ success: true });
   });
+
+  // HỆ THỐNG VẠN BẢO CÁC, PHƯỜNG THỊ P2P & QUẢN TRỊ KINH TẾ
+  registerEconomyRoutes(app, serverUsers, getUserByToken, saveUsersToFile);
 
   const httpServer = http.createServer(app);
 

@@ -21,6 +21,8 @@ import { MeditationDais } from './cultivation/MeditationDais';
 import { AlchemySection } from './cultivation/AlchemySection';
 import { ArtifactsSection } from './cultivation/ArtifactsSection';
 import { SectsSection } from './cultivation/SectsSection';
+import { VanBaoCacShop } from './cultivation/VanBaoCacShop';
+import { PhuongThiMarket } from './cultivation/PhuongThiMarket';
 import {
   X,
   Sparkles,
@@ -42,6 +44,8 @@ import {
   Swords,
   Compass,
   Users,
+  ShoppingBag,
+  Scale,
 } from 'lucide-react';
 
 interface CultivationModalProps {
@@ -50,6 +54,7 @@ interface CultivationModalProps {
   state: CultivationState;
   onUpdateState: (newState: CultivationState) => void;
   username?: string;
+  displayName?: string;
   userAvatar?: string;
   userFrame?: string;
   onSelectFrame?: (frameId: string) => void;
@@ -65,6 +70,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   state,
   onUpdateState,
   username,
+  displayName,
   userAvatar = '⚡',
   userFrame = 'default',
   onSelectFrame,
@@ -73,7 +79,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   onStartSectBoss,
   onStartSectTournament,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
   const bodyRef = useRef<HTMLDivElement>(null);
   const [usePhaCanh, setUsePhaCanh] = useState(false);
   const [useHoTam, setUseHoTam] = useState(false);
@@ -213,7 +219,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
       setBreakthroughNotice({ success: true, message: result.message });
       const realmObj = XIANXIA_REALMS[result.updatedState.realmIndex] || currentRealm;
       announceBreakthrough(
-        username || 'Đạo Hữu',
+        displayName || username || 'Đạo Hữu',
         realmObj.name,
         getSubStage(result.updatedState.tier),
         result.updatedState.tier,
@@ -352,6 +358,8 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         <div className="shrink-0 flex border-b border-slate-800 bg-slate-950/60 px-6 gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Động Phủ Tu Tiên', icon: Sparkles },
+            { id: 'van_bao_cac', label: 'Vạn Bảo Các', icon: ShoppingBag },
+            { id: 'phuong_thi', label: 'Phường Thị P2P', icon: Scale },
             { id: 'alchemy', label: 'Luyện Đan Phòng', icon: Flame },
             { id: 'artifacts', label: 'Pháp Bảo & Tâm Pháp', icon: Swords },
             { id: 'sects', label: 'Tông Môn & Linh Mạch', icon: Users },
@@ -762,6 +770,28 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* VẠN BẢO CÁC (CỬA HÀNG HỆ THỐNG) */}
+          {activeTab === 'van_bao_cac' && (
+            <VanBaoCacShop
+              state={state}
+              onUpdateState={onUpdateState}
+              userFrame={userFrame}
+              onSelectFrame={onSelectFrame}
+              username={username}
+              isLoggedIn={isLoggedIn}
+              onOpenAuthModal={onOpenAuthModal}
+            />
+          )}
+
+          {/* PHƯỜNG THỊ TU TIÊN (CHỢ GIAO DỊCH P2P) */}
+          {activeTab === 'phuong_thi' && (
+            <PhuongThiMarket
+              state={state}
+              onUpdateState={onUpdateState}
+              username={username}
+            />
           )}
 
           {/* ALCHEMY SANCTUARY TAB */}
@@ -1347,6 +1377,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         userAvatar={userAvatar}
         userFrame={userFrame}
         username={username || 'Đạo Hữu'}
+        displayName={displayName}
         onSelectFrame={onSelectFrame}
       />
     </div>

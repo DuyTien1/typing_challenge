@@ -185,6 +185,7 @@ export async function syncServerBanStatus(
  */
 export async function executeBanPenalty(params: {
   username: string;
+  displayName?: string;
   userId?: string;
   reason: string;
 }): Promise<ClientBanInfo> {
@@ -201,6 +202,7 @@ export async function executeBanPenalty(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: params.username,
+        displayName: params.displayName,
         userId: params.userId,
         reason,
         durationMs: BAN_DURATION_MS,

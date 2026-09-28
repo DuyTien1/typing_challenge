@@ -14,9 +14,16 @@ import {
   LogIn,
   LogOut,
   Lock,
-  History
+  History,
+  Check
 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
+import { 
+  UI_STYLES, 
+  UIStyleId, 
+  applyUIStyle, 
+  getStoredUIStyle 
+} from '../utils/themeAndFont';
 
 interface HeaderProps {
   username: string;
@@ -91,6 +98,32 @@ export const Header: React.FC<HeaderProps> = ({
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
+  const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getStoredUIStyle());
+  const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
+  const styleDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleStyleChange = (e: any) => {
+      if (e.detail?.id) setCurrentUIStyleId(e.detail.id);
+    };
+    window.addEventListener('ui_style_changed', handleStyleChange);
+    return () => window.removeEventListener('ui_style_changed', handleStyleChange);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutsideStyle = (e: MouseEvent) => {
+      if (styleDropdownRef.current && !styleDropdownRef.current.contains(e.target as Node)) {
+        setIsStyleDropdownOpen(false);
+      }
+    };
+    if (isStyleDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutsideStyle);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutsideStyle);
+  }, [isStyleDropdownOpen]);
+
+  const currentStyle = UI_STYLES.find((s) => s.id === currentUIStyleId) || UI_STYLES[0];
+
   // Close dropdown menu when clicking outside or pressing Escape
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -114,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isMoreMenuOpen]);
 
   return (
-    <header className="w-full border-b border-slate-800/80 bg-[#121620]/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-4 py-2">
+    <header className="w-full border-b border-[var(--theme-border,#1e293b)] bg-[var(--theme-card,#131926)]/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-4 py-2 transition-colors duration-300">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo & Branding - Click to return to Home/Lobby */}
         <div
@@ -200,7 +233,7 @@ export const Header: React.FC<HeaderProps> = ({
               soundFx.playKeyClick();
               onToggleChat();
             }}
-            title="Kênh Chat & Mật Đàm"
+            title="Kênh Chat & Mật Đàm (Phím tắt: Ctrl + Enter)"
             className="h-8.5 px-2.5 relative flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/70 hover:bg-slate-700/80 border border-slate-700/50 text-slate-300 hover:text-white text-xs font-medium transition-colors cursor-pointer shrink-0"
           >
             <MessageSquare className="w-4 h-4 text-sky-400" />
@@ -284,6 +317,100 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
           )}
+
+          {/* Quick UI Style Switcher Button */}
+          <div className="relative" ref={styleDropdownRef}>
+            <button
+              id="btn-switch-ui-style"
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                setIsStyleDropdownOpen(!isStyleDropdownOpen);
+              }}
+              title={`Đổi Phong Cách Giao Diện (Hiện tại: ${currentStyle.name})`}
+              className="h-8.5 px-2 sm:px-2.5 flex items-center gap-1.5 rounded-xl border border-slate-700/60 hover:border-amber-400/60 bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 transition-all cursor-pointer shrink-0 shadow-sm active:scale-95"
+            >
+              <span className="text-sm leading-none shrink-0">{currentStyle.icon}</span>
+              <span className="text-xs font-bold hidden md:inline max-w-[100px] truncate text-amber-300">
+                {currentStyle.tag}
+              </span>
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isStyleDropdownOpen ? 'rotate-180 text-amber-400' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu of 5 Distinct Styles */}
+            {isStyleDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-2 z-50 text-xs text-slate-200 space-y-1.5 ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-2.5 py-1.5 border-b border-slate-800 flex items-center justify-between">
+                  <span className="font-extrabold text-[11px] uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> 5 Phong Cách Giao Diện
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">1 Click đổi ngay</span>
+                </div>
+
+                <div className="space-y-1 pt-0.5">
+                  {UI_STYLES.map((style) => {
+                    const isSelected = style.id === currentUIStyleId;
+                    return (
+                      <button
+                        key={style.id}
+                        type="button"
+                        onClick={() => {
+                          applyUIStyle(style.id);
+                          soundFx.playKeyClick();
+                          setIsStyleDropdownOpen(false);
+                        }}
+                        className={`w-full p-2 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer group ${
+                          isSelected
+                            ? 'bg-amber-500/20 border border-amber-400/80 text-amber-300 shadow-sm'
+                            : 'hover:bg-slate-900 border border-transparent text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-lg p-1 rounded-lg bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">
+                            {style.icon}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs flex items-center gap-1.5 truncate">
+                              <span>{style.name}</span>
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 border border-slate-700 font-normal opacity-80">
+                                {style.tag}
+                              </span>
+                            </div>
+                            <div className="text-[10px] opacity-70 truncate font-mono">
+                              {style.switchName} • {style.fontName}
+                            </div>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="w-5 h-5 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {onOpenAppearance && (
+                  <div className="pt-1.5 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setIsStyleDropdownOpen(false);
+                        onOpenAppearance();
+                      }}
+                      className="w-full py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-amber-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Palette className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Xem Chi Tiết & Tùy Chỉnh Nâng Cao</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Eye-catching More Menu / Control Hub */}
           <div className="relative" ref={moreMenuRef}>
@@ -394,8 +521,8 @@ export const Header: React.FC<HeaderProps> = ({
                         <Palette className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-bold text-xs text-white">Tùy Chỉnh Giao Diện</div>
-                        <div className="text-[10px] text-slate-400">20 Themes Monkeytype, 20 Fonts & Switch phím</div>
+                        <div className="font-bold text-xs text-white">Phong Cách & Giao Diện</div>
+                        <div className="text-[10px] text-slate-400">5 Phong Cách Độc Bản, Font Chữ & Âm Phím Cơ</div>
                       </div>
                     </div>
                   </button>

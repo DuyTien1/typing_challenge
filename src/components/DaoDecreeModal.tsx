@@ -12,7 +12,7 @@ import {
   Share2,
   CheckCircle2,
 } from 'lucide-react';
-import { DAO_BOT_NAME, DAO_BOT_TITLE } from '../utils/heavenlyDaoBot';
+import { DAO_BOT_NAME, DAO_BOT_TITLE, resolvePlayerDisplayName } from '../utils/heavenlyDaoBot';
 
 interface DaoDecreeModalProps {
   decree: HeavenlyDaoDecree | null;
@@ -209,7 +209,7 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
               {decree.targetUser && (
                 <div className="flex items-center gap-1.5 text-amber-300 font-bold">
                   <span>Sắc phong:</span>
-                  <span className="text-white underline">@{decree.targetUser}</span>
+                  <span className="text-white underline">@{resolvePlayerDisplayName(decree.targetUser)}</span>
                 </div>
               )}
               {decree.wpm && (

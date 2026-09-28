@@ -7,6 +7,7 @@ import {
   getStoredDaoDecrees,
   subscribeToDaoDecrees,
   announceGuidance,
+  resolvePlayerDisplayName,
   DAO_BOT_NAME,
   DAO_BOT_TITLE,
   DAO_BOT_AVATAR,
@@ -133,12 +134,14 @@ export const HeavenlyChronicleModal: React.FC<HeavenlyChronicleModalProps> = ({
     setIsAskingOracle(true);
     setOracleAnswer(null);
 
+    const targetDisplayName = resolvePlayerDisplayName(currentUsername);
+
     // Call server oracle or generate local Dao prophecy
     try {
       const res = await fetch('/api/dao/oracle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, username: currentUsername, personaId: selectedPersona }),
+        body: JSON.stringify({ question: q, username: targetDisplayName, personaId: selectedPersona }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -156,7 +159,7 @@ export const HeavenlyChronicleModal: React.FC<HeavenlyChronicleModalProps> = ({
     setTimeout(() => {
       if (selectedPersona === 'linh_lung') {
         const linhLungAnswers = [
-          `« Linh Lung Mách Nước »: Hi hi, đạo hữu ${currentUsername}! Tiên Đồng ngó qua Phong Thần Bảng thấy ngón tay của đạo hữu đang dồi dào linh lực đó! Mau vào làm liền 3 ván chế độ Ngẫu Hứng hoặc Săn Boss, điểm bùng nổ WPM đang chờ đón kìa! 🪷`,
+          `« Linh Lung Mách Nước »: Hi hi, đạo hữu ${targetDisplayName}! Tiên Đồng ngó qua Phong Thần Bảng thấy ngón tay của đạo hữu đang dồi dào linh lực đó! Mau vào làm liền 3 ván chế độ Ngẫu Hứng hoặc Săn Boss, điểm bùng nổ WPM đang chờ đón kìa! 🪷`,
           `« Tiên Đồng Chỉ Điểm »: Ái chà, đạo hữu hay bị vấp ở mấy từ ghép telex đúng không nè? Nhớ thả lỏng hai vai, nhịp gõ đều đặn như gảy đàn tranh. Gõ đúng từng chữ thì tốc độ tự khắc vút bay như tiên kiếm! ✨`,
           `« Phong Thần Cơ Mật »: Bí kíp độc quyền của Tiên Đồng đây: Muốn leo top Bảng Vàng thì 10 giây đầu đừng ham gõ nhanh, giữ độ chính xác tuyệt đối 100% để tích tụ kiếm thế, sau đó mới tăng tốc thì đối thủ chỉ có hít khói! 🪷`,
           `« Linh Lung Soi Quẻ »: Quẻ hôm nay: Đại Cát! Các ngón trỏ và ngón giữa linh hoạt tuyệt đối, rất hợp để chinh phục các từ hiểm hóc. Mau mau lên đồ so tài đi nào! 🎉`,
@@ -165,7 +168,7 @@ export const HeavenlyChronicleModal: React.FC<HeavenlyChronicleModalProps> = ({
         setOracleAnswer(linhLungAnswers[Math.floor(Math.random() * linhLungAnswers.length)]);
       } else {
         const heuristicAnswers = [
-          `« Khí Linh Chiếu Mệnh »: Đạo hữu ${currentUsername}, thần thức quan trắc hôm nay vận khí hanh thông, ngón tay linh hoạt như gió lốc! Hãy thi đấu ngay 3 ván chế độ TV Có Dấu để đón đầu lôi kiếp đột phá WPM!`,
+          `« Khí Linh Chiếu Mệnh »: Đạo hữu ${targetDisplayName}, thần thức quan trắc hôm nay vận khí hanh thông, ngón tay linh hoạt như gió lốc! Hãy thi đấu ngay 3 ván chế độ TV Có Dấu để đón đầu lôi kiếp đột phá WPM!`,
           `« Thiên Đạo Chỉ Điểm »: Bình cảnh hiện tại không nằm ở tốc độ bàn tay mà ở đạo tâm nôn nóng. Hãy giữ nhịp thở điều hòa, ưu tiên độ chính xác 100% trong 15 giây đầu mỗi ván để phá vỡ giới hạn!`,
           `« Thần Khí Ban Phúc »: Khí Linh nhận thấy các ngón tay của đạo hữu đang tích tụ mỏi cơ. Hãy xoay nhẹ cổ tay theo chiều kim đồng hồ 10 lần, bấm phím số 5 định vị tâm thế trước khi vào trận tiếp theo!`,
           `« Đạo Cơ Thấu Thị »: Muốn vượt qua mốc 100 WPM, hãy tập buông phím nguyên âm dứt khoát trước khi gõ phím dấu thanh. Bộ đệm Telex thông suốt ắt kiếm khí tự sinh!`,

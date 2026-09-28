@@ -11,6 +11,7 @@ import {
 } from '../utils/cultivation';
 import { GameMode, Player, UserAccount, FriendRecord, HeavenlyDaoDecree } from '../types';
 import { announceBreakthrough } from '../utils/heavenlyDaoBot';
+import { getStoredAuthToken } from '../utils/auth';
 
 export interface CultivationMatchHarvest {
   gainedExp: number;
@@ -136,7 +137,7 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
           .catch(() => {});
       }
 
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('fasttyping_token') : null;
+      const token = getStoredAuthToken();
       if (token) {
         fetch('/api/cultivation', {
           method: 'POST',

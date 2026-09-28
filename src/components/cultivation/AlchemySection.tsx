@@ -33,17 +33,42 @@ interface AlchemySectionProps {
   onUpdateState: (newState: CultivationState) => void;
 }
 
-// Danh sách chân ngôn ấn chú điều tiết chân hỏa lò đan bát quái
-const ALCHEMY_INCANTATIONS = [
-  'chân hỏa quy nhất',
-  'bát quái càn khôn',
-  'đan điền tĩnh lặng',
-  'dược lực thăng hoa',
-  'ngũ hành tương sinh',
-  'thiên địa giao hòa',
-  'thuần dương chân khí',
-  'tâm viên ý mã',
-];
+// Bát Quái Chân Hỏa Thần Số (Numeric Alchemy Runes) - Phân định theo phẩm cấp đan dược & tăng độ khó
+const ALCHEMY_NUMERIC_INCANTATIONS: Record<
+  'thoNguyen' | 'hoTam' | 'phaCanh' | 'dinhTam' | 'ngungThan' | 'vanNienTuVi',
+  { runes: string[]; meaning: string; difficulty: string }
+> = {
+  thoNguyen: {
+    runes: ['84920173', '39182047', '72519384', '48201937', '92840175'],
+    meaning: 'Quy Nguyên Hóa Thể • Bồi Bổ Thọ Nguyên',
+    difficulty: '8 Chữ Số',
+  },
+  dinhTam: {
+    runes: ['938201745', '840192736', '739281048', '629108425', '958201734'],
+    meaning: 'Định Tâm An Thần • Chân Hỏa Bất Động',
+    difficulty: '9 Chữ Số',
+  },
+  ngungThan: {
+    runes: ['849102837', '928374019', '740192836', '839201746', '629401738'],
+    meaning: 'Ngưng Khí Tụ Thần • Đan Tâm Bất Hoại',
+    difficulty: '9 Chữ Số',
+  },
+  hoTam: {
+    runes: ['9582017483', '8204917365', '9381027462', '7491028365', '8401925163'],
+    meaning: 'Hộ Thể Kim Cương • Ngăn Chặn Tâm Ma',
+    difficulty: '10 Chữ Số',
+  },
+  phaCanh: {
+    runes: ['94820173651', '83920174520', '95820174839', '72910482639', '84910283756'],
+    meaning: 'Nghịch Chuyển Càn Khôn • Phá Bích Trùng Quan',
+    difficulty: '11 Chữ Số',
+  },
+  vanNienTuVi: {
+    runes: ['984019283746', '839201746291', '948201736518', '739281048295', '958201748392'],
+    meaning: 'Hỗn Độn Sơ Khai • Vạn Niên Đạo Quả Cực Phẩm',
+    difficulty: '12 Chữ Số',
+  },
+};
 
 export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateState }) => {
   const [selectedRecipeId, setSelectedRecipeId] = useState<
@@ -84,8 +109,9 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
       return;
     }
 
-    // Chọn ngẫu nhiên ấn chú
-    const randomInc = ALCHEMY_INCANTATIONS[Math.floor(Math.random() * ALCHEMY_INCANTATIONS.length)];
+    // Chọn ngẫu nhiên thần số ấn chú theo phẩm cấp đan dược
+    const recipeConfig = ALCHEMY_NUMERIC_INCANTATIONS[selectedRecipeId] || ALCHEMY_NUMERIC_INCANTATIONS.thoNguyen;
+    const randomInc = recipeConfig.runes[Math.floor(Math.random() * recipeConfig.runes.length)];
     setIncantationPrompt(randomInc);
     setTypedIncantation('');
     setIncantationErrorCount(0);
@@ -138,13 +164,14 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
     }, 900);
   };
 
-  // Lắng nghe người chơi gõ ấn chú điều tiết chân hỏa
+  // Lắng nghe người chơi gõ thần số ấn chú điều tiết chân hỏa (chỉ chấp nhận số 0-9)
   const handleIncantationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.toLowerCase();
+    const rawVal = e.target.value;
+    const val = rawVal.replace(/\D/g, '').slice(0, incantationPrompt.length);
     setTypedIncantation(val);
     soundFx.playKeyClick(false);
 
-    // Tính toán độ chính xác và nhiệt độ
+    // Tính toán độ chính xác và nhiệt độ lò đan
     let mismatches = 0;
     for (let i = 0; i < val.length; i++) {
       if (val[i] !== incantationPrompt[i]) {
@@ -153,39 +180,48 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
     }
     setIncantationErrorCount(mismatches);
 
-    // Quá nhiệt nếu gõ sai nhiều
+    // Tăng độ khó: Quá nhiệt nhanh nếu gõ sai thần số
     if (mismatches >= 3) {
-      setHeatLevel(95);
-    } else if (mismatches > 0) {
+      setHeatLevel(100);
+    } else if (mismatches >= 2) {
+      setHeatLevel(90);
+    } else if (mismatches === 1) {
       setHeatLevel(75);
     } else {
       setHeatLevel(50);
     }
 
-    // Hoàn thành gõ ấn chú
+    // Hoàn thành chuỗi thần số
     if (val === incantationPrompt) {
       const elapsed = Date.now() - (incantationStartTime || Date.now());
-      // Gõ nhanh dưới 3.5s và 0 lỗi -> Hỏa hầu cực phẩm (isGoodRhythm = true)
-      const isGoodRhythm = mismatches === 0 && elapsed <= 4500;
+      // Độ khó cao: Thời gian chuẩn tính theo độ dài chuỗi (ví dụ: 8 số ~ 3.6s, 10 số ~ 4.2s, 12 số ~ 4.8s)
+      const maxAllowedTime = 1600 + incantationPrompt.length * 260;
+      const isGoodRhythm = mismatches === 0 && elapsed <= maxAllowedTime;
       performDirectCraft(isGoodRhythm, false);
     }
   };
 
-  // Nếu người chơi gõ Enter hoặc hết thời gian
+  // Nếu người chơi gõ Enter hoặc các phím chức năng
   const handleIncantationKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       if (typedIncantation === incantationPrompt) {
-        const isGoodRhythm = incantationErrorCount === 0;
+        const elapsed = Date.now() - (incantationStartTime || Date.now());
+        const maxAllowedTime = 1600 + incantationPrompt.length * 260;
+        const isGoodRhythm = incantationErrorCount === 0 && elapsed <= maxAllowedTime;
         performDirectCraft(isGoodRhythm, false);
       } else {
-        // Cố tình nộp ấn chú sai -> Nguy cơ nổ lò
-        performDirectCraft(false, incantationErrorCount >= 2);
+        // Cố tình nộp ấn chú sai hoặc chưa xong -> Nguy cơ nổ lò
+        performDirectCraft(false, incantationErrorCount >= 2 || typedIncantation.length < incantationPrompt.length);
       }
     } else if (e.key === 'Escape') {
       // Hủy mở lò
       setIsForging(false);
       setIncantationPrompt('');
       setTypedIncantation('');
+    } else if (!['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key) && !e.ctrlKey && !e.metaKey) {
+      if (!/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+      }
     }
   };
 
@@ -492,37 +528,60 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-amber-300 flex items-center gap-1.5 uppercase tracking-wide">
                     <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>Ấn Chú Điều Tiết Chân Hỏa:</span>
+                    <span>Thần Số Bát Quái • Điều Tiết Chân Hỏa ({incantationPrompt.length} Chữ Số):</span>
                   </span>
                   <span
                     className={`font-mono font-bold text-xs ${
-                      heatLevel > 80 ? 'text-rose-400' : 'text-emerald-400'
+                      heatLevel >= 90 ? 'text-rose-400 animate-pulse' : heatLevel > 70 ? 'text-amber-400' : 'text-emerald-400'
                     }`}
                   >
-                    Hỏa Hầu: {heatLevel > 80 ? '⚠️ QUÁ NHIỆT (Nguy Cơ Nổ Lò)' : '✨ Hài Hòa Thuần Khiết'}
+                    Hỏa Hầu: {heatLevel >= 90 ? '⚠️ QUÁ NHIỆT (Nguy Cơ Nổ Lò)' : heatLevel > 70 ? '⚡ Hỏa Hầu Tăng Cao' : '✨ Hài Hòa Thuần Khiết'}
                   </span>
                 </div>
 
-                {/* Prompt target word sequence */}
-                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center">
-                  <span className="text-base sm:text-lg font-black tracking-widest text-amber-200 font-mono">
-                    {incantationPrompt}
-                  </span>
+                {/* Prompt target number sequence with character highlighting */}
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/40 text-center shadow-inner">
+                  <div className="text-xl sm:text-2xl md:text-3xl font-black tracking-[0.25em] font-mono select-none flex items-center justify-center flex-wrap gap-1.5">
+                    {incantationPrompt.split('').map((char, idx) => {
+                      const typedChar = typedIncantation[idx];
+                      let colorClass = 'text-amber-200/80 bg-amber-950/30 border border-amber-500/20';
+                      if (typedChar !== undefined) {
+                        colorClass =
+                          typedChar === char
+                            ? 'text-emerald-300 bg-emerald-950/60 border border-emerald-400/60 shadow-[0_0_8px_rgba(52,211,153,0.5)] font-extrabold scale-105'
+                            : 'text-rose-400 bg-rose-950/80 border border-rose-500/70 shadow-[0_0_8px_rgba(244,63,94,0.5)] font-bold scale-105';
+                      } else if (idx === typedIncantation.length) {
+                        colorClass = 'text-white bg-slate-800 border-2 border-amber-400 animate-pulse';
+                      }
+                      return (
+                        <span
+                          key={idx}
+                          className={`inline-block px-2.5 py-1 rounded-lg ${colorClass} transition-all font-mono`}
+                        >
+                          {char}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Typing Input for ritual */}
                 <input
                   ref={incantationInputRef}
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={typedIncantation}
                   onChange={handleIncantationChange}
                   onKeyDown={handleIncantationKeyDown}
-                  placeholder="Gõ chính xác ấn chú ở trên..."
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border-2 border-amber-400/80 text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
+                  placeholder="Nhập dãy thần số ấn chú ở trên..."
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border-2 border-amber-400/80 text-white font-mono text-base focus:outline-none focus:ring-2 focus:ring-amber-400 text-center tracking-[0.25em]"
                 />
 
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span>Gõ nhanh dưới 4 giây để luyện Cực Phẩm (x3 số lượng)</span>
+                  <span className="flex items-center gap-1 text-amber-300">
+                    <Zap className="w-3.5 h-3.5 text-amber-400" /> Gõ nhanh dưới {(1.6 + incantationPrompt.length * 0.26).toFixed(1)}s để luyện Cực Phẩm (x3 số lượng)
+                  </span>
                   <span>Nhấn Enter khi hoàn thành (Esc để hủy)</span>
                 </div>
               </div>

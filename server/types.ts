@@ -184,3 +184,49 @@ export interface ActivePresenceSession {
   connectedAt: number;
   lastSeen: number;
 }
+
+export interface ShopItem {
+  id: string;
+  category: 'herbs' | 'pills' | 'friendship' | 'customization';
+  name: string;
+  desc: string;
+  icon: string;
+  itemType: 'herb' | 'pill' | 'tea' | 'frame';
+  targetKey: string;
+  price: number;
+  dailyLimit: number;
+  discountPercent: number;
+  enabled: boolean;
+}
+
+export interface MarketListing {
+  id: string;
+  sellerId: string;
+  sellerUsername: string;
+  sellerAvatar: string;
+  sellerFrame: string;
+  itemType: 'herb' | 'pill' | 'tea' | 'artifact_fragment';
+  itemId: string;
+  itemName: string;
+  itemIcon: string;
+  quality: 'ha_pham' | 'trung_pham' | 'thuong_pham' | 'cuc_pham';
+  quantity: number;
+  pricePerUnit: number;
+  totalPrice: number;
+  listedAt: number;
+  expiresAt: number;
+  status: 'active' | 'sold' | 'cancelled' | 'takedown_by_admin';
+  buyerId?: string;
+  buyerUsername?: string;
+  soldAt?: number;
+}
+
+export interface MarketLog {
+  id: string;
+  type: 'buy' | 'list' | 'cancel' | 'admin_takedown' | 'admin_grant' | 'admin_deduct';
+  details: string;
+  timestamp: number;
+  actorUsername: string;
+  targetUsername?: string;
+  amount?: number;
+}
