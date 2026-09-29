@@ -28,6 +28,7 @@ import {
   Bot,
   Heart,
   Send,
+  User,
   X
 } from 'lucide-react';
 
@@ -55,6 +56,11 @@ interface WaitingRoomViewProps {
   onKickPlayer?: (targetPlayerId: string) => void;
   friendsList?: FriendRecord[];
   onOpenFriends?: () => void;
+  currentUser?: any;
+  cultivationState?: any;
+  onOpenWhisper?: (username: string, userId?: string) => void;
+  onAddFriend?: (userId: string, username?: string) => void;
+  onStartGhostChallenge?: (entry: any) => void;
 }
 
 interface PlayerSpeech {
@@ -98,6 +104,11 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   onKickPlayer,
   friendsList,
   onOpenFriends,
+  currentUser,
+  cultivationState,
+  onOpenWhisper,
+  onAddFriend,
+  onStartGhostChallenge,
 }) => {
   const [playerSpeeches, setPlayerSpeeches] = useState<Record<string, PlayerSpeech>>({});
   const [lastCheerTime, setLastCheerTime] = useState(0);
@@ -765,14 +776,15 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                   <div
                     key={`slot-${slotIndex}-${p.id}`}
                     id={`player-slot-${slotIndex}`}
-                    className={`h-[82px] min-h-[82px] p-3.5 rounded-2xl border flex items-center justify-between gap-3 relative animate-slot-enter transition-colors duration-150 ${
+                    onClick={() => handlePlayerAvatarClick(p)}
+                    className={`group h-[82px] min-h-[82px] p-3.5 rounded-2xl border flex items-center justify-between gap-3 relative animate-slot-enter transition-all duration-150 cursor-pointer ${
                       isPlayerInMatch
                         ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
                         : isSpeaking
                         ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400 shadow-xl shadow-amber-500/20 z-10'
                         : isMe
-                        ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-400/40 shadow-md'
-                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                        ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-400/40 shadow-md hover:border-amber-400'
+                        : 'bg-slate-900/80 border-slate-800 hover:border-amber-500/50 hover:bg-slate-850'
                     }`}
                   >
                     {/* Floating Speech Bubble Badge directly above this player's position */}
@@ -933,7 +945,20 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlayerAvatarClick(p);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-300 border border-slate-700 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                        title={userIsHost && !isMe ? `Tùy chọn quản lý cho ${p.username}` : `Xem hồ sơ của ${p.username}`}
+                      >
+                        <User className="w-3 h-3 text-cyan-400" />
+                        <span className="hidden sm:inline">Hồ sơ</span>
+                      </button>
+
                       {isSpeaking ? (
                         <span className="text-[10px] font-extrabold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40 flex items-center gap-1 shadow-sm animate-pulse">
                           <MessageSquare className="w-2.5 h-2.5" /> Đang nói
@@ -1141,6 +1166,11 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         highScores={highScores || {}}
         isAdminUser={Boolean(isAdmin)}
         onClose={() => setInspectedPlayer(null)}
+        currentUser={currentUser}
+        cultivationState={cultivationState}
+        onOpenWhisper={onOpenWhisper}
+        onAddFriend={onAddFriend}
+        onStartGhostChallenge={onStartGhostChallenge}
       />
 
       {/* Host Action Menu Modal when host clicks on any other player/bot in waiting room */}

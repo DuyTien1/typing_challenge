@@ -87,6 +87,7 @@ import {
   adminUpdateLeaderboard,
   adminResetLeaderboard,
   fetchFriendsList,
+  sendFriendRequest,
 } from './utils/roomManager';
 import {
   getLeaderboardSync,
@@ -2101,11 +2102,17 @@ export default function App() {
       matchResult = 'Thắng';
     }
 
-    const replayKeystrokes = keystrokes.map((k) => ({
-      key: k.key,
-      timeMs: Math.round(k.time),
-      isCorrect: k.isCorrect,
-    }));
+    const firstKeyRaw = keystrokes.length > 0 ? ((keystrokes[0] as any).timeMs ?? keystrokes[0].time) : 0;
+    const isAbsTime = firstKeyRaw > 50000;
+
+    const replayKeystrokes = keystrokes.map((k) => {
+      const relTime = (k as any).timeMs !== undefined ? (k as any).timeMs : (isAbsTime ? k.time - firstKeyRaw : k.time);
+      return {
+        key: k.key,
+        timeMs: Math.max(0, Math.round(relTime)),
+        isCorrect: typeof k.isCorrect === 'boolean' ? k.isCorrect : true,
+      };
+    });
 
     let matchSubMode: string | undefined = undefined;
     let matchDifficulty = difficulty;
@@ -2907,6 +2914,19 @@ export default function App() {
     handleLaunchGame(true, 'outplay');
   };
 
+  // Gửi lời mời kết bạn từ Preview Profile
+  const handleAddFriend = async (targetUserId: string, targetUsername?: string) => {
+    soundFx.playKeyClick();
+    try {
+      const res = await sendFriendRequest(targetUsername || targetUserId, targetUserId);
+      if (res && res.success) {
+        soundFx.playVictory();
+      }
+    } catch (err) {
+      console.warn('Failed to send friend request:', err);
+    }
+  };
+
   // Mode display name helper
   const getModeTitle = () => {
     if (sectMatchContext?.type === 'sect_boss') {
@@ -3110,6 +3130,11 @@ export default function App() {
             isAdmin={isAdmin}
             friendsList={friendsList}
             onOpenFriends={() => setIsFriendsOpen(true)}
+            currentUser={currentUser}
+            cultivationState={cultivationState}
+            onOpenWhisper={openWhisperWith}
+            onAddFriend={handleAddFriend}
+            onStartGhostChallenge={handleStartGhostChallenge}
           />
         )}
 
@@ -3721,6 +3746,8 @@ export default function App() {
         onStartGhostChallenge={handleStartGhostChallenge}
         onStartSectBoss={handleStartSectBoss}
         onStartSectTournament={handleStartSectTournament}
+        onOpenWhisper={openWhisperWith}
+        onAddFriend={handleAddFriend}
       />
 
       {/* Dedicated Match History, Replay & Skill Diagnostics Modal */}

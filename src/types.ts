@@ -143,6 +143,66 @@ export interface HighScoreRecord {
   frame?: string;
   accuracy?: number;
   isVerified?: boolean;
+  realmName?: string;
+  realmIcon?: string;
+  level?: number;
+  sectName?: string;
+  sectTag?: string;
+  sectRole?: string;
+  keyboardSwitch?: string;
+}
+
+export interface PlayerProfileDetail {
+  userId?: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+  frame: string;
+  isAdmin: boolean;
+  isVerified: boolean;
+  totalGames: number;
+  bestWpm: number;
+  bestWpmRecord: any;
+  showcaseAchievements: string[];
+  unlockedAchievementsCount: number;
+  unlockedAchievements?: string[];
+  accuracy?: number;
+  consistency?: number;
+  modeRecords?: Record<string, { wpm: number; accuracy?: number; timestamp?: number }>;
+  keyboardSwitch?: string;
+  isOnline?: boolean;
+  cultivation?: {
+    level: number;
+    realmIndex: number;
+    tier: number;
+    realmName: string;
+    realmIcon: string;
+    titleName?: string;
+    badge?: string;
+    subStage?: string;
+    exp: number;
+    maxExp: number;
+    thoNguyen?: number;
+    linhThach?: number;
+    sect?: {
+      sectId: string;
+      sectName: string;
+      sectTag: string;
+      role: string;
+      contribution: number;
+    };
+  };
+  sectInfo?: {
+    id: string;
+    name: string;
+    tag: string;
+    role: string;
+    badgeIcon: string;
+    slogan?: string;
+    bannerColor?: string;
+    linhMachLevel?: number;
+    memberCount?: number;
+  } | null;
 }
 
 export type LeaderboardTimePeriod = 'daily' | 'weekly' | 'all_time';
@@ -167,6 +227,7 @@ export interface LeaderboardEntry {
   level?: number;
   sectName?: string;
   sectTag?: string;
+  sectRole?: string;
   keyboardSwitch?: string;
   ghostRunAvailable?: boolean;
 }
@@ -598,6 +659,7 @@ export interface CultivationLeaderboardEntry {
   tuViScore?: number;
   sectName?: string;
   sectTag?: string;
+  sectRole?: string;
 }
 
 // === VẠN ĐẠO QUY TÔNG: TÂM PHÁP, PHÁP BẢO, LUYỆN ĐAN & TÔNG MÔN ===

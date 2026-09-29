@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { soundFx } from '../utils/audio';
 import { AvatarWithFrame } from '../utils/frames';
+import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 import { 
   Send, 
   X, 
@@ -98,6 +99,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [inputText, setInputText] = useState('');
   const [spamCooldown, setSpamCooldown] = useState(0);
   const [whisperTargetUser, setWhisperTargetUser] = useState<{ username: string; userId: string } | null>(initialWhisperTarget || null);
+  const [inspectedChatUser, setInspectedChatUser] = useState<any | null>(null);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isChallengeModalOpen, setIsChallengeModalOpen] = useState(false);
   const [challengeMode, setChallengeMode] = useState<string>('vi_dau');
@@ -637,8 +639,23 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   </div>
                 ) : (
                   <>
-                    {/* User Avatar */}
-                    <div className="shrink-0 pt-0.5">
+                    {/* User Avatar - Clickable to inspect profile */}
+                    <div
+                      className="shrink-0 pt-0.5 cursor-pointer transition-transform hover:scale-110 active:scale-95"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setInspectedChatUser({
+                          username: msg.username,
+                          userId: msg.userId,
+                          avatar: msg.avatar,
+                          frame: msg.frame,
+                          realmName: msg.senderRealm,
+                          realmIcon: msg.senderRealmIcon,
+                          sectTag: msg.senderSectTag,
+                        });
+                      }}
+                      title={`Nhấp để xem hồ sơ xem trước của ${msg.username}`}
+                    >
                       <AvatarWithFrame
                         icon={msg.avatar || '⚡'}
                         frameId={msg.frame || (isMsgAdmin ? 'admin_gold' : 'default')}
@@ -651,9 +668,22 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       {/* Name, Realm badge, Sect tag, Time */}
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
                         <span
-                          className={`text-xs font-black truncate flex items-center gap-1 ${
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            setInspectedChatUser({
+                              username: msg.username,
+                              userId: msg.userId,
+                              avatar: msg.avatar,
+                              frame: msg.frame,
+                              realmName: msg.senderRealm,
+                              realmIcon: msg.senderRealmIcon,
+                              sectTag: msg.senderSectTag,
+                            });
+                          }}
+                          className={`text-xs font-black truncate flex items-center gap-1 cursor-pointer hover:underline hover:text-amber-300 transition-colors ${
                             isMsgAdmin ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-white'
                           }`}
+                          title={`Nhấp để xem hồ sơ xem trước của ${msg.username}`}
                         >
                           {isMsgAdmin && <Crown className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />}
                           {msg.username}
@@ -1063,6 +1093,24 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           <Send className="w-4 h-4" />
         </button>
       </form>
+
+      {/* Preview Profile Modal when inspecting any player from chat */}
+      {inspectedChatUser && (
+        <PlayerSimpleProfileModal
+          isOpen={Boolean(inspectedChatUser)}
+          player={inspectedChatUser}
+          onClose={() => setInspectedChatUser(null)}
+          isMe={inspectedChatUser.username === currentUsername || inspectedChatUser.userId === currentUserId}
+          isAdminUser={isAdmin}
+          currentUser={{ id: currentUserId, username: currentUsername }}
+          cultivationState={cultivationState}
+          onOpenWhisper={(targetUsername, targetUserId) => {
+            setWhisperTargetUser({ username: targetUsername, userId: targetUserId || '' });
+            setActiveChannel('whisper');
+            setInspectedChatUser(null);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -8,6 +8,7 @@ import {
   Settings, 
   Sparkles,
   ChevronDown,
+  ChevronRight,
   User,
   Palette,
   Users,
@@ -455,72 +456,80 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Dropdown Menu Box */}
             {isMoreMenuOpen && (
-              <div className={`absolute right-0 mt-2 w-64 rounded-2xl bg-slate-950/95 shadow-2xl shadow-black/90 backdrop-blur-xl p-2 z-50 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-100 divide-y divide-slate-800/80 ${
+              <div className={`absolute right-0 mt-2 w-72 sm:w-80 rounded-2xl bg-slate-950/95 shadow-2xl shadow-black/90 backdrop-blur-xl p-2.5 z-50 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150 space-y-2.5 ${
                 isAdmin 
-                  ? 'border-2 border-amber-500/60 shadow-amber-500/20' 
-                  : 'border border-slate-700/90'
+                  ? 'border border-amber-500/60 shadow-amber-500/15 ring-1 ring-amber-500/30' 
+                  : 'border border-slate-700/80 shadow-black/80'
               }`}>
-                {/* Header User Identity Preview in Dropdown */}
-                <div className={`pb-2.5 px-2 py-1.5 rounded-xl flex items-center justify-between gap-2 ${
-                  isAdmin ? 'border border-amber-500/40 bg-amber-500/10' : ''
+                {/* Header User Identity Card */}
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${
+                  isAdmin 
+                    ? 'border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-slate-900/60 to-slate-900/60' 
+                    : 'border-slate-800/90 bg-slate-900/60'
                 }`}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xl p-1 rounded-xl bg-slate-900 border border-slate-800 shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-xl w-9 h-9 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center shrink-0 shadow-inner">
                       {avatar}
                     </span>
                     <div className="min-w-0">
-                      <div className="font-bold text-white text-xs truncate flex items-center gap-1">
-                        <span>{username || (isLoggedIn ? 'Thành viên' : 'Khách')}</span>
+                      <div className="font-bold text-white text-xs truncate flex items-center gap-1.5">
+                        <span className="truncate">{username || (isLoggedIn ? 'Thành viên' : 'Khách')}</span>
                         {isAdmin && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono font-bold">
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono font-bold shrink-0">
                             ADMIN
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-slate-400">
+                      <div className="text-[10px] text-slate-400 truncate">
                         {isAdmin ? 'Quản trị viên hệ thống' : (isLoggedIn ? 'Tài khoản chính thức' : 'Chế độ khách tạm thời')}
                       </div>
                     </div>
                   </div>
                   {isLoggedIn ? (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Online" />
+                    <div className="flex items-center gap-1.5 shrink-0 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-[10px] font-semibold text-emerald-400">Online</span>
+                    </div>
                   ) : (
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
                       Khách
                     </span>
                   )}
                 </div>
 
-                {/* Primary Action Tabs: 1. Hồ Sơ Cá Nhân & 2. Tùy Chỉnh Giao Diện */}
-                <div className="py-1.5 space-y-1">
+                {/* Section 1: Cá Nhân & Giao Diện */}
+                <div className="space-y-1">
+                  <div className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                    <span>Cá Nhân & Giao Diện</span>
+                  </div>
+
                   {/* Mục 1: Hồ Sơ Cá Nhân */}
                   <button
                     id="menu-item-profile"
+                    type="button"
                     onClick={() => {
                       soundFx.playKeyClick();
                       setIsMoreMenuOpen(false);
                       onOpenProfile();
                     }}
-                    className={`w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all cursor-pointer group ${
-                      isAdmin 
-                        ? 'border border-amber-500/40 hover:border-amber-400/80 bg-slate-900/40 shadow-xs' 
-                        : 'border border-transparent hover:border-slate-800'
-                    }`}
+                    className="w-full flex items-center justify-between p-2 rounded-xl border border-slate-800/90 hover:border-sky-500/50 bg-slate-900/50 hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <div className="w-8 h-8 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                         <User className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="font-bold text-xs text-white">Hồ Sơ Cá Nhân</div>
-                        <div className="text-[10px] text-slate-400">Tên, Avatar, Khung đại diện & Kỷ lục</div>
+                        <div className="text-[10px] text-slate-400 truncate">Tên, Avatar, Khung đại diện & Kỷ lục</div>
                       </div>
                     </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-sky-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                   </button>
 
                   {/* Mục 2: Tùy Chỉnh Giao Diện */}
                   <button
                     id="menu-item-appearance"
+                    type="button"
                     onClick={() => {
                       soundFx.playKeyClick();
                       setIsMoreMenuOpen(false);
@@ -528,49 +537,42 @@ export const Header: React.FC<HeaderProps> = ({
                         onOpenAppearance();
                       }
                     }}
-                    className={`w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all cursor-pointer group ${
-                      isAdmin 
-                        ? 'border border-amber-500/40 hover:border-amber-400/80 bg-slate-900/40 shadow-xs' 
-                        : 'border border-transparent hover:border-slate-800'
-                    }`}
+                    className="w-full flex items-center justify-between p-2 rounded-xl border border-slate-800/90 hover:border-amber-500/50 bg-slate-900/50 hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                         <Palette className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="font-bold text-xs text-white">Phong Cách & Giao Diện</div>
-                        <div className="text-[10px] text-slate-400">5 Phong Cách Độc Bản, Font Chữ & Âm Phím Cơ</div>
+                        <div className="text-[10px] text-slate-400 truncate">5 Phong Cách Độc Bản, Font Chữ & Âm Phím</div>
                       </div>
                     </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                   </button>
 
                   {/* Mục 3: Lịch Sử Đấu */}
                   {onOpenMatchHistory && (
                     <button
                       id="menu-item-match-history"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
                         onOpenMatchHistory();
                       }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all cursor-pointer group ${
-                        isAdmin 
-                          ? 'border border-amber-500/40 hover:border-amber-400/80 bg-slate-900/40 shadow-xs' 
-                          : 'border border-transparent hover:border-slate-800'
-                      }`}
+                      className="w-full flex items-center justify-between p-2 rounded-xl border border-slate-800/90 hover:border-emerald-500/50 bg-slate-900/50 hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                           <History className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                            <span>Lịch Sử Đấu</span>
-                          </div>
-                          <div className="text-[10px] text-slate-400">Replay, phân tích lỗi sai & lời khuyên</div>
+                          <div className="font-bold text-xs text-white">Lịch Sử Đấu</div>
+                          <div className="text-[10px] text-slate-400 truncate">Replay, phân tích lỗi sai & lời khuyên</div>
                         </div>
                       </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                     </button>
                   )}
 
@@ -578,15 +580,16 @@ export const Header: React.FC<HeaderProps> = ({
                   {onOpenFriends && (
                     <button
                       id="menu-item-friends"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
                         onOpenFriends();
                       }}
-                      className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all cursor-pointer group border border-transparent hover:border-slate-800"
+                      className="w-full flex items-center justify-between p-2 rounded-xl border border-slate-800/90 hover:border-teal-500/50 bg-slate-900/50 hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <div className="w-8 h-8 rounded-lg bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                           <Users className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
@@ -598,39 +601,46 @@ export const Header: React.FC<HeaderProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-slate-400">Danh sách bạn bè, Hảo Cảm & Đạo Lữ</div>
+                          <div className="text-[10px] text-slate-400 truncate">Danh sách bạn bè, Hảo Cảm & Đạo Lữ</div>
                         </div>
                       </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-teal-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                     </button>
                   )}
                 </div>
 
-                {/* Secondary Actions: Linh Đài, Khí Linh & Bảng Vàng */}
-                <div className="py-1.5 space-y-1">
+                {/* Section 2: Tu Tiên & Tính Năng */}
+                <div className="space-y-1">
+                  <div className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                    <span>Tu Tiên & Tính Năng</span>
+                  </div>
+
                   {/* Huyền Thiên Khí Linh */}
                   {onOpenHeavenlyChronicle && (
                     <button
                       id="menu-item-dao-chronicle"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
                         onOpenHeavenlyChronicle();
                       }}
-                      className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left transition-all cursor-pointer group border border-purple-500/30 hover:border-amber-400/60 bg-gradient-to-r from-purple-950/40 to-amber-950/30 text-amber-300 hover:text-amber-200"
+                      className="w-full flex items-center justify-between p-2 rounded-xl border border-purple-500/40 hover:border-purple-400/80 bg-purple-950/25 hover:bg-purple-950/45 text-left text-slate-200 hover:text-white transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center text-sm shrink-0 group-hover:scale-110 transition-transform">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-300 flex items-center justify-center text-sm shrink-0 group-hover:scale-110 transition-transform">
                           ☯️
                         </div>
                         <div className="min-w-0">
-                          <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
-                            <span>Huyền Thiên Khí Linh</span>
+                          <div className="font-bold text-xs text-purple-300 group-hover:text-purple-200">
+                            Huyền Thiên Khí Linh
                           </div>
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[10px] text-slate-400 truncate">
                             Thiên Đạo Chấp Pháp Sứ & Chiếu Thư
                           </div>
                         </div>
                       </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-purple-400/60 group-hover:text-purple-300 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                     </button>
                   )}
 
@@ -638,6 +648,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {onOpenCultivation && (
                     <button
                       id="menu-item-cultivation"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
@@ -647,109 +658,137 @@ export const Header: React.FC<HeaderProps> = ({
                         }
                         onOpenCultivation();
                       }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left transition-all cursor-pointer group ${
+                      className={`w-full flex items-center justify-between p-2 rounded-xl border transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99] text-left ${
                         !isLoggedIn
-                          ? 'border border-dashed border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50 text-slate-300'
-                          : isAdmin 
-                            ? 'border border-amber-500/40 hover:border-amber-400/80 bg-slate-900/40 shadow-xs text-amber-300' 
-                            : 'border border-transparent hover:border-slate-800 text-amber-300 hover:text-amber-200'
+                          ? 'border-amber-500/30 hover:border-amber-400/70 bg-amber-500/5 hover:bg-amber-500/15 text-slate-300 hover:text-white'
+                          : 'border-emerald-500/40 hover:border-emerald-400/80 bg-emerald-950/20 hover:bg-emerald-950/40 text-slate-200 hover:text-white'
                       }`}
                       title={!isLoggedIn ? 'Khóa ở chế độ Khách - Đăng nhập để mở khóa' : undefined}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 group-hover:scale-105 transition-transform ${
-                          !isLoggedIn ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 group-hover:scale-105 transition-transform ${
+                          !isLoggedIn 
+                            ? 'bg-amber-500/15 border border-amber-500/30 text-amber-400' 
+                            : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                         }`}>
                           {!isLoggedIn ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : (cultivationIcon || '🌿')}
                         </div>
                         <div className="min-w-0">
-                          <div className={`font-bold text-xs ${!isLoggedIn ? 'text-slate-300' : 'text-amber-300'}`}>
+                          <div className={`font-bold text-xs ${!isLoggedIn ? 'text-slate-300' : 'text-emerald-300 group-hover:text-emerald-200'}`}>
                             Linh Đài Tu Tiên
                           </div>
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[10px] text-slate-400 truncate">
                             {!isLoggedIn 
                               ? 'Khóa ở chế độ Khách (Đăng nhập để vào)'
                               : `${cultivationRealmName || 'Luyện Khí'} T.${cultivationTier || 1} • ${cultivationSubStage || 'Sơ Kỳ'}`}
                           </div>
                         </div>
                       </div>
+                      <ChevronRight className={`w-3.5 h-3.5 transition-all shrink-0 ml-1.5 ${
+                        !isLoggedIn ? 'text-amber-500/60 group-hover:text-amber-400' : 'text-emerald-400/60 group-hover:text-emerald-300'
+                      } group-hover:translate-x-0.5`} />
                     </button>
                   )}
 
                   {/* Leaderboard for small screens */}
                   <button
+                    type="button"
                     onClick={() => {
                       soundFx.playKeyClick();
                       setIsMoreMenuOpen(false);
                       onOpenLeaderboard();
                     }}
-                    className={`w-full sm:hidden flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-left text-amber-300 transition-all cursor-pointer ${
-                      isAdmin 
-                        ? 'border border-amber-500/40 hover:border-amber-400/80 bg-slate-900/40' 
-                        : 'border border-transparent hover:border-slate-800'
-                    }`}
+                    className="w-full sm:hidden flex items-center justify-between p-2 rounded-xl border border-slate-800/90 hover:border-amber-500/50 bg-slate-900/50 hover:bg-slate-900 text-left text-slate-200 hover:text-white transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <Trophy className="w-4 h-4 text-amber-400" />
-                      <span className="font-semibold text-xs">Bảng Vàng Kỷ Lục</span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Trophy className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-white">Bảng Vàng Kỷ Lục</div>
+                        <div className="text-[10px] text-slate-400 truncate">Xếp hạng tốc độ WPM & vinh danh</div>
+                      </div>
                     </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                   </button>
                 </div>
 
-                {/* Admin Section: Always in Dropdown for Admins */}
+                {/* Section 3: Quản Trị Hệ Thống (Nếu là Admin) */}
                 {isAdmin && (
-                  <div className="pt-1.5 space-y-1">
+                  <div className="space-y-1">
+                    <div className="px-1 text-[10px] font-bold uppercase tracking-wider text-amber-500/80 flex items-center justify-between">
+                      <span>Quản Trị Hệ Thống</span>
+                    </div>
+
                     <button
                       id="menu-item-admin"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
                         onOpenAdmin();
                       }}
-                      className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left text-amber-300 font-semibold transition-all cursor-pointer border border-amber-500/50 hover:border-amber-400 shadow-sm shadow-amber-500/10"
+                      className="w-full flex items-center justify-between p-2 rounded-xl border border-amber-500/50 hover:border-amber-400/90 bg-amber-500/15 hover:bg-amber-500/25 text-left text-amber-300 hover:text-amber-200 transition-all duration-150 cursor-pointer group shadow-xs shadow-amber-500/10 active:scale-[0.99]"
                     >
-                      <Shield className="w-4 h-4 text-amber-400 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-amber-300">Bảng Cài Đặt Admin</div>
-                        <div className="text-[10px] text-amber-400/70 font-normal">Quản trị hệ thống, điểm số & thiết lập</div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/25 border border-amber-500/50 text-amber-300 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-amber-300">Bảng Cài Đặt Admin</div>
+                          <div className="text-[10px] text-amber-400/70 truncate">Quản trị hệ thống, điểm số & thiết lập</div>
+                        </div>
                       </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-amber-400/70 group-hover:text-amber-300 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                     </button>
                   </div>
                 )}
 
-                {/* Account Actions: Logout if logged in, or Login/Register if guest */}
+                {/* Section 4: Tài Khoản (Đăng Nhập / Đăng Xuất) */}
                 <div className="pt-1.5 border-t border-slate-800/80">
                   {isLoggedIn ? (
                     <button
                       id="menu-item-logout"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
                         if (onLogout) onLogout();
                       }}
-                      className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-left text-rose-400 hover:text-rose-300 font-semibold transition-all cursor-pointer border border-rose-500/30"
+                      className="w-full flex items-center justify-between p-2 rounded-xl border border-rose-500/40 hover:border-rose-400/80 bg-rose-500/15 hover:bg-rose-500/25 text-left text-rose-300 hover:text-rose-200 transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                     >
-                      <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-rose-300">Đăng Xuất Tài Khoản</div>
-                        <div className="text-[10px] text-rose-400/70 font-normal">Xóa sạch dữ liệu tạm, chuyển về khách</div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <LogOut className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-rose-300">Đăng Xuất Tài Khoản</div>
+                          <div className="text-[10px] text-rose-400/70 truncate">Xóa phiên làm việc, chuyển về khách</div>
+                        </div>
                       </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-rose-400/70 group-hover:text-rose-300 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                     </button>
                   ) : (
                     <button
                       id="menu-item-login"
+                      type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setIsMoreMenuOpen(false);
                         if (onOpenAuthModal) onOpenAuthModal();
                       }}
-                      className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left text-amber-300 hover:text-amber-200 font-semibold transition-all cursor-pointer border border-amber-500/30"
+                      className="w-full flex items-center justify-between p-2 rounded-xl border border-amber-500/40 hover:border-amber-400/80 bg-amber-500/15 hover:bg-amber-500/25 text-left text-amber-300 hover:text-amber-200 transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
                     >
-                      <LogIn className="w-4 h-4 text-amber-400 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-amber-300">Đăng Nhập / Đăng Ký</div>
-                        <div className="text-[10px] text-amber-400/70 font-normal">Lưu kỷ lục, đổi tên & khung avatar</div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <LogIn className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-amber-300">Đăng Nhập / Đăng Ký</div>
+                          <div className="text-[10px] text-amber-400/70 truncate">Lưu kỷ lục, đổi tên & khung avatar</div>
+                        </div>
                       </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-amber-400/70 group-hover:text-amber-300 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
                     </button>
                   )}
                 </div>

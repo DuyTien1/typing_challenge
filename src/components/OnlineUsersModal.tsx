@@ -23,6 +23,7 @@ import {
   Activity,
   UserCheck,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { OnlineUserDetail, HighScoreRecord, Player } from '../types';
 import { fetchOnlineUsers } from '../utils/roomManager';
@@ -30,6 +31,7 @@ import { AvatarWithFrame } from '../utils/frames';
 import { getPlayerTitle } from '../utils/titles';
 import { soundFx } from '../utils/audio';
 import { WpmRecordBadge, resolveBestWpmRecord } from './WpmRecordBadge';
+import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 
 interface OnlineUsersModalProps {
   isOpen: boolean;
@@ -52,6 +54,7 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [inspectedOnlineUser, setInspectedOnlineUser] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'lobby' | 'room' | 'playing' | 'admin'>('all');
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -262,7 +265,7 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
       }}
     >
       <div
-        className="relative w-full max-w-4xl h-[88vh] max-h-[820px] min-h-[520px] bg-[#121622] border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-200"
+        className="relative w-full max-w-4xl h-[88vh] max-h-[820px] min-h-[520px] bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header (Fixed at top) */}
@@ -720,6 +723,18 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setInspectedOnlineUser(selectedUser);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold text-xs border border-purple-500/40 transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Xem Hồ Sơ Tu Tiên</span>
+                </button>
+
                 {selectedUser.currentRoomId && onJoinRoom && (
                   <button
                     type="button"
@@ -887,6 +902,17 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Preview Profile Modal when inspecting any online user */}
+      {inspectedOnlineUser && (
+        <PlayerSimpleProfileModal
+          isOpen={Boolean(inspectedOnlineUser)}
+          player={inspectedOnlineUser}
+          onClose={() => setInspectedOnlineUser(null)}
+          isMe={inspectedOnlineUser.userId === currentUserId}
+          highScores={highScores}
+        />
+      )}
     </div>
   );
 };

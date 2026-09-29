@@ -69,6 +69,8 @@ interface LeaderboardModalProps {
   isAdmin?: boolean;
   onRefreshLeaderboard?: () => Promise<void> | void;
   onStartGhostChallenge?: (entry: LeaderboardEntry) => void;
+  onOpenWhisper?: (username: string, userId?: string) => void;
+  onAddFriend?: (userId: string, username?: string) => void;
 }
 
 export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
@@ -81,6 +83,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   isAdmin = false,
   onRefreshLeaderboard,
   onStartGhostChallenge,
+  onOpenWhisper,
+  onAddFriend,
 }) => {
   // Top-Level Group Tabs: ⚔️ Chiến Trường Tốc Ký & 🪷 Cõi Tu Tiên & Tông Môn
   const [activeGroup, setActiveGroup] = useState<LeaderboardGroup>('battle');
@@ -315,8 +319,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           accuracy: fallbackTop1.accuracy || 100,
           timestamp: fallbackTop1.timestamp || Date.now(),
           isVerified: fallbackTop1.isVerified ?? true,
-          realmName: 'Luyện Khí Kỳ',
-          keyboardSwitch: 'Cherry MX Blue',
+          realmName: fallbackTop1.realmName || 'Luyện Khí Kỳ',
+          realmIcon: fallbackTop1.realmIcon || '🌿',
+          level: fallbackTop1.level || 1,
+          sectName: fallbackTop1.sectName,
+          sectTag: fallbackTop1.sectTag,
+          sectRole: fallbackTop1.sectRole,
+          keyboardSwitch: fallbackTop1.keyboardSwitch || 'Cherry MX Blue Clicky',
         },
       ];
     }
@@ -392,9 +401,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             <div>
               <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
                 <span>PHONG THẦN KIM BẢNG • BẢNG VÀNG KỶ LỤC</span>
-                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30">
-                  Toàn Server
-                </span>
               </h3>
               <p className="text-xs text-slate-400">
                 Xếp hạng vinh danh Top 20 cao thủ tốc ký & đại năng tu tiên toàn cõi
@@ -738,9 +744,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                               timestamp: Date.now(),
                               isVerified: true,
                               realmName: cultivator.realmName,
+                              realmIcon: cultivator.realmIcon,
                               level: cultivator.level,
                               sectName: cultivator.sectName,
                               sectTag: cultivator.sectTag,
+                              sectRole: cultivator.sectRole || (cultivator as any).role || 'noi_mon',
                               keyboardSwitch: 'Cherry MX Blue Clicky',
                             });
                           }}
@@ -1371,6 +1379,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         modeName={currentTabConfig.name}
         onClose={() => setInspectPlayer(null)}
         onStartGhostChallenge={onStartGhostChallenge}
+        sectList={sectList}
+        currentUser={currentUser}
+        cultivationState={cultivationState}
+        highScores={highScores}
+        isAdminUser={isAdmin}
+        onOpenWhisper={onOpenWhisper}
+        onAddFriend={onAddFriend}
       />
 
       {/* Season Rewards Modal */}

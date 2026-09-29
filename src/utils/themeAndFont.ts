@@ -300,8 +300,8 @@ export const MONKEY_THEMES: MonkeyTheme[] = [
     desc: 'Lấy cảm hứng từ thực vật thảo mộc rừng ôn đới dịu lành.',
   },
   {
-    id: 'cyberpunk',
-    name: 'Cyberpunk',
+    id: 'cyberpunk_neon',
+    name: 'Cyberpunk Neon',
     category: 'colorful',
     bg: '#000b1e',
     cardBg: '#051329',

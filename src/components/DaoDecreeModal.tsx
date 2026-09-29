@@ -158,7 +158,7 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
 
       {/* Main Celestial Scroll Frame */}
       <div className="relative w-full max-w-xl mx-auto rounded-3xl p-1 bg-gradient-to-b from-amber-400/80 via-purple-500/60 to-amber-600/80 shadow-2xl shadow-amber-500/30">
-        <div className="relative rounded-[22px] bg-gradient-to-b from-[#181126] via-[#120e1e] to-[#0c0a14] border border-amber-300/40 p-6 sm:p-8 overflow-hidden text-center text-slate-100">
+        <div id="dao-decree-scroll-card" className="relative rounded-[22px] bg-gradient-to-b from-[#181126] via-[#120e1e] to-[#0c0a14] border border-amber-300/40 p-6 sm:p-8 overflow-hidden text-center text-slate-100">
           {/* Close button with Esc badge */}
           <button
             type="button"
@@ -199,7 +199,7 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
           </h2>
 
           {/* Imperial Scroll Content Box */}
-          <div className="relative my-4 p-5 rounded-2xl bg-amber-950/20 border border-amber-500/30 shadow-inner space-y-3 text-left">
+          <div id="dao-decree-content-box" className="relative my-4 p-5 rounded-2xl bg-amber-950/20 border border-amber-500/30 shadow-inner space-y-3 text-left">
             <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans first-letter:text-2xl first-letter:font-serif first-letter:text-amber-300 first-letter:mr-1">
               {decree.content}
             </p>

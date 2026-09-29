@@ -106,6 +106,8 @@ export interface ModalContainerProps {
   onStartGhostChallenge?: (entry: any) => void;
   onStartSectBoss?: (sectId: string, sectName: string) => void;
   onStartSectTournament?: (sectId: string, sectName: string) => void;
+  onOpenWhisper?: (username: string, userId?: string) => void;
+  onAddFriend?: (userId: string, username?: string) => void;
 }
 
 export const ModalContainer: React.FC<ModalContainerProps> = ({
@@ -172,6 +174,8 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   onStartGhostChallenge,
   onStartSectBoss,
   onStartSectTournament,
+  onOpenWhisper,
+  onAddFriend,
 }) => {
   // Master Escape handler: Closes whichever modal is currently active
   React.useEffect(() => {
@@ -252,6 +256,8 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
             setIsAuthModalOpen(true);
           }}
           onStartGhostChallenge={onStartGhostChallenge}
+          onOpenWhisper={onOpenWhisper}
+          onAddFriend={onAddFriend}
         />
       )}
 

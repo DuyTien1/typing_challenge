@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Player } from '../../types';
 import { PerformanceChart } from '../PerformanceChart';
-import { Gauge, Target, Activity, AlertTriangle, RotateCcw, Trophy, TrendingUp, CheckCircle2 } from 'lucide-react';
+import { Gauge, Target, Activity, AlertTriangle, RotateCcw, Trophy, TrendingUp, CheckCircle2, User } from 'lucide-react';
+import { soundFx } from '../../utils/audio';
+import { PlayerSimpleProfileModal } from '../PlayerSimpleProfileModal';
 
 interface RaceResultViewProps {
   players: Player[];
@@ -16,6 +18,7 @@ export const RaceResultView: React.FC<RaceResultViewProps> = ({
   isSolo = false,
   isOutplay = false,
 }) => {
+  const [inspectedCompetitor, setInspectedCompetitor] = useState<any | null>(null);
   const me = players.find((p) => p.id === currentPlayerId);
 
   const calculatedAccuracy = me?.accuracy !== undefined
@@ -121,16 +124,21 @@ export const RaceResultView: React.FC<RaceResultViewProps> = ({
               return (
                 <div
                   key={p.id}
-                  className={`p-2.5 rounded-xl border flex items-center justify-between text-xs ${
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setInspectedCompetitor(p);
+                  }}
+                  className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-all cursor-pointer ${
                     isMe
-                      ? 'bg-amber-500/20 border-amber-400 font-bold'
-                      : 'bg-slate-800/60 border-slate-700/60 text-slate-300'
+                      ? 'bg-amber-500/20 border-amber-400 font-bold hover:bg-amber-500/30'
+                      : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 hover:border-amber-500/50 text-slate-300'
                   }`}
+                  title={`Nhấp để xem hồ sơ của ${p.username}`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span className="font-bold text-slate-400 w-5">#{idx + 1}</span>
                     <span className="text-lg">{p.icon}</span>
-                    <span className="truncate max-w-[140px] text-white">
+                    <span className="truncate max-w-[140px] text-white group-hover:text-amber-300">
                       {p.username} {isMe && '(Bạn)'}
                     </span>
                     {p.isSurrendered && (
@@ -140,9 +148,10 @@ export const RaceResultView: React.FC<RaceResultViewProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-4 font-mono">
+                  <div className="flex items-center gap-3 font-mono">
                     <span className="text-amber-400 font-bold">{p.wpm || 0} WPM</span>
                     <span className="text-rose-400 text-[11px]">{p.errors || 0} lỗi</span>
+                    <span className="text-[10px] text-slate-500 hidden sm:inline">👁️</span>
                   </div>
                 </div>
               );
@@ -211,6 +220,16 @@ export const RaceResultView: React.FC<RaceResultViewProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Preview Profile Modal when clicking competitor on race results */}
+      {inspectedCompetitor && (
+        <PlayerSimpleProfileModal
+          isOpen={Boolean(inspectedCompetitor)}
+          player={inspectedCompetitor}
+          onClose={() => setInspectedCompetitor(null)}
+          isMe={inspectedCompetitor.id === currentPlayerId}
+        />
+      )}
     </div>
   );
 };

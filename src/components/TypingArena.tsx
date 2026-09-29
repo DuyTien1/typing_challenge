@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Player, KeystrokeEvent, PerformanceChartPoint } from '../types';
+import { Player, KeystrokeEvent, PerformanceChartPoint, ArtifactType } from '../types';
 import { soundFx } from '../utils/audio';
 import { calculateConsistency, validateWordSubmission } from '../utils/antiCheat';
 import { normalizeChartTimeline } from '../utils/chartHelper';
@@ -635,6 +635,24 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }
   }, []);
   const equippedArtifact = cultState?.artifacts?.equipped;
+  const [activeArtifact, setActiveArtifact] = useState<ArtifactType | null>(() => {
+    return cultState?.artifacts?.equipped || 'thanh_van_kiem';
+  });
+
+  const ARTIFACT_CYCLE: (ArtifactType | null)[] = [
+    'thanh_van_kiem',
+    'hao_thien_kinh',
+    'cuu_pham_lien',
+    'ban_co_phu',
+    null,
+  ];
+
+  const handleCycleArtifact = () => {
+    soundFx.playGuzhengNote();
+    const currIdx = ARTIFACT_CYCLE.indexOf(activeArtifact);
+    const nextIdx = (currIdx + 1) % ARTIFACT_CYCLE.length;
+    setActiveArtifact(ARTIFACT_CYCLE[nextIdx]);
+  };
   const [liveConsistency, setLiveConsistency] = useState(100);
   const [cheatWarning, setCheatWarning] = useState<string | null>(null);
 
@@ -1629,6 +1647,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         word: w,
         typed: wordHistoryRef.current[idx]?.typedWord ?? '',
         isCorrect: wordHistoryRef.current[idx]?.isCorrect ?? false,
+        timeMs: wordHistoryRef.current[idx]?.timeMs ?? Math.round((idx / Math.max(1, nextIndex)) * elapsedSeconds * 1000),
       }));
 
       onFinish(newCorrectChars, newErrors, keystrokesRef.current, finalConsistency, {
@@ -1706,9 +1725,17 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     setCurrentInput(val);
 
     // Record key event
+    const now = performance.now();
+    const relTimeMs = Math.max(0, Math.round(now - startTimePerfRef.current));
+    const targetWord = effectiveWords[currentWordIndex] || '';
+    const charIdx = val.length - 1;
+    const isCharMatch = charIdx >= 0 && charIdx < targetWord.length && val[charIdx] === targetWord[charIdx];
+
     keystrokesRef.current.push({
       key: val.slice(-1) || 'IME_Char',
-      time: performance.now(),
+      time: now,
+      timeMs: relTimeMs,
+      isCorrect: isCharMatch,
     });
 
     setIsTyping(true);
@@ -1729,10 +1756,17 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     // Outplay mode: Start timer immediately on first character!
     startTypingIfNeeded();
 
-    // Record sub-millisecond keystroke
+    // Record sub-millisecond keystroke with relative time and correctness
+    const targetWord = effectiveWords[currentWordIndex] || '';
+    const charIdx = val.length - 1;
+    const isCharMatch = charIdx >= 0 && charIdx < targetWord.length && val[charIdx] === targetWord[charIdx];
+    const relTimeMs = Math.max(0, Math.round(now - startTimePerfRef.current));
+
     keystrokesRef.current.push({
       key: val.slice(-1) || 'Backspace',
       time: now,
+      timeMs: relTimeMs,
+      isCorrect: isCharMatch,
     });
 
     // Record ghost journey snapshot
@@ -1760,7 +1794,6 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     }
 
     // Realtime live WPM and progress feedback
-    const targetWord = effectiveWords[currentWordIndex] || '';
     let matchingCharsInVal = 0;
     for (let i = 0; i < val.length && i < targetWord.length; i++) {
       if (val[i] === targetWord[i]) matchingCharsInVal++;
@@ -1850,9 +1883,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
             typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
 
+            const bsNow = performance.now();
+            const bsRelTimeMs = Math.max(0, Math.round(bsNow - startTimePerfRef.current));
             keystrokesRef.current.push({
               key: 'Backspace',
-              time: performance.now(),
+              time: bsNow,
+              timeMs: bsRelTimeMs,
+              isCorrect: false,
             });
 
             setTimeout(() => {
@@ -2482,19 +2519,25 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
         {/* Bản Mệnh Pháp Bảo & Tâm Pháp Huy Hiệu & Buff Hoạt Hóa */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {equippedArtifact && (
-            <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-amber-500/40 text-amber-300 font-semibold text-[11px] flex items-center gap-1.5 shadow-sm">
-              <span>
-                {equippedArtifact === 'thanh_van_kiem'
-                  ? '⚔️ Thanh Vân Kiếm'
-                  : equippedArtifact === 'hao_thien_kinh'
-                  ? '🪞 Hạo Thiên Kính'
-                  : equippedArtifact === 'cuu_pham_lien'
-                  ? '🪷 Cửu Phẩm Hắc Liên'
-                  : '🪓 Bàn Cổ Khai Thiên Phủ'}
-              </span>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={handleCycleArtifact}
+            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-amber-500/40 hover:border-amber-400 text-amber-300 font-semibold text-[11px] flex items-center gap-1.5 shadow-sm cursor-pointer transition-all active:scale-95"
+            title="Bấm để chuyển đổi nhanh hiệu ứng VFX Pháp Bảo quanh ô gõ phím"
+          >
+            <span>
+              {activeArtifact === 'thanh_van_kiem'
+                ? '⚔️ Thanh Vân Kiếm'
+                : activeArtifact === 'hao_thien_kinh'
+                ? '🪞 Hạo Thiên Kính'
+                : activeArtifact === 'cuu_pham_lien'
+                ? '🪷 Cửu Phẩm Hắc Liên'
+                : activeArtifact === 'ban_co_phu'
+                ? '🪓 Bàn Cổ Khai Thiên Phủ'
+                : '✨ Chưa Trang Bị Pháp Bảo'}
+            </span>
+            <span className="text-[9px] text-amber-400/80 font-mono underline ml-0.5">đổi</span>
+          </button>
           {cultState?.tamPhap?.equipped && (
             <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-cyan-500/40 text-cyan-300 font-semibold text-[11px] flex items-center gap-1.5 shadow-sm">
               <span>
@@ -2625,7 +2668,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         <div className="mt-5 pt-4 border-t border-slate-800 flex flex-nowrap items-center gap-2 sm:gap-3">
           <div className="flex-1 min-w-0 flex items-center h-12">
             <ArtifactInputVfxFrame
-              artifact={equippedArtifact}
+              artifact={activeArtifact}
               userFrame={players.find((p) => p.id === currentPlayerId)?.frame || getStoredFrame()}
               cultivationState={loadStoredCultivationState()}
               wpm={liveWpm}

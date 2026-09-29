@@ -568,6 +568,401 @@ html, body {
   background-color: rgba(15, 23, 42, 0.55) !important;
 }
 
+/* =====================================================================
+   TỐI ƯU TOÀN DIỆN PHONG CÁCH TỐI GIẢN NỀN TRẮNG (MINIMAL & LIGHT THEMES)
+   Đảm bảo 100% chữ, huy hiệu, bảng vàng, khí linh, động phủ không bị chìm
+   ===================================================================== */
+
+/* 1. Xử lý triệt để Gradients nền tối thành dải màu sáng tao nhã */
+[data-ui-style="minimal"] .from-slate-950,
+[data-ui-style="minimal"] .from-slate-900,
+[data-ui-style="minimal"] .from-slate-850,
+[data-ui-style="minimal"] .from-slate-800,
+[data-ui-style="minimal"] .from-amber-950\/40,
+[data-ui-style="minimal"] .from-amber-950\/50,
+[data-ui-style="minimal"] .from-amber-950\/60,
+[data-ui-style="minimal"] .from-purple-950\/90,
+[data-ui-style="minimal"] .from-purple-950\/80,
+[data-ui-style="minimal"] .from-purple-950\/60,
+[data-ui-style="minimal"] .from-emerald-950\/60,
+[data-ui-style="minimal"] .from-cyan-950\/60,
+[data-theme-category="light"] .from-slate-950,
+[data-theme-category="light"] .from-slate-900,
+[data-theme-category="light"] .from-slate-850,
+[data-theme-category="light"] .from-slate-800,
+[data-theme-category="light"] .from-amber-950\/40,
+[data-theme-category="light"] .from-amber-950\/50,
+[data-theme-category="light"] .from-amber-950\/60,
+[data-theme-category="light"] .from-purple-950\/90,
+[data-theme-category="light"] .from-purple-950\/80,
+[data-theme-category="light"] .from-purple-950\/60,
+[data-theme-category="light"] .from-emerald-950\/60,
+[data-theme-category="light"] .from-cyan-950\/60 {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-to: #f8fafc !important;
+  --tw-gradient-stops: #ffffff, #f8fafc !important;
+}
+
+[data-ui-style="minimal"] .via-slate-950,
+[data-ui-style="minimal"] .via-slate-900,
+[data-ui-style="minimal"] .via-slate-850,
+[data-ui-style="minimal"] .via-slate-800,
+[data-ui-style="minimal"] .via-yellow-950\/20,
+[data-ui-style="minimal"] .via-orange-950\/20,
+[data-ui-style="minimal"] .via-purple-950\/30,
+[data-theme-category="light"] .via-slate-950,
+[data-theme-category="light"] .via-slate-900,
+[data-theme-category="light"] .via-slate-850,
+[data-theme-category="light"] .via-slate-800,
+[data-theme-category="light"] .via-yellow-950\/20,
+[data-theme-category="light"] .via-orange-950\/20,
+[data-theme-category="light"] .via-purple-950\/30 {
+  --tw-gradient-stops: var(--tw-gradient-from), #ffffff, var(--tw-gradient-to) !important;
+}
+
+[data-ui-style="minimal"] .to-slate-950,
+[data-ui-style="minimal"] .to-slate-900,
+[data-ui-style="minimal"] .to-slate-850,
+[data-ui-style="minimal"] .to-slate-800,
+[data-ui-style="minimal"] .to-slate-950\/70,
+[data-theme-category="light"] .to-slate-950,
+[data-theme-category="light"] .to-slate-900,
+[data-theme-category="light"] .to-slate-850,
+[data-theme-category="light"] .to-slate-800,
+[data-theme-category="light"] .to-slate-950\/70 {
+  --tw-gradient-to: #f1f5f9 !important;
+}
+
+/* Gradients mã màu tối HEX (#181126, #210d32, v.v.) */
+[data-ui-style="minimal"] .from-\[\#181126\],
+[data-ui-style="minimal"] .from-\[\#210d32\],
+[data-ui-style="minimal"] .from-\[\#170e2b\],
+[data-ui-style="minimal"] .from-\[\#100c1e\],
+[data-ui-style="minimal"] .from-\[\#0d0917\],
+[data-ui-style="minimal"] .from-\[\#0c0a14\],
+[data-ui-style="minimal"] .from-\[\#120e1e\],
+[data-ui-style="minimal"] .from-\[\#160c25\],
+[data-theme-category="light"] .from-\[\#181126\],
+[data-theme-category="light"] .from-\[\#210d32\],
+[data-theme-category="light"] .from-\[\#170e2b\],
+[data-theme-category="light"] .from-\[\#100c1e\],
+[data-theme-category="light"] .from-\[\#0d0917\],
+[data-theme-category="light"] .from-\[\#0c0a14\],
+[data-theme-category="light"] .from-\[\#120e1e\],
+[data-theme-category="light"] .from-\[\#160c25\] {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-stops: #ffffff, #fdf4ff, #ffffff !important;
+}
+
+[data-ui-style="minimal"] .via-\[\#120e1e\],
+[data-ui-style="minimal"] .via-\[\#160c25\],
+[data-ui-style="minimal"] .via-\[\#100c1e\],
+[data-theme-category="light"] .via-\[\#120e1e\],
+[data-theme-category="light"] .via-\[\#160c25\],
+[data-theme-category="light"] .via-\[\#100c1e\] {
+  --tw-gradient-stops: var(--tw-gradient-from), #faf5ff, var(--tw-gradient-to) !important;
+}
+
+[data-ui-style="minimal"] .to-\[\#0c0a14\],
+[data-ui-style="minimal"] .to-\[\#0d0917\],
+[data-theme-category="light"] .to-\[\#0c0a14\],
+[data-theme-category="light"] .to-\[\#0d0917\] {
+  --tw-gradient-to: #ffffff !important;
+}
+
+/* 2. BẢNG VÀNG PHONG THẦN (LeaderboardModal) */
+/* Hộp Bục Vinh Quang 3D (Podium Base) */
+[data-ui-style="minimal"] .bg-gradient-to-b.from-slate-950.via-slate-900.to-slate-950,
+[data-theme-category="light"] .bg-gradient-to-b.from-slate-950.via-slate-900.to-slate-950 {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Bệ Quán Quân #1 (Top 1) */
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-700,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-700 {
+  background: linear-gradient(0deg, #f59e0b 0%, #fbbf24 60%, #fef08a 100%) !important;
+  border-top: 2px solid #b45309 !important;
+}
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-700 span,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-700 span {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Bệ Á Quân #2 (Top 2) */
+[data-ui-style="minimal"] .bg-gradient-to-t.from-slate-800.to-slate-700,
+[data-theme-category="light"] .bg-gradient-to-t.from-slate-800.to-slate-700 {
+  background: linear-gradient(0deg, #94a3b8 0%, #cbd5e1 60%, #f1f5f9 100%) !important;
+  border-top: 2px solid #64748b !important;
+}
+[data-ui-style="minimal"] .bg-gradient-to-t.from-slate-800.to-slate-700 span,
+[data-theme-category="light"] .bg-gradient-to-t.from-slate-800.to-slate-700 span {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Bệ Quý Quân #3 (Top 3) */
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-900,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-900 {
+  background: linear-gradient(0deg, #d97706 0%, #f59e0b 60%, #ffedd5 100%) !important;
+  border-top: 2px solid #92400e !important;
+}
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-900 span,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-900 span {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Thẻ dòng Top 1 trong danh sách */
+[data-ui-style="minimal"] .from-amber-950\/40.via-yellow-950\/20,
+[data-theme-category="light"] .from-amber-950\/40.via-yellow-950\/20 {
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #ffffff 100%) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 2px 6px -1px rgba(245, 158, 11, 0.15) !important;
+}
+
+/* Thẻ dòng Top 2 trong danh sách */
+[data-ui-style="minimal"] .from-slate-800\/40.via-slate-900\/30,
+[data-theme-category="light"] .from-slate-800\/40.via-slate-900\/30 {
+  background: linear-gradient(90deg, #f1f5f9 0%, #f8fafc 50%, #ffffff 100%) !important;
+  border-color: #94a3b8 !important;
+}
+
+/* Thẻ dòng Top 3 trong danh sách */
+[data-ui-style="minimal"] .from-amber-950\/30.via-orange-950\/20,
+[data-theme-category="light"] .from-amber-950\/30.via-orange-950\/20 {
+  background: linear-gradient(90deg, #ffedd5 0%, #fff7ed 50%, #ffffff 100%) !important;
+  border-color: #fb923c !important;
+}
+
+/* 3. KHÍ LINH & CHIẾU THƯ THIÊN ĐẠO (HeavenlyDao / HeavenlyChronicleModal / DaoDecreeModal) */
+/* Thẻ Chiếu Thư Toàn Văn (DaoDecreeModal) */
+[data-ui-style="minimal"] #dao-decree-scroll-card,
+[data-theme-category="light"] #dao-decree-scroll-card,
+[data-ui-style="minimal"] .bg-gradient-to-b.from-\[\#181126\].via-\[\#120e1e\].to-\[\#0c0a14\],
+[data-theme-category="light"] .bg-gradient-to-b.from-\[\#181126\].via-\[\#120e1e\].to-\[\#0c0a14\] {
+  background: #ffffff !important;
+  border-color: #f59e0b !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #dao-decree-content-box,
+[data-theme-category="light"] #dao-decree-content-box,
+[data-ui-style="minimal"] .bg-amber-950\/20,
+[data-theme-category="light"] .bg-amber-950\/20 {
+  background-color: #fefce8 !important;
+  border-color: #fde047 !important;
+}
+
+[data-ui-style="minimal"] #dao-decree-content-box p,
+[data-theme-category="light"] #dao-decree-content-box p,
+[data-ui-style="minimal"] .bg-amber-950\/20 p,
+[data-theme-category="light"] .bg-amber-950\/20 p {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+/* Tiêu đề vàng kim chuyển thành màu hổ phách sắc nét trên nền trắng */
+[data-ui-style="minimal"] .bg-gradient-to-r.from-amber-200.via-amber-400.to-yellow-200,
+[data-theme-category="light"] .bg-gradient-to-r.from-amber-200.via-amber-400.to-yellow-200 {
+  -webkit-text-fill-color: #92400e !important;
+  color: #92400e !important;
+  text-shadow: none !important;
+}
+
+/* Khối Chiếu Thư trong Biên Niên Sử (HeavenlyChronicleModal) */
+[data-ui-style="minimal"] .bg-slate-900\/80,
+[data-theme-category="light"] .bg-slate-900\/80 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Khung trò chuyện Thỉnh Cầu Khí Linh (Oracle) */
+[data-ui-style="minimal"] .bg-purple-600\/30,
+[data-theme-category="light"] .bg-purple-600\/30 {
+  background-color: #f3e8ff !important;
+  border-color: #c4b5fd !important;
+  color: #581c87 !important;
+  font-weight: 600 !important;
+}
+
+/* 4. LUYỆN KHÍ & ĐỘNG PHỦ (CultivationModal) */
+/* Khung Avatar Tọa Thiền & Động Phủ */
+[data-ui-style="minimal"] .bg-gradient-to-r.from-amber-500\/20.via-yellow-500\/15.to-purple-500\/15,
+[data-theme-category="light"] .bg-gradient-to-r.from-amber-500\/20.via-yellow-500\/15.to-purple-500\/15 {
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #f5f3ff 100%) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 2px 8px -2px rgba(245, 158, 11, 0.15) !important;
+}
+
+/* Thẻ cảnh giới hiện tại & Động Phủ */
+[data-ui-style="minimal"] .bg-amber-500\/10,
+[data-ui-style="minimal"] .bg-amber-500\/15,
+[data-theme-category="light"] .bg-amber-500\/10,
+[data-theme-category="light"] .bg-amber-500\/15 {
+  background-color: #fefce8 !important;
+  border-color: #fde047 !important;
+  color: #92400e !important;
+}
+
+/* 5. TỔNG KẾT TRẬN ĐẤU (GameOverModal) */
+[data-ui-style="minimal"] .bg-slate-900.border.border-slate-700\/80,
+[data-theme-category="light"] .bg-slate-900.border.border-slate-700\/80 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* 6. NGƯỜI CHƠI ĐANG TRỰC TUYẾN (OnlineUsersModal) */
+[data-ui-style="minimal"] #modal-admin-online-users > div,
+[data-theme-category="light"] #modal-admin-online-users > div,
+[data-ui-style="minimal"] .bg-\[\#121622\],
+[data-theme-category="light"] .bg-\[\#121622\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-900\/90,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-900\/90 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-950\/70,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-950\/70 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users input,
+[data-theme-category="light"] #modal-admin-online-users input {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/80,
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/90,
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/70,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/80,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/90,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/70 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/80:hover,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/80:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-emerald-950\/20,
+[data-theme-category="light"] #modal-admin-online-users .bg-emerald-950\/20 {
+  background-color: #f0fdf4 !important;
+  border-color: #86efac !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-emerald-950\/20:hover,
+[data-theme-category="light"] #modal-admin-online-users .bg-emerald-950\/20:hover {
+  background-color: #dcfce7 !important;
+  border-color: #4ade80 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-white,
+[data-theme-category="light"] #modal-admin-online-users .text-white {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-200,
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-300,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-200,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-300 {
+  color: #1e293b !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-400,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-400 {
+  color: #475569 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-500,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Các hộp thông số nhỏ trong chi tiết người chơi */
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-900\/80,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-900\/80 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* 7. THANH THÔNG BÁO KHÍ LINH (Header & Ticker) */
+[data-ui-style="minimal"] #khi-linh-ticker-banner,
+[data-theme-category="light"] #khi-linh-ticker-banner {
+  background: linear-gradient(90deg, #fdf4ff 0%, #ffffff 40%, #fefce8 100%) !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-banner span.font-bold,
+[data-theme-category="light"] #khi-linh-ticker-banner span.font-bold,
+[data-ui-style="minimal"] #khi-linh-ticker-banner span.font-black,
+[data-theme-category="light"] #khi-linh-ticker-banner span.font-black {
+  color: #6b21a8 !important;
+  text-shadow: none !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-banner .text-slate-300,
+[data-theme-category="light"] #khi-linh-ticker-banner .text-slate-300,
+[data-ui-style="minimal"] #khi-linh-ticker-banner .text-slate-200,
+[data-theme-category="light"] #khi-linh-ticker-banner .text-slate-200 {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-banner:hover .text-slate-300,
+[data-theme-category="light"] #khi-linh-ticker-banner:hover .text-slate-300 {
+  color: #581c87 !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-minimized,
+[data-theme-category="light"] #khi-linh-ticker-minimized {
+  background: #ffffff !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Banner Chiếu Thư Phong Thần phá kỷ lục toàn server */
+[data-ui-style="minimal"] #breaking-record-banner,
+[data-theme-category="light"] #breaking-record-banner {
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #fef3c7 100%) !important;
+  border: 2px solid #f59e0b !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.25) !important;
+}
+
+[data-ui-style="minimal"] #breaking-record-banner .text-white,
+[data-theme-category="light"] #breaking-record-banner .text-white {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #breaking-record-banner .text-yellow-300,
+[data-theme-category="light"] #breaking-record-banner .text-yellow-300,
+[data-ui-style="minimal"] #breaking-record-banner .text-amber-300,
+[data-theme-category="light"] #breaking-record-banner .text-amber-300 {
+  color: #92400e !important;
+  font-weight: 800 !important;
+}
+
 /* UI Style 5: Hắc Ám Ma Vực (U Minh Hàn Ngục) - Tro tàn dung nham sắc sảo, nổi khối */
 [data-ui-style="abyss"] {
   --theme-bg: #080205;

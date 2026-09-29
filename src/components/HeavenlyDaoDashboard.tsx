@@ -16,13 +16,15 @@ import {
   TrendingUp,
   Award,
   Layers,
-  Info,
   Copy,
   Check,
+  Brain,
+  Timer,
+  HeartPulse,
 } from 'lucide-react';
 import {
   HeavenlyDaoAnalysisResult,
-  PeerBenchmarkMetric,
+  ErrorTimingPhase,
 } from '../utils/heavenlyDaoAnalysis';
 import { soundFx } from '../utils/audio';
 
@@ -40,7 +42,8 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
   onStartPractice,
 }) => {
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
-  const [activeSubView, setActiveSubView] = useState<'overview' | 'patterns' | 'timing' | 'radar'>('overview');
+  const [selectedPhaseId, setSelectedPhaseId] = useState<string>('acceleration');
+  const [activeSubView, setActiveSubView] = useState<'overview' | 'timing' | 'patterns' | 'radar' | 'drill'>('overview');
   const [copiedWords, setCopiedWords] = useState(false);
 
   const {
@@ -64,6 +67,68 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
     return peerComparison.metrics.find((m) => m.key === selectedPillarKey) || peerComparison.metrics[0];
   }, [selectedPillarKey, peerComparison.metrics]);
 
+  // Selected phase details for interactive timing analysis
+  const selectedPhase = useMemo(() => {
+    return (
+      timingAnalysis.phases.find((p) => p.phaseId === selectedPhaseId) ||
+      timingAnalysis.phases[1] ||
+      timingAnalysis.phases[0]
+    );
+  }, [selectedPhaseId, timingAnalysis.phases]);
+
+  // Total errors in timing analysis
+  const totalTimingErrors = useMemo(() => {
+    return timingAnalysis.phases.reduce((sum, p) => sum + p.errorCount, 0);
+  }, [timingAnalysis.phases]);
+
+  // Recovery latency status assessment
+  const recoveryLatencyStatus = useMemo(() => {
+    const lat = timingAnalysis.avgRecoveryLatencyMs;
+    if (totalTimingErrors === 0) {
+      return {
+        label: 'Tuyệt Đỉnh Vô Ngã',
+        color: 'text-emerald-400',
+        bg: 'bg-emerald-500/15',
+        border: 'border-emerald-500/30',
+        desc: 'Không một lần khựng lại vì không mắc bất kỳ sai sót nào trong ván đấu.',
+      };
+    }
+    if (lat <= 220) {
+      return {
+        label: 'Phản Xạ Xuất Quỷ Nhập Thần',
+        color: 'text-emerald-400',
+        bg: 'bg-emerald-500/15',
+        border: 'border-emerald-500/30',
+        desc: 'Hoàn hồn chớp nhoáng, gần như lập tức sửa lỗi và tái lập nhịp gõ chính xác.',
+      };
+    }
+    if (lat <= 360) {
+      return {
+        label: 'Khá Ổn Định',
+        color: 'text-sky-400',
+        bg: 'bg-sky-500/15',
+        border: 'border-sky-500/30',
+        desc: 'Độ trễ phục hồi tương đương tu sĩ cùng cảnh giới, cần tinh chỉnh thao tác Backspace dứt khoát hơn.',
+      };
+    }
+    if (lat <= 480) {
+      return {
+        label: 'Tâm Thức Hơi Chậm',
+        color: 'text-amber-400',
+        bg: 'bg-amber-500/15',
+        border: 'border-amber-500/30',
+        desc: 'Mỗi khi gõ sai, bạn bị sững sờ khoảng 0.4s trước khi bắt đầu sửa, làm tụt 6 - 10 WPM.',
+      };
+    }
+    return {
+      label: 'Tâm Ma Đình Trệ',
+      color: 'text-rose-400',
+      bg: 'bg-rose-500/15',
+      border: 'border-rose-500/30',
+      desc: 'Thời gian khựng lại quá lâu sau lỗi sai, dẫn đến việc mất nhịp thở và tụt dốc toàn ván.',
+    };
+  }, [timingAnalysis.avgRecoveryLatencyMs, totalTimingErrors]);
+
   // Compute Radar Chart Polygon Coordinates (6 vertices)
   const radarData = useMemo(() => {
     const size = 300;
@@ -72,7 +137,6 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
     const totalAxes = 6;
 
     const getCoord = (valueRatio: number, index: number) => {
-      // 0 is top (-90 degrees), step by 60 degrees
       const angle = (Math.PI * 2 * index) / totalAxes - Math.PI / 2;
       const r = radius * Math.min(1.05, Math.max(0.15, valueRatio));
       const x = center + r * Math.cos(angle);
@@ -131,50 +195,47 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
   }, [peerComparison.metrics]);
 
   return (
-    <div className="space-y-4 animate-fadeIn">
-      {/* 1. TOP CELESTIAL MASTERY HEADER BANNER */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-950 via-purple-950/90 to-slate-950 border border-purple-500/40 p-5 sm:p-6 shadow-2xl">
-        {/* Subtle celestial background stars & glow */}
-        <div className="absolute top-0 right-0 -mt-12 -mr-12 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-10 w-48 h-48 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
+    <div className="space-y-4 animate-fadeIn select-text">
+      {/* 1. CELESTIAL HEADER COMMAND DECK */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 via-[#0e1726] to-slate-950 border border-slate-800 p-5 shadow-2xl">
+        {/* Subtle ambient lighting */}
+        <div className="absolute top-0 right-0 -mt-16 -mr-16 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-1/4 -mb-16 w-52 h-52 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="flex items-start gap-4">
-            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-amber-400 via-purple-500 to-indigo-600 p-[2px] shrink-0 shadow-lg shadow-purple-500/30">
-              <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-2xl sm:text-3xl">
+            <div className="relative w-13 h-13 sm:w-15 sm:h-15 rounded-xl bg-gradient-to-br from-emerald-500 via-teal-500 to-indigo-600 p-[1.5px] shrink-0 shadow-lg shadow-emerald-500/20">
+              <div className="w-full h-full rounded-[10px] bg-slate-950 flex items-center justify-center text-2xl sm:text-3xl">
                 ☯️
               </div>
-              <span className="absolute -bottom-1 -right-1 px-1.5 py-0.2 bg-amber-500 text-slate-950 text-[9px] font-black rounded-full border border-amber-300">
-                AI
-              </span>
             </div>
 
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-black text-white tracking-wide uppercase flex items-center gap-2">
-                  <span className="bg-gradient-to-r from-amber-300 via-purple-200 to-cyan-300 bg-clip-text text-transparent">
-                    Bảng Điều Khiển Phân Tích Thiên Đạo
+                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight uppercase flex items-center gap-2">
+                  <span className="bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-300 bg-clip-text text-transparent">
+                    Phân Tích Thiên Đạo
                   </span>
+                  <span className="text-slate-500 font-normal">/</span>
+                  <span className="text-slate-300 font-medium lowercase text-sm">đạo cơ & thần thức</span>
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500/25 text-purple-300 border border-purple-400/40 shadow-sm">
-                  {isAiPowered ? 'Gemini 3.8 Flash Cung Cấp' : 'Thiên Đạo Trí Tuệ Tự Động'}
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {isAiPowered ? 'Gemini 3.8 Flash' : 'Thiên Đạo Trí Tuệ Tự Động'}
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-                <span className="text-amber-400 font-bold flex items-center gap-1">
-                  <span>✨ Cảnh Giới:</span>
-                  <span className="text-white underline decoration-amber-500/60 decoration-2">
-                    {playerRealm.realmName} {playerRealm.subStage} (Tầng {playerRealm.tier})
-                  </span>
+              {/* Unboxed Metadata Strip */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                <span className="text-amber-400 font-medium">
+                  Cảnh giới: <strong className="text-white font-semibold">{playerRealm.realmName} {playerRealm.subStage}</strong> (Tầng {playerRealm.tier})
                 </span>
-                <span className="text-slate-600">•</span>
-                <span className="text-purple-300 font-medium">
-                  Đồng đạo phân khúc: <strong className="text-white">{playerRealm.wpmBracket}</strong>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span className="text-slate-300">
+                  Phân khúc: <span className="font-mono text-cyan-300">{playerRealm.wpmBracket}</span>
                 </span>
-                <span className="text-slate-600">•</span>
-                <span className="text-cyan-300 font-mono">
-                  Tốc độ ghi nhận: <strong className="text-white">{playerRealm.currentWpm} WPM</strong>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span className="text-slate-300">
+                  Tốc độ trung bình: <strong className="font-mono text-emerald-400 tabular-nums">{playerRealm.currentWpm} WPM</strong>
                 </span>
               </div>
 
@@ -185,7 +246,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
           </div>
 
           {/* Action CTAs */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0 self-stretch lg:self-auto">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 self-stretch lg:self-auto">
             <button
               type="button"
               onClick={() => {
@@ -193,10 +254,10 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                 onRefresh();
               }}
               disabled={isLoading}
-              className="h-10 px-4.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-purple-500/40 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 shadow-md hover:border-purple-400 active:scale-95"
-              title="Khai mở Thiên Đạo Nhãn để phân tích lại toàn bộ"
+              className="h-9 px-3.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 active:scale-95 whitespace-nowrap"
+              title="Phân tích lại dữ liệu từ lịch sử ván đấu"
             >
-              <RotateCcw className={`w-4 h-4 ${isLoading ? 'animate-spin text-purple-400' : 'text-purple-300'}`} />
+              <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
               <span>{isLoading ? 'Đang quan trắc...' : 'Thỉnh Giáo Lại'}</span>
             </button>
 
@@ -207,41 +268,41 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                   soundFx.playKeyClick();
                   onStartPractice(practiceWords);
                 }}
-                className="h-10 px-5 rounded-xl bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 transition-all cursor-pointer active:scale-95"
+                className="h-9 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
               >
-                <Play className="w-4 h-4 fill-current" />
-                <span>Luyện Hóa Giải Tâm Ma ({practiceWords.length} chuỗi)</span>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Luyện Hóa Giải Tâm Ma ({practiceWords.length})</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Quick Realm Percentile Meter */}
-        <div className="mt-4 pt-3.5 border-t border-purple-500/20 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-purple-500/25 flex items-center justify-between gap-3">
+        {/* Dual Progress Telemetry Cards */}
+        <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+          <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400 shrink-0" />
-              <span className="text-slate-300">Vị thế trong cùng phân khúc WPM:</span>
+              <span className="text-slate-400">Vị thế trong phân khúc WPM:</span>
             </div>
-            <div className="flex items-center gap-1.5 font-bold font-mono">
-              <span className="text-emerald-400 text-sm">Vượt {overallVerdict.overallPercentile}%</span>
-              <span className="text-slate-400 text-[10px]">đồng đạo</span>
+            <div className="flex items-center gap-1 font-mono">
+              <span className="text-emerald-400 font-bold tabular-nums">Vượt {overallVerdict.overallPercentile}%</span>
+              <span className="text-slate-500 text-[11px]">đồng đạo</span>
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-purple-500/25 flex items-center justify-between gap-3">
+          <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span className="text-slate-300">Khí tức sẵn sàng đột phá:</span>
+              <span className="text-slate-400">Khí tức sẵn sàng đột phá:</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <div className="w-24 bg-slate-800 h-2 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full"
+                  className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-500"
                   style={{ width: `${overallVerdict.breakthroughReadiness}%` }}
                 />
               </div>
-              <span className="font-mono font-bold text-cyan-300 text-xs">
+              <span className="font-mono font-bold text-cyan-300 text-xs tabular-nums">
                 {overallVerdict.breakthroughReadiness}%
               </span>
             </div>
@@ -249,38 +310,22 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. SUB-NAVIGATION TABS FOR DEEP ANALYSIS */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
+      {/* 2. SUB-VIEW SEGMENTED CONTROLS */}
+      <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-950/90 rounded-xl border border-slate-800/90 text-xs">
         <button
           type="button"
           onClick={() => {
             soundFx.playKeyClick();
             setActiveSubView('overview');
           }}
-          className={`h-9.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`h-8 px-3 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             activeSubView === 'overview'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
-              : 'bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800'
+              ? 'bg-slate-800 text-white shadow-sm border border-slate-700'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <Layers className="w-4 h-4" />
+          <Layers className="w-3.5 h-3.5" />
           <span>Tổng Quan Đạo Cơ</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            soundFx.playKeyClick();
-            setActiveSubView('patterns');
-          }}
-          className={`h-9.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeSubView === 'patterns'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
-              : 'bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4 text-rose-400" />
-          <span>Mẫu Lỗi & Tâm Ma ({errorPatterns.length})</span>
         </button>
 
         <button
@@ -289,14 +334,30 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
             soundFx.playKeyClick();
             setActiveSubView('timing');
           }}
-          className={`h-9.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`h-8 px-3 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             activeSubView === 'timing'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
-              : 'bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800'
+              ? 'bg-slate-800 text-amber-300 shadow-sm border border-slate-700'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <Clock className="w-4 h-4 text-amber-400" />
-          <span>Thời Điểm Mắc Lỗi & Hồi Khí</span>
+          <Clock className="w-3.5 h-3.5 text-amber-400" />
+          <span>Thời Điểm Lỗi & Hồi Khí</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            soundFx.playKeyClick();
+            setActiveSubView('patterns');
+          }}
+          className={`h-8 px-3 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+            activeSubView === 'patterns'
+              ? 'bg-slate-800 text-rose-300 shadow-sm border border-slate-700'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+          <span>Mẫu Lỗi & Tâm Ma ({errorPatterns.length})</span>
         </button>
 
         <button
@@ -305,35 +366,378 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
             soundFx.playKeyClick();
             setActiveSubView('radar');
           }}
-          className={`h-9.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`h-8 px-3 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             activeSubView === 'radar'
-              ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
-              : 'bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800'
+              ? 'bg-slate-800 text-cyan-300 shadow-sm border border-slate-700'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <Compass className="w-4 h-4 text-cyan-400" />
-          <span>Biểu Đồ Lục Trụ Tu Vi (Radar)</span>
+          <Compass className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Lục Trụ Tu Vi (Radar)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            soundFx.playKeyClick();
+            setActiveSubView('drill');
+          }}
+          className={`h-8 px-3 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+            activeSubView === 'drill'
+              ? 'bg-slate-800 text-emerald-300 shadow-sm border border-slate-700'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <Target className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Bộ Từ Đặc Trị ({practiceWords.length})</span>
         </button>
       </div>
 
-      {/* 3. MAIN CONTENT PANELS ACCORDING TO SUB-VIEW */}
-
-      {/* VIEW: OVERVIEW OR RADAR */}
-      {(activeSubView === 'overview' || activeSubView === 'radar') && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* RADAR CHART (6 COLUMNS ON LARGE) */}
-          <div className="lg:col-span-6 p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between shadow-xl">
+      {/* 3. CORE SECTION: PHÂN BỔ THỜI ĐIỂM MẮC LỖI & ĐỘ TRỄ HỒI PHỤC THẦN THỨC */}
+      {(activeSubView === 'overview' || activeSubView === 'timing') && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
+          {/* Section Header with Telemetry Summary */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
             <div className="space-y-1">
+              <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                <span>Phân Bổ Thời Điểm Mắc Lỗi & Độ Trễ Hồi Phục Thần Thức</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-normal max-w-2xl">
+                {timingAnalysis.criticalMomentVerdict}
+              </p>
+            </div>
+
+            {/* Total Analyzed Errors Count */}
+            <div className="flex items-center gap-3 text-xs shrink-0 font-mono">
+              <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+                <span className="text-slate-500 mr-1.5">Tổng số lỗi:</span>
+                <strong className={totalTimingErrors === 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                  {totalTimingErrors}
+                </strong>
+                <span className="text-slate-500 ml-1">lỗi</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TELEMETRY METRIC BENCHMARK STRIP */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Metric 1: Độ Trễ Hồi Phục Thần Thức (ms) */}
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-extrabold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
-                  <Compass className="w-4 h-4 text-purple-400" />
-                  Biểu Đồ Lục Đại Trụ Cột Đạo Cơ
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <HeartPulse className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Độ trễ hồi phục sau lỗi</span>
                 </span>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  Chuẩn hóa theo Bách Phân Vị
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${recoveryLatencyStatus.bg} ${recoveryLatencyStatus.color} ${recoveryLatencyStatus.border} border`}>
+                  {recoveryLatencyStatus.label}
                 </span>
               </div>
+
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black font-mono text-white tabular-nums">
+                  ~{timingAnalysis.avgRecoveryLatencyMs}
+                </span>
+                <span className="text-xs text-slate-400 font-mono">ms / phím</span>
+              </div>
+
+              {/* Comparative horizontal gauge */}
+              <div className="space-y-1 pt-1">
+                <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden relative">
+                  <div
+                    className={`h-full rounded-full ${
+                      timingAnalysis.avgRecoveryLatencyMs <= 250
+                        ? 'bg-emerald-400'
+                        : timingAnalysis.avgRecoveryLatencyMs <= 400
+                        ? 'bg-sky-400'
+                        : 'bg-rose-400'
+                    }`}
+                    style={{
+                      width: `${Math.min(100, Math.max(15, Math.round((600 - timingAnalysis.avgRecoveryLatencyMs) / 5)))}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                  <span>Đỉnh phong: ~180ms</span>
+                  <span className="text-slate-400">Đồng đạo: ~{timingAnalysis.peerAvgRecoveryMs}ms</span>
+                </div>
+              </div>
               <p className="text-[11px] text-slate-400 leading-normal">
+                {recoveryLatencyStatus.desc}
+              </p>
+            </div>
+
+            {/* Metric 2: Tỷ Lệ Lỗi Dây Chuyền (Cascade Error Rate) */}
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Lỗi dây chuyền (&lt; 800ms)</span>
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">Tâm lý dao động</span>
+              </div>
+
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black font-mono text-amber-300 tabular-nums">
+                  {timingAnalysis.cascadeErrorRate}%
+                </span>
+                <span className="text-xs text-slate-400 font-mono">tổng lỗi</span>
+              </div>
+
+              <div className="space-y-1 pt-1">
+                <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      timingAnalysis.cascadeErrorRate <= 15
+                        ? 'bg-emerald-400'
+                        : timingAnalysis.cascadeErrorRate <= 30
+                        ? 'bg-amber-400'
+                        : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${Math.min(100, timingAnalysis.cascadeErrorRate * 2.5)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                  <span>0% (Hoàn hảo)</span>
+                  <span className="text-slate-400">An toàn: &lt; 20%</span>
+                  <span className="text-rose-400">Báo động: &gt; 35%</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-normal">
+                {timingAnalysis.cascadeErrorRate > 25
+                  ? 'Khi vừa gõ sai, bạn có xu hướng vội vàng bấm Backspace làm trượt thêm 1 - 2 phím kế tiếp.'
+                  : 'Khả năng kiểm soát tâm lý sau lỗi khá tốt, ít bị cuốn vào vòng lặp gõ sai liên hoàn.'}
+              </p>
+            </div>
+
+            {/* Metric 3: Giai Đoạn Cần Chú Ý Nhất */}
+            {(() => {
+              const worst = [...timingAnalysis.phases].sort((a, b) => b.errorCount - a.errorCount)[0];
+              return (
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Điểm nghẽn thời gian</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-cyan-400">Pha gõ yếu nhất</span>
+                  </div>
+
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold text-white truncate">
+                      {totalTimingErrors === 0 ? 'Toàn Pha An Toàn' : worst.name.split(' (')[0]}
+                    </span>
+                    {totalTimingErrors > 0 && (
+                      <span className="text-xs font-mono font-bold text-rose-400">
+                        ({worst.errorPercentage}%)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Mốc thời gian: <strong className="text-slate-200">{worst.timeRange}</strong>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-normal pt-1 border-t border-slate-800/80">
+                    {totalTimingErrors === 0
+                      ? 'Đạo hữu phân phối lực tay đều đặn qua từng giây thi đấu, không có giai đoạn suy giảm.'
+                      : `Tập trung kiểm soát tốc độ ở giai đoạn này sẽ lập tức cải thiện ${Math.round(worst.errorPercentage * 0.4)}% hiệu suất toàn trận.`}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* VISUAL INTERACTIVE CHRONOGRAM TIMELINE BAR */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Trục Thời Gian Thi Đấu & Mật Độ Phát Sinh Lỗi:</span>
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Nhấp vào từng giai đoạn bên dưới để xem phân tích cơ sinh học
+              </span>
+            </div>
+
+            {/* Segmented Phase Chronogram Bar */}
+            <div className="h-10 w-full rounded-xl bg-slate-950 border border-slate-800 p-1 flex gap-1 overflow-hidden">
+              {timingAnalysis.phases.map((ph, idx) => {
+                const isSelected = selectedPhase.phaseId === ph.phaseId;
+                const isHigh = ph.riskLevel === 'cao';
+                const isMed = ph.riskLevel === 'trung_binh';
+                // Segment widths: 25%, 30%, 25%, 20%
+                const widths = ['25%', '30%', '25%', '20%'];
+
+                return (
+                  <button
+                    key={ph.phaseId}
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setSelectedPhaseId(ph.phaseId);
+                    }}
+                    style={{ width: widths[idx] || '25%' }}
+                    className={`h-full rounded-lg transition-all flex items-center justify-between px-2.5 text-xs font-mono relative cursor-pointer ${
+                      isSelected
+                        ? 'ring-2 ring-cyan-400 shadow-md'
+                        : 'hover:opacity-90'
+                    } ${
+                      isHigh
+                        ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
+                        : isMed
+                        ? 'bg-amber-950/50 text-amber-300 border border-amber-500/30'
+                        : 'bg-emerald-950/40 text-emerald-300 border border-emerald-500/30'
+                    }`}
+                  >
+                    <span className="truncate text-[11px] font-bold">
+                      {idx + 1}. {ph.name.split(' (')[0]}
+                    </span>
+                    <span className="font-bold shrink-0 text-[11px] tabular-nums">
+                      {ph.errorCount} lỗi ({ph.errorPercentage}%)
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4 PHASES DETAILED EXPANDED CARDS GRID */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+            {timingAnalysis.phases.map((ph) => {
+              const isSelected = selectedPhase.phaseId === ph.phaseId;
+              const isHigh = ph.riskLevel === 'cao';
+              const isMed = ph.riskLevel === 'trung_binh';
+
+              return (
+                <div
+                  key={ph.phaseId}
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setSelectedPhaseId(ph.phaseId);
+                  }}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-slate-800/90 border-cyan-400 ring-1 ring-cyan-400/50 shadow-lg shadow-cyan-500/10'
+                      : isHigh
+                      ? 'bg-slate-950/70 border-rose-500/30 hover:border-rose-500/60'
+                      : isMed
+                      ? 'bg-slate-950/70 border-amber-500/30 hover:border-amber-500/60'
+                      : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-tight">
+                        {ph.xianxiaPhase}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          ph.errorCount === 0
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : isHigh
+                            ? 'bg-rose-500/25 text-rose-300'
+                            : isMed
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : 'bg-emerald-500/15 text-emerald-300'
+                        }`}
+                      >
+                        {ph.errorCount === 0 ? 'Hoàn Hảo' : isHigh ? 'Điểm Nghẽn' : isMed ? 'Cảnh Báo' : 'An Toàn'}
+                      </span>
+                    </div>
+
+                    <div className="text-xs font-bold text-white leading-tight">
+                      {ph.name}
+                    </div>
+
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      {ph.timeRange}
+                    </div>
+                  </div>
+
+                  {/* Error proportion bar */}
+                  <div className="space-y-1 pt-1">
+                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          ph.errorCount === 0
+                            ? 'bg-emerald-400'
+                            : isHigh
+                            ? 'bg-rose-500'
+                            : isMed
+                            ? 'bg-amber-400'
+                            : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${Math.min(100, ph.errorPercentage * 2.2)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[11px] font-mono">
+                      <span className="text-slate-400">Số lỗi: <strong className="text-white">{ph.errorCount}</strong></span>
+                      <span className={`font-bold tabular-nums ${isHigh ? 'text-rose-400' : 'text-slate-300'}`}>
+                        {ph.errorPercentage}% tổng lỗi
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-300 leading-normal pt-1.5 border-t border-slate-800/80">
+                    {ph.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Deep-Dive Actionable Remedy for the Selected Phase */}
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+                <Brain className="w-4 h-4 text-cyan-400" />
+                <span>Phương Pháp Hóa Giải Giai Đoạn [{selectedPhase.name}]:</span>
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                Khung thời gian: {selectedPhase.timeRange}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 text-xs">
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1">
+                <div className="font-semibold text-slate-300 text-[11px]">
+                  🔬 Cơ Chế Thần Kinh - Cơ Ngón Tay:
+                </div>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  {selectedPhase.physiologicalCause || 'Độ trễ vận động thần kinh giữa hai bán cầu não và phản xạ xúc giác ngón tay.'}
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1">
+                <div className="font-semibold text-emerald-400 text-[11px]">
+                  💡 Chiến Thuật Xuất Chiêu Khắc Phục:
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  {selectedPhase.remedy || 'Chủ động điều hòa nhịp thở, không vội bung sức và luôn nhìn trước 1 từ.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. RADAR CHART & 6 PILLARS VIEW */}
+      {(activeSubView === 'overview' || activeSubView === 'radar') && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* RADAR SVG GRAPH (6 COLS) */}
+          <div className="lg:col-span-6 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between shadow-xl">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                  <Compass className="w-4 h-4 text-cyan-400" />
+                  <span>Biểu Đồ Lục Đại Trụ Cột Đạo Cơ</span>
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Bách Phân Vị Chuẩn Hóa
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-normal">
                 Đối chiếu tương quan giữa bạn với bình quân tu sĩ cùng phân khúc WPM và đỉnh phong 10% cao thủ.
               </p>
             </div>
@@ -349,7 +753,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                 <defs>
                   <linearGradient id="playerRadarGrad" x1="0" y1="0" x2="1" y2="1">
                     <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
-                    <stop offset="100%" stopColor="#818cf8" stopOpacity="0.15" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.15" />
                   </linearGradient>
                 </defs>
 
@@ -363,7 +767,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                       cy={radarData.center}
                       r={ringRadius}
                       fill="none"
-                      stroke="#334155"
+                      stroke="#1e293b"
                       strokeWidth={rIdx === 3 ? 1.2 : 0.6}
                       strokeDasharray={rIdx === 3 ? 'none' : '3,3'}
                     />
@@ -378,33 +782,33 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                     y1={radarData.center}
                     x2={ax.outerX}
                     y2={ax.outerY}
-                    stroke="#475569"
+                    stroke="#334155"
                     strokeWidth="0.8"
                   />
                 ))}
 
-                {/* Top 10% Realm Masters Polygon (Dashed Gold) */}
+                {/* Top 10% Master Polygon (Dashed Gold) */}
                 <polygon
                   points={radarData.top10Points}
                   fill="none"
                   stroke="#fbbf24"
                   strokeWidth="1.5"
                   strokeDasharray="4,3"
-                  strokeOpacity="0.6"
+                  strokeOpacity="0.65"
                 />
 
-                {/* Peer Average Polygon (Dashed Purple/Slate) */}
+                {/* Peer Average Polygon (Dashed Slate/Purple) */}
                 <polygon
                   points={radarData.peerPoints}
                   fill="#6366f1"
-                  fillOpacity="0.08"
+                  fillOpacity="0.06"
                   stroke="#a855f7"
                   strokeWidth="1.5"
                   strokeDasharray="2,2"
-                  strokeOpacity="0.6"
+                  strokeOpacity="0.65"
                 />
 
-                {/* Player Polygon (Solid Cyan/Indigo Glow) */}
+                {/* Player Polygon (Solid Cyan/Emerald Glow) */}
                 <polygon
                   points={radarData.playerPoints}
                   fill="url(#playerRadarGrad)"
@@ -416,7 +820,6 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                 {/* Axis Labels & Interactive Dots */}
                 {radarData.axes.map((ax, i) => {
                   const isSelected = selectedMetric.key === ax.key;
-                  // Get exact player node coordinate
                   const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
                   const ptRadius = radarData.radius * (ax.percentile / 100);
                   const nodeX = radarData.center + ptRadius * Math.cos(angle);
@@ -431,7 +834,6 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                         setSelectedPillarKey(ax.key);
                       }}
                     >
-                      {/* Node circle */}
                       <circle
                         cx={nodeX}
                         cy={nodeY}
@@ -442,7 +844,6 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                         className="transition-all group-hover:scale-125"
                       />
 
-                      {/* Label Text */}
                       <text
                         x={ax.labelX}
                         y={ax.labelY}
@@ -477,48 +878,45 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
             </div>
           </div>
 
-          {/* 6 PILLAR METRIC DETAILS (6 COLUMNS) */}
+          {/* 6 PILLAR METRIC DETAILS (6 COLS) */}
           <div className="lg:col-span-6 space-y-3 flex flex-col justify-between">
             {/* Selected Pillar Highlight Card */}
-            <div className="p-4 rounded-3xl bg-gradient-to-r from-purple-950/60 to-slate-900 border border-purple-500/30 space-y-2 shadow-lg">
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 border border-cyan-500/30 space-y-2 shadow-lg">
               <div className="flex items-center justify-between text-xs">
-                <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-bold text-[10px] border border-purple-400/30">
+                <span className="text-cyan-300 font-mono font-bold text-[11px]">
                   {selectedMetric.xianxiaLabel}
                 </span>
                 <span className="text-slate-400 text-[11px]">
-                  Bách phân vị: <strong className="text-cyan-400 font-mono">{selectedMetric.percentile}%</strong>
+                  Bách phân vị: <strong className="text-cyan-400 font-mono tabular-nums">{selectedMetric.percentile}%</strong>
                 </span>
               </div>
 
               <div className="flex items-baseline justify-between gap-3">
-                <div className="text-base font-bold text-white">{selectedMetric.label}</div>
-                <div className="text-xl font-black font-mono text-cyan-300">
-                  {selectedMetric.playerValue} {selectedMetric.unit}
+                <div className="text-sm font-bold text-white">{selectedMetric.label}</div>
+                <div className="text-xl font-black font-mono text-cyan-300 tabular-nums">
+                  {selectedMetric.playerValue} <span className="text-xs font-normal text-slate-400">{selectedMetric.unit}</span>
                 </div>
               </div>
 
               {/* Progress comparison bar */}
               <div className="space-y-1">
-                <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden relative">
-                  {/* Peer Average marker */}
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden relative">
                   <div
                     className="absolute top-0 bottom-0 w-1 bg-purple-400 z-10"
                     style={{ left: '50%' }}
                     title="Bình quân cùng cảnh giới (50%)"
                   />
-                  {/* Top 10% marker */}
                   <div
                     className="absolute top-0 bottom-0 w-1 bg-amber-400 z-10"
                     style={{ left: '90%' }}
                     title="Đỉnh phong 10% cao thủ (90%)"
                   />
-                  {/* Player fill */}
                   <div
-                    className="h-full bg-gradient-to-r from-cyan-500 via-teal-400 to-indigo-500 rounded-full transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 rounded-full transition-all duration-500"
                     style={{ width: `${selectedMetric.percentile}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
                   <span>Cần rèn luyện</span>
                   <span className="text-purple-300">Bình quân: {selectedMetric.peerAverage} {selectedMetric.unit}</span>
                   <span className="text-amber-300">Đỉnh phong: {selectedMetric.peerTop10} {selectedMetric.unit}</span>
@@ -531,7 +929,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
             </div>
 
             {/* Grid of the 6 pillars */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {peerComparison.metrics.map((m) => {
                 const isSelected = selectedMetric.key === m.key;
                 return (
@@ -542,19 +940,19 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                       soundFx.playKeyClick();
                       setSelectedPillarKey(m.key);
                     }}
-                    className={`p-3 rounded-2xl text-left transition-all border cursor-pointer ${
+                    className={`p-3 rounded-xl text-left transition-all border cursor-pointer ${
                       isSelected
-                        ? 'bg-slate-800/90 border-cyan-400 shadow-md shadow-cyan-500/15'
-                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                        ? 'bg-slate-800/90 border-cyan-400 shadow-md shadow-cyan-500/10'
+                        : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="text-[10px] font-mono text-purple-400 uppercase tracking-tight truncate">
+                    <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tight truncate">
                       {m.xianxiaLabel}
                     </div>
-                    <div className="text-sm font-black text-white font-mono my-0.5">
+                    <div className="text-sm font-black text-white font-mono my-0.5 tabular-nums">
                       {m.playerValue} <span className="text-[10px] font-normal text-slate-400">{m.unit}</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between font-mono">
                       <span>Đồng đạo: {m.peerAverage}</span>
                       <span className={m.percentile >= 50 ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
                         {m.percentile}%
@@ -568,17 +966,17 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
         </div>
       )}
 
-      {/* VIEW: PATTERNS & PSYCHOLOGICAL BOTTLENECK (TÂM MA) */}
+      {/* 5. PATTERNS & PSYCHOLOGICAL BOTTLENECK (TÂM MA) */}
       {(activeSubView === 'overview' || activeSubView === 'patterns') && (
         <div className="space-y-3">
           {/* Header Card with Tâm Ma Highlight */}
-          <div className="p-4 rounded-3xl bg-gradient-to-r from-rose-950/70 via-slate-900 to-slate-950 border border-rose-500/40 shadow-xl space-y-2">
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/60 via-slate-900 to-slate-950 border border-rose-500/30 shadow-xl space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-extrabold uppercase tracking-wider text-rose-300 flex items-center gap-2">
+              <span className="font-bold uppercase tracking-wider text-rose-300 flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-rose-400" />
-                Tâm Ma Cốt Lõi Cần Trảm: {overallVerdict.tamMaName}
+                <span>Tâm Ma Cốt Lõi Cần Trảm: {overallVerdict.tamMaName}</span>
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
+              <span className="text-[10px] font-mono text-rose-400">
                 Căn Nguyên Tụt Nhịp
               </span>
             </div>
@@ -592,7 +990,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
             {errorPatterns.map((pat) => (
               <div
                 key={pat.id}
-                className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 transition-all space-y-2 flex flex-col justify-between shadow-lg"
+                className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 transition-all space-y-2 flex flex-col justify-between shadow-lg"
               >
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
@@ -600,43 +998,43 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                       {pat.xianxiaTitle}
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                      className={`text-[10px] font-mono uppercase tracking-wider ${
                         pat.severity === 'high'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          ? 'text-rose-400 font-bold'
                           : pat.severity === 'medium'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                          ? 'text-amber-400 font-bold'
+                          : 'text-cyan-400'
                       }`}
                     >
                       {pat.severity === 'high' ? 'Nghiêm trọng' : pat.severity === 'medium' ? 'Trung bình' : 'Nhẹ'}
                     </span>
                   </div>
 
-                  <div className="text-sm font-black text-white">{pat.name}</div>
+                  <div className="text-xs font-bold text-white">{pat.name}</div>
                   <p className="text-xs text-slate-300 leading-normal">{pat.description}</p>
                 </div>
 
                 <div className="pt-2 border-t border-slate-800 space-y-1.5 text-xs">
-                  <div className="text-[11px] text-slate-400 font-mono">
-                    <strong className="text-purple-300">Cơ chế cơ sinh học:</strong> {pat.biomechanics}
+                  <div className="text-[11px] text-slate-400">
+                    <strong className="text-slate-300">Cơ chế:</strong> {pat.biomechanics}
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                    <span className="text-[10px] text-slate-500">Ví dụ thực tế:</span>
+                    <span className="text-[10px] text-slate-500">Ví dụ:</span>
                     {pat.examples.map((ex, exIdx) => (
                       <span
                         key={exIdx}
-                        className="px-2 py-0.5 rounded-md bg-slate-800 font-mono text-[11px] text-rose-300 border border-slate-700"
+                        className="px-2 py-0.5 rounded bg-slate-950 font-mono text-[11px] text-rose-300 border border-slate-800"
                       >
                         {ex}
                       </span>
                     ))}
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 font-mono">
                     <span>Tần suất ghi nhận:</span>
-                    <span className="font-mono font-bold text-amber-400">
-                      {pat.frequency} lần ({pat.percentage}% tổng số lỗi)
+                    <span className="font-bold text-amber-400 tabular-nums">
+                      {pat.frequency} lần ({pat.percentage}%)
                     </span>
                   </div>
                 </div>
@@ -646,172 +1044,66 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
         </div>
       )}
 
-      {/* VIEW: ERROR TIMING PHASES & RECOVERY LATENCY */}
+      {/* 6. 3-STEP ACTIONABLE BREAKTHROUGH PATHWAY */}
       {(activeSubView === 'overview' || activeSubView === 'timing') && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="space-y-1">
-              <div className="font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-2 text-xs">
-                <Clock className="w-4 h-4 text-amber-400" />
-                Phân Bổ Thời Điểm Mắc Lỗi & Độ Trễ Hồi Phục Thần Thức
-              </div>
-              <p className="text-xs text-slate-400">
-                {timingAnalysis.criticalMomentVerdict}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 bg-slate-950/80 px-3.5 py-2 rounded-2xl border border-slate-800 text-xs shrink-0 font-mono">
-              <span className="text-slate-400">Độ trễ phục hồi sau lỗi:</span>
-              <span className="text-amber-400 font-bold text-sm">
-                ~{timingAnalysis.avgRecoveryLatencyMs}ms
-              </span>
-              <span className="text-slate-500 text-[10px]">
-                (Đồng đạo: ~{timingAnalysis.peerAvgRecoveryMs}ms)
-              </span>
-            </div>
-          </div>
-
-          {/* 4 PHASES HORIZONTAL VISUAL TIMELINE */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {timingAnalysis.phases.map((ph) => {
-              const isHighRisk = ph.riskLevel === 'cao';
-              return (
-                <div
-                  key={ph.phaseId}
-                  className={`p-3.5 rounded-2xl border space-y-2 flex flex-col justify-between ${
-                    isHighRisk
-                      ? 'bg-rose-950/25 border-rose-500/40 shadow-md shadow-rose-500/10'
-                      : ph.riskLevel === 'trung_binh'
-                      ? 'bg-amber-950/20 border-amber-500/30'
-                      : 'bg-slate-950/60 border-slate-800'
-                  }`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-[10px] font-mono text-purple-300 uppercase">
-                        {ph.xianxiaPhase}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isHighRisk
-                            ? 'bg-rose-500/30 text-rose-300'
-                            : ph.riskLevel === 'trung_binh'
-                            ? 'bg-amber-500/30 text-amber-300'
-                            : 'bg-emerald-500/20 text-emerald-300'
-                        }`}
-                      >
-                        {ph.riskLevel === 'cao' ? 'Điểm Nghẽn' : ph.riskLevel === 'trung_binh' ? 'Cảnh Báo' : 'An Toàn'}
-                      </span>
-                    </div>
-
-                    <div className="text-sm font-bold text-white">{ph.name}</div>
-                    <div className="text-[11px] text-slate-400 font-mono">{ph.timeRange}</div>
-                  </div>
-
-                  {/* Percentage Progress Bar */}
-                  <div className="space-y-1 pt-1">
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          isHighRisk ? 'bg-rose-500' : ph.riskLevel === 'trung_binh' ? 'bg-amber-500' : 'bg-emerald-400'
-                        }`}
-                        style={{ width: `${Math.min(100, ph.errorPercentage * 2.2)}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[11px] font-mono">
-                      <span className="text-slate-400">Số lỗi: {ph.errorCount}</span>
-                      <span className={`font-bold ${isHighRisk ? 'text-rose-400' : 'text-slate-300'}`}>
-                        {ph.errorPercentage}% tổng lỗi
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 leading-normal pt-1 border-t border-slate-800/80">
-                    {ph.description}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 4. THIÊN CƠ ĐỘT PHÁ - 3-STEP ACTIONABLE PATHWAY */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-indigo-950/70 via-slate-900 to-slate-950 border border-indigo-500/30 space-y-4 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-[#0e1726] to-slate-950 border border-slate-800 space-y-3 shadow-xl">
           <div className="space-y-0.5">
-            <h3 className="text-sm font-extrabold uppercase tracking-wider text-indigo-300 flex items-center gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-400" />
-              Thiên Cơ Đột Phá: Lộ Trình 3 Bước Khắc Phục Điểm Yếu
+              <span>Thiên Cơ Đột Phá: Lộ Trình 3 Bước Khắc Phục Điểm Yếu</span>
             </h3>
             <p className="text-xs text-slate-400">
               Thực hiện đúng 3 bước chỉ dẫn này trước mỗi ván đấu để nhanh chóng khai thông kinh mạch ngón tay.
             </p>
           </div>
 
-          {practiceWords && practiceWords.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                onStartPractice(practiceWords);
-              }}
-              className="h-10 px-5 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-cyan-500/20 shrink-0 active:scale-95"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Vào Luyện Bài Tập Này Ngay</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
-            <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-              <span>🧘</span>
-              <span>{breakthroughPathway.step1.title}</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+              <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <span>🧘</span>
+                <span>{breakthroughPathway.step1.title}</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {breakthroughPathway.step1.desc}
+              </p>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {breakthroughPathway.step1.desc}
-            </p>
-          </div>
 
-          <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
-            <div className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-              <span>⚡</span>
-              <span>{breakthroughPathway.step2.title}</span>
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+              <div className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                <span>⚡</span>
+                <span>{breakthroughPathway.step2.title}</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {breakthroughPathway.step2.desc}
+              </p>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {breakthroughPathway.step2.desc}
-            </p>
-          </div>
 
-          <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
-            <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-              <span>🎯</span>
-              <span>{breakthroughPathway.step3.title}</span>
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+              <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                <span>🎯</span>
+                <span>{breakthroughPathway.step3.title}</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {breakthroughPathway.step3.desc}
+              </p>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {breakthroughPathway.step3.desc}
-            </p>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 5. BỘ TỪ THIÊN ĐẠO ĐẶC TRỊ TỪ SAI THỰC TẾ */}
-      {practiceWords && practiceWords.length > 0 && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/30 space-y-3.5 shadow-2xl">
+      {/* 7. TARGETED PRACTICE DRILL WORDS */}
+      {(activeSubView === 'overview' || activeSubView === 'drill') && practiceWords && practiceWords.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3.5 shadow-2xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-rose-400" />
-                <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                  <span className="bg-gradient-to-r from-rose-300 via-amber-200 to-cyan-300 bg-clip-text text-transparent">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span className="text-emerald-300">
                     {practiceDrillTitle || (targetedMistakes && targetedMistakes.length > 0 ? `Bộ Từ Đặc Trị ${targetedMistakes.length} Lỗi Sai Thực Tế` : 'Bộ Từ Luyện Phản Xạ Cơ Ngón Tay')}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
-                    {practiceWords.length} từ mục tiêu
-                  </span>
+                  <span className="text-slate-500 font-normal">/</span>
+                  <span className="text-slate-400 font-mono text-[11px]">{practiceWords.length} chuỗi mục tiêu</span>
                 </h4>
               </div>
               <p className="text-xs text-slate-300">
@@ -830,11 +1122,11 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                     setTimeout(() => setCopiedWords(false), 2000);
                   });
                 }}
-                className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer active:scale-95 shadow-sm"
+                className="h-9 px-3 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
                 title="Sao chép toàn bộ danh sách để tự luyện tập"
               >
                 {copiedWords ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-                <span>{copiedWords ? 'Đã Sao Chép' : 'Sao Chép Bộ Từ'}</span>
+                <span>{copiedWords ? 'Đã Sao Chép' : 'Sao Chép'}</span>
               </button>
 
               <button
@@ -843,9 +1135,9 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                   soundFx.playKeyClick();
                   onStartPractice(practiceWords);
                 }}
-                className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/20 active:scale-95"
+                className="h-9 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
               >
-                <Play className="w-4 h-4 fill-current" />
+                <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Vào Luyện Bài Này Ngay</span>
               </button>
             </div>
@@ -859,7 +1151,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                 {targetedMistakes.map((w, idx) => (
                   <span
                     key={idx}
-                    className="px-2 py-0.5 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-[11px] font-bold"
+                    className="px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-[11px]"
                   >
                     ✕ {w}
                   </span>
@@ -873,7 +1165,7 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
                 {targetedClusters.map((c, idx) => (
                   <span
                     key={idx}
-                    className="px-2 py-0.5 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[11px] font-medium"
+                    className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[11px] font-medium"
                   >
                     ⚡ {c}
                   </span>
@@ -882,8 +1174,8 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
             )}
           </div>
 
-          {/* Interactive Word Preview Pills */}
-          <div className="flex flex-wrap gap-2 p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 max-h-48 overflow-y-auto">
+          {/* Interactive Word Preview */}
+          <div className="flex flex-wrap gap-2 p-3.5 rounded-xl bg-slate-950 border border-slate-800 max-h-48 overflow-y-auto">
             {practiceWords.map((word, idx) => {
               const isMistakeWord = targetedMistakes?.some(
                 (m) => m.toLowerCase() === word.toLowerCase()
@@ -891,12 +1183,12 @@ export const HeavenlyDaoDashboard: React.FC<HeavenlyDaoDashboardProps> = ({
               return (
                 <span
                   key={idx}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-default select-all ${
+                  className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-all select-all ${
                     isMistakeWord
-                      ? 'bg-rose-950/50 hover:bg-rose-900/60 border-rose-500/60 text-rose-200 shadow-md shadow-rose-500/10 font-mono'
-                      : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
+                      ? 'bg-rose-950/40 border-rose-500/50 text-rose-200 font-mono font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-300'
                   }`}
-                  title={isMistakeWord ? 'Từ bạn từng gõ sai trong trận đấu - hãy tập trung cao độ!' : 'Từ rèn luyện bổ trợ cùng cụm phím'}
+                  title={isMistakeWord ? 'Từ bạn từng gõ sai trong trận đấu' : 'Từ rèn luyện bổ trợ cùng cụm phím'}
                 >
                   {isMistakeWord && <span className="text-rose-400 mr-1 font-black">●</span>}
                   {word}

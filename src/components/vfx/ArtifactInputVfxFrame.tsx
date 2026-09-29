@@ -1,10 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { ArtifactType } from '../../types';
 import { 
   ARTIFACT_CONFIGS, 
   loadStoredCultivationState, 
-  equipArtifact, 
-  saveStoredCultivationState,
   CultivationState,
   XIANXIA_REALMS 
 } from '../../utils/cultivation';
@@ -13,7 +11,7 @@ import {
   getFrameConfig, 
   AVATAR_FRAMES 
 } from '../../utils/frames';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Shield, Eye, Flame, Swords } from 'lucide-react';
 
 export interface ArtifactInputVfxFrameProps {
   artifact?: ArtifactType | null;
@@ -23,14 +21,14 @@ export interface ArtifactInputVfxFrameProps {
   combo?: number;
   isTyping?: boolean;
   isError?: boolean;
-  lastKeystroke?: number; // timestamp of keystroke
+  lastKeystroke?: number;
   onSelectArtifact?: (art: ArtifactType | null) => void;
   showSelector?: boolean;
   children: React.ReactNode;
   className?: string;
 }
 
-// Particle interface for the VFX Engine
+// Particle interface with support for all 4 artifact visuals
 interface Particle {
   x: number;
   y: number;
@@ -42,150 +40,115 @@ interface Particle {
   color: string;
   alpha: number;
   type: 
-    | 'spark' 
-    | 'blade' 
-    | 'petal' 
-    | 'lightning' 
-    | 'rune' 
-    | 'orb' 
-    | 'flame' 
-    | 'electric_arc' 
-    | 'matrix_code' 
-    | 'star' 
-    | 'dragon_flame' 
-    | 'leaf' 
-    | 'crystal';
+    | 'sword_wisp'       // Thanh Vân Kiếm: Tia kiếm khí lam ngọc
+    | 'solar_dust'       // Hạo Thiên Kính: Bụi kim quang thái dương
+    | 'lotus_petal'      // Cửu Phẩm Hắc Liên: Cánh sen đen tím
+    | 'lotus_dew'        // Cửu Phẩm Hắc Liên: Giọt sương u minh
+    | 'primordial_ember' // Bàn Cổ Phủ: Tàn lửa hồng hoang
+    | 'ambient_spark';   // Mặc định: Tinh hoa linh khí
   angle?: number;
-  va?: number; // angular velocity
+  va?: number; // angular velocity (slow, constant)
   extra?: any;
 }
 
-// Lightning arc interface
-interface LightningArc {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  life: number;
-  maxLife: number;
-  branches: { x: number; y: number }[];
-  color: string;
-  width?: number;
-}
+// Fixed-speed perimeter point calculator for rounded rectangles
+function getPerimeterPoint(
+  padX: number,
+  padY: number,
+  boxW: number,
+  boxH: number,
+  r: number,
+  distance: number
+): { x: number; y: number; tangentAngle: number } {
+  const straightTop = boxW - 2 * r;
+  const straightRight = boxH - 2 * r;
+  const straightBottom = boxW - 2 * r;
+  const straightLeft = boxH - 2 * r;
+  const cornerArc = (Math.PI * r) / 2;
 
-// Flying sword interface for Thanh Vân Kiếm
-interface OrbitSword {
-  angle: number;
-  speed: number;
-  distX: number;
-  distY: number;
-  trail: { x: number; y: number }[];
-}
+  const totalPerimeter = 2 * straightTop + 2 * straightRight + 4 * cornerArc;
+  let d = ((distance % totalPerimeter) + totalPerimeter) % totalPerimeter;
 
-/**
- * Helper to compute cultivation scaling for particle count, size, and spiritual aura
- */
-function getCultivationVfxScaling(cultivation: CultivationState | null) {
-  if (!cultivation) {
+  // 1. Top straight (from left to right)
+  if (d <= straightTop) {
     return {
-      realmIdx: 0,
-      realmName: 'Phàm Nhân',
-      subStage: 'Sơ Kỳ',
-      intensity: 1.0,
-      particleMultiplier: 1.0,
-      sizeMultiplier: 1.0,
-      speedMultiplier: 1.0,
-      isHighRealm: false,
-      isSupremeRealm: false,
+      x: padX + r + d,
+      y: padY,
+      tangentAngle: 0,
     };
   }
+  d -= straightTop;
 
-  const realmIdx = Math.max(0, Math.min(11, cultivation.realmIndex ?? 0));
-  const level = cultivation.level ?? 1;
-  const tier = cultivation.tier ?? 1;
+  // 2. Top-right corner arc
+  if (d <= cornerArc) {
+    const theta = (d / cornerArc) * (Math.PI / 2);
+    return {
+      x: padX + boxW - r + Math.sin(theta) * r,
+      y: padY + r - Math.cos(theta) * r,
+      tangentAngle: theta,
+    };
+  }
+  d -= cornerArc;
 
-  // Scaling progression:
-  // Realm 0 (Luyện Khí): 1.0x
-  // Realm 3 (Nguyên Anh): 1.35x
-  // Realm 6 (Hợp Thể): 1.7x
-  // Realm 8 (Độ Kiếp): 2.0x
-  // Realm 11 (Thiên Tôn): 2.4x
-  const realmBonus = realmIdx * 0.12;
-  const levelBonus = Math.min(level / 1000, 0.25);
-  const intensity = 1.0 + realmBonus + levelBonus;
+  // 3. Right straight (from top to bottom)
+  if (d <= straightRight) {
+    return {
+      x: padX + boxW,
+      y: padY + r + d,
+      tangentAngle: Math.PI / 2,
+    };
+  }
+  d -= straightRight;
 
+  // 4. Bottom-right corner arc
+  if (d <= cornerArc) {
+    const theta = (d / cornerArc) * (Math.PI / 2);
+    return {
+      x: padX + boxW - r + Math.cos(theta) * r,
+      y: padY + boxH - r + Math.sin(theta) * r,
+      tangentAngle: Math.PI / 2 + theta,
+    };
+  }
+  d -= cornerArc;
+
+  // 5. Bottom straight (from right to left)
+  if (d <= straightBottom) {
+    return {
+      x: padX + boxW - r - d,
+      y: padY + boxH,
+      tangentAngle: Math.PI,
+    };
+  }
+  d -= straightBottom;
+
+  // 6. Bottom-left corner arc
+  if (d <= cornerArc) {
+    const theta = (d / cornerArc) * (Math.PI / 2);
+    return {
+      x: padX + r - Math.sin(theta) * r,
+      y: padY + boxH - r + Math.cos(theta) * r,
+      tangentAngle: Math.PI + theta,
+    };
+  }
+  d -= cornerArc;
+
+  // 7. Left straight (from bottom to top)
+  if (d <= straightLeft) {
+    return {
+      x: padX,
+      y: padY + boxH - r - d,
+      tangentAngle: (Math.PI * 3) / 2,
+    };
+  }
+  d -= straightLeft;
+
+  // 8. Top-left corner arc
+  const theta = (d / cornerArc) * (Math.PI / 2);
   return {
-    realmIdx,
-    realmName: cultivation.realmName || XIANXIA_REALMS[realmIdx]?.name || 'Tu Tiên Giả',
-    subStage: cultivation.subStage || `${tier} Tầng`,
-    intensity,
-    particleMultiplier: 1.0 + realmIdx * 0.14,
-    sizeMultiplier: 1.0 + realmIdx * 0.08,
-    speedMultiplier: 1.0 + realmIdx * 0.05,
-    isHighRealm: realmIdx >= 4,      // Hóa Thần trở lên
-    isSupremeRealm: realmIdx >= 8,   // Độ Kiếp, Kim Tiên, Đại La, Thiên Tôn
+    x: padX + r - Math.cos(theta) * r,
+    y: padY + r - Math.sin(theta) * r,
+    tangentAngle: (Math.PI * 3) / 2 + theta,
   };
-}
-
-/**
- * Determine the visual elemental theme of a userFrame
- */
-function resolveFrameElementalType(frameId: string | null | undefined): 
-  | 'flame' 
-  | 'lightning' 
-  | 'matrix' 
-  | 'cosmic' 
-  | 'arcane' 
-  | 'dragon' 
-  | 'admin_gold' 
-  | 'wood_leaf' 
-  | 'crystal' 
-  | 'golden_core' 
-  | 'chrono' 
-  | 'default' {
-  if (!frameId) return 'default';
-  const fid = frameId.toLowerCase();
-
-  if (fid === 'flame' || fid === 'top_vi_dau' || fid === 'top_ngau_hung' || fid === 'frame_xianxia_daithua') {
-    return 'flame';
-  }
-  if (fid === 'lightning' || fid === 'top_vi_nodau' || fid === 'frame_xianxia_hopthe' || fid === 'frame_xianxia_dokiep') {
-    return 'lightning';
-  }
-  if (fid === 'matrix' || fid === 'top_numpad') {
-    return 'matrix';
-  }
-  if (fid === 'cosmic' || fid === 'top_en' || fid === 'frame_xianxia_hoathan' || fid === 'frame_xianxia_luyenhu') {
-    return 'cosmic';
-  }
-  if (fid === 'arcane' || fid === 'top_doan_chu' || fid === 'frame_xianxia_nguyenanh') {
-    return 'arcane';
-  }
-  if (fid === 'dragon' || fid === 'top_san_boss') {
-    return 'dragon';
-  }
-  if (
-    fid === 'admin_gold' || 
-    fid === 'frame_xianxia_thienton' || 
-    fid === 'frame_xianxia_kimtien' || 
-    fid === 'frame_xianxia_daila'
-  ) {
-    return 'admin_gold';
-  }
-  if (fid === 'frame_xianxia_luyenkhi') {
-    return 'wood_leaf';
-  }
-  if (fid === 'frame_xianxia_trucco') {
-    return 'crystal';
-  }
-  if (fid === 'frame_xianxia_ketdan') {
-    return 'golden_core';
-  }
-  if (fid === 'top_outplay') {
-    return 'chrono';
-  }
-
-  return 'default';
 }
 
 export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
@@ -205,9 +168,9 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Active Artifact state
+  // Active Artifact resolution
   const [activeArtifact, setActiveArtifact] = useState<ArtifactType | null>(() => {
-    if (artifact !== undefined) return artifact;
+    if (artifact !== undefined && artifact !== null) return artifact;
     try {
       const state = loadStoredCultivationState();
       return state?.artifacts?.equipped || null;
@@ -216,20 +179,13 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
     }
   });
 
-  // Active User Frame
-  const activeFrameId = propUserFrame !== undefined && propUserFrame !== null 
-    ? propUserFrame 
-    : getStoredFrame();
+  useEffect(() => {
+    if (artifact !== undefined) {
+      setActiveArtifact(artifact);
+    }
+  }, [artifact]);
 
-  // Active Cultivation State
-  const activeCultivation = propCultivationState !== undefined && propCultivationState !== null
-    ? propCultivationState
-    : loadStoredCultivationState();
-
-  const cultScale = getCultivationVfxScaling(activeCultivation);
-  const frameElementalType = resolveFrameElementalType(activeFrameId);
-
-  // VFX Master Toggle
+  // Master VFX Toggle
   const [vfxEnabled, setVfxEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('fasttyping_vfx_enabled');
@@ -239,7 +195,6 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
     }
   });
 
-  // Sync VFX toggle changes across instances
   useEffect(() => {
     const handleSync = () => {
       try {
@@ -255,13 +210,6 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
     };
   }, []);
 
-  // Sync artifact prop if changes
-  useEffect(() => {
-    if (artifact !== undefined) {
-      setActiveArtifact(artifact);
-    }
-  }, [artifact]);
-
   const handleToggleVfx = () => {
     const next = !vfxEnabled;
     setVfxEnabled(next);
@@ -273,55 +221,26 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
 
   // State refs for animation loop
   const particlesRef = useRef<Particle[]>([]);
-  const lightningsRef = useRef<LightningArc[]>([]);
-  const orbitSwordsRef = useRef<OrbitSword[]>([
-    { angle: 0, speed: 0.008, distX: 0, distY: 0, trail: [] },
-    { angle: Math.PI, speed: 0.008, distX: 0, distY: 0, trail: [] },
-  ]);
-  const spawnTimerRef = useRef<number>(0);
   const animFrameIdRef = useRef<number | null>(null);
   const prevTimeRef = useRef<number>(performance.now());
+  const spawnTimerRef = useRef<number>(0);
+  const lightningTimerRef = useRef<number>(0);
+  const lightningActiveRef = useRef<{ points: { x: number; y: number }[]; life: number; maxLife: number } | null>(null);
+  const swordPerimeterDist1Ref = useRef<number>(0);
+  const swordPerimeterDist2Ref = useRef<number>(300);
+  const swordTrail1Ref = useRef<{ x: number; y: number; angle: number }[]>([]);
+  const swordTrail2Ref = useRef<{ x: number; y: number; angle: number }[]>([]);
+  const scanPositionRef = useRef<number>(0);
   const errorFlashRef = useRef<number>(0);
-
-  // Helper to pad coordinates
-  const padX = (w: number, ratio: number) => 12 + ratio * (w - 24);
 
   // Trigger error feedback
   useEffect(() => {
     if (!vfxEnabled || !isError) return;
     errorFlashRef.current = 1.0;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.width / dpr;
-    const h = canvas.height / dpr;
-
-    // Lotus error absorption if equipped
-    if (activeArtifact === 'cuu_pham_lien') {
-      for (let i = 0; i < 4; i++) {
-        particlesRef.current.push({
-          x: w / 2 + (Math.random() - 0.5) * 30,
-          y: h / 2 + (Math.random() - 0.5) * 15,
-          vx: (Math.random() - 0.5) * 0.6,
-          vy: (Math.random() - 0.5) * 0.6,
-          size: 5 + Math.random() * 3,
-          maxLife: 40,
-          life: 40,
-          color: '#e879f9',
-          alpha: 0.9,
-          type: 'petal',
-          angle: Math.random() * Math.PI * 2,
-          va: 0.02,
-          extra: { wavePhase: 0 },
-        });
-      }
-    }
-  }, [isError, activeArtifact, vfxEnabled]);
+  }, [isError, vfxEnabled]);
 
   // =========================================================================
-  // MAIN CANVAS ANIMATION LOOP (RUNS SLOWLY AT A FIXED CONSTANT SPEED)
-  // Completely decoupled from typing/keystrokes for zero visual distraction
+  // MAIN VFX RENDER LOOP (FIXED SPEED - STRICTLY INDEPENDENT OF TYPING SPEED)
   // =========================================================================
   useEffect(() => {
     if (!vfxEnabled) return;
@@ -336,8 +255,8 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
     const updateSize = () => {
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      const targetW = Math.max(rect.width + 24, 280);
-      const targetH = 48 + 24; // Strict 72px canvas height (48px input + 12px padding top/bottom)
+      const targetW = Math.max(rect.width + 32, 280);
+      const targetH = 48 + 32; // Exact 80px canvas (48px input + 16px padding on all sides)
 
       if (canvas.width !== targetW * dpr || canvas.height !== targetH * dpr) {
         canvas.width = targetW * dpr;
@@ -355,7 +274,7 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
 
     const render = (time: number) => {
       if (!isRunning) return;
-      const dt = Math.min((time - prevTimeRef.current) / 1000, 0.1);
+      const dt = Math.min((time - prevTimeRef.current) / 1000, 0.05);
       prevTimeRef.current = time;
 
       const dpr = window.devicePixelRatio || 1;
@@ -366,17 +285,17 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      // Bounds of the inner input box - exactly 48px height matching h-12 input
-      const padXVal = 12;
-      const padYVal = 12;
-      const boxW = w - padXVal * 2;
+      // Positioning box: 16px pad surrounding 48px input
+      const padXVal = 16;
+      const padYVal = 16;
+      const boxW = Math.max(10, w - padXVal * 2);
       const boxH = 48;
       const radius = 12;
 
       const art = activeArtifact;
 
       // Helper for drawing rounded rect
-      const drawRoundRect = (x: number, y: number, rw: number, rh: number, r: number) => {
+      const drawRoundRectPath = (x: number, y: number, rw: number, rh: number, r: number) => {
         ctx.beginPath();
         ctx.moveTo(x + r, y);
         ctx.lineTo(x + rw - r, y);
@@ -390,320 +309,586 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
         ctx.closePath();
       };
 
-      // Helper for corner bracket accents
-      const drawCornerBracket = (cx: number, cy: number, dx: number, dy: number, len: number, color: string) => {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.0;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(cx, cy + dy * len);
-        ctx.lineTo(cx, cy);
-        ctx.lineTo(cx + dx * len, cy);
-        ctx.stroke();
-      };
+      // Calculate total perimeter for orbit math
+      const straightW = boxW - 2 * radius;
+      const straightH = boxH - 2 * radius;
+      const cornerArcLen = (Math.PI * radius) / 2;
+      const totalPerimeter = 2 * straightW + 2 * straightH + 4 * cornerArcLen;
 
-      // ========================================================
-      // 1. BASE AURA GLOW LAYER (FIXED ELEGANT SPEED & INTENSITY)
-      // ========================================================
-      ctx.save();
-      let borderColor = 'rgba(251, 191, 36, 0.5)';
-      let cornerColor = '#fbbf24';
-
-      // Map border/corner colors to userFrame elemental type with calm, steady opacity
-      if (frameElementalType === 'flame') {
-        borderColor = 'rgba(244, 63, 94, 0.65)';
-        cornerColor = cultScale.isSupremeRealm ? '#fb923c' : '#f43f5e';
-      } else if (frameElementalType === 'lightning') {
-        borderColor = 'rgba(250, 204, 21, 0.7)';
-        cornerColor = cultScale.isSupremeRealm ? '#ffffff' : '#facc15';
-      } else if (frameElementalType === 'matrix') {
-        borderColor = 'rgba(52, 211, 153, 0.65)';
-        cornerColor = '#34d399';
-      } else if (frameElementalType === 'cosmic') {
-        borderColor = 'rgba(56, 189, 248, 0.65)';
-        cornerColor = '#38bdf8';
-      } else if (frameElementalType === 'arcane') {
-        borderColor = 'rgba(192, 132, 252, 0.65)';
-        cornerColor = '#c084fc';
-      } else if (frameElementalType === 'dragon') {
-        borderColor = 'rgba(220, 38, 38, 0.7)';
-        cornerColor = '#dc2626';
-      } else if (frameElementalType === 'admin_gold') {
-        borderColor = 'rgba(251, 191, 36, 0.8)';
-        cornerColor = '#fbbf24';
-      } else if (frameElementalType === 'wood_leaf') {
-        borderColor = 'rgba(16, 185, 129, 0.65)';
-        cornerColor = '#10b981';
-      } else if (frameElementalType === 'crystal') {
-        borderColor = 'rgba(6, 182, 212, 0.65)';
-        cornerColor = '#06b6d4';
-      } else if (frameElementalType === 'chrono') {
-        borderColor = 'rgba(34, 211, 238, 0.7)';
-        cornerColor = '#22d3ee';
-      }
-
-      // If active artifact is equipped, blend artifact accents
+      // =======================================================================
+      // PHÁP BẢO 1: THANH VÂN KIẾM (⚔️ - Lam Ngọc Kiếm Khí & Ngự Kiếm Phi Hành)
+      // =======================================================================
       if (art === 'thanh_van_kiem') {
-        cornerColor = '#22d3ee';
-      } else if (art === 'hao_thien_kinh') {
-        cornerColor = '#facc15';
-      } else if (art === 'cuu_pham_lien') {
-        cornerColor = '#c084fc';
-      } else if (art === 'ban_co_phu') {
-        cornerColor = '#f97316';
-      }
+        // Slow fixed breathing pulse (~5.2s period)
+        const breath = 0.8 + 0.2 * Math.sin(time * 0.0012);
 
-      // Fixed calm aura glow - constant blur and width
-      ctx.shadowColor = cornerColor;
-      ctx.shadowBlur = 9;
-      drawRoundRect(padXVal, padYVal, boxW, boxH, radius);
-      ctx.strokeStyle = borderColor;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.restore();
-
-      // ========================================================
-      // 2. CORNER ACCENTS & RUNIC MOTIFS
-      // ========================================================
-      const cornerSize = 12;
-      drawCornerBracket(padXVal, padYVal, 1, 1, cornerSize, cornerColor);
-      drawCornerBracket(padXVal + boxW, padYVal, -1, 1, cornerSize, cornerColor);
-      drawCornerBracket(padXVal, padYVal + boxH, 1, -1, cornerSize, cornerColor);
-      drawCornerBracket(padXVal + boxW, padYVal + boxH, -1, -1, cornerSize, cornerColor);
-
-      // Rotating Conic Ring for Admin Gold or Supreme Realm at a slow, fixed constant speed
-      if (frameElementalType === 'admin_gold' || cultScale.isSupremeRealm) {
+        // 1. Subtle cyan sword qi perimeter glow
         ctx.save();
-        const angle = time * 0.0006; // Slow fixed constant rotation
-        const grad = ctx.createConicGradient(angle, w / 2, h / 2);
-        grad.addColorStop(0, 'rgba(251, 191, 36, 0.45)');
-        grad.addColorStop(0.25, 'rgba(244, 63, 94, 0.45)');
-        grad.addColorStop(0.5, 'rgba(56, 189, 248, 0.45)');
-        grad.addColorStop(0.75, 'rgba(192, 132, 252, 0.45)');
-        grad.addColorStop(1, 'rgba(251, 191, 36, 0.45)');
-
-        ctx.strokeStyle = grad;
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 10 * breath;
+        ctx.strokeStyle = `rgba(34, 211, 238, ${0.45 * breath})`;
         ctx.lineWidth = 1.5;
-        drawRoundRect(padXVal - 1, padYVal - 1, boxW + 2, boxH + 2, radius + 1);
+        drawRoundRectPath(padXVal, padYVal, boxW, boxH, radius);
+        ctx.stroke();
+
+        // Inner fine sword blade edge
+        ctx.strokeStyle = 'rgba(165, 243, 252, 0.35)';
+        ctx.lineWidth = 0.75;
+        drawRoundRectPath(padXVal + 1, padYVal + 1, boxW - 2, boxH - 2, radius - 1);
         ctx.stroke();
         ctx.restore();
-      }
 
-      // Thanh Vân Kiếm: Orbiting Flying Swords at a slow, fixed constant speed
-      if (art === 'thanh_van_kiem') {
-        orbitSwordsRef.current.forEach((os) => {
-          os.angle += 0.008; // Slow fixed constant orbit speed
-          const rx = boxW / 2 + 8;
-          const ry = boxH / 2 + 8;
-          const sx = w / 2 + Math.cos(os.angle) * rx;
-          const sy = h / 2 + Math.sin(os.angle) * ry;
-
-          os.trail.push({ x: sx, y: sy });
-          if (os.trail.length > 6) os.trail.shift();
-
-          ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)';
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          os.trail.forEach((pt, ti) => {
-            if (ti === 0) ctx.moveTo(pt.x, pt.y);
-            else ctx.lineTo(pt.x, pt.y);
-          });
-          ctx.stroke();
-
+        // 2. Corner Sword Hilts / Sword Points
+        const cornerLen = 14;
+        const drawSwordCorner = (cx: number, cy: number, dx: number, dy: number) => {
           ctx.save();
-          ctx.translate(sx, sy);
-          ctx.rotate(os.angle + Math.PI / 2);
-          ctx.fillStyle = '#22d3ee';
-          ctx.shadowColor = '#22d3ee';
+          ctx.strokeStyle = '#22d3ee';
+          ctx.lineWidth = 2.0;
+          ctx.lineCap = 'round';
+          ctx.shadowColor = '#06b6d4';
           ctx.shadowBlur = 6;
           ctx.beginPath();
-          ctx.moveTo(0, -6);
-          ctx.lineTo(2, 2.5);
-          ctx.lineTo(-2, 2.5);
-          ctx.closePath();
+          ctx.moveTo(cx, cy + dy * cornerLen);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + dx * cornerLen, cy);
+          ctx.stroke();
+
+          // Mini diamond sword guard accent at corner
+          ctx.fillStyle = '#a5f3fc';
+          ctx.beginPath();
+          ctx.arc(cx + dx * 2, cy + dy * 2, 1.8, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
-        });
-      }
+        };
 
-      // ========================================================
-      // 3. FIXED SLOW-PACED AMBIENT PARTICLE SPAWNER
-      // Completely independent of player keystrokes
-      // ========================================================
-      spawnTimerRef.current += 1;
-      if (spawnTimerRef.current >= 24 && particlesRef.current.length < 12) {
-        spawnTimerRef.current = 0;
+        drawSwordCorner(padXVal, padYVal, 1, 1);
+        drawSwordCorner(padXVal + boxW, padYVal, -1, 1);
+        drawSwordCorner(padXVal, padYVal + boxH, 1, -1);
+        drawSwordCorner(padXVal + boxW, padYVal + boxH, -1, -1);
 
-        // Spawn a gentle, slow-floating ambient particle
-        const spawnX = Math.random() * (boxW - 16) + padXVal + 8;
-        const spawnY = padYVal + boxH - 6;
+        // 3. Ngự Kiếm Phi Hành: Twin Flying Swords at constant fixed speed (35 px/sec)
+        const swordSpeed = 38 * dt; // Slow, majestic constant speed
+        swordPerimeterDist1Ref.current = (swordPerimeterDist1Ref.current + swordSpeed) % totalPerimeter;
+        swordPerimeterDist2Ref.current = (swordPerimeterDist1Ref.current + totalPerimeter / 2) % totalPerimeter;
 
-        if (frameElementalType === 'flame') {
+        const sword1 = getPerimeterPoint(padXVal, padYVal, boxW, boxH, radius, swordPerimeterDist1Ref.current);
+        const sword2 = getPerimeterPoint(padXVal, padYVal, boxW, boxH, radius, swordPerimeterDist2Ref.current);
+
+        // Update trails
+        swordTrail1Ref.current.push({ x: sword1.x, y: sword1.y, angle: sword1.tangentAngle });
+        if (swordTrail1Ref.current.length > 10) swordTrail1Ref.current.shift();
+
+        swordTrail2Ref.current.push({ x: sword2.x, y: sword2.y, angle: sword2.tangentAngle });
+        if (swordTrail2Ref.current.length > 10) swordTrail2Ref.current.shift();
+
+        const renderSword = (
+          swordPos: { x: number; y: number; tangentAngle: number },
+          trail: { x: number; y: number; angle: number }[]
+        ) => {
+          // Sword Light Trail
+          if (trail.length > 1) {
+            ctx.save();
+            ctx.beginPath();
+            trail.forEach((pt, idx) => {
+              if (idx === 0) ctx.moveTo(pt.x, pt.y);
+              else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
+            ctx.lineWidth = 1.6;
+            ctx.lineCap = 'round';
+            ctx.shadowColor = '#06b6d4';
+            ctx.shadowBlur = 6;
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Flying Sword Body
+          ctx.save();
+          ctx.translate(swordPos.x, swordPos.y);
+          ctx.rotate(swordPos.tangentAngle);
+
+          // Outer sword aura
+          ctx.shadowColor = '#22d3ee';
+          ctx.shadowBlur = 8;
+
+          // Double-edged miniature blade (13px long, 4px wide)
+          ctx.beginPath();
+          ctx.moveTo(7, 0);       // Blade tip
+          ctx.lineTo(1, -2.5);   // Upper blade edge
+          ctx.lineTo(-4, -2);    // Guard
+          ctx.lineTo(-4, -3.5);  // Guard wing
+          ctx.lineTo(-5.5, -3.5);
+          ctx.lineTo(-5.5, 3.5);
+          ctx.lineTo(-4, 3.5);
+          ctx.lineTo(-4, 2);
+          ctx.lineTo(1, 2.5);    // Lower blade edge
+          ctx.closePath();
+
+          const bladeGrad = ctx.createLinearGradient(-6, 0, 7, 0);
+          bladeGrad.addColorStop(0, '#0e7490');
+          bladeGrad.addColorStop(0.4, '#22d3ee');
+          bladeGrad.addColorStop(1, '#ffffff');
+          ctx.fillStyle = bladeGrad;
+          ctx.fill();
+
+          // Central blade spine line
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(-3, 0);
+          ctx.lineTo(6, 0);
+          ctx.stroke();
+
+          ctx.restore();
+        };
+
+        renderSword(sword1, swordTrail1Ref.current);
+        renderSword(sword2, swordTrail2Ref.current);
+
+        // 4. Ambient Sword Wisps (Kiếm Ý Tinh Hoa) - Spawns at constant cadence
+        spawnTimerRef.current += 1;
+        if (spawnTimerRef.current >= 40 && particlesRef.current.length < 7) {
+          spawnTimerRef.current = 0;
           particlesRef.current.push({
-            x: spawnX,
-            y: spawnY,
-            vx: (Math.random() - 0.5) * 0.25,
-            vy: -0.35 - Math.random() * 0.25,
-            size: 5 + Math.random() * 3,
-            maxLife: 80,
-            life: 80,
-            color: Math.random() > 0.4 ? '#f97316' : '#f59e0b',
-            alpha: 0.8,
-            type: 'flame',
-            angle: 0,
-            extra: { wavePhase: Math.random() * Math.PI * 2 },
-          });
-        } else if (frameElementalType === 'lightning') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: Math.random() > 0.5 ? padYVal + 6 : padYVal + boxH - 6,
-            vx: (Math.random() - 0.5) * 0.3,
-            vy: (Math.random() - 0.5) * 0.3,
-            size: 2.2 + Math.random() * 1.5,
-            maxLife: 65,
-            life: 65,
-            color: '#facc15',
-            alpha: 0.85,
-            type: 'spark',
-          });
-        } else if (frameElementalType === 'matrix') {
-          const glyphs = ['1', '0', '⚡', 'λ', '0x'];
-          particlesRef.current.push({
-            x: spawnX,
-            y: padYVal + 8,
-            vx: 0,
-            vy: 0.3 + Math.random() * 0.2,
-            size: 9,
-            maxLife: 80,
-            life: 80,
-            color: '#34d399',
-            alpha: 0.8,
-            type: 'matrix_code',
-            extra: { glyph: glyphs[Math.floor(Math.random() * glyphs.length)] },
-          });
-        } else if (frameElementalType === 'cosmic') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: padYVal + Math.random() * boxH,
-            vx: (Math.random() - 0.5) * 0.2,
-            vy: (Math.random() - 0.5) * 0.2,
-            size: 4 + Math.random() * 2.5,
-            maxLife: 90,
-            life: 90,
-            color: Math.random() > 0.5 ? '#38bdf8' : '#818cf8',
-            alpha: 0.8,
-            type: 'star',
-            angle: Math.random() * Math.PI,
-            va: 0.01,
-          });
-        } else if (frameElementalType === 'arcane') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: spawnY,
-            vx: (Math.random() - 0.5) * 0.2,
-            vy: -0.3 - Math.random() * 0.2,
-            size: 4 + Math.random() * 2,
-            maxLife: 85,
-            life: 85,
-            color: '#c084fc',
-            alpha: 0.8,
-            type: 'rune',
-            angle: Math.random() * Math.PI,
-            va: 0.015,
-          });
-        } else if (frameElementalType === 'dragon') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: spawnY,
-            vx: (Math.random() - 0.5) * 0.25,
-            vy: -0.35 - Math.random() * 0.2,
-            size: 5 + Math.random() * 3,
-            maxLife: 80,
-            life: 80,
-            color: '#ef4444',
-            alpha: 0.8,
-            type: 'dragon_flame',
-            angle: 0,
-            va: 0.01,
-          });
-        } else if (frameElementalType === 'admin_gold') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: padYVal + Math.random() * boxH,
-            vx: (Math.random() - 0.5) * 0.25,
-            vy: (Math.random() - 0.5) * 0.25,
-            size: 4 + Math.random() * 2.5,
-            maxLife: 80,
-            life: 80,
-            color: Math.random() > 0.4 ? '#fbbf24' : '#ffffff',
-            alpha: 0.85,
-            type: 'star',
-            angle: Math.random() * Math.PI,
-            va: 0.015,
-          });
-        } else if (frameElementalType === 'wood_leaf') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: padYVal + 6,
-            vx: 0.2 + Math.random() * 0.2,
-            vy: 0.25 + Math.random() * 0.2,
-            size: 5 + Math.random() * 2.5,
-            maxLife: 95,
-            life: 95,
-            color: '#10b981',
-            alpha: 0.8,
-            type: 'leaf',
-            angle: Math.random() * Math.PI * 2,
-            va: 0.015,
-            extra: { wavePhase: Math.random() * Math.PI * 2 },
-          });
-        } else if (frameElementalType === 'crystal') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: padYVal + Math.random() * boxH,
-            vx: (Math.random() - 0.5) * 0.2,
-            vy: (Math.random() - 0.5) * 0.2,
-            size: 4 + Math.random() * 2,
-            maxLife: 80,
-            life: 80,
-            color: '#06b6d4',
-            alpha: 0.8,
-            type: 'crystal',
-            angle: Math.random() * Math.PI,
-            va: 0.015,
-          });
-        } else if (frameElementalType === 'chrono') {
-          particlesRef.current.push({
-            x: spawnX,
-            y: padYVal + Math.random() * boxH,
-            vx: (Math.random() > 0.5 ? 0.5 : -0.5),
-            vy: (Math.random() - 0.5) * 0.15,
-            size: 7 + Math.random() * 3,
-            maxLife: 50,
-            life: 50,
-            color: '#22d3ee',
-            alpha: 0.8,
-            type: 'blade',
-            angle: 0,
-          });
-        } else {
-          // Default / Golden Core ambient stardust
-          particlesRef.current.push({
-            x: spawnX,
-            y: spawnY,
-            vx: (Math.random() - 0.5) * 0.2,
-            vy: -0.3 - Math.random() * 0.2,
-            size: 2.5 + Math.random() * 1.5,
+            x: padXVal + 12 + Math.random() * (boxW - 24),
+            y: padYVal + boxH - 4,
+            vx: (Math.random() - 0.5) * 0.15,
+            vy: -0.25 - Math.random() * 0.15, // Slow fixed float
+            size: 8 + Math.random() * 4,
             maxLife: 75,
             life: 75,
-            color: '#fbbf24',
-            alpha: 0.8,
-            type: 'spark',
+            color: '#22d3ee',
+            alpha: 0.75,
+            type: 'sword_wisp',
+            angle: -Math.PI / 4 + (Math.random() - 0.5) * 0.2,
           });
         }
       }
 
-      // Draw and update active particles with slow, fixed motion
+      // =======================================================================
+      // PHÁP BẢO 2: HẠO THIÊN KÍNH (🪞 - Kim Quang Thấu Chiếu & Bát Quái Cổ Kính)
+      // =======================================================================
+      else if (art === 'hao_thien_kinh') {
+        const breath = 0.85 + 0.15 * Math.sin(time * 0.001);
+
+        // 1. Bronze & Solar Gold Border
+        ctx.save();
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 10 * breath;
+        ctx.strokeStyle = `rgba(245, 158, 11, ${0.5 * breath})`;
+        ctx.lineWidth = 1.6;
+        drawRoundRectPath(padXVal, padYVal, boxW, boxH, radius);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(254, 240, 138, 0.35)';
+        ctx.lineWidth = 0.8;
+        drawRoundRectPath(padXVal + 1.5, padYVal + 1.5, boxW - 3, boxH - 3, radius - 1.5);
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Chiseled Bagua Mirror Corners
+        const cornerSize = 13;
+        const drawMirrorCorner = (cx: number, cy: number, dx: number, dy: number) => {
+          ctx.save();
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 2.0;
+          ctx.lineCap = 'round';
+          ctx.shadowColor = '#fbbf24';
+          ctx.shadowBlur = 6;
+
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + dy * cornerSize);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + dx * cornerSize, cy);
+          ctx.stroke();
+
+          // Double concentric mirror arc
+          ctx.beginPath();
+          ctx.arc(cx + dx * 3, cy + dy * 3, 5, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(254, 240, 138, 0.7)';
+          ctx.lineWidth = 1.0;
+          ctx.stroke();
+
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.arc(cx + dx * 3, cy + dy * 3, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        };
+
+        drawMirrorCorner(padXVal, padYVal, 1, 1);
+        drawMirrorCorner(padXVal + boxW, padYVal, -1, 1);
+        drawMirrorCorner(padXVal, padYVal + boxH, 1, -1);
+        drawMirrorCorner(padXVal + boxW, padYVal + boxH, -1, -1);
+
+        // 3. Divine Optical Scanning Beam (Kính Quang Thấu Chiếu - Constant Speed)
+        // Cycles horizontally across the box once every ~6.8 seconds
+        scanPositionRef.current = ((time * 0.00014) % 1.0) * (boxW + 80) - 40;
+        const scanX = padXVal + scanPositionRef.current;
+
+        ctx.save();
+        // Clip to inside input rounded rect so light stays within bounds
+        drawRoundRectPath(padXVal, padYVal, boxW, boxH, radius);
+        ctx.clip();
+
+        // Soft God-ray scanning band
+        const beamW = 60;
+        const beamGrad = ctx.createLinearGradient(scanX - beamW / 2, 0, scanX + beamW / 2, 0);
+        beamGrad.addColorStop(0, 'rgba(251, 191, 36, 0)');
+        beamGrad.addColorStop(0.35, 'rgba(251, 191, 36, 0.09)');
+        beamGrad.addColorStop(0.5, 'rgba(254, 240, 138, 0.22)');
+        beamGrad.addColorStop(0.65, 'rgba(56, 189, 248, 0.09)'); // Faint prismatic refraction
+        beamGrad.addColorStop(1, 'rgba(251, 191, 36, 0)');
+
+        ctx.fillStyle = beamGrad;
+        ctx.fillRect(scanX - beamW / 2, padYVal, beamW, boxH);
+
+        // Thin sharp central caustic glint
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.moveTo(scanX, padYVal);
+        ctx.lineTo(scanX, padYVal + boxH);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // 4. Micro Rotating Bagua Mirror (Top-right accent)
+        ctx.save();
+        const baguaX = padXVal + boxW - 8;
+        const baguaY = padYVal + 8;
+        const baguaAngle = time * 0.0006; // Ultra-slow fixed constant rotation
+        ctx.translate(baguaX, baguaY);
+        ctx.rotate(baguaAngle);
+
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 8 trigram tick marks
+        for (let ti = 0; ti < 8; ti++) {
+          const a = (ti * Math.PI) / 4;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
+          ctx.lineTo(Math.cos(a) * 6, Math.sin(a) * 6);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 5. Ambient Solar Dust (Kim Quang Linh Điểm)
+        spawnTimerRef.current += 1;
+        if (spawnTimerRef.current >= 42 && particlesRef.current.length < 6) {
+          spawnTimerRef.current = 0;
+          particlesRef.current.push({
+            x: padXVal + 16 + Math.random() * (boxW - 32),
+            y: padYVal + boxH - 6,
+            vx: (Math.random() - 0.5) * 0.12,
+            vy: -0.22 - Math.random() * 0.12,
+            size: 4 + Math.random() * 2.5,
+            maxLife: 80,
+            life: 80,
+            color: Math.random() > 0.4 ? '#fde047' : '#ffffff',
+            alpha: 0.8,
+            type: 'solar_dust',
+            angle: Math.random() * Math.PI,
+            va: 0.008,
+          });
+        }
+      }
+
+      // =======================================================================
+      // PHÁP BẢO 3: CỬU PHẨM HẮC LIÊN (🪷 - Hắc Liên Hộ Mạch & Tịnh Thế U Liên)
+      // =======================================================================
+      else if (art === 'cuu_pham_lien') {
+        const breath = 0.85 + 0.15 * Math.sin(time * 0.0011);
+
+        // 1. Mystic Purple Lotus Perimeter Aura
+        ctx.save();
+        ctx.shadowColor = '#c084fc';
+        ctx.shadowBlur = 11 * breath;
+        ctx.strokeStyle = `rgba(168, 85, 247, ${0.48 * breath})`;
+        ctx.lineWidth = 1.6;
+        drawRoundRectPath(padXVal, padYVal, boxW, boxH, radius);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(232, 121, 249, 0.3)';
+        ctx.lineWidth = 0.8;
+        drawRoundRectPath(padXVal + 1.5, padYVal + 1.5, boxW - 3, boxH - 3, radius - 1.5);
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Multi-layered Lotus Petal Corners
+        const drawLotusCorner = (cx: number, cy: number, dx: number, dy: number) => {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.shadowColor = '#c084fc';
+          ctx.shadowBlur = 6;
+
+          // 3-petal cluster blooming from corner
+          const drawMiniPetal = (angle: number, scale: number, color: string) => {
+            ctx.save();
+            ctx.rotate(angle);
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.quadraticCurveTo(-3 * scale, 6 * scale, 0, 11 * scale);
+            ctx.quadraticCurveTo(3 * scale, 6 * scale, 0, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          };
+
+          const baseAngle = dx > 0 ? (dy > 0 ? 0 : -Math.PI / 2) : (dy > 0 ? Math.PI / 2 : Math.PI);
+          drawMiniPetal(baseAngle - 0.35, 0.8, '#7e22ce');
+          drawMiniPetal(baseAngle + 0.35, 0.8, '#7e22ce');
+          drawMiniPetal(baseAngle, 1.0, '#c084fc');
+
+          ctx.restore();
+        };
+
+        drawLotusCorner(padXVal, padYVal, 1, 1);
+        drawLotusCorner(padXVal + boxW, padYVal, -1, 1);
+        drawLotusCorner(padXVal, padYVal + boxH, 1, -1);
+        drawLotusCorner(padXVal + boxW, padYVal + boxH, -1, -1);
+
+        // 3. Ambient Drifting Lotus Petals (Hắc Liên Hoa Biện) - Constant Slow Sway
+        spawnTimerRef.current += 1;
+        if (spawnTimerRef.current >= 48 && particlesRef.current.length < 6) {
+          spawnTimerRef.current = 0;
+          particlesRef.current.push({
+            x: padXVal + 14 + Math.random() * (boxW - 28),
+            y: padYVal + boxH - 4,
+            vx: (Math.random() - 0.5) * 0.15,
+            vy: -0.2 - Math.random() * 0.12, // Ultra slow, soothing upward drift
+            size: 6.5 + Math.random() * 2.5,
+            maxLife: 95,
+            life: 95,
+            color: '#c084fc',
+            alpha: 0.82,
+            type: 'lotus_petal',
+            angle: Math.random() * Math.PI * 2,
+            va: 0.007, // Slow constant rotation
+            extra: { wavePhase: Math.random() * Math.PI * 2 },
+          });
+        }
+      }
+
+      // =======================================================================
+      // PHÁP BẢO 4: BÀN CỔ KHAI THIÊN PHỦ (🪓 - Thái Sơ Thần Lôi & Liệt Ngấn Thái Cổ)
+      // =======================================================================
+      else if (art === 'ban_co_phu') {
+        const breath = 0.85 + 0.15 * Math.sin(time * 0.0013);
+
+        // 1. Primordial Molten Basalt Border
+        ctx.save();
+        ctx.shadowColor = '#ea580c';
+        ctx.shadowBlur = 11 * breath;
+        ctx.strokeStyle = `rgba(234, 88, 12, ${0.55 * breath})`;
+        ctx.lineWidth = 1.8;
+        drawRoundRectPath(padXVal, padYVal, boxW, boxH, radius);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.4)';
+        ctx.lineWidth = 0.8;
+        drawRoundRectPath(padXVal + 1.5, padYVal + 1.5, boxW - 3, boxH - 3, radius - 1.5);
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Chiseled Primordial Axe Blade Corners
+        const cornerSize = 14;
+        const drawAxeCorner = (cx: number, cy: number, dx: number, dy: number) => {
+          ctx.save();
+          ctx.strokeStyle = '#f97316';
+          ctx.lineWidth = 2.0;
+          ctx.lineCap = 'round';
+          ctx.shadowColor = '#ea580c';
+          ctx.shadowBlur = 7;
+
+          // Main heavy bracket
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + dy * cornerSize);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + dx * cornerSize, cy);
+          ctx.stroke();
+
+          // Axe blade bevel
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.moveTo(cx + dx * 2, cy + dy * 2);
+          ctx.lineTo(cx + dx * 7, cy + dy * 2);
+          ctx.lineTo(cx + dx * 2, cy + dy * 7);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.restore();
+        };
+
+        drawAxeCorner(padXVal, padYVal, 1, 1);
+        drawAxeCorner(padXVal + boxW, padYVal, -1, 1);
+        drawAxeCorner(padXVal, padYVal + boxH, 1, -1);
+        drawAxeCorner(padXVal + boxW, padYVal + boxH, -1, -1);
+
+        // 3. Space Fissure Lines (Liệt Ngấn Thái Cổ - Fixed Rhythmic Magma Glow)
+        ctx.save();
+        const fissureAlpha = 0.35 + 0.25 * Math.sin(time * 0.001);
+        ctx.strokeStyle = `rgba(251, 191, 36, ${fissureAlpha})`;
+        ctx.lineWidth = 1.0;
+        ctx.shadowColor = '#f97316';
+        ctx.shadowBlur = 5;
+
+        // Fissure 1 on top border
+        const f1X = padXVal + boxW * 0.32;
+        ctx.beginPath();
+        ctx.moveTo(f1X - 15, padYVal);
+        ctx.lineTo(f1X - 5, padYVal - 2);
+        ctx.lineTo(f1X + 5, padYVal + 2);
+        ctx.lineTo(f1X + 18, padYVal);
+        ctx.stroke();
+
+        // Fissure 2 on bottom border
+        const f2X = padXVal + boxW * 0.68;
+        ctx.beginPath();
+        ctx.moveTo(f2X - 16, padYVal + boxH);
+        ctx.lineTo(f2X - 4, padYVal + boxH + 2);
+        ctx.lineTo(f2X + 6, padYVal + boxH - 2);
+        ctx.lineTo(f2X + 18, padYVal + boxH);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // 4. Thái Sơ Thần Lôi: Graceful, slow-fading cosmic lightning arc
+        // Triggered every 3.2 seconds at a regular, fixed cadence (no wild jitter)
+        lightningTimerRef.current += dt;
+        if (lightningTimerRef.current >= 3.2) {
+          lightningTimerRef.current = 0;
+          // Generate a smooth lightning segment along top or bottom
+          const isTop = Math.random() > 0.5;
+          const startX = padXVal + 25 + Math.random() * (boxW - 120);
+          const endX = startX + 70 + Math.random() * 40;
+          const arcY = isTop ? padYVal : padYVal + boxH;
+
+          const pts = [{ x: startX, y: arcY }];
+          const segs = 5;
+          for (let si = 1; si < segs; si++) {
+            pts.push({
+              x: startX + ((endX - startX) * si) / segs,
+              y: arcY + (Math.random() - 0.5) * 6,
+            });
+          }
+          pts.push({ x: endX, y: arcY });
+
+          lightningActiveRef.current = {
+            points: pts,
+            life: 50,
+            maxLife: 50,
+          };
+        }
+
+        // Draw active lightning arc smoothly over its lifecycle
+        if (lightningActiveRef.current) {
+          const l = lightningActiveRef.current;
+          l.life -= 1;
+          const lProgress = l.life / l.maxLife;
+
+          if (lProgress > 0) {
+            ctx.save();
+            ctx.beginPath();
+            l.points.forEach((pt, idx) => {
+              if (idx === 0) ctx.moveTo(pt.x, pt.y);
+              else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.strokeStyle = `rgba(254, 240, 138, ${lProgress * 0.9})`;
+            ctx.lineWidth = 1.4;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+
+            // White inner hot core
+            ctx.strokeStyle = `rgba(255, 255, 255, ${lProgress * 0.95})`;
+            ctx.lineWidth = 0.6;
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          if (l.life <= 0) {
+            lightningActiveRef.current = null;
+          }
+        }
+
+        // 5. Primordial Embers (Tàn Lửa Hồng Hoang) - Slow Constant Float
+        spawnTimerRef.current += 1;
+        if (spawnTimerRef.current >= 45 && particlesRef.current.length < 6) {
+          spawnTimerRef.current = 0;
+          particlesRef.current.push({
+            x: padXVal + 14 + Math.random() * (boxW - 28),
+            y: padYVal + boxH - 4,
+            vx: (Math.random() - 0.5) * 0.16,
+            vy: -0.26 - Math.random() * 0.14,
+            size: 3.5 + Math.random() * 2.0,
+            maxLife: 75,
+            life: 75,
+            color: Math.random() > 0.4 ? '#f97316' : '#ea580c',
+            alpha: 0.8,
+            type: 'primordial_ember',
+          });
+        }
+      }
+
+      // =======================================================================
+      // KHI CHƯA TRANG BỊ PHÁP BẢO (Default Spiritual Aura Frame)
+      // =======================================================================
+      else {
+        const breath = 0.85 + 0.15 * Math.sin(time * 0.001);
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(251, 191, 36, 0.4)';
+        ctx.shadowBlur = 8 * breath;
+        ctx.strokeStyle = `rgba(251, 191, 36, ${0.4 * breath})`;
+        ctx.lineWidth = 1.4;
+        drawRoundRectPath(padXVal, padYVal, boxW, boxH, radius);
+        ctx.stroke();
+
+        // 4 Simple Elegant Corners
+        const cLen = 10;
+        const drawDefaultCorner = (cx: number, cy: number, dx: number, dy: number) => {
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + dy * cLen);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + dx * cLen, cy);
+          ctx.stroke();
+        };
+        drawDefaultCorner(padXVal, padYVal, 1, 1);
+        drawDefaultCorner(padXVal + boxW, padYVal, -1, 1);
+        drawDefaultCorner(padXVal, padYVal + boxH, 1, -1);
+        drawDefaultCorner(padXVal + boxW, padYVal + boxH, -1, -1);
+        ctx.restore();
+
+        // Gentle Ambient Stardust
+        spawnTimerRef.current += 1;
+        if (spawnTimerRef.current >= 55 && particlesRef.current.length < 5) {
+          spawnTimerRef.current = 0;
+          particlesRef.current.push({
+            x: padXVal + 12 + Math.random() * (boxW - 24),
+            y: padYVal + boxH - 4,
+            vx: (Math.random() - 0.5) * 0.1,
+            vy: -0.2 - Math.random() * 0.1,
+            size: 2.5 + Math.random() * 1.5,
+            maxLife: 75,
+            life: 75,
+            color: '#fbbf24',
+            alpha: 0.7,
+            type: 'ambient_spark',
+          });
+        }
+      }
+
+      // =======================================================================
+      // DRAW & UPDATE ACTIVE PARTICLES (CONSTANT SLOW MOTION)
+      // =======================================================================
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const p = particlesRef.current[i];
         p.life -= 1;
@@ -723,52 +908,33 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
         ctx.save();
         ctx.globalAlpha = p.alpha * progress;
 
-        // --- A. FLAME SHAPE ---
-        if (p.type === 'flame') {
+        // --- 1. SWORD WISP (Thanh Vân Kiếm) ---
+        if (p.type === 'sword_wisp') {
           ctx.translate(p.x, p.y);
-          if (p.extra?.wavePhase !== undefined) {
-            p.extra.wavePhase += 0.04;
-            ctx.rotate((p.angle || 0) + Math.sin(p.extra.wavePhase) * 0.08);
-          } else {
-            ctx.rotate(p.angle || 0);
-          }
-
-          ctx.shadowColor = p.color;
+          ctx.rotate(p.angle || 0);
+          ctx.shadowColor = '#22d3ee';
           ctx.shadowBlur = 6;
 
-          const flameGrad = ctx.createRadialGradient(0, p.size * 0.3, 0, 0, 0, p.size);
-          flameGrad.addColorStop(0, '#ffffff');
-          flameGrad.addColorStop(0.35, p.color);
-          flameGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-          ctx.fillStyle = flameGrad;
+          const wispGrad = ctx.createLinearGradient(0, -p.size, 0, p.size);
+          wispGrad.addColorStop(0, '#ffffff');
+          wispGrad.addColorStop(0.5, '#22d3ee');
+          wispGrad.addColorStop(1, 'rgba(6, 182, 212, 0)');
 
+          ctx.fillStyle = wispGrad;
           ctx.beginPath();
-          ctx.moveTo(0, p.size);
-          ctx.bezierCurveTo(-p.size * 0.7, p.size * 0.3, -p.size * 0.7, -p.size * 0.3, 0, -p.size * 1.3);
-          ctx.bezierCurveTo(p.size * 0.7, -p.size * 0.3, p.size * 0.7, p.size * 0.3, 0, p.size);
-          ctx.closePath();
+          ctx.ellipse(0, 0, 1.4, p.size, 0, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        // --- B. MATRIX DIGITAL CODE GLYPH ---
-        else if (p.type === 'matrix_code') {
-          ctx.translate(p.x, p.y);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = '#10b981';
-          ctx.shadowBlur = 5;
-          ctx.font = `bold ${Math.round(p.size)}px monospace`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(p.extra?.glyph || '1', 0, 0);
-        }
-
-        // --- C. COSMIC TWINKLING STAR ---
-        else if (p.type === 'star') {
+        // --- 2. SOLAR DUST / GLYPH (Hạo Thiên Kính) ---
+        else if (p.type === 'solar_dust') {
           ctx.translate(p.x, p.y);
           ctx.rotate(p.angle || 0);
+          ctx.shadowColor = '#facc15';
+          ctx.shadowBlur = 5;
           ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color;
-          ctx.shadowBlur = 6;
+
+          // 4-pointed radiant star
           ctx.beginPath();
           for (let si = 0; si < 4; si++) {
             ctx.rotate(Math.PI / 2);
@@ -779,88 +945,59 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
           ctx.fill();
         }
 
-        // --- D. DRAGON BLOOD FLAME ---
-        else if (p.type === 'dragon_flame') {
-          ctx.translate(p.x, p.y);
-          ctx.rotate(p.angle || 0);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = '#dc2626';
-          ctx.shadowBlur = 7;
-          ctx.beginPath();
-          ctx.moveTo(-p.size * 0.4, p.size);
-          ctx.quadraticCurveTo(-p.size * 0.8, 0, 0, -p.size * 1.4);
-          ctx.quadraticCurveTo(p.size * 0.4, -p.size * 0.4, 0, p.size * 0.5);
-          ctx.closePath();
-          ctx.fill();
-        }
+        // --- 3. LOTUS PETAL (Cửu Phẩm Hắc Liên) ---
+        else if (p.type === 'lotus_petal') {
+          if (p.extra?.wavePhase !== undefined) {
+            p.extra.wavePhase += 0.025; // Gentle sinusoidal sway
+          }
+          const sway = Math.sin(p.extra?.wavePhase || 0) * 1.2;
 
-        // --- E. EMERALD WOOD LEAF ---
-        else if (p.type === 'leaf') {
-          if (p.extra?.wavePhase !== undefined) p.extra.wavePhase += 0.03;
-          const sway = Math.sin(p.extra?.wavePhase || 0) * 1.0;
           ctx.translate(p.x + sway, p.y);
           ctx.rotate(p.angle || 0);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color;
-          ctx.shadowBlur = 4;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, p.size, p.size * 0.45, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // --- F. AZURE CRYSTAL SHARD ---
-        else if (p.type === 'crystal') {
-          ctx.translate(p.x, p.y);
-          ctx.rotate(p.angle || 0);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color;
-          ctx.shadowBlur = 5;
-          ctx.beginPath();
-          ctx.moveTo(0, -p.size);
-          ctx.lineTo(p.size * 0.6, 0);
-          ctx.lineTo(0, p.size);
-          ctx.lineTo(-p.size * 0.6, 0);
-          ctx.closePath();
-          ctx.fill();
-        }
-
-        // --- G. SWORD BLADE SLASH ---
-        else if (p.type === 'blade') {
-          ctx.translate(p.x, p.y);
-          ctx.rotate(p.angle || 0);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color;
+          ctx.shadowColor = '#c084fc';
           ctx.shadowBlur = 6;
+
+          // Detailed two-tone lotus petal
+          const petalGrad = ctx.createLinearGradient(0, p.size * 0.6, 0, -p.size * 0.8);
+          petalGrad.addColorStop(0, '#581c87');
+          petalGrad.addColorStop(0.5, '#9333ea');
+          petalGrad.addColorStop(1, '#f472b6');
+
+          ctx.fillStyle = petalGrad;
           ctx.beginPath();
-          ctx.ellipse(0, 0, p.size, 1.6, 0, 0, Math.PI * 2);
+          ctx.moveTo(0, p.size * 0.6);
+          ctx.quadraticCurveTo(-p.size * 0.6, 0, 0, -p.size * 0.8);
+          ctx.quadraticCurveTo(p.size * 0.6, 0, 0, p.size * 0.6);
+          ctx.closePath();
           ctx.fill();
+
+          // Petal delicate central vein
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.lineWidth = 0.6;
+          ctx.beginPath();
+          ctx.moveTo(0, p.size * 0.4);
+          ctx.lineTo(0, -p.size * 0.6);
+          ctx.stroke();
         }
 
-        // --- H. LOTUS PETAL ---
-        else if (p.type === 'petal') {
-          if (p.extra?.wavePhase !== undefined) p.extra.wavePhase += 0.03;
-          const sway = Math.sin(p.extra?.wavePhase || 0) * 1.0;
-          ctx.translate(p.x + sway, p.y);
-          ctx.rotate(p.angle || 0);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color;
-          ctx.shadowBlur = 5;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, p.size, p.size * 0.45, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // --- I. RUNIC GLYPH ---
-        else if (p.type === 'rune') {
+        // --- 4. PRIMORDIAL EMBER (Bàn Cổ Phủ) ---
+        else if (p.type === 'primordial_ember') {
           ctx.translate(p.x, p.y);
-          ctx.rotate(p.angle || 0);
-          ctx.fillStyle = p.color;
-          ctx.shadowColor = p.color;
+          ctx.shadowColor = '#ea580c';
           ctx.shadowBlur = 5;
-          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+
+          const emberGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
+          emberGrad.addColorStop(0, '#fef08a');
+          emberGrad.addColorStop(0.4, p.color);
+          emberGrad.addColorStop(1, 'rgba(234, 88, 12, 0)');
+
+          ctx.fillStyle = emberGrad;
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+          ctx.fill();
         }
 
-        // --- J. STANDARD GLOWING SPARK ---
+        // --- 5. AMBIENT SPARK (Default) ---
         else {
           ctx.fillStyle = p.color;
           ctx.shadowColor = p.color;
@@ -873,18 +1010,18 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
         ctx.restore();
       }
 
-      // ========================================================
-      // 4. ERROR FLASH DISRUPTION OVERLAY
-      // ========================================================
+      // =======================================================================
+      // ERROR FEEDBACK (GENTLE TRANSLUCENT SHIELD DISRUPTION)
+      // =======================================================================
       if (errorFlashRef.current > 0) {
         ctx.save();
-        ctx.globalAlpha = errorFlashRef.current * 0.35;
+        ctx.globalAlpha = errorFlashRef.current * 0.3;
         ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2.5;
-        drawRoundRect(padXVal - 2, padYVal - 2, boxW + 4, boxH + 4, radius);
+        ctx.lineWidth = 2.0;
+        drawRoundRectPath(padXVal - 1.5, padYVal - 1.5, boxW + 3, boxH + 3, radius);
         ctx.stroke();
         ctx.restore();
-        errorFlashRef.current = Math.max(0, errorFlashRef.current - dt * 3.5);
+        errorFlashRef.current = Math.max(0, errorFlashRef.current - dt * 2.5);
       }
 
       ctx.restore();
@@ -898,17 +1035,32 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       resizeObserver.disconnect();
     };
-  }, [vfxEnabled, activeArtifact, frameElementalType, cultScale]);
+  }, [vfxEnabled, activeArtifact]);
+
+  // Current artifact information
+  const currentArtConfig = activeArtifact ? ARTIFACT_CONFIGS[activeArtifact] : null;
 
   return (
-    <div className={`relative w-full flex items-center ${className}`}>
-      {/* Top Bar: Only VFX Master Toggle Button */}
+    <div className={`relative w-full flex flex-col justify-center ${className}`}>
+      {/* Optional Top Mini Artifact Switcher / Indicator */}
       {showSelector && (
-        <div className="flex items-center justify-end pb-1.5 px-1 select-none">
+        <div className="flex items-center justify-between pb-1 px-1 select-none text-[11px]">
+          <div className="flex items-center gap-1.5 text-slate-300 font-medium">
+            <span className="text-amber-400">Pháp Bảo:</span>
+            {currentArtConfig ? (
+              <span className="font-bold text-amber-300 flex items-center gap-1">
+                <span>{currentArtConfig.icon}</span>
+                <span>{currentArtConfig.name}</span>
+              </span>
+            ) : (
+              <span className="text-slate-400 italic">Chưa trang bị</span>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={handleToggleVfx}
-            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+            className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
               vfxEnabled
                 ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 shadow-sm'
                 : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-300'
@@ -927,7 +1079,7 @@ export const ArtifactInputVfxFrame: React.FC<ArtifactInputVfxFrameProps> = ({
         {vfxEnabled && (
           <canvas
             ref={canvasRef}
-            className="absolute -top-3 -left-3 pointer-events-none z-10 select-none"
+            className="absolute -top-4 -left-4 pointer-events-none z-10 select-none"
             aria-hidden="true"
           />
         )}

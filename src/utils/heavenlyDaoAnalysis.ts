@@ -23,6 +23,8 @@ export interface ErrorTimingPhase {
   errorCount: number;
   errorPercentage: number;
   description: string;
+  remedy?: string;
+  physiologicalCause?: string;
   riskLevel: 'cao' | 'trung_binh' | 'thap';
 }
 
@@ -167,71 +169,133 @@ export function analyzeErrorTimingFromMatches(matches: MatchRecord[]): {
   let endgameErrors = 0;
   let totalErrors = 0;
   let cascadeErrors = 0;
-  let recoveryLatencies: number[] = [];
+  const recoveryLatencies: number[] = [];
 
   matches.forEach((m) => {
-    const duration = m.durationSeconds || 60;
-    const p1 = duration * 0.25; // 0 - 15s
-    const p2 = duration * 0.55; // 15 - 33s
-    const p3 = duration * 0.8;  // 33 - 48s
+    const duration = Math.max(10, m.durationSeconds || 60);
+    const p1 = duration * 0.25; // 0 - 25% (Khởi Thức)
+    const p2 = duration * 0.55; // 25% - 55% (Tăng Tốc)
+    const p3 = duration * 0.80; // 55% - 80% (Bình Ổn)
 
-    // 1. Phân tích qua keystrokes nếu có
-    if (m.keystrokes && m.keystrokes.length > 0) {
-      let lastErrorTime = -1;
-      m.keystrokes.forEach((k) => {
-        const sec = k.timeMs / 1000;
-        if (!k.isCorrect) {
-          totalErrors++;
-          if (sec <= p1) introErrors++;
-          else if (sec <= p2) accelErrors++;
-          else if (sec <= p3) sustainErrors++;
-          else endgameErrors++;
-
-          if (lastErrorTime > 0 && k.timeMs - lastErrorTime < 800) {
-            cascadeErrors++;
-          }
-          lastErrorTime = k.timeMs;
-        } else {
-          if (lastErrorTime > 0) {
-            const recovery = k.timeMs - lastErrorTime;
-            if (recovery > 50 && recovery < 3000) {
-              recoveryLatencies.push(recovery);
-            }
-            lastErrorTime = -1;
-          }
-        }
-      });
+    // Kiểm tra nếu ván đấu hoàn hảo 100% không mắc lỗi
+    const isFlawless = m.accuracy === 100 || (m.totalErrors === 0 && (m.incorrectWords === 0 || !m.incorrectWords));
+    if (isFlawless) {
+      return;
     }
-    // 2. Phân tích qua chartData nếu không có keystrokes chi tiết
-    else if (m.chartData && m.chartData.length > 0) {
-      m.chartData.forEach((pt) => {
-        const err = pt.errors || 0;
-        if (err > 0) {
+
+    let matchErrorsFound = 0;
+
+    // 1. Phân tích qua chartData (mốc thời gian giây thực tế khi thi đấu)
+    if (m.chartData && m.chartData.length > 0) {
+      const errorPoints = m.chartData.filter((pt) => (pt.errors || 0) > 0);
+      if (errorPoints.length > 0) {
+        errorPoints.forEach((pt) => {
+          const err = pt.errors || 1;
+          matchErrorsFound += err;
           totalErrors += err;
           if (pt.second <= p1) introErrors += err;
           else if (pt.second <= p2) accelErrors += err;
           else if (pt.second <= p3) sustainErrors += err;
           else endgameErrors += err;
+        });
+      }
+    }
+
+    // 2. Phân tích keystrokes để đo độ trễ hồi phục thần thức và lỗi liên hoàn
+    if (m.keystrokes && m.keystrokes.length > 0) {
+      const firstTime = m.keystrokes[0]?.timeMs || 0;
+      const isAbsolute = firstTime > 10000;
+      const offset = isAbsolute ? firstTime : 0;
+
+      let lastErrorTime = -1;
+      let ksErrors = 0;
+
+      m.keystrokes.forEach((k) => {
+        const relMs = Math.max(0, (k.timeMs || 0) - offset);
+        const sec = relMs / 1000;
+        const isErr = k.isCorrect === false || k.key === 'Backspace';
+
+        if (isErr) {
+          ksErrors++;
+          // Nếu chartData chưa có thì cộng vào các phase từ keystrokes
+          if (matchErrorsFound === 0) {
+            totalErrors++;
+            if (sec <= p1) introErrors++;
+            else if (sec <= p2) accelErrors++;
+            else if (sec <= p3) sustainErrors++;
+            else endgameErrors++;
+          }
+
+          if (lastErrorTime > 0 && relMs - lastErrorTime < 800) {
+            cascadeErrors++;
+          }
+          lastErrorTime = relMs;
+        } else {
+          if (lastErrorTime > 0) {
+            const delta = relMs - lastErrorTime;
+            if (delta >= 60 && delta <= 3000) {
+              recoveryLatencies.push(delta);
+            }
+            lastErrorTime = -1;
+          }
         }
       });
+
+      if (matchErrorsFound === 0 && ksErrors > 0) {
+        matchErrorsFound = ksErrors;
+      }
     }
-    // 3. Phân bổ ước lượng theo tổng số lỗi và wordLogs
-    else {
-      const err = m.incorrectWords || (m.mistakes ? m.mistakes.length : 3);
-      totalErrors += err;
-      // Phân bổ mẫu thực tế: đầu ván 20%, tăng tốc 35%, trung đoạn 20%, cuối ván 25%
-      introErrors += Math.round(err * 0.2);
-      accelErrors += Math.round(err * 0.35);
-      sustainErrors += Math.round(err * 0.2);
-      endgameErrors += Math.max(0, err - Math.round(err * 0.75));
+
+    // 3. Phân bổ qua wordLogs nếu chưa có chi tiết từ chart/keystrokes
+    if (matchErrorsFound === 0 && m.wordLogs && m.wordLogs.length > 0) {
+      const wrongLogs = m.wordLogs.filter((w) => !w.isCorrect);
+      if (wrongLogs.length > 0) {
+        wrongLogs.forEach((w, wIdx) => {
+          matchErrorsFound++;
+          totalErrors++;
+          const sec = w.timeMs ? w.timeMs / 1000 : (wIdx / Math.max(1, m.wordLogs!.length)) * duration;
+          if (sec <= p1) introErrors++;
+          else if (sec <= p2) accelErrors++;
+          else if (sec <= p3) sustainErrors++;
+          else endgameErrors++;
+        });
+      }
+    }
+
+    // 4. Ước tính từ m.incorrectWords hoặc m.totalErrors nếu thiếu chi tiết
+    if (matchErrorsFound === 0) {
+      const err = m.totalErrors ?? m.incorrectWords ?? (m.mistakes ? m.mistakes.reduce((s, x) => s + (x.count || 1), 0) : 0);
+      if (err > 0) {
+        totalErrors += err;
+        const e1 = Math.round(err * 0.2);
+        const e2 = Math.round(err * 0.35);
+        const e3 = Math.round(err * 0.2);
+        const e4 = Math.max(0, err - e1 - e2 - e3);
+        introErrors += e1;
+        accelErrors += e2;
+        sustainErrors += e3;
+        endgameErrors += e4;
+      }
+    }
+
+    // Nếu ván đấu có ghi nhận averageHesitationMs
+    if (m.averageHesitationMs && m.averageHesitationMs >= 80 && m.averageHesitationMs <= 2500) {
+      recoveryLatencies.push(m.averageHesitationMs);
     }
   });
 
-  const safeTotal = Math.max(1, totalErrors);
   const avgRecoveryLatencyMs =
     recoveryLatencies.length > 0
       ? Math.round(recoveryLatencies.reduce((a, b) => a + b, 0) / recoveryLatencies.length)
-      : 360;
+      : totalErrors === 0
+      ? 140
+      : 320;
+
+  const safeTotal = totalErrors > 0 ? totalErrors : 1;
+  const introPct = totalErrors > 0 ? Math.round((introErrors / safeTotal) * 100) : 0;
+  const accelPct = totalErrors > 0 ? Math.round((accelErrors / safeTotal) * 100) : 0;
+  const sustainPct = totalErrors > 0 ? Math.round((sustainErrors / safeTotal) * 100) : 0;
+  const endgamePct = totalErrors > 0 ? Math.max(0, 100 - introPct - accelPct - sustainPct) : 0;
 
   const phases: ErrorTimingPhase[] = [
     {
@@ -240,9 +304,13 @@ export function analyzeErrorTimingFromMatches(matches: MatchRecord[]): {
       xianxiaPhase: 'Sơ Khai Định Thần',
       timeRange: '0s - 15s (25% đầu ván)',
       errorCount: introErrors,
-      errorPercentage: Math.round((introErrors / safeTotal) * 100),
-      description: 'Lỗi do bàn tay chưa làm ấm, chưa bắt kịp nhịp gõ hoặc vội vàng gõ từ đầu tiên.',
-      riskLevel: introErrors / safeTotal > 0.3 ? 'cao' : introErrors / safeTotal > 0.18 ? 'trung_binh' : 'thap',
+      errorPercentage: introPct,
+      description: totalErrors === 0
+        ? 'Xuất chiêu khai mạc hoàn hảo, không có sai sót.'
+        : 'Lỗi do bàn tay chưa làm ấm, chưa bắt kịp nhịp gõ hoặc vội vàng bung sức ở những từ đầu tiên.',
+      physiologicalCause: 'Hệ thần kinh vận động chưa thiết lập đồng bộ giữa thụ cảm thị giác và phản xạ lướt phím.',
+      remedy: 'Gõ chậm lại 10% ở 5 từ đầu tiên, chú trọng độ chính xác 100% để tạo đà gia tốc tự nhiên.',
+      riskLevel: totalErrors === 0 ? 'thap' : introPct > 30 ? 'cao' : introPct > 18 ? 'trung_binh' : 'thap',
     },
     {
       phaseId: 'acceleration',
@@ -250,9 +318,13 @@ export function analyzeErrorTimingFromMatches(matches: MatchRecord[]): {
       xianxiaPhase: 'Cực Hạn Bứt Phá',
       timeRange: '15s - 35s (Giai đoạn đẩy WPM)',
       errorCount: accelErrors,
-      errorPercentage: Math.round((accelErrors / safeTotal) * 100),
-      description: 'Lỗi phát sinh khi cố gắng gõ nhanh hơn ngưỡng phản xạ an toàn của ngón tay.',
-      riskLevel: accelErrors / safeTotal > 0.35 ? 'cao' : accelErrors / safeTotal > 0.2 ? 'trung_binh' : 'thap',
+      errorPercentage: accelPct,
+      description: totalErrors === 0
+        ? 'Khí thế bứt phá tuyệt đối chính xác, tâm thủ hợp nhất.'
+        : 'Lỗi phát sinh khi cố gắng gõ nhanh hơn ngưỡng phản xạ an toàn của ngón tay, gây tranh chấp nhịp phím.',
+      physiologicalCause: 'Ngón tay lướt trước khi mắt kịp quét từ tiếp theo, tạo xung đột thần kinh giữa hai bàn tay.',
+      remedy: 'Tập kỹ thuật nhìn trước 1 - 2 từ (Lookahead reading); giữ hơi thở đều đặn khi bắt đầu tăng tốc.',
+      riskLevel: totalErrors === 0 ? 'thap' : accelPct > 35 ? 'cao' : accelPct > 20 ? 'trung_binh' : 'thap',
     },
     {
       phaseId: 'sustain',
@@ -260,9 +332,13 @@ export function analyzeErrorTimingFromMatches(matches: MatchRecord[]): {
       xianxiaPhase: 'Đạo Tâm Trì Trệ',
       timeRange: '35s - 50s (Duy trì nhịp)',
       errorCount: sustainErrors,
-      errorPercentage: Math.round((sustainErrors / safeTotal) * 100),
-      description: 'Lỗi xuất hiện sau các từ dài hoặc khi dòng văn bản đổi dòng gây gián đoạn mắt nhìn.',
-      riskLevel: sustainErrors / safeTotal > 0.3 ? 'cao' : sustainErrors / safeTotal > 0.18 ? 'trung_binh' : 'thap',
+      errorPercentage: sustainPct,
+      description: totalErrors === 0
+        ? 'Đạo tâm bất động như sơn, duy trì nhịp điệu hoàn hảo.'
+        : 'Lỗi xuất hiện sau các từ dài hoặc khi dòng văn bản đổi dòng gây phân tán sự chú ý.',
+      physiologicalCause: 'Khựng nhịp ngón cái ở phím Space và gián đoạn mắt nhìn khi đổi dòng hiển thị.',
+      remedy: 'Giữ lực nhấn phím Space ổn định, không khựng lại sau khi kết thúc từ dài.',
+      riskLevel: totalErrors === 0 ? 'thap' : sustainPct > 30 ? 'cao' : sustainPct > 18 ? 'trung_binh' : 'thap',
     },
     {
       phaseId: 'endgame',
@@ -270,9 +346,13 @@ export function analyzeErrorTimingFromMatches(matches: MatchRecord[]): {
       xianxiaPhase: 'Linh Khí Khô Kiệt',
       timeRange: '50s - 60s+ (Giai đoạn rút đích)',
       errorCount: endgameErrors,
-      errorPercentage: Math.round((endgameErrors / safeTotal) * 100),
-      description: 'Lỗi do mỏi cơ bàn tay, đuối hơi hoặc tâm lý nôn nóng khi thời gian sắp cạn.',
-      riskLevel: endgameErrors / safeTotal > 0.3 ? 'cao' : endgameErrors / safeTotal > 0.18 ? 'trung_binh' : 'thap',
+      errorPercentage: endgamePct,
+      description: totalErrors === 0
+        ? 'Duy trì phong độ xuất sắc đến tận giây thi đấu cuối cùng.'
+        : 'Lỗi do mỏi cơ bàn tay, đuối sức hoặc tâm lý nôn nóng nhìn đồng hồ đếm ngược.',
+      physiologicalCause: 'Căng cơ cổ tay và giảm độ nhạy xúc giác ngón tay sau thời gian dài gõ liên tục.',
+      remedy: 'Thả lỏng hai vai và cổ tay; tuyệt đối không nhìn đồng hồ đếm ngược trong 10 giây cuối.',
+      riskLevel: totalErrors === 0 ? 'thap' : endgamePct > 30 ? 'cao' : endgamePct > 18 ? 'trung_binh' : 'thap',
     },
   ];
 
@@ -760,13 +840,19 @@ export function generateHeuristicDaoAnalysis(
       title: isNumberMode
         ? `Thiên Đạo Phán Quyết: Toán Pháp Đạo Cơ ${realmName} ${subStage}`
         : `Thiên Đạo Phán Quyết: Đạo Cơ ${realmName} ${subStage}`,
-      summary: isNumberMode
+      summary: timing.totalErrorsAnalyzed === 0
+        ? `Quan trắc qua ${count} ván đấu, thần thức ghi nhận tốc độ trung bình ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác tuyệt đối 100%! Đạo cơ xuất chúng, xuất chiêu không tỳ vết.`
+        : isNumberMode
         ? `Quan trắc qua ${count} ván đấu bàn phím số, thần thức ghi nhận tốc độ trung bình ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Bạn kiểm soát các phím số rất tốt song đang gặp bình cảnh do nhịp vươn ngón tay ở các phím số xa.`
         : `Quan trắc qua ${count} ván đấu, thần thức ghi nhận tốc độ trung bình ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Người chơi thuộc tốp trên của cảnh giới này, song đang vấp phải bình cảnh do phân tán nhịp gõ tại giai đoạn ${worstPhase.name}.`,
-      tamMaName: isNumberMode
+      tamMaName: timing.totalErrorsAnalyzed === 0
+        ? 'Vô Ma Khuyết (Tâm Pháp Thuần Khiết)'
+        : isNumberMode
         ? 'Tâm Ma Thần Số (Nôn Nóng Bấm Số)'
         : 'Tâm Gấp Khí Loạn (Vội Vàng Xuất Chiêu)',
-      tamMaDescription: isNumberMode
+      tamMaDescription: timing.totalErrorsAnalyzed === 0
+        ? 'Đạo tâm kiên định, các ngón tay lướt trên bàn phím chuẩn xác 100%. Hãy duy trì độ tĩnh tâm này và thử thách các bài tập đẩy ngưỡng WPM cực hạn.'
+        : isNumberMode
         ? `Tâm ma xuất hiện rõ nét nhất khi bạn cố đẩy WPM số lên cực hạn. Các ngón tay bắt đầu trượt sang các phím số liền kề trên layout bàn phím số, làm đứt đoạn nhịp thở.`
         : `Tâm ma xuất hiện rõ nét nhất ở giai đoạn ${worstPhase.timeRange} khi bạn cố đẩy WPM lên cực hạn. Các ngón tay bắt đầu hoán vị vị trí, dẫn đến việc phải nhấn Backspace liên tục và làm tụt nhịp toàn ván đấu.`,
       overallPercentile: Math.max(15, Math.min(96, overallPercentile)),
@@ -775,10 +861,14 @@ export function generateHeuristicDaoAnalysis(
     errorPatterns,
     timingAnalysis: {
       phases: timing.phases,
-      criticalMomentVerdict: `Thời điểm phát sinh lỗi nhiều nhất là ở ${worstPhase.name} (${worstPhase.errorPercentage}% tổng số lỗi). Khắc phục được giai đoạn này sẽ lập tức giải phóng thêm 12 - 18 WPM!`,
+      criticalMomentVerdict: timing.totalErrorsAnalyzed === 0
+        ? 'Thần thức quán thông tuyệt đối! Đạo hữu không mắc bất kỳ sai sót nào trong toàn bộ các mốc thời gian thi đấu.'
+        : `Thời điểm phát sinh lỗi nhiều nhất là ở ${worstPhase.name} (${worstPhase.errorPercentage}% tổng số lỗi). Khắc phục được giai đoạn này sẽ lập tức giải phóng thêm 12 - 18 WPM!`,
       avgRecoveryLatencyMs: timing.avgRecoveryLatencyMs,
       peerAvgRecoveryMs: peerAvgRecovery,
-      cascadeErrorRate: Math.round((timing.cascadeErrorCount / Math.max(1, timing.totalErrorsAnalyzed)) * 100) || 24,
+      cascadeErrorRate: timing.totalErrorsAnalyzed > 0
+        ? Math.round((timing.cascadeErrorCount / timing.totalErrorsAnalyzed) * 100)
+        : 0,
     },
     peerComparison: {
       bracketName: bracket.name,

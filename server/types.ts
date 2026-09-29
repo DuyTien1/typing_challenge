@@ -101,6 +101,12 @@ export interface ServerHighScoreRecord {
   frame?: string;
   accuracy?: number;
   isVerified?: boolean;
+  sectName?: string;
+  sectTag?: string;
+  sectRole?: string;
+  realmName?: string;
+  realmIcon?: string;
+  level?: number;
 }
 
 export interface ServerLeaderboardEntry {
@@ -122,6 +128,7 @@ export interface ServerLeaderboardEntry {
   level?: number;
   sectName?: string;
   sectTag?: string;
+  sectRole?: string;
   keyboardSwitch?: string;
 }
 

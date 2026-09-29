@@ -16,11 +16,13 @@ import {
   ShieldAlert,
   Send,
   ExternalLink,
-  Crown
+  Crown,
+  User
 } from 'lucide-react';
 import { FriendRecord, FriendRequest, UserAccount } from '../types';
 import { AvatarWithFrame } from '../utils/frames';
 import { soundFx } from '../utils/audio';
+import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 import { 
   fetchFriendsList, 
   sendFriendRequest, 
@@ -58,6 +60,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'search' | 'daolu'>('friends');
   const [friends, setFriends] = useState<FriendRecord[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [inspectedFriend, setInspectedFriend] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTarget, setSearchTarget] = useState('');
   const [searchMessage, setSearchMessage] = useState('Bái kiến Đạo Hữu, mong được kết bái giao lưu đạo pháp gõ phím!');
@@ -401,7 +404,14 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                         {/* Top: Avatar, Name, Realm, Online Status */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 min-w-0">
-                            <div className="shrink-0 relative">
+                            <div
+                              className="shrink-0 relative cursor-pointer hover:scale-105 transition-transform"
+                              onClick={() => {
+                                soundFx.playKeyClick();
+                                setInspectedFriend(friend);
+                              }}
+                              title={`Xem hồ sơ của ${friend.displayName || friend.username}`}
+                            >
                               <AvatarWithFrame
                                 icon={friend.avatar || '⚡'}
                                 frameId={friend.frame || 'default'}
@@ -421,7 +431,14 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-black text-sm text-white truncate">
+                                <span
+                                  onClick={() => {
+                                    soundFx.playKeyClick();
+                                    setInspectedFriend(friend);
+                                  }}
+                                  className="font-black text-sm text-white hover:text-amber-300 cursor-pointer transition-colors truncate"
+                                  title={`Xem hồ sơ của ${friend.displayName || friend.username}`}
+                                >
                                   {friend.displayName || friend.username}
                                 </span>
                                 {friend.isDaoLu && (
@@ -495,6 +512,20 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
                         {/* Bottom: Action buttons */}
                         <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/60">
+                          {/* View Profile */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playKeyClick();
+                              setInspectedFriend(friend);
+                            }}
+                            title="Xem chi tiết hồ sơ xem trước"
+                            className="py-1.5 px-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                          >
+                            <User className="w-3.5 h-3.5" />
+                            <span>Hồ Sơ</span>
+                          </button>
+
                           {/* Whisper */}
                           <button
                             type="button"
@@ -791,6 +822,23 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
         </div>
       </div>
+
+      {/* Preview Profile Modal when inspecting any friend */}
+      {inspectedFriend && (
+        <PlayerSimpleProfileModal
+          isOpen={Boolean(inspectedFriend)}
+          player={inspectedFriend}
+          onClose={() => setInspectedFriend(null)}
+          currentUser={currentUser}
+          onOpenWhisper={(uName, uId) => {
+            if (onOpenWhisperChat) {
+              onOpenWhisperChat(uName, uId);
+              setInspectedFriend(null);
+              onClose();
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

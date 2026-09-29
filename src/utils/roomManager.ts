@@ -18,7 +18,8 @@ import {
   SectInfo, 
   SectRole,
   LeaderboardEntry,
-  LeaderboardMultiData
+  LeaderboardMultiData,
+  PlayerProfileDetail,
 } from '../types';
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken } from './auth';
@@ -1264,6 +1265,30 @@ export async function fetchServerSects(): Promise<{ success: boolean; sects: Sec
     console.error('Failed to fetch sects:', err);
   }
   return { success: false, sects: [] };
+}
+
+/**
+ * Lấy hồ sơ xem trước chi tiết của người chơi từ Server
+ */
+export async function fetchPlayerProfile(identifier: string): Promise<{
+  success: boolean;
+  profile?: PlayerProfileDetail;
+  error?: string;
+}> {
+  if (!identifier) return { success: false, error: 'Thiếu định danh' };
+  try {
+    const res = await fetch(`/api/player/profile/${encodeURIComponent(identifier)}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err: any) {
+    console.warn('Failed to fetch player profile:', err?.message || err);
+  }
+  return { success: false };
 }
 
 /**
