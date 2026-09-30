@@ -2,9 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { ShopItem, MarketListing, MarketLog, ServerUserRecord } from './types';
+import { getSafeStoragePath } from './utils';
 
-const SHOP_CONFIG_FILE = path.resolve(process.cwd(), 'shop_config.json');
-const MARKET_FILE = path.resolve(process.cwd(), 'market.json');
+const SHOP_CONFIG_FILE = getSafeStoragePath('shop_config.json');
+const MARKET_FILE = getSafeStoragePath('market.json');
 
 // Memory Stores
 let shopCatalog: ShopItem[] = [];

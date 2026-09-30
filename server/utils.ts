@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 export function normalizeRoomCode(input: string): string {
   if (!input) return '';
@@ -57,4 +59,20 @@ export function getModeDisplayName(mode: string): string {
 
 export function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 1000, 32, 'sha256').toString('hex');
+}
+
+export function getSafeStoragePath(filename: string): string {
+  if (process.env.VERCEL) {
+    const tmpPath = path.join('/tmp', filename);
+    const origPath = path.join(process.cwd(), filename);
+    if (!fs.existsSync(tmpPath) && fs.existsSync(origPath)) {
+      try {
+        fs.copyFileSync(origPath, tmpPath);
+      } catch {
+        // ignore
+      }
+    }
+    return tmpPath;
+  }
+  return path.join(process.cwd(), filename);
 }
