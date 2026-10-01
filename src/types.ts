@@ -495,6 +495,7 @@ export interface GameRoom {
   hostId: string;
   hostName: string;
   isQuickRoom: boolean;
+  isWorldRoom?: boolean;
   status: 'waiting' | 'playing' | 'finished';
   matchId?: string;
   createdAt: number;

@@ -46,13 +46,16 @@ function sanitizeRecords(
   if (!data || typeof data !== 'object') {
     return { ...DEFAULT_LEADERBOARD_FALLBACK };
   }
-  const hasMock = Object.values(data).some(
-    (r: any) => r && typeof r === 'object' && MOCK_NAMES.has(r.username)
-  );
-  if (hasMock) {
-    return { ...DEFAULT_LEADERBOARD_FALLBACK };
+  const result: Record<string, HighScoreRecord | null> = { ...DEFAULT_LEADERBOARD_FALLBACK };
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === 'object') {
+      const rec = val as any;
+      if (rec.username && !MOCK_NAMES.has(rec.username.trim())) {
+        result[key] = rec;
+      }
+    }
   }
-  return { ...DEFAULT_LEADERBOARD_FALLBACK, ...data };
+  return result;
 }
 
 // In-memory hot caches for instant synchronous access (prevents UI flicker and eliminates synchronous disk I/O on Citrix VDI)
@@ -149,10 +152,12 @@ export async function migrateLegacyLocalStorageToIndexedDB(): Promise<void> {
       const clean = sanitizeRecords(parsed);
       inMemoryLeaderboardCache = clean;
       await saveLeaderboardToIndexedDB(clean);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
     } else {
       const idbData = await getLeaderboardFromIndexedDB();
-      if (idbData) inMemoryLeaderboardCache = idbData;
+      if (idbData) {
+        inMemoryLeaderboardCache = idbData;
+        try { localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(idbData)); } catch {}
+      }
     }
 
     // 2. Match History migration
@@ -163,10 +168,12 @@ export async function migrateLegacyLocalStorageToIndexedDB(): Promise<void> {
         inMemoryMatchHistoryCache = parsed;
         await saveMatchHistoryToIndexedDB(parsed);
       }
-      localStorage.removeItem(LEGACY_HISTORY_KEY);
     } else {
       const idbHistory = await getMatchHistoryFromIndexedDB();
-      if (idbHistory) inMemoryMatchHistoryCache = idbHistory;
+      if (idbHistory) {
+        inMemoryMatchHistoryCache = idbHistory;
+        try { localStorage.setItem(LEGACY_HISTORY_KEY, JSON.stringify(idbHistory)); } catch {}
+      }
     }
 
     // 3. Cultivation migration
@@ -175,10 +182,12 @@ export async function migrateLegacyLocalStorageToIndexedDB(): Promise<void> {
       const parsed = JSON.parse(rawCult);
       inMemoryCultivationCache = parsed;
       await saveCultivationToIndexedDB(parsed);
-      localStorage.removeItem(LEGACY_CULTIVATION_KEY);
     } else {
       const idbCult = await getCultivationFromIndexedDB();
-      if (idbCult) inMemoryCultivationCache = idbCult;
+      if (idbCult) {
+        inMemoryCultivationCache = idbCult;
+        try { localStorage.setItem(LEGACY_CULTIVATION_KEY, JSON.stringify(idbCult)); } catch {}
+      }
     }
 
     // 4. Ghost runs migration
@@ -203,6 +212,18 @@ export async function migrateLegacyLocalStorageToIndexedDB(): Promise<void> {
  * LEADERBOARD STORAGE
  */
 export function getLeaderboardSync(): Record<string, HighScoreRecord | null> {
+  const isPopulated = Object.values(inMemoryLeaderboardCache).some((v) => v !== null);
+  if (isPopulated) return inMemoryLeaderboardCache;
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        inMemoryLeaderboardCache = sanitizeRecords(parsed);
+        return inMemoryLeaderboardCache;
+      }
+    } catch {}
+  }
   return inMemoryLeaderboardCache;
 }
 
@@ -218,6 +239,7 @@ export async function getLeaderboardFromIndexedDB(): Promise<Record<string, High
         if (request.result) {
           const sanitized = sanitizeRecords(request.result);
           inMemoryLeaderboardCache = sanitized;
+          try { localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(sanitized)); } catch {}
           resolve(sanitized);
         } else {
           resolve(inMemoryLeaderboardCache);
@@ -235,6 +257,10 @@ export async function saveLeaderboardToIndexedDB(scores: Record<string, HighScor
   const sanitized = sanitizeRecords(scores);
   inMemoryLeaderboardCache = sanitized;
 
+  if (typeof window !== 'undefined') {
+    try { localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(sanitized)); } catch {}
+  }
+
   try {
     const db = await openLeaderboardDB();
     await new Promise<void>((resolve, reject) => {
@@ -244,10 +270,6 @@ export async function saveLeaderboardToIndexedDB(scores: Record<string, HighScor
       request.onsuccess = () => resolve();
       request.onerror = (e) => reject((e.target as IDBRequest).error);
     });
-
-    if (typeof window !== 'undefined') {
-      try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch {}
-    }
   } catch {}
 }
 
@@ -272,6 +294,21 @@ export async function clearLeaderboardFromIndexedDB(): Promise<void> {
  * MATCH HISTORY STORAGE
  */
 export function getMatchHistorySync(): any[] {
+  if (inMemoryMatchHistoryCache && inMemoryMatchHistoryCache.length > 0) {
+    return inMemoryMatchHistoryCache;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LEGACY_HISTORY_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          inMemoryMatchHistoryCache = parsed;
+          return parsed;
+        }
+      }
+    } catch {}
+  }
   return inMemoryMatchHistoryCache;
 }
 
@@ -286,6 +323,7 @@ export async function getMatchHistoryFromIndexedDB(): Promise<any[]> {
       request.onsuccess = () => {
         if (Array.isArray(request.result)) {
           inMemoryMatchHistoryCache = request.result;
+          try { localStorage.setItem(LEGACY_HISTORY_KEY, JSON.stringify(request.result)); } catch {}
           resolve(request.result);
         } else {
           resolve(inMemoryMatchHistoryCache);
@@ -301,6 +339,9 @@ export async function getMatchHistoryFromIndexedDB(): Promise<any[]> {
 
 export async function saveMatchHistoryToIndexedDB(records: any[]): Promise<void> {
   inMemoryMatchHistoryCache = records;
+  if (typeof window !== 'undefined') {
+    try { localStorage.setItem(LEGACY_HISTORY_KEY, JSON.stringify(records)); } catch {}
+  }
   try {
     const db = await openLeaderboardDB();
     await new Promise<void>((resolve, reject) => {
@@ -310,9 +351,6 @@ export async function saveMatchHistoryToIndexedDB(records: any[]): Promise<void>
       request.onsuccess = () => resolve();
       request.onerror = (e) => reject((e.target as IDBRequest).error);
     });
-    if (typeof window !== 'undefined') {
-      try { localStorage.removeItem(LEGACY_HISTORY_KEY); } catch {}
-    }
   } catch {}
 }
 
@@ -337,6 +375,21 @@ export async function clearMatchHistoryFromIndexedDB(): Promise<void> {
  * CULTIVATION STATE STORAGE
  */
 export function getCultivationSync(): any {
+  if (inMemoryCultivationCache) {
+    return inMemoryCultivationCache;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LEGACY_CULTIVATION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          inMemoryCultivationCache = parsed;
+          return parsed;
+        }
+      }
+    } catch {}
+  }
   return inMemoryCultivationCache;
 }
 
@@ -351,6 +404,7 @@ export async function getCultivationFromIndexedDB(): Promise<any> {
       request.onsuccess = () => {
         if (request.result) {
           inMemoryCultivationCache = request.result;
+          try { localStorage.setItem(LEGACY_CULTIVATION_KEY, JSON.stringify(request.result)); } catch {}
           resolve(request.result);
         } else {
           resolve(inMemoryCultivationCache);
@@ -366,6 +420,9 @@ export async function getCultivationFromIndexedDB(): Promise<any> {
 
 export async function saveCultivationToIndexedDB(state: any): Promise<void> {
   inMemoryCultivationCache = state;
+  if (typeof window !== 'undefined') {
+    try { localStorage.setItem(LEGACY_CULTIVATION_KEY, JSON.stringify(state)); } catch {}
+  }
   try {
     const db = await openLeaderboardDB();
     await new Promise<void>((resolve, reject) => {
@@ -375,9 +432,6 @@ export async function saveCultivationToIndexedDB(state: any): Promise<void> {
       request.onsuccess = () => resolve();
       request.onerror = (e) => reject((e.target as IDBRequest).error);
     });
-    if (typeof window !== 'undefined') {
-      try { localStorage.removeItem(LEGACY_CULTIVATION_KEY); } catch {}
-    }
   } catch {}
 }
 

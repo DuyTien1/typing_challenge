@@ -1,6 +1,18 @@
 import { UserAccount, AuthResponse } from '../types';
 
-export const API_BASE = ((import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+export function getApiBase(): string {
+  // Always use relative path '' so requests go to the internal Express server directly without CORS or mixed-content issues.
+  return '';
+}
+
+export const API_BASE = '';
+
+/**
+ * Smart fetch helper that routes requests directly to relative endpoints.
+ */
+export async function smartAuthFetch(endpoint: string, init?: RequestInit): Promise<Response> {
+  return await fetch(endpoint, init);
+}
 
 async function parseAuthResponse(res: Response, defaultErrMsg: string): Promise<AuthResponse> {
   const text = await res.text();
@@ -10,7 +22,7 @@ async function parseAuthResponse(res: Response, defaultErrMsg: string): Promise<
     if (res.status === 404) {
       return {
         success: false,
-        error: 'Máy chủ API không phản hồi (404 Not Found). Khi triển khai trên Vercel, vui lòng đảm bảo file vercel.json và api/index.ts đã được cấu hình chuyển hướng backend!',
+        error: 'Máy chủ API không phản hồi (404 Not Found). Vui lòng thử lại sau!',
       };
     }
     if (res.status >= 500) {
@@ -94,7 +106,7 @@ export async function fetchCurrentUser(): Promise<UserAccount | null> {
   if (!token) return null;
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const res = await smartAuthFetch('/api/auth/me', {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -103,9 +115,12 @@ export async function fetchCurrentUser(): Promise<UserAccount | null> {
     if (data.success && data.user) {
       setStoredCachedUser(data.user);
       return data.user;
-    } else {
+    } else if (res.status === 401 || res.status === 403) {
       setStoredAuthToken(null);
+      setStoredCachedUser(null);
       return null;
+    } else {
+      return getStoredCachedUser();
     }
   } catch {
     return getStoredCachedUser();
@@ -117,7 +132,7 @@ export async function fetchCurrentUser(): Promise<UserAccount | null> {
  */
 export async function loginWithGoogle(credential: string, profileHint?: { email?: string; name?: string; picture?: string }): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
+    const res = await smartAuthFetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credential, ...profileHint }),
@@ -129,7 +144,11 @@ export async function loginWithGoogle(credential: string, profileHint?: { email?
     }
     return data;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi đăng nhập Google' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại!' : (err.message || 'Lỗi kết nối khi đăng nhập Google'),
+    };
   }
 }
 
@@ -144,7 +163,7 @@ export async function registerWithEmail(data: {
   email?: string;
 }): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/register`, {
+    const res = await smartAuthFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -156,7 +175,11 @@ export async function registerWithEmail(data: {
     }
     return result;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi tạo tài khoản' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại!' : (err.message || 'Lỗi kết nối khi tạo tài khoản'),
+    };
   }
 }
 
@@ -167,7 +190,7 @@ export const registerAccount = registerWithEmail;
  */
 export async function verifyEmailCode(email: string, code: string): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/verify-email`, {
+    const res = await smartAuthFetch('/api/auth/verify-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code }),
@@ -179,7 +202,11 @@ export async function verifyEmailCode(email: string, code: string): Promise<Auth
     }
     return data;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi xác nhận mã' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại!' : (err.message || 'Lỗi kết nối khi xác nhận mã'),
+    };
   }
 }
 
@@ -188,14 +215,18 @@ export async function verifyEmailCode(email: string, code: string): Promise<Auth
  */
 export async function resendVerifyCode(email: string): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/resend-code`, {
+    const res = await smartAuthFetch('/api/auth/resend-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
     return await parseAuthResponse(res, 'Lỗi kết nối khi gửi lại mã');
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi gửi lại mã' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại!' : (err.message || 'Lỗi kết nối khi gửi lại mã'),
+    };
   }
 }
 
@@ -204,7 +235,7 @@ export async function resendVerifyCode(email: string): Promise<AuthResponse> {
  */
 export async function loginWithEmail(identifier: string, password?: string): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+    const res = await smartAuthFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account: identifier, password }),
@@ -216,7 +247,11 @@ export async function loginWithEmail(identifier: string, password?: string): Pro
     }
     return data;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi đăng nhập' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau vài giây!' : (err.message || 'Lỗi kết nối khi đăng nhập'),
+    };
   }
 }
 
@@ -244,7 +279,7 @@ export async function updateUserProfile(updates: {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/profile`, {
+    const res = await smartAuthFetch('/api/auth/profile', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -258,7 +293,11 @@ export async function updateUserProfile(updates: {
     }
     return data;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi cập nhật hồ sơ' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại!' : (err.message || 'Lỗi kết nối khi cập nhật hồ sơ'),
+    };
   }
 }
 
@@ -272,7 +311,7 @@ export async function changeUserPassword(oldPassword: string, newPassword: strin
   }
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+    const res = await smartAuthFetch('/api/auth/change-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +322,11 @@ export async function changeUserPassword(oldPassword: string, newPassword: strin
     const data = await parseAuthResponse(res, 'Lỗi kết nối khi đổi mật khẩu');
     return data;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Lỗi kết nối khi đổi mật khẩu' };
+    const isFetchErr = err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('failed to fetch');
+    return {
+      success: false,
+      error: isFetchErr ? 'Không thể kết nối đến máy chủ. Vui lòng thử lại!' : (err.message || 'Lỗi kết nối khi đổi mật khẩu'),
+    };
   }
 }
 
@@ -294,7 +337,7 @@ export async function logoutUser(): Promise<void> {
   const token = getStoredAuthToken();
   if (token) {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
+      await smartAuthFetch('/api/auth/logout', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });

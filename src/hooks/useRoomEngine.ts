@@ -108,11 +108,24 @@ export function useRoomEngine({
   onLaunchGame,
   onBossVictoryChange,
 }: UseRoomEngineProps) {
-  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem('fasttyping_current_room_id') || null;
+  });
   const [isRoomHost, setIsRoomHost] = useState(true);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [targetJoinMode, setTargetJoinMode] = useState<GameMode>('vi_dau');
   const [kickedNotice, setKickedNotice] = useState<string | null>(null);
+
+  // Sync active room ID to sessionStorage for F5 reload persistence
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (currentRoomId) {
+      sessionStorage.setItem('fasttyping_current_room_id', currentRoomId);
+    } else {
+      sessionStorage.removeItem('fasttyping_current_room_id');
+    }
+  }, [currentRoomId]);
 
   // Initial players list
   const [players, setPlayers] = useState<Player[]>(() => [createMePlayer()]);
@@ -247,7 +260,9 @@ export function useRoomEngine({
 
         if (gameState === 'waiting_room' || gameState === 'gameover') {
           // Check if player was kicked
-          const meInRoom = updatedRoom.players?.find((p) => p.id === currentUserId);
+          const meInRoom = updatedRoom.players?.find(
+            (p) => p.id === currentUserId || (currentUser?.id && p.id === currentUser.id) || p.username === username
+          );
           if (gameState === 'waiting_room' && !meInRoom) {
             soundFx.playError();
             setCurrentRoomId(null);
@@ -281,7 +296,11 @@ export function useRoomEngine({
             return updatedRoom.players;
           });
 
-          setIsRoomHost(updatedRoom.hostId === currentUserId);
+          setIsRoomHost(
+            updatedRoom.hostId === currentUserId ||
+            (currentUser?.id && updatedRoom.hostId === currentUser.id) ||
+            updatedRoom.hostName === username
+          );
           if (updatedRoom.mode && updatedRoom.mode !== gameModeRef.current) {
             onGameModeChange(updatedRoom.mode);
             gameModeRef.current = updatedRoom.mode;
@@ -447,17 +466,9 @@ export function useRoomEngine({
     onBossVictoryChange,
   ]);
 
-  // Clean up player from room when tab is closed or navigated away
+  // Note: Tab reload (F5) preserves room session; explicit leaveRoom is only invoked on manual exit
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (currentRoomId) {
-        leaveRoom(currentRoomId, currentUserId);
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    // Keep empty to avoid leaving room on refresh
   }, [currentRoomId, currentUserId]);
 
   // Room Actions
@@ -506,12 +517,17 @@ export function useRoomEngine({
   const handleLeaveRoom = useCallback(async () => {
     if (currentRoomIdRef.current) {
       await leaveRoom(currentRoomIdRef.current, currentUserId);
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('fasttyping_current_room_id');
+        sessionStorage.removeItem('fasttyping_game_state');
+      }
       setCurrentRoomId(null);
     }
     const me = createMePlayer();
     setPlayers([me]);
     setIsRoomHost(true);
-  }, [currentUserId, createMePlayer]);
+    onGameStateChange('lobby');
+  }, [currentUserId, createMePlayer, onGameStateChange]);
 
   const handleAddBot = useCallback(() => {
     if (gameMode === 'ngau_hung' || gameMode === 'doan_chu' || gameMode === 'san_boss') return;

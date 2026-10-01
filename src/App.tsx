@@ -59,7 +59,7 @@ import {
 } from './utils/banManager';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
 import { resolveBestWpmRecord, isOutplayMode } from './components/WpmRecordBadge';
-import { fetchCurrentUser, logoutUser, updateUserProfile, getStoredAuthToken } from './utils/auth';
+import { fetchCurrentUser, logoutUser, updateUserProfile, getStoredAuthToken, loginWithEmail, getStoredCachedUser } from './utils/auth';
 import {
   createNewRoom,
   joinExistingRoom,
@@ -326,24 +326,32 @@ const BOT_NAMES = [
 ];
 
 export default function App() {
-  // User Profile: Unique per tab session with fallback to localStorage
+  // User Profile: Persistent across tabs with fallback
   const [username, setUsername] = useState<string>(() => {
     if (typeof window === 'undefined') return 'NgườiChơi_1';
+    const localUser = localStorage.getItem('fasttyping_user');
+    if (localUser) return localUser;
     const sessionUser = sessionStorage.getItem('fasttyping_user_session');
     if (sessionUser) return sessionUser;
-    const localUser = localStorage.getItem('fasttyping_user');
-    const defaultName = localUser || ('TayGõ_' + Math.floor(Math.random() * 900 + 100));
-    sessionStorage.setItem('fasttyping_user_session', defaultName);
+    const defaultName = 'TayGõ_' + Math.floor(Math.random() * 900 + 100);
+    try {
+      localStorage.setItem('fasttyping_user', defaultName);
+      sessionStorage.setItem('fasttyping_user_session', defaultName);
+    } catch {}
     return defaultName;
   });
   const [avatar, setAvatar] = useState<string>(() => {
     if (typeof window === 'undefined') return '🤖';
+    const localAvatar = localStorage.getItem('fasttyping_avatar');
+    if (localAvatar) return localAvatar;
     const sessionAvatar = sessionStorage.getItem('fasttyping_avatar_session');
     if (sessionAvatar) return sessionAvatar;
-    const localAvatar = localStorage.getItem('fasttyping_avatar');
     const avatarList = ['🦊', '⚡', '🚀', '🔥', '🐯', '🤖', '🎯', '👑', '🐉'];
-    const defaultAvatar = localAvatar || avatarList[Math.floor(Math.random() * avatarList.length)];
-    sessionStorage.setItem('fasttyping_avatar_session', defaultAvatar);
+    const defaultAvatar = avatarList[Math.floor(Math.random() * avatarList.length)];
+    try {
+      localStorage.setItem('fasttyping_avatar', defaultAvatar);
+      sessionStorage.setItem('fasttyping_avatar_session', defaultAvatar);
+    } catch {}
     return defaultAvatar;
   });
   const [bestWpm, setBestWpm] = useState<number>(() => {
@@ -352,9 +360,7 @@ export default function App() {
       const outplaySaved = localStorage.getItem('fasttyping_outplay_best_record');
       if (outplaySaved) {
         const parsed = JSON.parse(outplaySaved);
-        if (parsed && parsed.wpm > 0 && isOutplayMode(parsed.mode)) {
-          return parsed.wpm;
-        }
+        if (parsed && parsed.wpm > 0) return parsed.wpm;
       }
       const outplayWpm = Number(localStorage.getItem('fasttyping_outplay_best_wpm'));
       if (outplayWpm > 0) return outplayWpm;
@@ -362,8 +368,10 @@ export default function App() {
       const saved = localStorage.getItem('fasttyping_best_wpm_record');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.wpm > 0 && isOutplayMode(parsed.mode)) return parsed.wpm;
+        if (parsed && parsed.wpm > 0) return parsed.wpm;
       }
+      const generalWpm = Number(localStorage.getItem('fasttyping_best_wpm'));
+      if (generalWpm > 0) return generalWpm;
     } catch {}
     return 0;
   });
@@ -373,12 +381,12 @@ export default function App() {
       const outplaySaved = localStorage.getItem('fasttyping_outplay_best_record');
       if (outplaySaved) {
         const parsed = JSON.parse(outplaySaved);
-        if (parsed && parsed.wpm > 0 && isOutplayMode(parsed.mode)) return parsed;
+        if (parsed && parsed.wpm > 0) return parsed;
       }
       const saved = localStorage.getItem('fasttyping_best_wpm_record');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.wpm > 0 && isOutplayMode(parsed.mode)) return parsed;
+        if (parsed && parsed.wpm > 0) return parsed;
       }
     } catch {}
     return null;
@@ -389,20 +397,35 @@ export default function App() {
 
   const [userFrame, setUserFrame] = useState<string>(() => getStoredFrame());
 
-  // Unique Player ID per tab/session to guarantee distinct players across multiple tabs
-  const [currentUserId] = useState<string>(() => {
+  // Unique Player ID persisted across refreshes, preferring cached authenticated user ID
+  const [currentUserId, setCurrentUserId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'usr_default';
-    let id = sessionStorage.getItem('fasttyping_player_id');
+    const cachedUser = getStoredCachedUser();
+    if (cachedUser && cachedUser.id) {
+      return cachedUser.id;
+    }
+    let id = localStorage.getItem('fasttyping_player_id') || sessionStorage.getItem('fasttyping_player_id');
     if (!id) {
       id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-      sessionStorage.setItem('fasttyping_player_id', id);
+      try {
+        localStorage.setItem('fasttyping_player_id', id);
+        sessionStorage.setItem('fasttyping_player_id', id);
+      } catch {}
     }
     return id;
   });
 
-  // Unique Tab ID per page instance in memory
+  // Tab ID persistent per tab across F5 reloads via sessionStorage
   const [currentTabId] = useState<string>(() => {
-    return 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+    if (typeof window === 'undefined') return 'tab_default';
+    let tid = sessionStorage.getItem('fasttyping_tab_id');
+    if (!tid) {
+      tid = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+      try {
+        sessionStorage.setItem('fasttyping_tab_id', tid);
+      } catch {}
+    }
+    return tid;
   });
 
   // Persistent device ID across all tabs
@@ -661,7 +684,24 @@ export default function App() {
       setNewlyUnlockedAchievements([]);
     }
   }, [playType, matchHistory]);
-  const [gameState, setGameState] = useState<'lobby' | 'waiting_room' | 'countdown' | 'playing' | 'gameover'>('lobby');
+  const [gameState, setGameState] = useState<'lobby' | 'waiting_room' | 'countdown' | 'playing' | 'gameover'>(() => {
+    if (typeof window === 'undefined') return 'lobby';
+    const savedRoom = sessionStorage.getItem('fasttyping_current_room_id');
+    const savedState = sessionStorage.getItem('fasttyping_game_state');
+    if (savedRoom && savedState === 'waiting_room') {
+      return 'waiting_room';
+    }
+    return 'lobby';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (gameState === 'waiting_room') {
+      sessionStorage.setItem('fasttyping_game_state', 'waiting_room');
+    } else {
+      sessionStorage.removeItem('fasttyping_game_state');
+    }
+  }, [gameState]);
   const [countdownNum, setCountdownNum] = useState<number>(3);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundFx.getMuted());
   const [config, setConfig] = useState<GameConfig>(() => {
@@ -817,8 +857,8 @@ export default function App() {
     message?: string;
     friendshipId?: string;
   } | null>(null);
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => checkIsAdmin());
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getStoredCachedUser());
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => checkIsAdmin() || Boolean(getStoredCachedUser()?.isAdmin));
   const [isHeavenlyChronicleOpen, setIsHeavenlyChronicleOpen] = useState(false);
   const [activeDaoDecreePopup, setActiveDaoDecreePopup] = useState<HeavenlyDaoDecree | null>(null);
   const [breakingRecordNotice, setBreakingRecordNotice] = useState<{
@@ -1046,7 +1086,7 @@ export default function App() {
     });
   }, []);
 
-  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết cho Outplay Yourself
+  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết cho mọi chế độ chơi
   useEffect(() => {
     const resolved = resolveBestWpmRecord({
       bestWpm,
@@ -1056,24 +1096,19 @@ export default function App() {
       username,
       isMe: true,
     });
-    if (resolved && resolved.wpm > 0 && isOutplayMode(resolved.mode)) {
-      if (!bestWpmRecord || bestWpmRecord.wpm !== resolved.wpm || !isOutplayMode(bestWpmRecord.mode)) {
+    if (resolved && resolved.wpm > 0) {
+      if (!bestWpmRecord || bestWpmRecord.wpm !== resolved.wpm) {
         setBestWpmRecord(resolved);
         setBestWpm(resolved.wpm);
         try {
           localStorage.setItem('fasttyping_best_wpm', resolved.wpm.toString());
           localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(resolved));
-          localStorage.setItem('fasttyping_outplay_best_wpm', resolved.wpm.toString());
-          localStorage.setItem('fasttyping_outplay_best_record', JSON.stringify(resolved));
+          if (isOutplayMode(resolved.mode)) {
+            localStorage.setItem('fasttyping_outplay_best_wpm', resolved.wpm.toString());
+            localStorage.setItem('fasttyping_outplay_best_record', JSON.stringify(resolved));
+          }
         } catch {}
       }
-    } else if (bestWpmRecord && !isOutplayMode(bestWpmRecord.mode)) {
-      setBestWpmRecord(null);
-      setBestWpm(0);
-      try {
-        localStorage.removeItem('fasttyping_best_wpm');
-        localStorage.removeItem('fasttyping_best_wpm_record');
-      } catch {}
     }
   }, [bestWpm, bestWpmRecord, highScores, username, matchHistory]);
 
@@ -2553,73 +2588,70 @@ export default function App() {
     setIsAdmin(isUserAdmin);
     setAdminStatus(isUserAdmin);
 
-    // Dữ liệu kỷ lục WPM: CHỈ ÁP DỤNG KỶ LỤC TỪ CHẾ ĐỘ OUTPLAY YOURSELF
-    let serverOutplayWpm = 0;
-    let serverOutplayRecord: BestWpmRecord | null = null;
-    if (
-      user.bestWpmRecord &&
-      typeof user.bestWpmRecord === 'object' &&
-      user.bestWpmRecord.wpm > 0 &&
-      isOutplayMode(user.bestWpmRecord.mode)
-    ) {
-      serverOutplayRecord = {
-        ...user.bestWpmRecord,
-        mode: 'outplay',
-        modeName: 'Outplay Yourself (Solo)',
-      };
-      serverOutplayWpm = user.bestWpmRecord.wpm;
-    } else if (Array.isArray(user.matchHistory)) {
-      const outplayMatches = user.matchHistory.filter(
-        (m: any) => m && m.wpm > 0 && isOutplayMode(m.modeId || m.mode) && m.result !== 'Đầu hàng'
-      );
-      if (outplayMatches.length > 0) {
-        const best = [...outplayMatches].sort((a: any, b: any) => b.wpm - a.wpm)[0];
-        serverOutplayRecord = {
-          wpm: best.wpm,
-          mode: 'outplay',
-          modeName: 'Outplay Yourself (Solo)',
-          timestamp: best.timestamp,
-        };
-        serverOutplayWpm = best.wpm;
+    // Dữ liệu kỷ lục WPM: Hỗ trợ mọi chế độ chơi
+    let effectiveBestWpm = typeof user.bestWpm === 'number' && user.bestWpm > 0 ? user.bestWpm : 0;
+    let effectiveRecord: BestWpmRecord | null = user.bestWpmRecord || null;
+
+    if (effectiveRecord && typeof effectiveRecord === 'object' && effectiveRecord.wpm > effectiveBestWpm) {
+      effectiveBestWpm = effectiveRecord.wpm;
+    }
+
+    if (Array.isArray(user.matchHistory) && user.matchHistory.length > 0) {
+      for (const m of user.matchHistory) {
+        if (m && typeof m.wpm === 'number' && m.wpm > effectiveBestWpm && m.result !== 'Đầu hàng') {
+          effectiveBestWpm = m.wpm;
+          effectiveRecord = {
+            wpm: m.wpm,
+            mode: m.modeId || m.mode || 'vi_dau',
+            modeName: m.mode || getFriendlyModeName(m.modeId || 'vi_dau'),
+            timestamp: m.timestamp || Date.now(),
+          };
+        }
       }
     }
 
-    setBestWpm(serverOutplayWpm);
-    setBestWpmRecord(serverOutplayRecord);
-    if (serverOutplayWpm > 0) {
-      localStorage.setItem('fasttyping_best_wpm', serverOutplayWpm.toString());
-      localStorage.setItem('fasttyping_outplay_best_wpm', serverOutplayWpm.toString());
-    } else {
-      localStorage.removeItem('fasttyping_best_wpm');
-      localStorage.removeItem('fasttyping_outplay_best_wpm');
+    const localSavedWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
+    if (localSavedWpm > effectiveBestWpm) {
+      effectiveBestWpm = localSavedWpm;
+      try {
+        const localRec = localStorage.getItem('fasttyping_best_wpm_record');
+        if (localRec) effectiveRecord = JSON.parse(localRec);
+      } catch {}
     }
 
-    if (serverOutplayRecord) {
-      try {
-        localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(serverOutplayRecord));
-        localStorage.setItem('fasttyping_outplay_best_record', JSON.stringify(serverOutplayRecord));
-      } catch {}
-    } else {
-      localStorage.removeItem('fasttyping_best_wpm_record');
-      localStorage.removeItem('fasttyping_outplay_best_record');
+    setBestWpm(effectiveBestWpm);
+    setBestWpmRecord(effectiveRecord);
+    if (effectiveBestWpm > 0) {
+      localStorage.setItem('fasttyping_best_wpm', effectiveBestWpm.toString());
+      if (effectiveRecord) {
+        try {
+          localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(effectiveRecord));
+          if (isOutplayMode(effectiveRecord.mode)) {
+            localStorage.setItem('fasttyping_outplay_best_wpm', effectiveBestWpm.toString());
+            localStorage.setItem('fasttyping_outplay_best_record', JSON.stringify(effectiveRecord));
+          }
+        } catch {}
+      }
     }
 
     const serverTotalGames = typeof user.totalGames === 'number' ? user.totalGames : 0;
-    setTotalGames(serverTotalGames);
-    if (serverTotalGames > 0) {
-      localStorage.setItem('fasttyping_games_count', serverTotalGames.toString());
-    } else {
-      localStorage.removeItem('fasttyping_games_count');
+    const localTotalGames = Number(localStorage.getItem('fasttyping_games_count')) || 0;
+    const effectiveTotalGames = Math.max(serverTotalGames, localTotalGames);
+    setTotalGames(effectiveTotalGames);
+    if (effectiveTotalGames > 0) {
+      localStorage.setItem('fasttyping_games_count', effectiveTotalGames.toString());
     }
 
-    if (Array.isArray(user.matchHistory)) {
+    if (Array.isArray(user.matchHistory) && user.matchHistory.length > 0) {
       setMatchHistory(user.matchHistory);
       try {
         localStorage.setItem('fasttyping_match_history', JSON.stringify(user.matchHistory));
       } catch {}
     } else {
-      setMatchHistory([]);
-      localStorage.removeItem('fasttyping_match_history');
+      const stored = getStoredMatchHistory();
+      if (stored && stored.length > 0) {
+        setMatchHistory(stored);
+      }
     }
 
     // Tiến độ tu vi tiên hiệp
@@ -2635,6 +2667,12 @@ export default function App() {
     if (Array.isArray(user.unlockedAchievements)) {
       setStoredUnlockedAchievements(user.unlockedAchievements, user.id);
     }
+
+    setCurrentUserId(user.id);
+    try {
+      localStorage.setItem('fasttyping_player_id', user.id);
+      sessionStorage.setItem('fasttyping_player_id', user.id);
+    } catch {}
 
     localStorage.setItem('fasttyping_user', activeName);
     sessionStorage.setItem('fasttyping_user_session', activeName);
@@ -2715,6 +2753,13 @@ export default function App() {
     const defaultName = 'Khách_' + Math.floor(Math.random() * 9000 + 1000);
     const defaultAvatar = '🤖';
     const defaultFrame = 'default';
+    const newGuestId = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+
+    setCurrentUserId(newGuestId);
+    try {
+      localStorage.setItem('fasttyping_player_id', newGuestId);
+      sessionStorage.setItem('fasttyping_player_id', newGuestId);
+    } catch {}
 
     setUsername(defaultName);
     setAvatar(defaultAvatar);
@@ -2827,6 +2872,16 @@ export default function App() {
     if (pwd === adminPassword) {
       setIsAdmin(true);
       setAdminStatus(true);
+      // Đồng bộ đăng nhập phiên tài khoản admin trên máy chủ backend nếu chưa đăng nhập
+      if (!currentUser?.isAdmin && String(currentUser?.username || '').toLowerCase() !== 'admin') {
+        loginWithEmail('admin', pwd)
+          .then((res) => {
+            if (res.success && res.user) {
+              applyAuthenticatedUser(res.user);
+            }
+          })
+          .catch(() => {});
+      }
       return true;
     }
     return false;

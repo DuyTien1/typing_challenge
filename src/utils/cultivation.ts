@@ -1519,7 +1519,11 @@ export async function syncCultivationToServer(state?: CultivationState): Promise
 export function saveStoredCultivationState(state: CultivationState): void {
   if (typeof window === 'undefined') return;
   
-  // Lưu vào bộ nhớ đệm và IndexedDB nền (tránh nghẽn I/O trên Citrix VDI)
+  try {
+    localStorage.setItem(CULTIVATION_STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+
+  // Lưu vào bộ nhớ đệm và IndexedDB nền
   saveCultivationToIndexedDB(state).catch(() => {});
 
   // Tự động đồng bộ ngầm tiến độ tu vi mới nhất lên máy chủ nếu người chơi đã đăng nhập
