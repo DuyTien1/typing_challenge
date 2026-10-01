@@ -51,6 +51,7 @@ export interface ModalContainerProps {
   setIsAppearanceOpen: (open: boolean) => void;
   isCultivationOpen: boolean;
   setIsCultivationOpen: (open: boolean) => void;
+  cultivationInitialTab?: 'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history';
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
   authModalInitialTab: 'login' | 'register';
@@ -123,6 +124,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   setIsAppearanceOpen,
   isCultivationOpen,
   setIsCultivationOpen,
+  cultivationInitialTab,
   isAuthModalOpen,
   setIsAuthModalOpen,
   authModalInitialTab,
@@ -352,6 +354,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
       <CultivationModal
         isOpen={isCultivationOpen}
         onClose={() => setIsCultivationOpen(false)}
+        initialTab={cultivationInitialTab}
         state={cultivationState}
         username={currentUser?.username || username}
         displayName={currentUser?.displayName}

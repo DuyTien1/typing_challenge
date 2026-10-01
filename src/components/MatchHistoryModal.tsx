@@ -90,7 +90,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
 
   // Filtered completed matches list (strictly max 20)
   const filteredMatches = useMemo(() => {
-    let list = history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng');
+    let list = history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng' && m.result !== 'AFK');
     if (filterMode !== 'all') {
       list = list.filter((m) => m.modeId === filterMode);
     }
@@ -611,7 +611,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                 }}
                 className="h-9 bg-slate-900 border border-slate-700/80 text-slate-300 text-xs rounded-xl px-3 outline-none cursor-pointer focus:border-amber-400 transition-colors"
               >
-                <option value="all">Tất cả chế độ ({history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng').length})</option>
+                <option value="all">Tất cả chế độ ({history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng' && m.result !== 'AFK').length})</option>
                 <option value="vi_dau">🇻🇳 TV Có Dấu</option>
                 <option value="vi_nodau">⚡ TV Không Dấu</option>
                 <option value="en">🇬🇧 Tiếng Anh</option>
@@ -681,7 +681,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                           <div className="text-[11px] text-slate-400 flex items-center gap-2">
                             <span>{dateStr}</span>
                             <span>•</span>
-                            <span className={match.result === 'Thắng' || match.result === 'Top 1' ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                            <span className={match.result === 'Thắng' || match.result === 'Top 1' ? 'text-emerald-400 font-bold' : match.result === 'AFK' ? 'text-amber-400 font-bold' : match.result === 'Đầu hàng' ? 'text-rose-400' : 'text-slate-400'}>
                               {match.result}
                             </span>
                           </div>

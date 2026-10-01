@@ -12,7 +12,7 @@ export type DifficultyLevel = 'normal' | 'hard' | 'legendary' | 'hell' | 'custom
 
 export type GameState = 'lobby' | 'waiting_room' | 'countdown' | 'playing' | 'gameover';
 
-export type MatchResult = 'Thắng' | 'Thua' | 'Đầu hàng' | 'Hoàn thành' | 'Top 1' | 'Top 2' | 'Top 3';
+export type MatchResult = 'Thắng' | 'Thua' | 'Đầu hàng' | 'AFK' | 'Hoàn thành' | 'Top 1' | 'Top 2' | 'Top 3';
 
 export interface BestWpmRecord {
   wpm: number;
@@ -688,6 +688,67 @@ export interface SectMemberRecord {
   lastActive?: number;
 }
 
+export interface SectWeeklyBuff {
+  tuViBonusPct: number;
+  linhThachBonusPct: number;
+  title: string;
+  rank: number;
+  expiresAt: number;
+}
+
+export interface SectWarContributor {
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  points: number;
+  matchesCount: number;
+  lastActive: number;
+}
+
+export interface SectWarStatus {
+  isActive: boolean;
+  phase: 'active' | 'settled_rest';
+  timeRemainingMs: number;
+  nextSettlementTimestamp: number;
+  dailyAttemptsMax?: number;
+  dailyAttemptsUsed?: number;
+  dailyAttemptsLeft?: number;
+  isHappyHour?: boolean;
+  happyHourMultiplier?: number;
+  happyHourNotice?: string;
+  topSects: Array<{
+    id: string;
+    name: string;
+    tag: string;
+    badgeIcon: string;
+    bannerColor?: string;
+    leaderName: string;
+    leaderAvatar?: string;
+    weeklyWarPoints: number;
+    memberCount: number;
+    isHoldingThienCung?: boolean;
+    rank: number;
+  }>;
+  previousWinner?: {
+    sectId: string;
+    sectName: string;
+    tag: string;
+    badgeIcon: string;
+    leaderName: string;
+    points: number;
+    settledAt: number;
+  };
+  mySectWarStats?: {
+    sectId: string;
+    sectName: string;
+    rank: number;
+    weeklyWarPoints: number;
+    myContributionPoints: number;
+    myMatchesCount: number;
+    topContributors: SectWarContributor[];
+  };
+}
+
 export interface SectLeaderboardEntry {
   rank: number;
   id: string;
@@ -710,7 +771,9 @@ export interface SectLeaderboardEntry {
   linhMachLevel: number;
   totalContribution: number;
   weeklyTournamentPoints?: number;
+  weeklyWarPoints?: number;
   isHoldingThienCung?: boolean;
+  activeWeeklyBuff?: SectWeeklyBuff;
   topMembers?: SectMemberRecord[];
   members?: SectMemberRecord[];
   createdAt?: number;
@@ -774,7 +837,10 @@ export interface SectInfo {
   slogan?: string;
   bannerColor?: string;
   weeklyTournamentPoints?: number;
+  weeklyWarPoints?: number;
   isHoldingThienCung?: boolean; // Chiếm cứ Thiên Cung Long Mạch
+  activeWeeklyBuff?: SectWeeklyBuff;
+  warContributors?: Record<string, SectWarContributor>;
   worldBoss?: SectWorldBoss;
   totalTuVi?: number;
   avgLevel?: number;

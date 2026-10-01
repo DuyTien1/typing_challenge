@@ -661,7 +661,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           ) : (
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
               {recentMatches.map((m, idx) => {
-                const isWin = m.result === 'Thắng';
+                const isWin = m.result === 'Thắng' || m.result === 'Top 1';
+                const isAFK = m.result === 'AFK';
                 const isSurrender = m.result === 'Đầu hàng';
                 const isLoss = m.result === 'Thua';
 
@@ -720,8 +721,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           <span>Thua</span>
                         </span>
                       )}
-                      {isSurrender && (
+                      {isAFK && (
                         <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold">
+                          <span>💤</span>
+                          <span>AFK</span>
+                        </span>
+                      )}
+                      {isSurrender && (
+                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
                           <Flag className="w-3 h-3 shrink-0" />
                           <span>Đầu hàng</span>
                         </span>

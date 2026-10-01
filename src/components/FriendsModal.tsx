@@ -698,7 +698,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                     type="text"
                     value={searchTarget}
                     onChange={(e) => setSearchTarget(e.target.value)}
-                    placeholder="Ví dụ: Độc Cô Cầu Bại, thuc_son_1..."
+                    placeholder="Ví dụ: Độc Cô Cầu Bại, TienNhan99..."
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                   />
                 </div>

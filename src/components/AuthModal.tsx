@@ -35,7 +35,7 @@ interface AuthModalProps {
   initialTab?: 'login' | 'register' | 'password';
 }
 
-const AVATAR_PRESETS = ['⚡', '🔥', '👑', '🐉', '🎯', '🚀', '🦊', '🐱', '🦁', '🐺'];
+const AVATAR_PRESETS = ['🪷', '⚡', '🔥', '👑', '🐉', '⚔️', '🔮', '☯️', '🦅', '🦊', '🎯', '🚀'];
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,

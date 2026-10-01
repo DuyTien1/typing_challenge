@@ -615,557 +615,8 @@ export const ALCHEMY_RECIPES: AlchemyRecipe[] = [
   },
 ];
 
-// === TÔNG MÔN MẶC ĐỊNH & THẦN THÚ TRẤN GIỚI ===
-export const DEFAULT_SECTS: SectInfo[] = [
-  {
-    id: 'sect_thuc_son',
-    name: 'Thục Sơn Kiếm Phái',
-    tag: 'Thục Sơn',
-    description: 'Kiếm tu đệ nhất thiên hạ, vạn kiếm quy tông, ngự kiếm trảm yêu trừ ma.',
-    leaderId: 'leader_thuc_son',
-    leaderName: 'Độc Cô Kiếm Tôn',
-    leaderAvatar: '⚔️',
-    leaderFrame: 'frame_xianxia_dokiep',
-    leaderRealmName: 'Độ Kiếp Kỳ',
-    leaderLevel: 820,
-    linhMachLevel: 3,
-    totalContribution: 24500,
-    memberCount: 48,
-    totalTuVi: 40007000,
-    avgLevel: 375,
-    avgRealmName: 'Hóa Thần Kỳ',
-    badgeIcon: '⚔️',
-    slogan: 'Vạn Kiếm Quy Nhất • Trảm Phá Thái Hư',
-    bannerColor: '#38bdf8',
-    weeklyTournamentPoints: 840,
-    isHoldingThienCung: true,
-    worldBoss: {
-      id: 'boss_hac_long',
-      name: 'Thái Cổ Hắc Long',
-      icon: '🐉',
-      hp: 154000,
-      maxHp: 200000,
-      level: 10,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'thuc_son_1',
-        username: 'Độc Cô Kiếm Tôn',
-        displayName: 'Độc Cô Kiếm Tôn',
-        avatar: '⚔️',
-        frame: 'frame_xianxia_dokiep',
-        role: 'chuong_mon',
-        contribution: 12000,
-        realmIndex: 8,
-        realmName: 'Độ Kiếp Kỳ',
-        realmIcon: '🌩️',
-        level: 820,
-        tier: 8,
-        exp: 820000,
-        tuViScore: 8820000,
-        joinedAt: Date.now() - 30 * 86400000,
-      },
-      {
-        userId: 'thuc_son_2',
-        username: 'Thanh Hư Chân Nhân',
-        displayName: 'Thanh Hư Chân Nhân',
-        avatar: '🧙‍♂️',
-        frame: 'frame_xianxia_daithua',
-        role: 'dai_truong_lao',
-        contribution: 5800,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 650,
-        tier: 6,
-        exp: 650000,
-        tuViScore: 7650000,
-        joinedAt: Date.now() - 25 * 86400000,
-      },
-      {
-        userId: 'thuc_son_3',
-        username: 'Lăng Phong Kiếm Sĩ',
-        displayName: 'Lăng Phong Kiếm Sĩ',
-        avatar: '🗡️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 2900,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 480,
-        tier: 5,
-        exp: 480000,
-        tuViScore: 6480000,
-        joinedAt: Date.now() - 20 * 86400000,
-      },
-      {
-        userId: 'thuc_son_4',
-        username: 'Vân Dao Kiếm Nữ',
-        displayName: 'Vân Dao Kiếm Nữ',
-        avatar: '🧝‍♀️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 2400,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 450,
-        tier: 4,
-        exp: 450000,
-        tuViScore: 6450000,
-        joinedAt: Date.now() - 18 * 86400000,
-      },
-      {
-        userId: 'thuc_son_5',
-        username: 'Hàn Lập',
-        displayName: 'Hàn Lập',
-        avatar: '🌿',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 850,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 270,
-        tier: 4,
-        exp: 270000,
-        tuViScore: 4270000,
-        joinedAt: Date.now() - 14 * 86400000,
-      },
-      {
-        userId: 'thuc_son_6',
-        username: 'Diệp Thần',
-        displayName: 'Diệp Thần',
-        avatar: '🔥',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 720,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 240,
-        tier: 3,
-        exp: 240000,
-        tuViScore: 4240000,
-        joinedAt: Date.now() - 12 * 86400000,
-      },
-      {
-        userId: 'thuc_son_7',
-        username: 'Trương Đan',
-        displayName: 'Trương Đan',
-        avatar: '🧱',
-        frame: 'frame_xianxia_trucco',
-        role: 'ngoai_mon',
-        contribution: 180,
-        realmIndex: 1,
-        realmName: 'Trúc Cơ Kỳ',
-        realmIcon: '🧱',
-        level: 55,
-        tier: 2,
-        exp: 55000,
-        tuViScore: 1055000,
-        joinedAt: Date.now() - 5 * 86400000,
-      },
-      {
-        userId: 'thuc_son_8',
-        username: 'Lục Tuyết',
-        displayName: 'Lục Tuyết',
-        avatar: '❄️',
-        frame: 'frame_xianxia_trucco',
-        role: 'ngoai_mon',
-        contribution: 150,
-        realmIndex: 1,
-        realmName: 'Trúc Cơ Kỳ',
-        realmIcon: '🧱',
-        level: 42,
-        tier: 1,
-        exp: 42000,
-        tuViScore: 1042000,
-        joinedAt: Date.now() - 3 * 86400000,
-      },
-    ],
-  },
-  {
-    id: 'sect_cuu_trong',
-    name: 'Cửu Trọng Thiên',
-    tag: 'Cửu Trọng',
-    description: 'Chưởng quản lôi đình cửu thiên, uy trấn bát hoang lục hợp vô địch.',
-    leaderId: 'leader_cuu_trong',
-    leaderName: 'Cửu Thiên Thần Quân',
-    leaderAvatar: '⚡',
-    leaderFrame: 'frame_xianxia_dokiep',
-    leaderRealmName: 'Độ Kiếp Kỳ',
-    leaderLevel: 850,
-    linhMachLevel: 4,
-    totalContribution: 38900,
-    memberCount: 62,
-    totalTuVi: 35900000,
-    avgLevel: 483,
-    avgRealmName: 'Hợp Thể Kỳ',
-    badgeIcon: '⚡',
-    slogan: 'Lôi Đình Vạn Trượng • Chấn Nhiếp Bát Hoang',
-    bannerColor: '#facc15',
-    weeklyTournamentPoints: 780,
-    isHoldingThienCung: false,
-    worldBoss: {
-      id: 'boss_hoa_phuong',
-      name: 'Cửu Thiên Hỏa Phượng',
-      icon: '🦅',
-      hp: 195000,
-      maxHp: 250000,
-      level: 12,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'cuu_trong_1',
-        username: 'Cửu Thiên Thần Quân',
-        displayName: 'Cửu Thiên Thần Quân',
-        avatar: '⚡',
-        frame: 'frame_xianxia_dokiep',
-        role: 'chuong_mon',
-        contribution: 15000,
-        realmIndex: 8,
-        realmName: 'Độ Kiếp Kỳ',
-        realmIcon: '🌩️',
-        level: 850,
-        tier: 9,
-        exp: 850000,
-        tuViScore: 8850000,
-        joinedAt: Date.now() - 35 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_2',
-        username: 'Lôi Chấn Tử',
-        displayName: 'Lôi Chấn Tử',
-        avatar: '🌩️',
-        frame: 'frame_xianxia_daithua',
-        role: 'dai_truong_lao',
-        contribution: 8200,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 680,
-        tier: 7,
-        exp: 680000,
-        tuViScore: 7680000,
-        joinedAt: Date.now() - 28 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_3',
-        username: 'Phong Lôi Tiên Tử',
-        displayName: 'Phong Lôi Tiên Tử',
-        avatar: '🌪️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 3200,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 490,
-        tier: 5,
-        exp: 490000,
-        tuViScore: 6490000,
-        joinedAt: Date.now() - 22 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_4',
-        username: 'Thần Tiêu Kiếm Hiệp',
-        displayName: 'Thần Tiêu Kiếm Hiệp',
-        avatar: '🗡️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 2600,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 460,
-        tier: 4,
-        exp: 460000,
-        tuViScore: 6460000,
-        joinedAt: Date.now() - 17 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_5',
-        username: 'Lôi Bạo Cuồng Đao',
-        displayName: 'Lôi Bạo Cuồng Đao',
-        avatar: '⚔️',
-        frame: 'frame_xianxia_luyenhu',
-        role: 'noi_mon',
-        contribution: 980,
-        realmIndex: 5,
-        realmName: 'Luyện Hư Kỳ',
-        realmIcon: '🌀',
-        level: 360,
-        tier: 3,
-        exp: 360000,
-        tuViScore: 5360000,
-        joinedAt: Date.now() - 10 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_6',
-        username: 'Lôi Đình Tiểu Sinh',
-        displayName: 'Lôi Đình Tiểu Sinh',
-        avatar: '👦',
-        frame: 'frame_xianxia_trucco',
-        role: 'ngoai_mon',
-        contribution: 120,
-        realmIndex: 1,
-        realmName: 'Trúc Cơ Kỳ',
-        realmIcon: '🧱',
-        level: 60,
-        tier: 2,
-        exp: 60000,
-        tuViScore: 1060000,
-        joinedAt: Date.now() - 4 * 86400000,
-      },
-    ],
-  },
-  {
-    id: 'sect_van_kiem',
-    name: 'Vạn Kiếm Quy Tông',
-    tag: 'Vạn Kiếm',
-    description: 'Kiếm ý thông thiên triệt địa, một kiếm phá vạn pháp khai mở thái hư.',
-    leaderId: 'leader_van_kiem',
-    leaderName: 'Vô Nhai Kiếm Thánh',
-    leaderAvatar: '🗡️',
-    leaderFrame: 'frame_xianxia_daithua',
-    leaderRealmName: 'Đại Thừa Kỳ',
-    leaderLevel: 710,
-    linhMachLevel: 3,
-    totalContribution: 29400,
-    memberCount: 51,
-    totalTuVi: 26065000,
-    avgLevel: 413,
-    avgRealmName: 'Hóa Thần Kỳ',
-    badgeIcon: '🗡️',
-    slogan: 'Nhất Kiếm Đoạt Mệnh • Khai Mở Càn Khôn',
-    bannerColor: '#a855f7',
-    weeklyTournamentPoints: 710,
-    isHoldingThienCung: false,
-    worldBoss: {
-      id: 'boss_bach_ho',
-      name: 'Thần Thú Bạch Hổ',
-      icon: '🐯',
-      hp: 140000,
-      maxHp: 200000,
-      level: 9,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'van_kiem_1',
-        username: 'Vô Nhai Kiếm Thánh',
-        displayName: 'Vô Nhai Kiếm Thánh',
-        avatar: '🗡️',
-        frame: 'frame_xianxia_daithua',
-        role: 'chuong_mon',
-        contribution: 11000,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 710,
-        tier: 8,
-        exp: 710000,
-        tuViScore: 7710000,
-        joinedAt: Date.now() - 29 * 86400000,
-      },
-      {
-        userId: 'van_kiem_2',
-        username: 'Tàng Kiếm Lão Nhân',
-        displayName: 'Tàng Kiếm Lão Nhân',
-        avatar: '🧙‍♂️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'dai_truong_lao',
-        contribution: 6200,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 560,
-        tier: 6,
-        exp: 560000,
-        tuViScore: 6560000,
-        joinedAt: Date.now() - 21 * 86400000,
-      },
-      {
-        userId: 'van_kiem_3',
-        username: 'Kiếm Vô Ngấn',
-        displayName: 'Kiếm Vô Ngấn',
-        avatar: '⚔️',
-        frame: 'frame_xianxia_luyenhu',
-        role: 'chan_truyen',
-        contribution: 2700,
-        realmIndex: 5,
-        realmName: 'Luyện Hư Kỳ',
-        realmIcon: '🌀',
-        level: 410,
-        tier: 4,
-        exp: 410000,
-        tuViScore: 5410000,
-        joinedAt: Date.now() - 15 * 86400000,
-      },
-      {
-        userId: 'van_kiem_4',
-        username: 'Mặc Kiếm Khách',
-        displayName: 'Mặc Kiếm Khách',
-        avatar: '🥷',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 920,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 290,
-        tier: 3,
-        exp: 290000,
-        tuViScore: 4290000,
-        joinedAt: Date.now() - 9 * 86400000,
-      },
-      {
-        userId: 'van_kiem_5',
-        username: 'Tố Kiếm Đệ Tử',
-        displayName: 'Tố Kiếm Đệ Tử',
-        avatar: '🌸',
-        frame: 'frame_xianxia_ketdan',
-        role: 'ngoai_mon',
-        contribution: 210,
-        realmIndex: 2,
-        realmName: 'Kết Đan Kỳ',
-        realmIcon: '🔮',
-        level: 95,
-        tier: 2,
-        exp: 95000,
-        tuViScore: 2095000,
-        joinedAt: Date.now() - 4 * 86400000,
-      },
-    ],
-  },
-  {
-    id: 'sect_tieu_dao',
-    name: 'Tiêu Dao Cung',
-    tag: 'Tiêu Dao',
-    description: 'Tiêu dao tự tại giữa đất trời, tâm như chỉ thủy, thân tự phù vân ngao du vạn dặm.',
-    leaderId: 'leader_tieu_dao',
-    leaderName: 'Tiêu Dao Tử',
-    leaderAvatar: '🪷',
-    leaderFrame: 'frame_xianxia_daithua',
-    leaderRealmName: 'Đại Thừa Kỳ',
-    leaderLevel: 690,
-    linhMachLevel: 2,
-    totalContribution: 16800,
-    memberCount: 35,
-    totalTuVi: 25978000,
-    avgLevel: 395,
-    avgRealmName: 'Hóa Thần Kỳ',
-    badgeIcon: '🪷',
-    slogan: 'Tiêu Dao Tự Tại • Đạo Pháp Tự Nhiên',
-    bannerColor: '#34d399',
-    weeklyTournamentPoints: 620,
-    isHoldingThienCung: false,
-    worldBoss: {
-      id: 'boss_ky_lan',
-      name: 'Hồng Hoang Kỳ Lân',
-      icon: '🦄',
-      hp: 120000,
-      maxHp: 180000,
-      level: 8,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'tieu_dao_1',
-        username: 'Tiêu Dao Tử',
-        displayName: 'Tiêu Dao Tử',
-        avatar: '🪷',
-        frame: 'frame_xianxia_daithua',
-        role: 'chuong_mon',
-        contribution: 8500,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 690,
-        tier: 7,
-        exp: 690000,
-        tuViScore: 7690000,
-        joinedAt: Date.now() - 27 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_2',
-        username: 'Cầm Họa Tiên Cô',
-        displayName: 'Cầm Họa Tiên Cô',
-        avatar: '🪕',
-        frame: 'frame_xianxia_hopthe',
-        role: 'dai_truong_lao',
-        contribution: 5100,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 530,
-        tier: 5,
-        exp: 530000,
-        tuViScore: 6530000,
-        joinedAt: Date.now() - 20 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_3',
-        username: 'Bạch Lộc Chân Quân',
-        displayName: 'Bạch Lộc Chân Quân',
-        avatar: '🦌',
-        frame: 'frame_xianxia_luyenhu',
-        role: 'chan_truyen',
-        contribution: 2300,
-        realmIndex: 5,
-        realmName: 'Luyện Hư Kỳ',
-        realmIcon: '🌀',
-        level: 390,
-        tier: 4,
-        exp: 390000,
-        tuViScore: 5390000,
-        joinedAt: Date.now() - 14 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_4',
-        username: 'Lưu Vân Đạo Trưởng',
-        displayName: 'Lưu Vân Đạo Trưởng',
-        avatar: '☁️',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 880,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 280,
-        tier: 3,
-        exp: 280000,
-        tuViScore: 4280000,
-        joinedAt: Date.now() - 8 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_5',
-        username: 'Thính Phong Tử',
-        displayName: 'Thính Phong Tử',
-        avatar: '🍃',
-        frame: 'frame_xianxia_ketdan',
-        role: 'ngoai_mon',
-        contribution: 190,
-        realmIndex: 2,
-        realmName: 'Kết Đan Kỳ',
-        realmIcon: '🔮',
-        level: 88,
-        tier: 2,
-        exp: 88000,
-        tuViScore: 2088000,
-        joinedAt: Date.now() - 3 * 86400000,
-      },
-    ],
-  },
-];
+// === TÔNG MÔN HOÀN TOÀN DO NGƯỜI CHƠI TỰ TẠO ===
+export const DEFAULT_SECTS: SectInfo[] = []
 
 export const DAILY_MATCH_EXP_CAP = 2500;
 export const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
@@ -1340,15 +791,7 @@ export function createInitialCultivationState(): CultivationState {
       ngungThanMatchesRemaining: 0,
       kimCangImmunityUntil: 0,
     },
-    sect: {
-      sectId: 'sect_thuc_son',
-      sectName: 'Thục Sơn Kiếm Phái',
-      sectTag: 'Thục Sơn',
-      role: 'noi_mon',
-      contribution: 150,
-      joinedAt: Date.now(),
-      tournamentWins: 0,
-    },
+    sect: undefined,
     linhThach: 150,
     historyLog: ['Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)'],
   };
@@ -1476,15 +919,9 @@ export function loadStoredCultivationState(): CultivationState {
         ngungThanMatchesRemaining: parsed.activeBuffs?.ngungThanMatchesRemaining ?? 0,
         kimCangImmunityUntil: parsed.activeBuffs?.kimCangImmunityUntil ?? 0,
       },
-      sect: parsed.sect || {
-        sectId: 'sect_thuc_son',
-        sectName: 'Thục Sơn Kiếm Phái',
-        sectTag: 'Thục Sơn',
-        role: 'noi_mon',
-        contribution: 150,
-        joinedAt: Date.now(),
-        tournamentWins: 0,
-      },
+      sect: (parsed.sect && parsed.sect.sectId && !['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh'].includes(parsed.sect.sectId) && !parsed.sect.sectId.startsWith('sect_thuc_son'))
+        ? parsed.sect
+        : undefined,
       linhThach: parsed.linhThach ?? 150,
       historyLog: Array.isArray(parsed.historyLog) ? parsed.historyLog.slice(-20) : [],
     };
@@ -1737,15 +1174,9 @@ export function addTuViFromMatch(
       ngungThanMatchesRemaining: 0,
       kimCangImmunityUntil: 0,
     },
-    sect: state.sect || {
-      sectId: 'sect_thuc_son',
-      sectName: 'Thục Sơn Kiếm Phái',
-      sectTag: 'Thục Sơn',
-      role: 'noi_mon',
-      contribution: 150,
-      joinedAt: Date.now(),
-      tournamentWins: 0,
-    },
+    sect: (state.sect && state.sect.sectId && !['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh'].includes(state.sect.sectId) && !state.sect.sectId.startsWith('sect_thuc_son'))
+      ? state.sect
+      : undefined,
     linhThach: state.linhThach ?? 150,
   };
 
@@ -2837,36 +2268,41 @@ export function calculateSectTotalTuVi(sect: SectInfo): number {
 }
 
 export function getStoredSects(): SectInfo[] {
-  if (typeof window === 'undefined') return DEFAULT_SECTS;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(SECTS_STORAGE_KEY);
     if (!raw) {
-      saveStoredSects(DEFAULT_SECTS);
-      return DEFAULT_SECTS;
+      saveStoredSects([]);
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      // Ensure all sects have members array and totalTuVi
-      return parsed.map((s: SectInfo) => {
-        const defaultMatch = DEFAULT_SECTS.find((d) => d.id === s.id);
-        const members = s.members && s.members.length > 0 ? s.members : defaultMatch?.members || [];
+    if (Array.isArray(parsed)) {
+      const DEFAULT_SECT_IDS = new Set(['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh']);
+      const userCreatedSects = parsed.filter(
+        (s: SectInfo) => s && s.id && !DEFAULT_SECT_IDS.has(s.id) && !s.id.startsWith('sect_thuc_son')
+      );
+      if (userCreatedSects.length !== parsed.length) {
+        saveStoredSects(userCreatedSects);
+      }
+      return userCreatedSects.map((s: SectInfo) => {
+        const members = s.members && Array.isArray(s.members) ? s.members : [];
         const totalTuVi = calculateSectTotalTuVi({ ...s, members });
         return {
           ...s,
           members,
           totalTuVi,
-          leaderAvatar: s.leaderAvatar || defaultMatch?.leaderAvatar || '⚔️',
-          leaderFrame: s.leaderFrame || defaultMatch?.leaderFrame || 'frame_xianxia_dokiep',
-          leaderRealmName: s.leaderRealmName || defaultMatch?.leaderRealmName || 'Đại Thừa Kỳ',
-          leaderLevel: s.leaderLevel || defaultMatch?.leaderLevel || 500,
-          avgLevel: s.avgLevel || defaultMatch?.avgLevel || 350,
-          avgRealmName: s.avgRealmName || defaultMatch?.avgRealmName || 'Hóa Thần Kỳ',
+          leaderAvatar: s.leaderAvatar || '👑',
+          leaderFrame: s.leaderFrame || 'default',
+          leaderRealmName: s.leaderRealmName || 'Luyện Khí Kỳ',
+          leaderLevel: s.leaderLevel || 1,
+          avgLevel: s.avgLevel || 1,
+          avgRealmName: s.avgRealmName || 'Luyện Khí Kỳ',
         };
       });
     }
-    return DEFAULT_SECTS;
+    return [];
   } catch {
-    return DEFAULT_SECTS;
+    return [];
   }
 }
 
@@ -3293,8 +2729,18 @@ export function createSect(
     badgeIcon: icon || '⚡',
     slogan: 'Khai Sơn Lập Phái • Vạn Cổ Trường Tồn',
     bannerColor: '#f59e0b',
-    weeklyTournamentPoints: 100,
+    weeklyTournamentPoints: 0,
     isHoldingThienCung: false,
+    worldBoss: {
+      id: `boss_${Date.now()}`,
+      name: 'Thái Cổ Hắc Long',
+      icon: '🐉',
+      hp: 150000,
+      maxHp: 150000,
+      level: 10,
+      isDefeated: false,
+      lastResetTime: Date.now(),
+    },
     members: [founderMember],
     createdAt: Date.now(),
   };
@@ -3516,6 +2962,24 @@ export function attackSectWorldBoss(
 /**
  * Đóng góp điểm Tỷ Võ Tông Môn (Relay / Tournament Score)
  */
+/**
+ * Kiểm tra xem hiện tại có đang trong khung giờ sự kiện Vạn Phái Tranh Phong hay không
+ * Sự kiện mở từ 00:00:00 Thứ Bảy đến 20:00:00 Chủ Nhật hàng tuần theo giờ Việt Nam (UTC+7)
+ */
+export function isSectWarEventActive(warStatus?: { isActive?: boolean; nextSettlementTimestamp?: number } | null): boolean {
+  if (warStatus) {
+    if (!warStatus.isActive) return false;
+    if (warStatus.nextSettlementTimestamp && Date.now() >= warStatus.nextSettlementTimestamp) return false;
+    return true;
+  }
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const vnTime = new Date(utc + 7 * 3600000);
+  const day = vnTime.getDay(); // 0 = Chủ Nhật, 6 = Thứ Bảy
+  const hour = vnTime.getHours();
+  return day === 6 || (day === 0 && hour < 20);
+}
+
 export function contributeTournamentScore(
   state: CultivationState,
   sectId: string,
@@ -3539,12 +3003,23 @@ export function contributeTournamentScore(
     };
   }
 
+  // Khóa xuất chiến nếu không phải giờ sự kiện
+  if (!isSectWarEventActive()) {
+    return {
+      success: false,
+      updatedState: state,
+      newTournamentPoints: currentSect.weeklyTournamentPoints || 0,
+      isLeading: false,
+      message: '⚠️ Hiện tại không phải là giờ sự kiện Vạn Phái Tranh Phong! Sự kiện chỉ mở từ 00:00 Thứ Bảy đến 20:00 Chủ Nhật hàng tuần.',
+    };
+  }
+
   const addedPoints = Math.max(10, Math.round(wpmScore * 0.5));
   currentSect.weeklyTournamentPoints = (currentSect.weeklyTournamentPoints || 0) + addedPoints;
 
   // Kiểm tra xem tông môn có dẫn đầu toàn cõi để chiếm cứ "Thiên Cung Long Mạch"
-  const maxPoints = Math.max(...sects.map((s) => s.weeklyTournamentPoints || 0));
-  const isLeading = currentSect.weeklyTournamentPoints >= maxPoints;
+  const maxPoints = sects.length > 0 ? Math.max(...sects.map((s) => s.weeklyTournamentPoints || 0)) : 0;
+  const isLeading = currentSect.weeklyTournamentPoints >= maxPoints && currentSect.weeklyTournamentPoints > 0;
 
   sects.forEach((s) => {
     s.isHoldingThienCung = s.id === currentSect.id && isLeading;
@@ -3606,3 +3081,62 @@ export function interactWithArtifactSpirit(
     updatedState: updated,
   };
 }
+
+/**
+ * Lấy số lần đầu hàng liên tiếp trong bài thi Vạn Phái Tranh Phong
+ */
+export function getConsecutiveSectSurrenders(username?: string): number {
+  try {
+    const key = `fasttyping_sect_consec_surr_${(username || 'guest').toLowerCase()}`;
+    const raw = localStorage.getItem(key);
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Đặt lại (reset) số lần đầu hàng liên tiếp khi qua bài mới / hoàn thành ván đấu
+ */
+export function resetConsecutiveSectSurrenders(username?: string): void {
+  try {
+    const key = `fasttyping_sect_consec_surr_${(username || 'guest').toLowerCase()}`;
+    localStorage.removeItem(key);
+  } catch {}
+}
+
+/**
+ * Ghi nhận 1 lần đầu hàng trong bài thi Tông Môn.
+ * Nếu đạt mốc 3 lần liên tiếp: khấu trừ 1 lượt bài thi và reset biến đếm về 0.
+ */
+export function recordSectTrialSurrender(username?: string): {
+  count: number;
+  penalized: boolean;
+  message: string;
+} {
+  const current = getConsecutiveSectSurrenders(username);
+  const next = current + 1;
+  const key = `fasttyping_sect_consec_surr_${(username || 'guest').toLowerCase()}`;
+
+  if (next >= 3) {
+    // Đạt 3 lần liên tiếp -> Trừ 1 lượt bài thi và reset chuỗi
+    resetConsecutiveSectSurrenders(username);
+    return {
+      count: 3,
+      penalized: true,
+      message: '⚡ [THIÊN ĐẠO TRỪNG PHẠT] Đạo hữu đã đầu hàng 3 lần liên tiếp trong Vạn Phái Tranh Phong! Đã khấu trừ 1 lượt bài thi hôm nay để đảm bảo tính công bằng!',
+    };
+  } else {
+    try {
+      localStorage.setItem(key, next.toString());
+    } catch {}
+    return {
+      count: next,
+      penalized: false,
+      message: next === 2
+        ? '⚠️ [CẢNH BÁO ĐẦU HÀNG 2/3] Đạo hữu đã đầu hàng 2 lần liên tục! Nếu đầu hàng thêm 1 lần nữa sẽ bị khấu trừ 1 lượt bài thi hôm nay.'
+        : '⚠️ [CẢNH BÁO ĐẦU HÀNG 1/3] Đạo hữu đã đầu hàng 1 lần. Nếu đầu hàng 3 lần liên tiếp sẽ bị khấu trừ 1 lượt bài thi hôm nay (sẽ reset khi hoàn thành bài mới).',
+    };
+  }
+}
+

@@ -17,6 +17,7 @@ import {
   SectLeaderboardEntry, 
   SectInfo, 
   SectRole,
+  SectWarStatus,
   LeaderboardEntry,
   LeaderboardMultiData,
   PlayerProfileDetail,
@@ -24,6 +25,7 @@ import {
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken } from './auth';
 import { saveDaoDecree } from './heavenlyDaoBot';
+import { getStoredSects } from './cultivation';
 
 export interface PresenceUserMeta {
   username?: string;
@@ -94,25 +96,25 @@ export function normalizeRoomCode(input: string): string {
   return `VN-${cleaned}`;
 }
 
-// Tên hiển thị thân thiện cho từng chế độ chơi
+// Tên hiển thị thân thiện cho từng chế độ chơi theo phong cách Tiên Hiệp
 export function getModeDisplayName(mode: GameMode): string {
   switch (mode) {
     case 'vi_dau':
-      return 'Tiếng Việt Có Dấu';
+      return 'Chính Đạo Vấn Tâm (Tiếng Việt Có Dấu)';
     case 'vi_nodau':
-      return 'Tiếng Việt Không Dấu';
+      return 'Tật Phong Ngự Kiếm (Tiếng Việt Không Dấu)';
     case 'en':
-      return 'Tiếng Anh (English)';
+      return 'Dị Vực Luận Đạo (Tiếng Anh)';
     case 'numpad':
-      return 'Bàn Phím Số (Numpad)';
+      return 'Cửu Cung Trận Pháp (Bàn Phím Số)';
     case 'ngau_hung':
-      return 'Ngẫu Hứng (Rush)';
+      return 'Lôi Đình Nhất Kích (Ngẫu Hứng - Rush)';
     case 'doan_chu':
-      return 'Đoán Chữ (Mystery)';
+      return 'Huyền Cơ Mật Cảnh (Đoán Chữ - Mystery)';
     case 'san_boss':
-      return 'Săn Boss (Raid)';
+      return 'Hàng Phục Ma Tôn (Săn Boss Hắc Long)';
     case 'outplay':
-      return 'Outplay Yourself (Solo)';
+      return 'Tâm Ma Thí Luyện (Đột Phá Bản Ngã)';
     default:
       return mode;
   }
@@ -399,11 +401,11 @@ export async function markRoomFinished(roomId: string): Promise<void> {
   }
 }
 
-// Cập nhật trạng thái cụ thể của người chơi trong phòng (inMatch: false khi về phòng chờ, isSurrendered, ...)
+// Cập nhật trạng thái cụ thể của người chơi trong phòng (inMatch: false khi về phòng chờ, isSurrendered, isAFK, ...)
 export async function updatePlayerRoomStatus(
   roomId: string,
   playerId: string,
-  updates: { inMatch?: boolean; isSurrendered?: boolean; isFinished?: boolean }
+  updates: { inMatch?: boolean; isSurrendered?: boolean; isFinished?: boolean; isAFK?: boolean }
 ): Promise<void> {
   const normId = normalizeRoomCode(roomId);
   try {
@@ -1121,33 +1123,50 @@ export async function fetchLeaderboardFull(): Promise<LeaderboardMultiData> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const res = await fetch('/api/leaderboard', {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache' },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) {
-          if (data.highScores) {
-            saveLeaderboardToIndexedDB(data.highScores).catch(() => {});
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        if (text.includes('Rate exceeded') || res.status === 429) {
+          if (attempt < maxRetries) {
+            await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 800));
+            continue;
           }
-          return {
-            highScores: data.highScores || {},
-            rankings: data.rankings || {},
-            lastResetDate: data.lastResetDate,
-            lastResetWeek: data.lastResetWeek,
-          };
         }
+      }
+
+      if (data && data.success) {
+        if (data.highScores) {
+          saveLeaderboardToIndexedDB(data.highScores).catch(() => {});
+        }
+        return {
+          highScores: data.highScores || {},
+          rankings: data.rankings || {},
+          lastResetDate: data.lastResetDate,
+          lastResetWeek: data.lastResetWeek,
+        };
+      } else if (!res.ok && attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 800));
+        continue;
       }
     } catch (err: any) {
       if (attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 350));
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 800));
         continue;
       }
-      console.warn('Leaderboard service currently unreachable, using local cache:', err?.message || err);
+      // Silently fall back to cached scores without console noise if request was aborted or throttled
+      if (err?.name !== 'AbortError' && !String(err?.message || '').includes('aborted')) {
+        console.warn('Leaderboard service note, using local cache:', err?.message || err);
+      }
     }
   }
   return {
@@ -1427,6 +1446,152 @@ export async function serverContributeToSect(amount: number): Promise<{ success:
 }
 
 /**
+ * Trạng thái dự phòng Vạn Phái Tranh Phong cục bộ khi máy chủ đang khởi động hoặc mất mạng
+ */
+export function getLocalSectWarStatus(): SectWarStatus {
+  const now = Date.now();
+  const VN_OFFSET = 7 * 3600 * 1000;
+  const nowVN = new Date(now + VN_OFFSET);
+  const day = nowVN.getUTCDay(); // 0 = Chủ Nhật, 6 = Thứ Bảy
+  const hour = nowVN.getUTCHours();
+
+  const isActive = day === 6 || (day === 0 && hour < 20);
+
+  let daysUntilSunday = (7 - day) % 7;
+  if (day === 0 && hour >= 20) {
+    daysUntilSunday = 7;
+  }
+  const targetVN = new Date(nowVN);
+  targetVN.setUTCDate(targetVN.getUTCDate() + daysUntilSunday);
+  targetVN.setUTCHours(20, 0, 0, 0);
+  const nextSettlementTimestamp = targetVN.getTime() - VN_OFFSET;
+  const timeRemainingMs = Math.max(0, nextSettlementTimestamp - now);
+
+  let topSects: SectWarStatus['topSects'] = [];
+  try {
+    const localSects = getStoredSects();
+    if (Array.isArray(localSects)) {
+      topSects = localSects
+        .map((s, idx) => ({
+          id: s.id,
+          name: s.name,
+          tag: s.tag,
+          badgeIcon: s.badgeIcon || '⚔️',
+          bannerColor: s.bannerColor || '#38bdf8',
+          leaderName: s.leaderName,
+          leaderAvatar: s.leaderAvatar || '👑',
+          weeklyWarPoints: s.weeklyTournamentPoints || 0,
+          memberCount: s.memberCount || 1,
+          isHoldingThienCung: Boolean(s.isHoldingThienCung || (idx === 0 && (s.weeklyTournamentPoints || 0) > 0)),
+          rank: idx + 1,
+        }))
+        .sort((a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0));
+    }
+  } catch {
+    topSects = [];
+  }
+
+  return {
+    isActive,
+    phase: isActive ? 'active' : 'settled_rest',
+    timeRemainingMs,
+    nextSettlementTimestamp,
+    dailyAttemptsMax: 3,
+    dailyAttemptsUsed: 0,
+    dailyAttemptsLeft: 3,
+    isHappyHour: false,
+    happyHourMultiplier: 1,
+    topSects,
+  };
+}
+
+/**
+ * Lấy trạng thái Đại sự kiện Vạn Phái Tranh Phong cuối tuần (T7 & CN • Tổng kết 20h CN)
+ */
+export async function fetchSectWarStatus(): Promise<SectWarStatus | null> {
+  const token = getStoredAuthToken();
+  try {
+    const res = await fetch('/api/sects/war/status', {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) return getLocalSectWarStatus();
+    const data = await res.json();
+    return data && data.success ? data : getLocalSectWarStatus();
+  } catch {
+    // Dự phòng an toàn bằng tính toán lịch trình sự kiện cục bộ, không ném console.error
+    return getLocalSectWarStatus();
+  }
+}
+
+/**
+ * Đóng góp điểm Chiến Công cho Tông Môn sau khi hoàn thành bài gõ
+ */
+export async function serverContributeSectWarScore(payload: {
+  wpm: number;
+  accuracy: number;
+  mode?: string;
+  isMultiplayer?: boolean;
+}): Promise<{
+  success: boolean;
+  addedPoints?: number;
+  userTotalPoints?: number;
+  totalWeeklyPoints?: number;
+  dailyAttemptsUsed?: number;
+  dailyAttemptsLeft?: number;
+  dailyAttemptsMax?: number;
+  currentRank?: number;
+  isHappyHour?: boolean;
+  sectName?: string;
+  isActive?: boolean;
+  error?: string;
+}> {
+  const token = getStoredAuthToken();
+  if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+  try {
+    const res = await fetch('/api/sects/war/contribute', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi mạng khi cống hiến điểm chiến công' };
+  }
+}
+
+/**
+ * Khấu trừ 1 lượt bài thi Tông Môn khi đầu hàng 3 lần liên tục
+ */
+export async function serverPenalizeSectSurrender(): Promise<{
+  success: boolean;
+  deducted?: boolean;
+  dailyAttemptsUsed?: number;
+  dailyAttemptsLeft?: number;
+  dailyAttemptsMax?: number;
+  message?: string;
+  error?: string;
+}> {
+  const token = getStoredAuthToken();
+  try {
+    const res = await fetch('/api/sects/war/penalize-surrender', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Lỗi kết nối khi trừ lượt bài thi' };
+  }
+}
+
+/**
  * Submit player score to server leaderboard
  * Chỉ được ghi nhận khi ván đấu diễn ra trọn vẹn, không đầu hàng, không out phòng, độ chính xác >= 92%
  */
@@ -1486,21 +1651,62 @@ export async function submitScoreToLeaderboard(record: {
     };
   }
 
-  try {
-    const res = await fetch('/api/leaderboard', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ ...record, authToken: token }),
-    });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    console.warn('Error submitting score to leaderboard:', err);
-    return { success: false, isNewRecord: false, highScores: {} };
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch('/api/leaderboard', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ...record, authToken: token }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Plain text response like "Rate exceeded." or 429
+        if (text.includes('Rate exceeded') || res.status === 429) {
+          if (attempt < maxRetries) {
+            await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 800));
+            continue;
+          }
+          return {
+            success: false,
+            isNewRecord: false,
+            highScores: getStoredHighScores(),
+            error: 'Lưu lượng truy cập máy chủ đang cao, điểm số đã được bảo toàn trên thiết bị của bạn.',
+          };
+        }
+        return {
+          success: false,
+          isNewRecord: false,
+          highScores: getStoredHighScores(),
+        };
+      }
+
+      if (data && typeof data === 'object') {
+        return data;
+      }
+    } catch (err: any) {
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 800));
+        continue;
+      }
+      if (err?.name !== 'AbortError' && !String(err?.message || '').includes('aborted')) {
+        console.warn('Leaderboard submission note:', err?.message || err);
+      }
+    }
   }
+
+  return { success: false, isNewRecord: false, highScores: getStoredHighScores() };
 }
 
 /**

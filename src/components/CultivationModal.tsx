@@ -62,6 +62,7 @@ interface CultivationModalProps {
   onOpenAuthModal?: () => void;
   onStartSectBoss?: (sectId: string, sectName: string) => void;
   onStartSectTournament?: (sectId: string, sectName: string) => void;
+  initialTab?: 'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history';
 }
 
 export const CultivationModal: React.FC<CultivationModalProps> = ({
@@ -78,8 +79,15 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   onOpenAuthModal,
   onStartSectBoss,
   onStartSectTournament,
+  initialTab,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
+
+  useEffect(() => {
+    if (initialTab && isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [usePhaCanh, setUsePhaCanh] = useState(false);
   const [useHoTam, setUseHoTam] = useState(false);

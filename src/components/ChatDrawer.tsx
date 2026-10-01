@@ -298,11 +298,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const handleSendBattleChallenge = () => {
     soundFx.playKeyClick();
     const modeTitle = 
-      challengeMode === 'vi_dau' ? 'Tiếng Việt Có Dấu' :
-      challengeMode === 'vi_nodau' ? 'Tiếng Việt Không Dấu' :
-      challengeMode === 'en' ? 'Tiếng Anh (English)' :
-      challengeMode === 'doan_chu' ? 'Đoán Chữ (Mystery)' :
-      challengeMode === 'ngau_hung' ? 'Ngẫu Hứng (Rush)' : 'Săn Boss Hắc Long';
+      challengeMode === 'vi_dau' ? 'Chính Đạo Vấn Tâm' :
+      challengeMode === 'vi_nodau' ? 'Tật Phong Ngự Kiếm' :
+      challengeMode === 'en' ? 'Dị Vực Luận Đạo' :
+      challengeMode === 'doan_chu' ? 'Huyền Cơ Mật Cảnh' :
+      challengeMode === 'ngau_hung' ? 'Lôi Đình Nhất Kích' : 'Hàng Phục Ma Tôn';
 
     const challengeRoom = currentRoomId || `VN-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -944,12 +944,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 onChange={(e) => setChallengeMode(e.target.value)}
                 className="w-full px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs outline-none"
               >
-                <option value="vi_dau">Tiếng Việt Có Dấu</option>
-                <option value="vi_nodau">Tiếng Việt Không Dấu</option>
-                <option value="en">Tiếng Anh (English)</option>
-                <option value="ngau_hung">Ngẫu Hứng (Rush)</option>
-                <option value="doan_chu">Đoán Chữ (Mystery)</option>
-                <option value="san_boss">Săn Boss Hắc Long</option>
+                <option value="vi_dau">Chính Đạo Vấn Tâm (Có Dấu)</option>
+                <option value="vi_nodau">Tật Phong Ngự Kiếm (Không Dấu)</option>
+                <option value="en">Dị Vực Luận Đạo (Tiếng Anh)</option>
+                <option value="ngau_hung">Lôi Đình Nhất Kích (Rush)</option>
+                <option value="doan_chu">Huyền Cơ Mật Cảnh (Đoán Chữ)</option>
+                <option value="san_boss">Hàng Phục Ma Tôn (Săn Boss)</option>
               </select>
             </div>
             <div>

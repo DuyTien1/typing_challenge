@@ -22,27 +22,27 @@ export interface WpmRecordBadgeProps {
  * Lấy tên hiển thị tiếng Việt chuẩn đẹp của các chế độ chơi
  */
 export function getFriendlyModeTitle(modeId?: string): string {
-  if (!modeId) return 'Tiếng Việt Có Dấu';
+  if (!modeId) return 'Chính Đạo Vấn Tâm (Tiếng Việt Có Dấu)';
   const clean = modeId.toLowerCase().trim();
   switch (clean) {
     case 'vi_dau':
-      return 'Tiếng Việt Có Dấu';
+      return 'Chính Đạo Vấn Tâm (Tiếng Việt Có Dấu)';
     case 'vi_nodau':
-      return 'Tiếng Việt Không Dấu';
+      return 'Tật Phong Ngự Kiếm (Tiếng Việt Không Dấu)';
     case 'en':
-      return 'Tiếng Anh (English)';
+      return 'Dị Vực Luận Đạo (Tiếng Anh)';
     case 'numpad':
-      return 'Bàn Phím Số (Numpad)';
+      return 'Cửu Cung Trận Pháp (Bàn Phím Số)';
     case 'ngau_hung':
-      return 'Ngẫu Hứng (Rush)';
+      return 'Lôi Đình Nhất Kích (Ngẫu Hứng)';
     case 'doan_chu':
-      return 'Đoán Chữ (Mystery)';
+      return 'Huyền Cơ Mật Cảnh (Đoán Chữ)';
     case 'san_boss':
-      return 'Săn Boss (Raid)';
+      return 'Hàng Phục Ma Tôn (Săn Boss Hắc Long)';
     case 'outplay':
-      return 'Outplay Yourself (Solo)';
+      return 'Tâm Ma Thí Luyện (Đột Phá Bản Ngã)';
     case 'bot_arena':
-      return 'Đấu Trường Luyện Tập AI';
+      return 'Hư Ảnh Đạo Đài (Luyện Tập Cơ Khí)';
     default:
       return modeId;
   }

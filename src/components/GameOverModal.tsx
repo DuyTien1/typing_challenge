@@ -161,7 +161,22 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           <div className="text-center space-y-1.5">
           {(() => {
             const me = players.find((p) => p.id === currentPlayerId);
+            const isPlayerAFK = (gameMode === 'ngau_hung' || gameMode === 'doan_chu') ? false : (me?.isAFK || false);
             const isPlayerSurrendered = me?.isSurrendered || false;
+
+            if (isPlayerAFK) {
+              return (
+                <div>
+                  <div className="text-4xl sm:text-5xl mb-1.5">💤</div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-amber-400">
+                    BẠN ĐÃ BỊ TÍNH LÀ AFK (TREO MÁY)
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Không có thao tác bàn phím trong suốt 30 giây. Ván đấu không được tính là hoàn thành.
+                  </p>
+                </div>
+              );
+            }
 
             if (isPlayerSurrendered) {
               return (

@@ -720,7 +720,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 }`}
               >
                 <Zap className="w-3.5 h-3.5" />
-                <span>Ngẫu Hứng</span>
+                <span>Lôi Đình Nhất Kích</span>
               </button>
 
               {/* Tab 3: Đoán Chữ */}
@@ -738,7 +738,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 }`}
               >
                 <HelpCircle className="w-3.5 h-3.5" />
-                <span>Đoán Chữ</span>
+                <span>Huyền Cơ Mật Cảnh</span>
               </button>
 
               {/* Tab 4: Săn Boss (Raid) */}
@@ -756,7 +756,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 }`}
               >
                 <Swords className="w-3.5 h-3.5" />
-                <span>Săn Boss</span>
+                <span>Hàng Phục Ma Tôn</span>
               </button>
 
               <div className="h-4 w-px bg-slate-800 shrink-0 mx-0.5" />
@@ -986,8 +986,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3.5 hover:border-rose-500/40 transition-colors">
                         <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                           <div className="text-xs font-black text-rose-400 uppercase tracking-wide flex items-center gap-2">
-                            <span className="text-base">🇻🇳</span>
-                            <span>Tiếng Việt Có Dấu</span>
+                            <span className="text-base">🪷</span>
+                            <span>Chính Đạo Vấn Tâm</span>
                           </div>
                           <span className="text-[10px] bg-rose-950/60 text-rose-300 border border-rose-800/40 px-2 py-0.5 rounded-full font-bold">
                             Chế độ chuẩn
@@ -1080,7 +1080,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                           <div className="text-xs font-black text-yellow-400 uppercase tracking-wide flex items-center gap-2">
                             <span className="text-base">⚡</span>
-                            <span>Tiếng Việt Không Dấu</span>
+                            <span>Tật Phong Ngự Kiếm</span>
                           </div>
                           <span className="text-[10px] bg-yellow-950/60 text-yellow-300 border border-yellow-800/40 px-2 py-0.5 rounded-full font-bold">
                             Tốc độ cao
@@ -1171,7 +1171,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                           <div className="text-xs font-black text-sky-400 uppercase tracking-wide flex items-center gap-2">
                             <span className="text-base">🌐</span>
-                            <span>Tiếng Anh (English)</span>
+                            <span>Dị Vực Luận Đạo (Tiếng Anh)</span>
                           </div>
                           <span className="text-[10px] bg-sky-950/60 text-sky-300 border border-sky-800/40 px-2 py-0.5 rounded-full font-bold">
                             Quốc tế
@@ -1262,7 +1262,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                           <div className="text-xs font-black text-emerald-400 uppercase tracking-wide flex items-center gap-2">
                             <span className="text-base">🔢</span>
-                            <span>Bàn Phím Số (Numpad)</span>
+                            <span>Cửu Cung Trận Pháp (Phím Số)</span>
                           </div>
                           <span className="text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/40 px-2 py-0.5 rounded-full font-bold">
                             Phím số chuyên dụng
@@ -1366,7 +1366,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div>
                       <h4 className="text-xs font-black uppercase text-orange-400 tracking-wide flex items-center gap-2">
                         <Zap className="w-4 h-4" />
-                        <span>Chế Độ Ngẫu Hứng (Rush - Chạy Đua Từ Rơi)</span>
+                        <span>Lôi Đình Nhất Kích (Ngẫu Hứng - Rush)</span>
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-0.5">
                         Thi đấu theo từng đợt hiệp dồn dập, gõ kịp trước khi hết thanh thời gian mỗi vòng.
@@ -1592,7 +1592,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div>
                       <h4 className="text-xs font-black uppercase text-purple-400 tracking-wide flex items-center gap-2">
                         <HelpCircle className="w-4 h-4" />
-                        <span>Chế Độ Đoán Chữ (Mystery Word)</span>
+                        <span>Huyền Cơ Mật Cảnh (Đoán Chữ - Mystery Word)</span>
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-0.5">
                         Tùy chỉnh thời gian đoán từ, chu kỳ lật mở ký tự gợi ý và số lượng câu đố.

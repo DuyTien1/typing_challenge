@@ -400,11 +400,15 @@ export const MysteryWordResultView: React.FC<MysteryWordResultViewProps> = ({
                     <span className="truncate max-w-[140px] text-white">
                       {p.username} {isMe && '(Bạn)'}
                     </span>
-                    {p.isSurrendered && (
+                    {p.isAFK ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
+                        AFK
+                      </span>
+                    ) : p.isSurrendered ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-bold border border-rose-500/30">
                         Đầu Hàng
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-3 font-mono">

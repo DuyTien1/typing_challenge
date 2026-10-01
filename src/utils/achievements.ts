@@ -1008,16 +1008,16 @@ export function calculatePlayerAchievements(params: {
   }
 
   // QUY TẮC CỐT LÕI: Lọc chỉ lấy các trận đấu ĐÃ HOÀN THÀNH HỢP LỆ
-  // Bỏ qua toàn bộ các trận đầu hàng, out phòng sớm hoặc ván chưa hoàn thành
+  // Bỏ qua toàn bộ các trận đầu hàng, AFK, out phòng sớm hoặc ván chưa hoàn thành
   const completedMatchHistory = matchHistory.filter(
-    (m) => m.isCompleted !== false && m.result !== 'Đầu hàng'
+    (m) => m.isCompleted !== false && m.result !== 'Đầu hàng' && m.result !== 'AFK'
   );
 
   // Thống kê từ lịch sử đấu: CHỈ tính từ các trận đấu ĐÃ HOÀN THÀNH
   const maxMatchWpm = Math.max(bestWpm, ...completedMatchHistory.map((m) => m.wpm || 0));
   const effectiveTotalMatches = Math.max(totalGames, completedMatchHistory.length);
   const accurate100Count = completedMatchHistory.filter((m) => m.accuracy === 100).length;
-  const surrenderedCount = matchHistory.filter((m) => m.result === 'Đầu hàng' || m.isCompleted === false).length;
+  const surrenderedCount = matchHistory.filter((m) => m.result === 'Đầu hàng' || m.result === 'AFK' || m.isCompleted === false).length;
   const uniqueModes = new Set(completedMatchHistory.map((m) => m.modeId || m.mode));
 
   // Kiểm tra chuỗi thắng (phải là trận hoàn thành và kết quả Thắng; nếu gặp trận Đầu hàng hoặc chưa hoàn thành thì chuỗi bị ngắt)

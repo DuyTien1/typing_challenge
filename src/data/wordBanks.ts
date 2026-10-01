@@ -426,3 +426,26 @@ export function generateOutplayWords(
     return word;
   });
 }
+
+/**
+ * Cấu hình bài thi Vạn Phái Tranh Phong Solo (3 Ải liên hoàn: Tiếng Việt có dấu -> Tiếng Anh -> Number)
+ */
+export const SECT_TRIAL_CONFIG = {
+  stage1ViDauCount: 30, // Ải 1: Tiếng Việt có dấu
+  stage2EnCount: 30,     // Ải 2: Tiếng Anh
+  stage3NumberCount: 25, // Ải 3: Dãy số
+  totalWords: 85,
+};
+
+export function generateSectTrialWords(): string[] {
+  const stage1 = Array.from({ length: SECT_TRIAL_CONFIG.stage1ViDauCount }, () =>
+    getRandomWordFromBank(BIG_WORD_BANKS.vi_dau.easy, BIG_WORD_BANKS.vi_dau.hard, 30)
+  );
+  const stage2 = Array.from({ length: SECT_TRIAL_CONFIG.stage2EnCount }, () =>
+    getRandomWordFromBank(BIG_WORD_BANKS.en.easy, BIG_WORD_BANKS.en.hard, 30)
+  );
+  const stage3 = Array.from({ length: SECT_TRIAL_CONFIG.stage3NumberCount }, () =>
+    generate58008Word('number')
+  );
+  return [...stage1, ...stage2, ...stage3];
+}

@@ -6,14 +6,5 @@
     "totalTaxBurned": 0,
     "totalTradesCount": 0
   },
-  "logs": [
-    {
-      "type": "buy",
-      "actorUsername": "admin",
-      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
-      "amount": 30,
-      "id": "log_1790608201043_whe3",
-      "timestamp": 1790608201043
-    }
-  ]
+  "logs": []
 }

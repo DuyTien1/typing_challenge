@@ -1,4 +1,4 @@
-export type MatchResult = 'Thắng' | 'Thua' | 'Đầu hàng' | 'Hoàn thành' | 'Top 1' | 'Top 2' | 'Top 3';
+export type MatchResult = 'Thắng' | 'Thua' | 'Đầu hàng' | 'AFK' | 'Hoàn thành' | 'Top 1' | 'Top 2' | 'Top 3';
 
 export interface MatchWordLog {
   word: string;
@@ -68,8 +68,8 @@ export const MAX_COMPLETED_HISTORY = 20;
  */
 export function getStoredMatchHistory(): MatchRecord[] {
   const all = getMatchHistorySync() as MatchRecord[];
-  // Lọc chỉ giữ các trận đấu đã hoàn thành (isCompleted: true và không đầu hàng)
-  const completed = all.filter((r) => r.isCompleted !== false && r.result !== 'Đầu hàng');
+  // Lọc chỉ giữ các trận đấu đã hoàn thành (isCompleted: true và không đầu hàng / AFK)
+  const completed = all.filter((r) => r.isCompleted !== false && r.result !== 'Đầu hàng' && r.result !== 'AFK');
   return completed.slice(0, MAX_COMPLETED_HISTORY);
 }
 
@@ -322,7 +322,7 @@ export function addMatchRecord(record: {
   const current = getStoredMatchHistory();
   const isCompleted = record.isCompleted !== undefined 
     ? record.isCompleted 
-    : record.result !== 'Đầu hàng';
+    : record.result !== 'Đầu hàng' && record.result !== 'AFK';
 
   // Tự động phân tích lỗi sai nếu có wordLogs
   let analyzedMistakes = record.mistakes || [];
@@ -542,7 +542,7 @@ export function aggregateHistoryMistakes(historyList: MatchRecord[]): {
   avgAccuracy: number;
   avgConsistency: number;
 } {
-  const completed = historyList.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng');
+  const completed = historyList.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng' && m.result !== 'AFK');
   const mistakeMap: Record<string, MistakeDetail> = {};
   const errorKeyMap: Record<string, number> = {};
   const slowestWords: { word: string; pauseMs: number }[] = [];

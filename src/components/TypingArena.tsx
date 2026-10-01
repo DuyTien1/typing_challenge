@@ -76,6 +76,7 @@ interface TypingArenaProps {
     }
   ) => void;
   onSurrender: () => void;
+  onAFK?: () => void;
   onRestart: () => void;
   onHome?: () => void;
   modeName: string;
@@ -92,21 +93,22 @@ interface TypingArenaProps {
   onCustomWpmChange?: (newWpm: number) => void;
   daoLuPartnerName?: string;
   daoLuPartnerId?: string;
+  isSectTrial?: boolean;
 }
 
 const VOCAB_OPTIONS: { id: OutplaySubMode; label: string; flag: string }[] = [
-  { id: 'vi_dau', label: 'Tiếng Việt có dấu', flag: '🇻🇳' },
-  { id: 'vi_nodau', label: 'Tiếng Việt không dấu', flag: '🇻🇳' },
-  { id: 'en', label: 'Tiếng Anh', flag: '🇬🇧' },
-  { id: 'numpad_number', label: 'Numpad (Số)', flag: '🔢' },
-  { id: 'numpad_fullsize', label: 'Numpad (Phép tính)', flag: '⌨️' },
+  { id: 'vi_dau', label: 'Chính Đạo Vấn Tâm (Có dấu)', flag: '🪷' },
+  { id: 'vi_nodau', label: 'Tật Phong Ngự Kiếm (Không dấu)', flag: '⚡' },
+  { id: 'en', label: 'Dị Vực Luận Đạo (Tiếng Anh)', flag: '🌐' },
+  { id: 'numpad_number', label: 'Cửu Cung Trận Pháp (Dãy số)', flag: '🔢' },
+  { id: 'numpad_fullsize', label: 'Cửu Cung Trận Pháp (Phép tính)', flag: '☯️' },
 ];
 
 const GHOST_OPTIONS: { id: OutplayPaceMode; label: string }[] = [
-  { id: 'last', label: 'Ghost: Ván trước' },
-  { id: 'pb', label: 'Ghost: Kỷ lục PB' },
-  { id: 'custom', label: 'Ghost: Tùy chỉnh' },
-  { id: 'off', label: 'Tắt Ghost' },
+  { id: 'last', label: 'Tàn Ảnh: Ván trước' },
+  { id: 'pb', label: 'Tâm Ma: Kỷ lục PB' },
+  { id: 'custom', label: 'Phân Thân: Tùy chỉnh' },
+  { id: 'off', label: 'Tắt Tàn Ảnh' },
 ];
 
 export type CharacterStatus =
@@ -312,7 +314,8 @@ interface CompetitorLaneProps {
 
 const CompetitorLane = React.memo<CompetitorLaneProps>(
   ({ player: p, isMe, isDaoLuCouple }) => {
-    const isSurrendered = !!p.isSurrendered;
+    const isAFK = !!p.isAFK;
+    const isSurrendered = !!p.isSurrendered || isAFK;
     const isFinished = !!p.isFinished;
     return (
       <div 
@@ -321,10 +324,14 @@ const CompetitorLane = React.memo<CompetitorLaneProps>(
         }`}
       >
         <div className="w-28 text-[11px] font-bold truncate text-right flex items-center justify-end gap-1">
-          {isSurrendered && <span title="Đã đầu hàng">🏳️</span>}
+          {isAFK ? (
+            <span title="Treo máy AFK">💤</span>
+          ) : isSurrendered ? (
+            <span title="Đã đầu hàng">🏳️</span>
+          ) : null}
           {isFinished && <span title="Đã về đích" className="text-emerald-400 font-bold">🏁</span>}
           {isDaoLuCouple && <span title="Song Tu Đạo Lữ [Tâm Đầu Ý Hợp]">💖</span>}
-          <span className={isSurrendered ? 'line-through text-slate-500' : isFinished ? 'text-emerald-400 font-bold' : isDaoLuCouple ? 'text-pink-300 font-bold' : 'text-slate-300'}>
+          <span className={isAFK ? 'line-through text-amber-500/80' : isSurrendered ? 'line-through text-slate-500' : isFinished ? 'text-emerald-400 font-bold' : isDaoLuCouple ? 'text-pink-300 font-bold' : 'text-slate-300'}>
             {p.username}
           </span>
           {isMe && <span className="text-amber-400 font-bold">*</span>}
@@ -378,7 +385,11 @@ const CompetitorLane = React.memo<CompetitorLaneProps>(
         </div>
 
         <div className="w-24 text-right font-mono text-[11px]">
-          {isSurrendered ? (
+          {isAFK ? (
+            <span className="text-[10px] font-black text-amber-400 tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+              AFK
+            </span>
+          ) : isSurrendered ? (
             <span className="text-[10px] font-bold text-rose-400/90 tracking-tight">
               ĐẦU HÀNG
             </span>
@@ -414,6 +425,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   onUpdateProgress,
   onFinish,
   onSurrender,
+  onAFK,
   onRestart,
   onHome,
   modeName,
@@ -430,6 +442,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   onCustomWpmChange,
   daoLuPartnerName,
   daoLuPartnerId,
+  isSectTrial = false,
 }) => {
   // Outplay Mode Persistent Settings (Monkeytype Architecture)
   const [outplaySubMode, setOutplaySubMode] = useState<OutplaySubMode>(() => {
@@ -526,9 +539,9 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     ? (currentConditionStat && currentConditionStat.bestWpm > 0 ? currentConditionStat.bestWpm : 0)
     : (currentConditionStat && currentConditionStat.bestWpm > 0 ? currentConditionStat.bestWpm : (propSessionBestWpm || 0));
 
-  // In-room countdown for multiplayer: starts at 3 when entering the room
+  // In-room countdown: starts at 3 when entering multiplayer or Sect War Solo Trial
   const [inRoomCountdown, setInRoomCountdown] = useState<number | null>(() => {
-    return isMultiplayer && !isOutplay ? 3 : null;
+    return (isMultiplayer && !isOutplay) || isSectTrial ? 3 : null;
   });
 
   useEffect(() => {
@@ -595,6 +608,65 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   }, [words, isOutplay, duration]);
 
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
+
+  // Quản lý 3 Ải Vạn Phái Tranh Phong: Ải 1 (Tiếng Việt có dấu 30 từ) -> Ải 2 (Tiếng Anh 30 từ) -> Ải 3 (Number 25 số)
+  const sectTrialCurrentStage = useMemo(() => {
+    if (!isSectTrial) return null;
+    if (currentWordIndex < 30) {
+      return {
+        stageNum: 1,
+        title: 'Ải 1: Tiếng Việt Có Dấu',
+        flag: '🇻🇳',
+        desc: '30 từ ngữ Tiếng Việt có dấu chuẩn xác',
+        range: '1 - 30',
+        progress: Math.min(30, currentWordIndex + 1),
+        max: 30,
+        color: 'from-emerald-500 to-teal-500',
+        borderColor: 'border-emerald-400',
+        textColor: 'text-emerald-400',
+      };
+    } else if (currentWordIndex < 60) {
+      return {
+        stageNum: 2,
+        title: 'Ải 2: Tiếng Anh Quốc Tế',
+        flag: '🇬🇧',
+        desc: '30 từ vựng Tiếng Anh tốc độ cao',
+        range: '31 - 60',
+        progress: Math.min(30, currentWordIndex - 29),
+        max: 30,
+        color: 'from-cyan-500 to-blue-500',
+        borderColor: 'border-cyan-400',
+        textColor: 'text-cyan-400',
+      };
+    } else {
+      return {
+        stageNum: 3,
+        title: 'Ải 3: Thần Tốc Phím Số',
+        flag: '🔢',
+        desc: '25 cụm phím số chuẩn xác về đích',
+        range: '61 - 85',
+        progress: Math.min(25, currentWordIndex - 59),
+        max: 25,
+        color: 'from-amber-500 to-orange-500',
+        borderColor: 'border-amber-400',
+        textColor: 'text-amber-400',
+      };
+    }
+  }, [isSectTrial, currentWordIndex]);
+
+  const lastAnnouncedStageRef = useRef<number>(1);
+  const [stageTransitionNotice, setStageTransitionNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSectTrial || !sectTrialCurrentStage) return;
+    if (sectTrialCurrentStage.stageNum !== lastAnnouncedStageRef.current) {
+      lastAnnouncedStageRef.current = sectTrialCurrentStage.stageNum;
+      soundFx.playVictory();
+      setStageTransitionNotice(`⚡ [ĐỘT PHÁ ẢI] Đạo hữu đã bước vào ${sectTrialCurrentStage.title}!`);
+      const timer = setTimeout(() => setStageTransitionNotice(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSectTrial, sectTrialCurrentStage?.stageNum]);
   const [currentInput, setCurrentInput] = useState('');
   const [wordStatuses, setWordStatuses] = useState<('correct' | 'incorrect' | 'pending')[]>(() =>
     new Array(effectiveWords.length).fill('pending')
@@ -660,7 +732,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
   const currentPlayerData = players.find((p) => p.id === currentPlayerId);
-  const isPlayerSurrendered = !!currentPlayerData?.isSurrendered;
+  const isPlayerAFK = !!currentPlayerData?.isAFK;
+  const isPlayerSurrendered = !!currentPlayerData?.isSurrendered || isPlayerAFK;
 
   // Finished & Spectating State for Multiplayer
   const [hasUserFinished, setHasUserFinished] = useState(false);
@@ -671,6 +744,35 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const remainingActiveCount = activeCompetitors.length;
   const finishedPlayersList = players.filter((p) => p.isFinished);
   const myPlacement = finishedPlayersList.findIndex((p) => p.id === currentPlayerId) + 1 || Math.max(1, finishedPlayersList.length);
+
+  // Inactivity tracking for Multiplayer (AFK after 30s with no keyboard activity)
+  const lastActivityTimeRef = useRef<number>(Date.now());
+
+  const recordActivity = useCallback(() => {
+    lastActivityTimeRef.current = Date.now();
+  }, []);
+
+  useEffect(() => {
+    if (!isMultiplayer || inRoomCountdown !== null || isUserFinished || isPlayerSurrendered || isPlayerAFK || timeLeft <= 0) {
+      return;
+    }
+
+    lastActivityTimeRef.current = Date.now();
+
+    const afkInterval = setInterval(() => {
+      if (isUserFinished || isPlayerSurrendered || isPlayerAFK || timeLeft <= 0) return;
+      const idleTime = Date.now() - lastActivityTimeRef.current;
+      if (idleTime >= 30000) {
+        if (onAFK) {
+          onAFK();
+        } else {
+          onSurrender();
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(afkInterval);
+  }, [isMultiplayer, inRoomCountdown, isUserFinished, isPlayerSurrendered, isPlayerAFK, timeLeft, onAFK, onSurrender]);
 
   // Monkeytype Caret State & Focus
   const [caretPos, setCaretPos] = useState<{ x: number; y: number; height?: number } | null>(null);
@@ -915,6 +1017,11 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     if (isOutplay) {
       handleResetOutplay();
     } else if (!isMultiplayer) {
+      // Trong bài thi Tông Môn (Vạn Phái Tranh Phong), bấm làm lại khi đang thi đấu dở dang tính là đầu hàng/bỏ cuộc
+      if (isSectTrial && !isUserFinished && !isPlayerSurrendered) {
+        confirmSurrender();
+        return;
+      }
       if (onRestart) {
         onRestart();
       }
@@ -966,6 +1073,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   // Keyboard shortcut listener: Esc opens surrender modal, Enter confirms; Esc cancels; Tab / Alt+R resets solo; auto focus
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
+      recordActivity();
       // If user is editing the custom ghost WPM input, do not steal or intercept keystrokes!
       if (document.activeElement === customWpmInputRef.current) {
         if (e.key === 'Enter' || e.key === 'Escape') {
@@ -1748,6 +1856,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Main Input Change Handler - Live feedback per character
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    recordActivity();
     if (isUserFinished || isPlayerSurrendered || timeLeft <= 0) return;
     const val = e.target.value;
     const now = performance.now();
@@ -1822,6 +1931,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
 
   // Backspace key handler
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    recordActivity();
     // Solo Mode: Tab, Alt+R, or Ctrl+Enter quickly restarts the game (at any time)
     if (
       e.key === 'Tab' || 
@@ -2417,6 +2527,105 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
         </div>
       )}
 
+      {/* Ải Vạn Phái Tranh Phong Solo Trial (3 Ải Liên Hoàn: Tiếng Việt -> Tiếng Anh -> Number) */}
+      {isSectTrial && sectTrialCurrentStage && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-amber-500/50 shadow-2xl space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black text-[11px] tracking-wider uppercase flex items-center gap-1.5 shadow-sm">
+                <span>⚔️</span>
+                <span>Vạn Phái Tranh Phong • Thử Thách 3 Ải Đơn</span>
+              </span>
+              <span className="font-bold text-white flex items-center gap-1.5 text-xs sm:text-sm">
+                <span>{sectTrialCurrentStage.flag}</span>
+                <span className={sectTrialCurrentStage.textColor}>{sectTrialCurrentStage.title}</span>
+              </span>
+            </div>
+            <div className="font-mono text-xs text-slate-300">
+              Tiến độ ải hiện tại: <strong className={sectTrialCurrentStage.textColor}>{sectTrialCurrentStage.progress}/{sectTrialCurrentStage.max} từ</strong>
+              <span className="text-slate-500 ml-2 font-normal">| Tổng bài thi: {Math.min(85, currentWordIndex + 1)}/85 từ</span>
+            </div>
+          </div>
+
+          {/* 3-Stage Stepper Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className={`p-2.5 rounded-xl border transition-all ${
+              sectTrialCurrentStage.stageNum === 1
+                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/50'
+                : currentWordIndex >= 30
+                ? 'bg-emerald-950/40 border-emerald-600/40 text-emerald-400/70'
+                : 'bg-slate-950/50 border-slate-800 text-slate-500'
+            }`}>
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="flex items-center gap-1">
+                  <span>🇻🇳</span>
+                  <span>1. Tiếng Việt (Có Dấu)</span>
+                </span>
+                <span className="font-mono">{currentWordIndex >= 30 ? '✓ Đạt' : `${Math.min(30, currentWordIndex + 1)}/30`}</span>
+              </div>
+              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-400 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, ((currentWordIndex + 1) / 30) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            <div className={`p-2.5 rounded-xl border transition-all ${
+              sectTrialCurrentStage.stageNum === 2
+                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.3)] ring-1 ring-cyan-400/50'
+                : currentWordIndex >= 60
+                ? 'bg-cyan-950/40 border-cyan-600/40 text-cyan-400/70'
+                : 'bg-slate-950/50 border-slate-800 text-slate-500'
+            }`}>
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="flex items-center gap-1">
+                  <span>🇬🇧</span>
+                  <span>2. Tiếng Anh Quốc Tế</span>
+                </span>
+                <span className="font-mono">{currentWordIndex >= 60 ? '✓ Đạt' : currentWordIndex < 30 ? '0/30' : `${Math.min(30, currentWordIndex - 29)}/30`}</span>
+              </div>
+              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div 
+                  className="bg-cyan-400 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${currentWordIndex < 30 ? 0 : Math.min(100, ((currentWordIndex - 29) / 30) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            <div className={`p-2.5 rounded-xl border transition-all ${
+              sectTrialCurrentStage.stageNum === 3
+                ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.3)] ring-1 ring-amber-400/50'
+                : currentWordIndex >= 85
+                ? 'bg-amber-950/40 border-amber-600/40 text-amber-400/70'
+                : 'bg-slate-950/50 border-slate-800 text-slate-500'
+            }`}>
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="flex items-center gap-1">
+                  <span>🔢</span>
+                  <span>3. Phím Số (Number)</span>
+                </span>
+                <span className="font-mono">{currentWordIndex >= 85 ? '✓ Đạt' : currentWordIndex < 60 ? '0/25' : `${Math.min(25, currentWordIndex - 59)}/25`}</span>
+              </div>
+              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div 
+                  className="bg-amber-400 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${currentWordIndex < 60 ? 0 : Math.min(100, ((currentWordIndex - 59) / 25) * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stage transition toast alert */}
+      {stageTransitionNotice && (
+        <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-400/20 to-orange-500/20 border border-amber-400 text-amber-300 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg animate-bounce select-none">
+          <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
+          <span>{stageTransitionNotice}</span>
+        </div>
+      )}
+
       {/* Live Stats HUD (Session Focused: Tốc độ, Số lỗi, Tốc độ ván trước, Tốc độ cao nhất phiên) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* 1. Tốc Độ (WPM) */}
@@ -2684,7 +2893,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                 ref={inputRef}
                 type="text"
                 value={currentInput}
-                disabled={isUserFinished || isPlayerSurrendered || timeLeft <= 0 || inRoomCountdown !== null}
+                disabled={isUserFinished || isPlayerSurrendered || isPlayerAFK || timeLeft <= 0 || inRoomCountdown !== null}
                 onChange={handleInputChange}
                 onKeyDown={handleInputKeyDown}
                 onCompositionStart={handleCompositionStart}
@@ -2704,6 +2913,8 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
                 placeholder={
                   isUserFinished
                     ? `🏁 Bạn đã về đích thành công! Đang trực tiếp theo dõi ${remainingActiveCount} đấu thủ còn lại...`
+                    : isPlayerAFK
+                    ? "Bạn đã bị tính là AFK do không thao tác bàn phím trong 30 giây."
                     : isPlayerSurrendered
                     ? "Bạn đã đầu hàng ván đấu này. Nhấn Tab để làm lại ván mới..."
                     : inRoomCountdown !== null
@@ -2791,11 +3002,24 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       </div>
 
       {/* Surrendered Notice Banner for Current Player - Placed at the very bottom of the screen */}
-      {isPlayerSurrendered && (
-        <div className="fixed bottom-4 inset-x-4 max-w-2xl mx-auto z-40 p-4 rounded-2xl bg-slate-900/95 border-2 border-rose-500/60 shadow-2xl backdrop-blur-md text-center space-y-2.5 animate-fadeIn">
-          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
-            <Flag className="w-4 h-4 text-rose-400" />
-            <span>Bạn đã đầu hàng ván đấu này.</span>
+      {(isPlayerSurrendered || isPlayerAFK) && (
+        <div className={`fixed bottom-4 inset-x-4 max-w-2xl mx-auto z-40 p-4 rounded-2xl bg-slate-900/95 border-2 ${
+          isPlayerAFK ? 'border-amber-500/80 shadow-amber-950/50' : 'border-rose-500/60 shadow-2xl'
+        } backdrop-blur-md text-center space-y-2.5 animate-fadeIn`}>
+          <div className={`flex items-center justify-center gap-2 font-bold text-sm ${
+            isPlayerAFK ? 'text-amber-300' : 'text-rose-300'
+          }`}>
+            {isPlayerAFK ? (
+              <>
+                <span className="text-lg">💤</span>
+                <span>Bạn đã bị tính là AFK do không thao tác bàn phím trong 30 giây.</span>
+              </>
+            ) : (
+              <>
+                <Flag className="w-4 h-4 text-rose-400" />
+                <span>Bạn đã đầu hàng ván đấu này.</span>
+              </>
+            )}
           </div>
           <p className="text-xs text-slate-400">
             {isMultiplayer
@@ -2885,6 +3109,11 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               <p className="text-xs text-slate-400 leading-relaxed">
                 Bạn có chắc chắn muốn bỏ cuộc ván đấu này không? Sau khi xác nhận, bạn có thể xem bảng kết quả, chơi ván mới hoặc quay về trang chủ.
               </p>
+              {isSectTrial && (
+                <div className="mt-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 font-medium text-left leading-relaxed">
+                  ⚠️ <strong>Quy định Vạn Phái Tranh Phong:</strong> Để chống lạm dụng làm mới bài thi, nếu đầu hàng <strong>3 lần liên tục</strong> sẽ bị trừ <strong>1 lượt bài thi hôm nay</strong> (sẽ tự động reset khi hoàn thành bài mới).
+                </div>
+              )}
             </div>
 
             <div className="py-2.5 px-3 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-amber-300/90 flex items-center justify-center gap-2">

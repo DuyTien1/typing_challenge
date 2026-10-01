@@ -88,6 +88,8 @@ import {
   adminResetLeaderboard,
   fetchFriendsList,
   sendFriendRequest,
+  serverContributeSectWarScore,
+  serverPenalizeSectSurrender,
 } from './utils/roomManager';
 import {
   getLeaderboardSync,
@@ -98,7 +100,7 @@ import {
 } from './utils/leaderboardStorage';
 import { soundFx } from './utils/audio';
 import { validateKeystrokes } from './utils/antiCheat';
-import { generateWords, generateDoanChuWords } from './data/wordBanks';
+import { generateWords, generateDoanChuWords, generateSectTrialWords } from './data/wordBanks';
 import { initThemeAndFont } from './utils/themeAndFont';
 import { getStoredFrame, setStoredFrame, checkIsAdmin, setAdminStatus } from './utils/frames';
 import { 
@@ -130,6 +132,10 @@ import {
   getSubStage,
   attackSectWorldBoss,
   contributeTournamentScore,
+  isSectWarEventActive,
+  getConsecutiveSectSurrenders,
+  resetConsecutiveSectSurrenders,
+  recordSectTrialSurrender,
 } from './utils/cultivation';
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -225,13 +231,13 @@ export const DEFAULT_CONFIG: GameConfig = {
         icon: '🟡',
         color: '#ffe600',
         duration: 120,
-        baseHp: 1600,
-        hpPerPlayer: 1000,
-        selfDestructTarget: 1200,
+        baseHp: 800,
+        hpPerPlayer: 500,
+        selfDestructTarget: 600,
         skillInterval: 9,
         skillWarningDuration: 1.8,
         shieldDuration: 5.5,
-        shieldHpPerPlayer: 120,
+        shieldHpPerPlayer: 60,
         stunDuration: 3.5,
         shakeDuration: 4.5,
         smokeDuration: 4.5,
@@ -251,13 +257,13 @@ export const DEFAULT_CONFIG: GameConfig = {
         icon: '🔴',
         color: '#ff7700',
         duration: 100,
-        baseHp: 2800,
-        hpPerPlayer: 1600,
-        selfDestructTarget: 2000,
+        baseHp: 1200,
+        hpPerPlayer: 700,
+        selfDestructTarget: 900,
         skillInterval: 7.5,
         skillWarningDuration: 1.4,
         shieldDuration: 4.5,
-        shieldHpPerPlayer: 200,
+        shieldHpPerPlayer: 60,
         stunDuration: 3.0,
         shakeDuration: 5,
         smokeDuration: 5,
@@ -277,13 +283,13 @@ export const DEFAULT_CONFIG: GameConfig = {
         icon: '💀',
         color: '#ff0055',
         duration: 85,
-        baseHp: 4200,
-        hpPerPlayer: 2400,
-        selfDestructTarget: 3000,
+        baseHp: 1800,
+        hpPerPlayer: 1000,
+        selfDestructTarget: 1350,
         skillInterval: 6.0,
         skillWarningDuration: 1.0,
         shieldDuration: 4.0,
-        shieldHpPerPlayer: 300,
+        shieldHpPerPlayer: 80,
         stunDuration: 2.5,
         shakeDuration: 5.5,
         smokeDuration: 5.5,
@@ -566,7 +572,7 @@ export default function App() {
     // Người chơi phải hoàn thành toàn bộ trận thi đấu mới được tính là hoàn thành và được tính thành tựu, thưởng tu vi.
     // Đầu hàng, out phòng sớm ở chế độ multiplayer và đầu hàng cùng reset trong trận ở chế độ solo
     // TUYỆT ĐỐI không được tính là hoàn thành trận đấu, KHÔNG được thưởng tu vi và KHÔNG được tính vào thành tựu.
-    const isActuallyCompleted = data.isCompleted === true && data.result !== 'Đầu hàng';
+    const isActuallyCompleted = data.isCompleted === true && data.result !== 'Đầu hàng' && data.result !== 'AFK';
 
     const newRecord = addMatchRecord({
       mode: data.mode || getFriendlyModeName(data.modeId),
@@ -711,6 +717,7 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         const needsDiacriticsMigration = !parsed._migratedNoDiacriticsDefault_v1;
+        const needsBossHpMigration = !parsed._migratedBossHp_v2;
 
         const sanitizePools = (pools: import('./types').WordPoolType[] | undefined, defaultPools: import('./types').WordPoolType[]) => {
           if (!pools) return defaultPools;
@@ -725,13 +732,16 @@ export default function App() {
           ...DEFAULT_CONFIG,
           ...parsed,
           _migratedNoDiacriticsDefault_v1: true,
+          _migratedBossHp_v2: true,
           sanBoss: {
             difficulties: {
               normal: {
                 ...DEFAULT_CONFIG.sanBoss.difficulties.normal,
-                ...((parsed.sanBoss?.difficulties?.normal?.baseHp && parsed.sanBoss.difficulties.normal.baseHp > 750)
-                  ? parsed.sanBoss.difficulties.normal
-                  : {}),
+                ...((!needsBossHpMigration && parsed.sanBoss?.difficulties?.normal) || {}),
+                baseHp: 800,
+                hpPerPlayer: 500,
+                shieldHpPerPlayer: 60,
+                selfDestructTarget: 600,
                 allowedPools: sanitizePools(
                   parsed.sanBoss?.difficulties?.normal?.allowedPools,
                   DEFAULT_CONFIG.sanBoss.difficulties.normal.allowedPools || ['vi_nodau', 'en', 'numbers']
@@ -739,9 +749,11 @@ export default function App() {
               },
               hard: {
                 ...DEFAULT_CONFIG.sanBoss.difficulties.hard,
-                ...((parsed.sanBoss?.difficulties?.hard?.baseHp && parsed.sanBoss.difficulties.hard.baseHp > 1000)
-                  ? parsed.sanBoss.difficulties.hard
-                  : {}),
+                ...((!needsBossHpMigration && parsed.sanBoss?.difficulties?.hard) || {}),
+                baseHp: 1200,
+                hpPerPlayer: 700,
+                shieldHpPerPlayer: 60,
+                selfDestructTarget: 900,
                 allowedPools: sanitizePools(
                   parsed.sanBoss?.difficulties?.hard?.allowedPools,
                   DEFAULT_CONFIG.sanBoss.difficulties.hard.allowedPools || ['vi_nodau', 'en', 'numbers', 'fullsize']
@@ -749,9 +761,11 @@ export default function App() {
               },
               hell: {
                 ...DEFAULT_CONFIG.sanBoss.difficulties.hell,
-                ...((parsed.sanBoss?.difficulties?.hell?.baseHp && parsed.sanBoss.difficulties.hell.baseHp > 1200)
-                  ? parsed.sanBoss.difficulties.hell
-                  : {}),
+                ...((!needsBossHpMigration && parsed.sanBoss?.difficulties?.hell) || {}),
+                baseHp: 1800,
+                hpPerPlayer: 1000,
+                shieldHpPerPlayer: 80,
+                selfDestructTarget: 1350,
                 allowedPools: sanitizePools(
                   parsed.sanBoss?.difficulties?.hell?.allowedPools,
                   DEFAULT_CONFIG.sanBoss.difficulties.hell.allowedPools || ['vi_nodau', 'en', 'numbers', 'fullsize']
@@ -892,6 +906,7 @@ export default function App() {
     onBreakthroughNotice: (dec) => setActiveDaoDecreePopup(dec),
   });
   awardMatchHarvestRef.current = awardMatchHarvest;
+  const [cultivationInitialTab, setCultivationInitialTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
 
   // Me player factory for room & multiplayer synchronization
   const createMePlayer = useCallback((): Player => {
@@ -1686,8 +1701,15 @@ export default function App() {
     handleLaunchGame(true, 'san_boss');
   };
 
-  // Khởi động Xuất Chiến Đại Hội Tỷ Võ Tông Môn (Thiên Cung Long Mạch)
+  // Khởi động Xuất Chiến Đại Hội Tỷ Võ Tông Môn (Vạn Phái Tranh Phong - Thử Thách 3 Ải Chơi Đơn)
   const handleStartSectTournament = (sectId: string, sectName: string) => {
+    // Kiểm tra nghiêm ngặt khung giờ mở sự kiện Vạn Phái Tranh Phong (T7 & CN đến 20:00)
+    if (!isSectWarEventActive()) {
+      soundFx.playError();
+      setSectMatchNotice('⚠️ Hiện tại không phải là giờ sự kiện Vạn Phái Tranh Phong! Sự kiện chỉ mở từ 00:00 Thứ Bảy đến 20:00 Chủ Nhật hàng tuần.');
+      return;
+    }
+
     const ban = checkClientBanStatus();
     if (ban.isBanned) {
       setClientBanStatus(ban);
@@ -1698,7 +1720,19 @@ export default function App() {
     setIsCultivationOpen(false);
     sectMatchContextRef.current = { type: 'sect_tournament', sectId, sectName };
     setSectMatchContext(sectMatchContextRef.current);
-    setSectMatchNotice(null);
+    
+    const currentSurr = getConsecutiveSectSurrenders(currentUser?.username);
+    if (currentSurr > 0) {
+      setSectMatchNotice(
+        `⚠️ Cảnh báo: Đạo hữu đang có ${currentSurr}/3 lần đầu hàng liên tiếp. Nếu đầu hàng thêm ${3 - currentSurr} lần sẽ bị khấu trừ 1 lượt bài thi hôm nay (sẽ reset khi hoàn thành bài mới)!`
+      );
+    } else {
+      setSectMatchNotice(null);
+    }
+
+    // Sinh bộ từ ngữ 3 Ải liên hoàn: Ải 1 (Tiếng Việt 30 từ) -> Ải 2 (Tiếng Anh 30 từ) -> Ải 3 (Phím số 25 số)
+    const trialWords = generateSectTrialWords();
+    setWords(trialWords);
 
     setGameMode('vi_dau');
     gameModeRef.current = 'vi_dau';
@@ -1710,6 +1744,7 @@ export default function App() {
         id: currentUserId,
         username: `${username} (${sectName})`,
         icon: avatar,
+        frame: userFrame,
         progress: 0,
         wpm: 0,
         score: 0,
@@ -1719,38 +1754,8 @@ export default function App() {
         isSurrendered: false,
         isAFK: false,
       },
-      {
-        id: 'bot_sect_1',
-        username: 'Vạn Tiên Minh • Chân Truyền',
-        icon: '⚔️',
-        progress: 0,
-        wpm: 68,
-        score: 0,
-        errors: 0,
-        correctChars: 0,
-        isFinished: false,
-        isSurrendered: false,
-        isAFK: false,
-        isBot: true,
-        botTargetWpm: 72,
-      },
-      {
-        id: 'bot_sect_2',
-        username: 'Bắc Đẩu Tông • Đại Đệ Tử',
-        icon: '⚡',
-        progress: 0,
-        wpm: 78,
-        score: 0,
-        errors: 0,
-        correctChars: 0,
-        isFinished: false,
-        isSurrendered: false,
-        isAFK: false,
-        isBot: true,
-        botTargetWpm: 84,
-      },
     ]);
-    handleLaunchGame(true, 'vi_dau');
+    handleLaunchGame(true, 'vi_dau', trialWords);
   };
 
   // Alias for backward compatibility / restarting
@@ -2196,38 +2201,63 @@ export default function App() {
       maxCombo: extraStats?.maxCombo,
     });
 
-    // Đóng góp điểm Đại Hội Tỷ Võ Tông Môn nếu đang thi đấu trong ngữ cảnh Tỷ Võ
-    if (sectMatchContextRef.current && sectMatchContextRef.current.type === 'sect_tournament' && !isPlayerSurrendered && verifiedWpm > 0) {
-      const { sectId, sectName } = sectMatchContextRef.current;
-      const tourneyRes = contributeTournamentScore(cultivationState, sectId, verifiedWpm);
-      setCultivationState(tourneyRes.updatedState);
-      saveStoredCultivationState(tourneyRes.updatedState);
-      if (currentUser) {
-        setCurrentUser((prev) => (prev ? { ...prev, cultivation: tourneyRes.updatedState } : prev));
-        const token = getStoredAuthToken();
-        if (token || currentUser.username) {
-          fetch('/api/cultivation', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-              'x-username': currentUser.username,
-            },
-            body: JSON.stringify({
-              cultivation: tourneyRes.updatedState,
-              username: currentUser.username,
-              userId: currentUser.id,
-            }),
-          }).catch(() => {});
-        }
+    // Đóng góp điểm Đại Hội Tỷ Võ Tông Môn & Vạn Phái Tranh Phong
+    // QUY TẮC NGHIÊM NGẶT: CHỈ KHI XUẤT CHIẾN ĐƠN 3 ẢI (sect_tournament) MỚI TÍNH ĐIỂM SỰ KIỆN TÔNG MÔN!
+    if (!isPlayerSurrendered && verifiedWpm > 0 && sectMatchContextRef.current?.type === 'sect_tournament') {
+      // Hoàn thành bài thi thành công / qua bài mới -> Reset chuỗi đầu hàng liên tiếp
+      resetConsecutiveSectSurrenders(currentUser?.username);
+
+      if (!isSectWarEventActive()) {
+        setSectMatchNotice('⚠️ Ván đấu kết thúc ngoài khung giờ sự kiện Vạn Phái Tranh Phong. Điểm không được ghi nhận.');
+        sectMatchContextRef.current = null;
+        setSectMatchContext(null);
+        return;
       }
 
-      const added = Math.max(10, Math.round(verifiedWpm * 0.5));
-      setSectMatchNotice(
-        tourneyRes.isLeading
-          ? `👑 [ĐẠI HỘI TỶ VÕ] Xuất sắc đạt ${verifiedWpm} WPM (+${added} điểm)! Bạn đã đưa ${sectName} vươn lên dẫn đầu và chiếm cứ THIÊN CUNG LONG MẠCH!`
-          : `🏆 [ĐẠI HỘI TỶ VÕ] Xuất chiến thành công! Tốc độ ${verifiedWpm} WPM đã đóng góp +${added} điểm chiến cho ${sectName}!`
-      );
+      const sectId = sectMatchContextRef.current?.sectId || cultivationState?.sect?.sectId;
+      const sectName = sectMatchContextRef.current?.sectName || cultivationState?.sect?.sectName || 'Tông Môn';
+
+      if (sectId) {
+        const tourneyRes = contributeTournamentScore(cultivationState, sectId, verifiedWpm);
+        setCultivationState(tourneyRes.updatedState);
+        saveStoredCultivationState(tourneyRes.updatedState);
+
+        // Gửi điểm cống hiến Vạn Phái Tranh Phong lên máy chủ (được trừ 1 lượt trong 3 lượt/ngày)
+        serverContributeSectWarScore({
+          wpm: verifiedWpm,
+          accuracy: accuracy || 100,
+          mode: 'sect_trial',
+          isMultiplayer: false,
+        }).then((warRes) => {
+          if (warRes && warRes.success && warRes.addedPoints) {
+            setSectMatchNotice(
+              `⚔️ [VẠN PHÁI TRANH PHONG] Vượt 3 Ải xuất sắc (${verifiedWpm} WPM)! Đã cống hiến +${warRes.addedPoints} Điểm Chiến cho ${warRes.sectName || sectName} (Hạng #${warRes.currentRank || 1} • Hôm nay còn ${warRes.dailyAttemptsLeft ?? 0}/3 lượt)!`
+            );
+          } else if (warRes && warRes.error) {
+            setSectMatchNotice(`⚠️ [VẠN PHÁI TRANH PHONG] ${warRes.error}`);
+          }
+        }).catch(() => {});
+
+        if (currentUser) {
+          setCurrentUser((prev) => (prev ? { ...prev, cultivation: tourneyRes.updatedState } : prev));
+          const token = getStoredAuthToken();
+          if (token || currentUser.username) {
+            fetch('/api/cultivation', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                'x-username': currentUser.username,
+              },
+              body: JSON.stringify({
+                cultivation: tourneyRes.updatedState,
+                username: currentUser.username,
+                userId: currentUser.id,
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
     }
 
     // Kiểm tra xem trong phòng multiplayer còn đối thủ thực nào đang tiếp tục thi đấu không:
@@ -2268,8 +2298,10 @@ export default function App() {
   };
 
   const handleBossSelfDestruct = () => {
-    // Kamikaze self-destruct dealing massive damage to Boss
-    const selfDestructDmg = 450;
+    // Kamikaze self-destruct dealing proportional massive damage to Boss based on new halved HP
+    const bossDiff = config.sanBoss.difficulties[difficulty] || config.sanBoss.difficulties.normal;
+    // Sát thương tự bạo tương ứng ~28% máu cơ bản (Bình thường: 225 DMG - giảm 50% chuẩn từ 450; Khó: 392 DMG; Địa ngục: 588 DMG)
+    const selfDestructDmg = Math.round(bossDiff.baseHp * 0.28);
     setPlayers((prev) =>
       prev.map((p) =>
         p.id === currentUserId
@@ -2398,22 +2430,48 @@ export default function App() {
     setGameState('gameover');
   };
 
-  // Surrender Handler
-  const handleSurrender = () => {
+  // Surrender Handler (isAFK = true: Bị tính là AFK do 30s không gõ phím)
+  const handleSurrender = (isAFK: boolean = false) => {
+    // Không tính cơ chế AFK cho 2 chế độ multiplayer Ngẫu Hứng và Đoán Chữ
+    const effectiveIsAFK = (gameMode === 'ngau_hung' || gameMode === 'doan_chu') ? false : isAFK;
+
     // Clear last game WPM, but keep sessionBestWpm
     setLastGameWpm(0);
 
-    // Ghi nhận đầu hàng vào lịch sử đấu nếu không phải chế độ Outplay (Outplay là chế độ tự luyện tập retry)
+    // Ghi nhận đầu hàng hoặc AFK vào lịch sử đấu nếu không phải chế độ Outplay (Outplay là chế độ tự luyện tập retry)
     if (gameMode !== 'outplay') {
       const me = players.find((p) => p.id === currentUserId);
       recordCurrentMatch({
         modeId: gameMode,
         wpm: me?.wpm || 0,
         accuracy: me?.accuracy ?? 100,
-        result: 'Đầu hàng',
+        result: effectiveIsAFK ? 'AFK' : 'Đầu hàng',
         score: me?.score,
         isCompleted: false,
       });
+    }
+
+    // Cơ chế chống lạm dụng đầu hàng liên tục trong bài thi Tông Môn (Vạn Phái Tranh Phong)
+    if (sectMatchContextRef.current?.type === 'sect_tournament') {
+      const penaltyResult = recordSectTrialSurrender(currentUser?.username);
+      if (penaltyResult.penalized) {
+        // Đã đầu hàng 3 lần liên tục: Khấu trừ 1 lượt bài thi hôm nay
+        serverPenalizeSectSurrender().then((penRes) => {
+          if (penRes && penRes.success) {
+            setSectMatchNotice(
+              `⚡ [THIÊN ĐẠO TRỪNG PHẠT] Đạo hữu đã đầu hàng 3 lần liên tục trong Vạn Phái Tranh Phong! Đã khấu trừ 1 lượt bài thi hôm nay (Còn ${penRes.dailyAttemptsLeft ?? 0}/3 lượt)!`
+            );
+          }
+        }).catch(() => {});
+        setSectMatchNotice(penaltyResult.message);
+        announcePenalty(
+          currentUser?.displayName || currentUser?.username || username,
+          'Đầu hàng 3 lần liên tiếp trong Vạn Phái Tranh Phong',
+          'Khấu trừ 1 lượt xuất chiến bài thi hôm nay'
+        );
+      } else {
+        setSectMatchNotice(penaltyResult.message);
+      }
     }
 
     const updatedPlayers = players.map((p) =>
@@ -2422,29 +2480,32 @@ export default function App() {
             ...p,
             // In outplay mode, player can continue typing immediately without being locked in surrendered state
             isSurrendered: gameMode === 'outplay' ? false : true,
+            isAFK: effectiveIsAFK,
             lastWpm: undefined,
           }
         : p
     );
     setPlayers(updatedPlayers);
+    playersRef.current = updatedPlayers;
 
     if (playType === 'multiplayer' && currentRoomId) {
       updatePlayerRoomStatus(currentRoomId, currentUserId, {
         isSurrendered: true,
+        isAFK: effectiveIsAFK,
       });
 
-      // Kiểm tra nếu người chơi vừa đầu hàng là người chơi cuối cùng đang thi đấu:
+      // Kiểm tra nếu người chơi vừa đầu hàng / AFK là người chơi cuối cùng đang thi đấu:
       const activeHumanPlayers = updatedPlayers.filter(
-        (p) => !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+        (p) => !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false && !p.isAFK
       );
 
       if (activeHumanPlayers.length === 0) {
-        // Người chơi cuối cùng đầu hàng: kết thúc phòng chơi và tổng kết ngay lập tức, không đợi hết giờ
+        // Người chơi cuối cùng đầu hàng / AFK: kết thúc phòng chơi và tổng kết ngay lập tức, không đợi hết giờ
         markRoomFinished(currentRoomId);
         setPlayers((prev) =>
           prev.map((p) =>
             p.isBot
-              ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
+              ? { ...p, inMatch: false, isSurrendered: false, isAFK: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
               : p
           )
         );
@@ -2460,18 +2521,27 @@ export default function App() {
     soundFx.playError();
   };
 
+  const handleAFK = () => {
+    // Không tính cơ chế AFK cho 2 chế độ multiplayer Ngẫu Hứng và Đoán Chữ
+    if (gameMode === 'ngau_hung' || gameMode === 'doan_chu') {
+      return;
+    }
+    handleSurrender(true);
+  };
+
   // Surrender Rematch Handler: if player surrendered while match is ongoing, return them to waiting room and light up their avatar
   const handleSurrenderRestart = () => {
     if (playType === 'multiplayer' && currentRoomId) {
       updatePlayerRoomStatus(currentRoomId, currentUserId, {
         inMatch: false,
         isSurrendered: false,
+        isAFK: false,
         isFinished: false,
       });
       setPlayers((prev) =>
         prev.map((p) =>
           p.id === currentUserId || p.isBot
-            ? { ...p, inMatch: false, isSurrendered: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
+            ? { ...p, inMatch: false, isSurrendered: false, isAFK: false, isFinished: false, progress: 0, wpm: 0, errors: 0, correctChars: 0 }
             : p
         )
       );
@@ -2493,6 +2563,19 @@ export default function App() {
         score: me?.score,
         isCompleted: false,
       });
+
+      // Kiểm tra cơ chế chống lạm dụng đầu hàng/thoát bài thi Tông Môn liên tiếp
+      if (sectMatchContextRef.current?.type === 'sect_tournament') {
+        const penaltyResult = recordSectTrialSurrender(currentUser?.username);
+        if (penaltyResult.penalized) {
+          serverPenalizeSectSurrender().catch(() => {});
+          announcePenalty(
+            currentUser?.displayName || currentUser?.username || username,
+            'Bỏ cuộc 3 lần liên tiếp trong Vạn Phái Tranh Phong',
+            'Khấu trừ 1 lượt xuất chiến bài thi hôm nay'
+          );
+        }
+      }
     }
     if (currentRoomId) {
       leaveRoom(currentRoomId, currentUserId);
@@ -2598,7 +2681,7 @@ export default function App() {
 
     if (Array.isArray(user.matchHistory) && user.matchHistory.length > 0) {
       for (const m of user.matchHistory) {
-        if (m && typeof m.wpm === 'number' && m.wpm > effectiveBestWpm && m.result !== 'Đầu hàng') {
+        if (m && typeof m.wpm === 'number' && m.wpm > effectiveBestWpm && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
           effectiveBestWpm = m.wpm;
           effectiveRecord = {
             wpm: m.wpm,
@@ -2988,27 +3071,27 @@ export default function App() {
       return '🐉 Vây Quét Thần Thú Trấn Giới';
     }
     if (sectMatchContext?.type === 'sect_tournament') {
-      return '🏆 Đại Hội Tỷ Võ Tông Môn';
+      return '⚔️ Vạn Phái Tranh Phong (Vượt 3 Ải Solo)';
     }
     switch (gameMode) {
       case 'vi_dau':
-        return 'Tiếng Việt Có Dấu';
+        return '🪷 Chính Đạo Vấn Tâm (Tiếng Việt Có Dấu)';
       case 'vi_nodau':
-        return 'Tiếng Việt Không Dấu';
+        return '⚡ Tật Phong Ngự Kiếm (Tiếng Việt Không Dấu)';
       case 'en':
-        return 'Tiếng Anh (English)';
+        return '🌐 Dị Vực Luận Đạo (Tiếng Anh)';
       case 'numpad':
-        return 'Bàn Phím Số (Numpad)';
+        return '🔢 Cửu Cung Trận Pháp (Bàn Phím Số)';
       case 'ngau_hung':
-        return 'Ngẫu Hứng (Rush)';
+        return '🌪️ Lôi Đình Nhất Kích (Ngẫu Hứng - Rush)';
       case 'doan_chu':
-        return 'Đoán Chữ (Mystery)';
+        return '🔮 Huyền Cơ Mật Cảnh (Đoán Chữ - Mystery)';
       case 'san_boss':
-        return 'Săn Boss Hắc Long';
+        return '🐉 Hàng Phục Ma Tôn (Săn Boss Hắc Long)';
       case 'outplay':
-        return 'Outplay Yourself';
+        return '🎯 Tâm Ma Thí Luyện (Đột Phá Bản Ngã)';
       default:
-        return 'Đua Thường';
+        return 'Chính Đạo Vấn Tâm';
     }
   };
 
@@ -3146,6 +3229,10 @@ export default function App() {
             isBanned={clientBanStatus.isBanned}
             bannedRemainingFormatted={clientBanStatus.formatted}
             onOpenBanModal={() => setIsBanModalOpen(true)}
+            onOpenSectModal={() => {
+              setCultivationInitialTab('sects');
+              setIsCultivationOpen(true);
+            }}
             hasAnyModalOpen={
               isLeaderboardOpen ||
               isChatOpen ||
@@ -3217,7 +3304,9 @@ export default function App() {
               <TypingArena
                 words={words}
                 duration={
-                  gameMode === 'numpad'
+                  sectMatchContext?.type === 'sect_tournament'
+                    ? 180
+                    : gameMode === 'numpad'
                     ? (config.modeDurations?.numpad || config.numpad.duration)
                     : gameMode === 'outplay'
                     ? (config.modeDurations?.outplay || 60)
@@ -3228,11 +3317,13 @@ export default function App() {
                 onUpdateProgress={handleUpdatePlayerProgress}
                 onFinish={handleFinishMatch}
                 onSurrender={handleSurrender}
+                onAFK={handleAFK}
                 onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
                 onHome={handleReturnToLobby}
                 modeName={getModeTitle()}
                 isOutplay={gameMode === 'outplay'}
                 isMultiplayer={playType === 'multiplayer'}
+                isSectTrial={sectMatchContext?.type === 'sect_tournament'}
                 conditionStats={conditionStats}
                 onUpdateConditionStats={handleUpdateConditionStats}
                 lastGameWpm={lastGameWpm}
@@ -3271,6 +3362,7 @@ export default function App() {
                 onSelfDestruct={handleBossSelfDestruct}
                 onFinish={handleBossFinish}
                 onSurrender={handleSurrender}
+                onAFK={handleAFK}
                 onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
                 onHome={handleReturnToLobby}
                 isMultiplayer={playType === 'multiplayer'}
@@ -3750,6 +3842,7 @@ export default function App() {
         setIsAppearanceOpen={setIsAppearanceOpen}
         isCultivationOpen={isCultivationOpen}
         setIsCultivationOpen={setIsCultivationOpen}
+        cultivationInitialTab={cultivationInitialTab}
         isAuthModalOpen={isAuthModalOpen}
         setIsAuthModalOpen={setIsAuthModalOpen}
         authModalInitialTab={authModalInitialTab}

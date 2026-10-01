@@ -287,7 +287,8 @@ export function useRoomEngine({
                   cp.progress === up.progress &&
                   cp.wpm === up.wpm &&
                   cp.isFinished === up.isFinished &&
-                  cp.isSurrendered === up.isSurrendered
+                  cp.isSurrendered === up.isSurrendered &&
+                  cp.isAFK === up.isAFK
                 );
               })
             ) {
@@ -345,6 +346,7 @@ export function useRoomEngine({
                     errors: me?.errors ?? remoteP.errors,
                     isFinished: me?.isFinished ?? remoteP.isFinished,
                     isSurrendered: me?.isSurrendered ?? remoteP.isSurrendered,
+                    isAFK: me?.isAFK ?? remoteP.isAFK,
                     score: me?.score ?? remoteP.score,
                     chartData: me?.chartData ?? remoteP.chartData,
                     ghostDiff: me?.ghostDiff ?? remoteP.ghostDiff,
@@ -362,12 +364,13 @@ export function useRoomEngine({
 
             const meInUpdated = updatedRoom.players.find((p) => p.id === currentUserId);
             const isSurr = meInUpdated?.isSurrendered || false;
-            const isFinishedMatch = !!meInUpdated?.isFinished && !isSurr;
+            const isAfkPlayer = (gameMode === 'ngau_hung' || gameMode === 'doan_chu') ? false : (meInUpdated?.isAFK || false);
+            const isFinishedMatch = !!meInUpdated?.isFinished && !isSurr && !isAfkPlayer;
             const rivals = updatedRoom.players.filter(
-              (p) => p.id !== currentUserId && !p.isSurrendered
+              (p) => p.id !== currentUserId && !p.isSurrendered && !((gameMode === 'ngau_hung' || gameMode === 'doan_chu') ? false : p.isAFK)
             );
             const isTop = rivals.every((r) => (r.wpm || 0) <= (meInUpdated?.wpm || 0));
-            const result: MatchResult = isSurr ? 'Đầu hàng' : isTop ? 'Thắng' : 'Thua';
+            const result: MatchResult = isAfkPlayer ? 'AFK' : isSurr ? 'Đầu hàng' : isTop ? 'Thắng' : 'Thua';
 
             onRecordMatch({
               modeId: gameMode,
@@ -380,7 +383,7 @@ export function useRoomEngine({
 
             if (result === 'Thắng' && isFinishedMatch) {
               soundFx.playVictory();
-            } else if (isSurr) {
+            } else if (isSurr || isAfkPlayer) {
               soundFx.playError();
             }
             onGameStateChange('gameover');
@@ -401,6 +404,7 @@ export function useRoomEngine({
                   errors: me?.errors ?? remoteP.errors,
                   isFinished: me?.isFinished ?? remoteP.isFinished,
                   isSurrendered: me?.isSurrendered ?? remoteP.isSurrendered,
+                  isAFK: me?.isAFK ?? remoteP.isAFK,
                   score: me?.score ?? remoteP.score,
                   chartData: me?.chartData ?? remoteP.chartData,
                   ghostDiff: me?.ghostDiff ?? remoteP.ghostDiff,
@@ -412,7 +416,7 @@ export function useRoomEngine({
             });
 
             const activeHumanPlayers = synced.filter(
-              (p) => !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
+              (p) => !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false && !((gameMode === 'ngau_hung' || gameMode === 'doan_chu') ? false : p.isAFK)
             );
             if (activeHumanPlayers.length === 0) {
               shouldEndGame = true;

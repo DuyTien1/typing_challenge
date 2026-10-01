@@ -16,6 +16,7 @@ interface NgauHungArenaProps {
   onFinishGame: (stats?: NgauHungGameStats) => void;
   onUpdateScore: (points: number, playerId?: string) => void;
   onSurrender?: () => void;
+  onAFK?: () => void;
   onRestart?: () => void;
   onHome?: () => void;
   isMultiplayer?: boolean;
@@ -31,6 +32,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   onFinishGame,
   onUpdateScore,
   onSurrender,
+  onAFK,
   onRestart,
   onHome,
   isMultiplayer = false,
@@ -47,9 +49,17 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   const [roundPlacement, setRoundPlacement] = useState<number | null>(null);
   const [roundFinishers, setRoundFinishers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
   const [isSurrendered, setIsSurrendered] = useState(false);
+  const currentPlayerData = players.find((p) => p.id === currentPlayerId);
+  // Không áp dụng cơ chế tính AFK cho chế độ Ngẫu Hứng
+  const isPlayerAFK = false;
   const [hasFinishedGame, setHasFinishedGame] = useState(false);
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
+
+  // Không tính cơ chế AFK (inactivity tracking) cho chế độ Ngẫu Hứng
+  const recordActivity = useCallback(() => {
+    // Không cần ghi nhận AFK ở chế độ Ngẫu Hứng
+  }, []);
   const finishersRef = useRef<string[]>([]);
   const roundHandledForRef = useRef<number>(0);
 
@@ -125,6 +135,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
       inputRef.current?.focus();
     }
     const handleKeyDown = (e: KeyboardEvent) => {
+      recordActivity();
       // 1. Modal is open: Enter to confirm surrender, Escape to cancel
       if (showSurrenderModalRef.current || showSurrenderModal) {
         if (e.key === 'Enter') {
@@ -409,7 +420,8 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isIntermission || userFinishedThisRound || isSurrendered) return;
+    recordActivity();
+    if (isIntermission || userFinishedThisRound || isSurrendered || isPlayerAFK) return;
     const val = e.target.value;
     setInputVal(val);
     setLastKeystrokeTime(performance.now());
@@ -465,12 +477,25 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         </div>
       </div>
 
-      {/* Surrender Banner */}
-      {isSurrendered && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-center space-y-2 animate-in fade-in zoom-in duration-200">
-          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
-            <Flag className="w-4 h-4 text-rose-400" />
-            <span>Bạn đã đầu hàng ván đấu này.</span>
+      {/* Surrender / AFK Banner */}
+      {(isSurrendered || isPlayerAFK) && (
+        <div className={`p-4 rounded-2xl ${
+          isPlayerAFK ? 'bg-amber-500/10 border border-amber-500/40 text-amber-300' : 'bg-rose-500/10 border border-rose-500/40'
+        } text-center space-y-2 animate-in fade-in zoom-in duration-200`}>
+          <div className={`flex items-center justify-center gap-2 font-bold text-sm ${
+            isPlayerAFK ? 'text-amber-300' : 'text-rose-300'
+          }`}>
+            {isPlayerAFK ? (
+              <>
+                <span className="text-lg">💤</span>
+                <span>Bạn đã bị tính là AFK do không thao tác bàn phím trong 30 giây.</span>
+              </>
+            ) : (
+              <>
+                <Flag className="w-4 h-4 text-rose-400" />
+                <span>Bạn đã đầu hàng ván đấu này.</span>
+              </>
+            )}
           </div>
           <p className="text-xs text-slate-400">
             Ô gõ đã bị khóa. Bạn vẫn có thể tiếp tục xem các người chơi khác thi đấu cho đến khi kết thúc trận đấu, hoặc bấm nút bên dưới để chuyển tiếp:
@@ -689,13 +714,15 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                   onChange={handleInputChange}
                   onCompositionStart={handleCompositionStart}
                   onCompositionEnd={handleCompositionEnd}
-                  disabled={inRoomCountdown !== null || userFinishedThisRound || isSurrendered || hasFinishedGame}
-                  readOnly={isSurrendered || hasFinishedGame}
+                  disabled={inRoomCountdown !== null || userFinishedThisRound || isSurrendered || isPlayerAFK || hasFinishedGame}
+                  readOnly={isSurrendered || isPlayerAFK || hasFinishedGame}
                   placeholder={
                     hasFinishedGame
                       ? "⚡ Bạn đã hoàn thành tất cả vòng đấu! Đang theo dõi các đối thủ còn lại..."
                       : inRoomCountdown !== null
                       ? `Bắt đầu sau ${inRoomCountdown}s...`
+                      : isPlayerAFK
+                      ? "Bạn đã bị tính là AFK do không thao tác bàn phím trong 30 giây."
                       : isSurrendered
                       ? "Bạn đã đầu hàng. Đang theo dõi trận đấu..."
                       : userFinishedThisRound
@@ -703,7 +730,9 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                       : "Gõ từ trên thật nhanh..."
                   }
                   className={`w-full px-4 py-3 rounded-xl bg-slate-950/90 border ${
-                    isSurrendered
+                    isPlayerAFK
+                      ? 'border-amber-500/40 text-amber-500/80 cursor-not-allowed'
+                      : isSurrendered
                       ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
                       : 'border-slate-800 text-white'
                   } font-['JetBrains_Mono',monospace] text-xl text-center outline-none focus:ring-1 focus:ring-yellow-400 shadow-inner`}
@@ -739,7 +768,11 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                 </div>
                 <span className="font-mono text-xs font-bold text-amber-400">{p.score || 0}đ</span>
               </div>
-              {p.isSurrendered ? (
+              {p.isAFK ? (
+                <div className="text-[10px] font-bold text-amber-400 text-right">
+                  AFK
+                </div>
+              ) : p.isSurrendered ? (
                 <div className="text-[10px] font-bold text-rose-400 text-right">
                   Đã đầu hàng
                 </div>

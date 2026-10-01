@@ -172,19 +172,19 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
   // Tabs Definitions grouped by Category
   const speedTabs = [
-    { id: 'vi_dau', name: 'Tiếng Việt Có Dấu', unit: 'WPM', icon: '🇻🇳' },
-    { id: 'vi_nodau', name: 'Tiếng Việt Không Dấu', unit: 'WPM', icon: '⚡' },
-    { id: 'en', name: 'Tiếng Anh', unit: 'WPM', icon: '🌐' },
-    { id: 'numpad', name: 'Bàn Phím Số', unit: 'WPM', icon: '🔢' },
-    { id: 'ngau_hung', name: 'Ngẫu Hứng', unit: 'Điểm', icon: '🎲' },
-    { id: 'doan_chu', name: 'Đoán Chữ', unit: 'Điểm', icon: '🧩' },
+    { id: 'vi_dau', name: 'Chính Đạo Vấn Tâm', unit: 'WPM', icon: '🪷' },
+    { id: 'vi_nodau', name: 'Tật Phong Ngự Kiếm', unit: 'WPM', icon: '⚡' },
+    { id: 'en', name: 'Dị Vực Luận Đạo', unit: 'WPM', icon: '🌐' },
+    { id: 'numpad', name: 'Cửu Cung Trận Pháp', unit: 'WPM', icon: '🔢' },
+    { id: 'ngau_hung', name: 'Lôi Đình Nhất Kích', unit: 'Điểm', icon: '🌪️' },
+    { id: 'doan_chu', name: 'Huyền Cơ Mật Cảnh', unit: 'Điểm', icon: '🔮' },
   ];
 
   const cultivationTabs = [
-    { id: 'tu_vi', name: 'Top 50 Tu Vi', unit: 'Tu Vi', isSpecial: true, icon: '🪷' },
-    { id: 'tong_mon', name: 'Bảng Tông Môn', unit: 'Tu Vi', isSpecial: true, icon: '🏰' },
-    { id: 'san_boss', name: 'Săn Boss Ma Thần', unit: 'DMG', isSpecial: true, icon: '🐉' },
-    { id: 'cao_thi', name: 'Cáo Thị Vạn Giới', unit: '', isSpecial: true, icon: '📜' },
+    { id: 'tu_vi', name: 'Bảng Vàng Tu Vi', unit: 'Tu Vi', isSpecial: true, icon: '📜' },
+    { id: 'tong_mon', name: 'Vạn Phái Tranh Phong', unit: 'Chiến Công', isSpecial: true, icon: '⚔️' },
+    { id: 'san_boss', name: 'Hàng Phục Ma Tôn', unit: 'DMG', isSpecial: true, icon: '🐉' },
+    { id: 'cao_thi', name: 'Cáo Thị Vạn Giới', unit: '', isSpecial: true, icon: '🪶' },
   ];
 
   const currentTabConfig = useMemo(() => {
@@ -837,50 +837,60 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             </div>
           ) : selectedTab === 'tong_mon' ? (
             /* TAB: BẢNG TÔNG MÔN with Virtual Scrolling */
-            <VirtualList<SectLeaderboardEntry>
-              ref={sectVirtualListRef}
-              items={sectList}
-              estimateItemHeight={76}
-              gap={8}
-              keyExtractor={(sect) => sect.id}
-              className="flex-1 min-h-0 pr-1 scrollbar-thin scrollbar-thumb-slate-700"
-              renderItem={(sect) => (
-                <div
-                  key={sect.id}
-                  onClick={() => setSelectedSectForDetails(sect)}
-                  className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 hover:border-amber-500/40 transition-all flex items-center justify-between gap-3 cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl p-2 rounded-xl bg-slate-900 border border-slate-700">
-                      {sect.badgeIcon}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-black text-white">{sect.name}</span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
-                          {sect.tag}
-                        </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
-                          Hạng #{sect.rank}
-                        </span>
+            sectList.length === 0 ? (
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-8 text-center text-slate-400 space-y-3">
+                <span className="text-4xl">🏛️</span>
+                <p className="text-sm font-bold text-slate-300">Chưa có môn phái nào được thành lập</p>
+                <p className="text-xs text-slate-500 max-w-xs">
+                  Hãy là người tiên phong Khai Sơn Lập Phái tại Động Phủ Tu Tiên để quy tụ đệ tử và ghi danh vào Bảng Vàng!
+                </p>
+              </div>
+            ) : (
+              <VirtualList<SectLeaderboardEntry>
+                ref={sectVirtualListRef}
+                items={sectList}
+                estimateItemHeight={76}
+                gap={8}
+                keyExtractor={(sect) => sect.id}
+                className="flex-1 min-h-0 pr-1 scrollbar-thin scrollbar-thumb-slate-700"
+                renderItem={(sect) => (
+                  <div
+                    key={sect.id}
+                    onClick={() => setSelectedSectForDetails(sect)}
+                    className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 hover:border-amber-500/40 transition-all flex items-center justify-between gap-3 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl p-2 rounded-xl bg-slate-900 border border-slate-700">
+                        {sect.badgeIcon}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-white">{sect.name}</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
+                            {sect.tag}
+                          </span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                            Hạng #{sect.rank}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 italic mt-0.5">
+                          &ldquo;{sect.slogan || sect.description}&rdquo;
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-400 italic mt-0.5">
-                        &ldquo;{sect.slogan || sect.description}&rdquo;
-                      </p>
                     </div>
-                  </div>
 
-                  <div className="text-right shrink-0">
-                    <div className="text-sm font-mono font-black text-amber-400">
-                      {(sect.totalTuVi || 0).toLocaleString()}
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-mono font-black text-amber-400">
+                        {(sect.totalTuVi || 0).toLocaleString()}
+                      </div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold">
+                        {sect.memberCount} Thành Viên
+                      </span>
                     </div>
-                    <span className="text-[10px] text-slate-500 uppercase font-bold">
-                      {sect.memberCount} Thành Viên
-                    </span>
                   </div>
-                </div>
-              )}
-            />
+                )}
+              />
+            )
           ) : selectedTab === 'cao_thi' ? (
             /* TAB: CÁO THỊ VẠN GIỚI with Virtual Scrolling */
             <VirtualList<HeavenlyDaoDecree>

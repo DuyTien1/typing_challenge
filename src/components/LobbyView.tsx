@@ -3,16 +3,19 @@ import { GameMode } from '../types';
 import { soundFx } from '../utils/audio';
 import { 
   Zap, 
-  Search, 
-  Skull, 
-  Target, 
-  Calculator, 
-  Flag, 
+  Scroll, 
+  Swords, 
+  Globe, 
+  Layers, 
+  Eye, 
+  Flame, 
+  Ghost,
   Users, 
   Play, 
   Sparkles,
   Gamepad2
 } from 'lucide-react';
+import { SectWarLobbyBanner } from './SectWarLobbyBanner';
 
 interface LobbyViewProps {
   currentMode: GameMode;
@@ -23,6 +26,7 @@ interface LobbyViewProps {
   isBanned?: boolean;
   bannedRemainingFormatted?: string;
   onOpenBanModal?: () => void;
+  onOpenSectModal?: () => void;
 }
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
@@ -34,15 +38,16 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   isBanned = false,
   bannedRemainingFormatted,
   onOpenBanModal,
+  onOpenSectModal,
 }) => {
   const modes = [
     {
       id: 'vi_dau' as GameMode,
       keyShortcut: '1',
-      name: 'Tiếng Việt Có Dấu',
-      subtext: 'Bộ từ vựng chuẩn & phức tạp, luyện gõ thanh điệu tiếng Việt',
-      icon: <Flag className="w-5 h-5 text-rose-400" />,
-      tag: 'Multiplayer (8 Người)',
+      name: 'Chính Đạo Vấn Tâm',
+      subtext: 'Tu luyện tâm cảnh qua thanh điệu thuần chính, tôi luyện khí chất người tu tiên',
+      icon: <Scroll className="w-5 h-5 text-rose-400" />,
+      tag: 'Tiếng Việt Có Dấu • 8 Người',
       isSolo: false,
       color: 'from-rose-500/20 via-rose-500/10 to-transparent border-rose-500/40 text-rose-300',
       badgeColor: 'bg-rose-950/80 text-rose-300 border-rose-500/40',
@@ -51,10 +56,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'vi_nodau' as GameMode,
       keyShortcut: '2',
-      name: 'Tiếng Việt Không Dấu',
-      subtext: 'Luyện gõ lướt phím tốc độ cao, bứt phá giới hạn WPM',
-      icon: <span className="text-base font-black text-amber-400">VD</span>,
-      tag: 'Multiplayer (8 Người)',
+      name: 'Tật Phong Ngự Kiếm',
+      subtext: 'Ngự kiếm phá không, lướt phím thần tốc, bứt phá cực hạn tốc độ WPM',
+      icon: <Swords className="w-5 h-5 text-amber-400" />,
+      tag: 'Tiếng Việt Không Dấu • 8 Người',
       isSolo: false,
       color: 'from-amber-500/20 via-amber-500/10 to-transparent border-amber-500/40 text-amber-300',
       badgeColor: 'bg-amber-950/80 text-amber-300 border-amber-500/40',
@@ -63,10 +68,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'en' as GameMode,
       keyShortcut: '3',
-      name: 'Tiếng Anh (English)',
-      subtext: 'Bộ từ điển Oxford 3000 từ thông dụng và học thuật',
-      icon: <span className="text-base font-black text-sky-400">EN</span>,
-      tag: 'Multiplayer (8 Người)',
+      name: 'Dị Vực Luận Đạo',
+      subtext: 'Viễn chinh dị giới, lĩnh ngộ vạn quyển kinh văn từ điển Oxford học thuật',
+      icon: <Globe className="w-5 h-5 text-sky-400" />,
+      tag: 'Tiếng Anh (English) • 8 Người',
       isSolo: false,
       color: 'from-sky-500/20 via-sky-500/10 to-transparent border-sky-500/40 text-sky-300',
       badgeColor: 'bg-sky-950/80 text-sky-300 border-sky-500/40',
@@ -75,10 +80,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'numpad' as GameMode,
       keyShortcut: '4',
-      name: 'Bàn Phím Số (Numpad)',
-      subtext: 'Chuỗi số tính tiền, phép tính Fullsize và mã Easter Egg 58008',
-      icon: <Calculator className="w-5 h-5 text-emerald-400" />,
-      tag: 'Multiplayer (8 Người)',
+      name: 'Cửu Cung Trận Pháp',
+      subtext: 'Diễn toán thiên cơ cửu cung bát quái, kết ấn chuỗi số linh lực không vết lỗi',
+      icon: <Layers className="w-5 h-5 text-emerald-400" />,
+      tag: 'Bàn Phím Số (Numpad) • 8 Người',
       isSolo: false,
       color: 'from-emerald-500/20 via-emerald-500/10 to-transparent border-emerald-500/40 text-emerald-300',
       badgeColor: 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40',
@@ -87,10 +92,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'ngau_hung' as GameMode,
       keyShortcut: '5',
-      name: 'Ngẫu Hứng (Rush)',
-      subtext: 'Đua 1 từ chớp nhoáng theo vòng (15 hoặc 20 vòng)',
-      icon: <Zap className="w-5 h-5 text-yellow-400" />,
-      tag: 'Multiplayer (8 Người)',
+      name: 'Lôi Đình Nhất Kích',
+      subtext: 'Đua 1 từ chớp nhoáng theo vòng luân hồi, tốc chiến tốc thắng áp đảo đối thủ',
+      icon: <Zap className="w-5 h-5 text-yellow-400 animate-pulse" />,
+      tag: 'Ngẫu Hứng (Rush) • 8 Người',
       isSolo: false,
       color: 'from-yellow-500/20 via-yellow-500/10 to-transparent border-yellow-500/40 text-yellow-300',
       badgeColor: 'bg-yellow-950/80 text-yellow-300 border-yellow-500/40',
@@ -99,10 +104,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'doan_chu' as GameMode,
       keyShortcut: '6',
-      name: 'Đoán Chữ (Mystery)',
-      subtext: 'Mở ký tự theo chu kỳ, gợi ý chủ đề & phán đoán từ',
-      icon: <Search className="w-5 h-5 text-purple-400" />,
-      tag: 'Multiplayer (8 Người)',
+      name: 'Huyền Cơ Mật Cảnh',
+      subtext: 'Giải mã mật tự linh văn, suy đoán thiên cơ, mở cổ trận đoạt điểm kỳ ngộ',
+      icon: <Eye className="w-5 h-5 text-purple-400" />,
+      tag: 'Đoán Chữ (Mystery) • 8 Người',
       isSolo: false,
       color: 'from-purple-500/20 via-purple-500/10 to-transparent border-purple-500/40 text-purple-300',
       badgeColor: 'bg-purple-950/80 text-purple-300 border-purple-500/40',
@@ -111,10 +116,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'san_boss' as GameMode,
       keyShortcut: '7',
-      name: 'Săn Boss (Raid)',
-      subtext: 'Hợp lực diệt Hắc Long Ma Vương, phá giáp làm choáng & tự bạo',
-      icon: <Skull className="w-5 h-5 text-red-500 animate-pulse" />,
-      tag: 'Multiplayer Co-op',
+      name: 'Hàng Phục Ma Tôn',
+      subtext: 'Đồng lòng vây hãm Hắc Long Ma Vương, dồn chiêu phá giáp trấn áp Thần Thú',
+      icon: <Flame className="w-5 h-5 text-red-500 animate-pulse" />,
+      tag: 'Săn Boss (Co-op 8 Người)',
       isSolo: false,
       color: 'from-red-600/25 via-red-900/15 to-transparent border-red-500/50 text-red-300',
       badgeColor: 'bg-red-950/80 text-red-300 border-red-500/40',
@@ -123,10 +128,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     {
       id: 'outplay' as GameMode,
       keyShortcut: '8',
-      name: 'Outplay Yourself',
-      subtext: 'Luyện tập cá nhân vượt kỷ lục bóng ma WPM của chính bạn',
-      icon: <Target className="w-5 h-5 text-cyan-400" />,
-      tag: 'Solo Độc Quyền',
+      name: 'Tâm Ma Thí Luyện',
+      subtext: 'Đối diện tàn ảnh tâm ma, khiêu chiến giới hạn bản ngã để đắc đạo phi thăng',
+      icon: <Ghost className="w-5 h-5 text-cyan-400" />,
+      tag: 'Đột Phá Bản Ngã (Solo)',
       isSolo: true,
       color: 'from-cyan-500/20 via-blue-600/10 to-transparent border-cyan-500/40 text-cyan-300',
       badgeColor: 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40',
@@ -275,6 +280,15 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Weekend Sect War Event Dashboard Banner */}
+      <SectWarLobbyBanner
+        onOpenSectModal={onOpenSectModal}
+        onQuickStartRace={() => {
+          soundFx.playKeyClick();
+          onJoinWaitingRoom(currentMode);
+        }}
+      />
 
       {/* Ban Warning Banner if active */}
       {isBanned && (

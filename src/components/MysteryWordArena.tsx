@@ -17,6 +17,7 @@ interface MysteryWordArenaProps {
   onFinishRound: (round: number, scoreEarned: number, correct: boolean, playerId?: string) => void;
   onFinishGame: (stats?: MysteryWordGameStats) => void;
   onSurrender?: () => void;
+  onAFK?: () => void;
   onRestart?: () => void;
   onHome?: () => void;
   isMultiplayer?: boolean;
@@ -32,6 +33,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   onFinishRound,
   onFinishGame,
   onSurrender,
+  onAFK,
   onRestart,
   onHome,
   isMultiplayer = false,
@@ -45,9 +47,17 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   const [solvedMessage, setSolvedMessage] = useState<string | null>(null);
   const [roundScore, setRoundScore] = useState(0);
   const [isSurrendered, setIsSurrendered] = useState(false);
+  const currentPlayerData = players.find((p) => p.id === currentPlayerId);
+  // Không áp dụng cơ chế tính AFK cho chế độ Đoán Chữ
+  const isPlayerAFK = false;
   const [hasFinishedGame, setHasFinishedGame] = useState(false);
   const [showSurrenderModal, setShowSurrenderModal] = useState(false);
   const showSurrenderModalRef = useRef(false);
+
+  // Không tính cơ chế AFK (inactivity tracking) cho chế độ Đoán Chữ
+  const recordActivity = useCallback(() => {
+    // Không cần ghi nhận AFK ở chế độ Đoán Chữ
+  }, []);
   const [roundSolvers, setRoundSolvers] = useState<{ id: string; rank: number; pts: number; name: string }[]>([]);
 
   const isRoundSolvedRef = useRef(false);
@@ -111,6 +121,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       inputRef.current?.focus();
     }
     const handleKeyDown = (e: KeyboardEvent) => {
+      recordActivity();
       // 1. Modal is open: Enter to confirm surrender, Escape to cancel
       if (showSurrenderModalRef.current || showSurrenderModal) {
         if (e.key === 'Enter') {
@@ -481,12 +492,25 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         </div>
       </div>
 
-      {/* Surrendered Banner */}
-      {isSurrendered && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-center space-y-2 animate-in fade-in zoom-in duration-200">
-          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
-            <Flag className="w-4 h-4 text-rose-400" />
-            <span>Bạn đã đầu hàng ván đoán chữ này.</span>
+      {/* Surrendered / AFK Banner */}
+      {(isSurrendered || isPlayerAFK) && (
+        <div className={`p-4 rounded-2xl ${
+          isPlayerAFK ? 'bg-amber-500/10 border border-amber-500/40 text-amber-300' : 'bg-rose-500/10 border border-rose-500/40'
+        } text-center space-y-2 animate-in fade-in zoom-in duration-200`}>
+          <div className={`flex items-center justify-center gap-2 font-bold text-sm ${
+            isPlayerAFK ? 'text-amber-300' : 'text-rose-300'
+          }`}>
+            {isPlayerAFK ? (
+              <>
+                <span className="text-lg">💤</span>
+                <span>Bạn đã bị tính là AFK do không thao tác bàn phím trong 30 giây.</span>
+              </>
+            ) : (
+              <>
+                <Flag className="w-4 h-4 text-rose-400" />
+                <span>Bạn đã đầu hàng ván đoán chữ này.</span>
+              </>
+            )}
           </div>
           <p className="text-xs text-slate-400">
             Ô gõ đã bị khóa. Bạn vẫn có thể tiếp tục xem các người chơi khác đoán từ cho đến khi kết thúc trận đấu, hoặc bấm nút bên dưới để chuyển tiếp:
@@ -680,7 +704,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
                 type="text"
                 value={guessInput}
                 onChange={(e) => {
-                  if (isSurrendered) return;
+                  recordActivity();
+                  if (isSurrendered || isPlayerAFK) return;
                   setGuessInput(e.target.value);
                   setLastKeystrokeTime(performance.now());
                   setIsTyping(true);
@@ -688,10 +713,12 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
                   typingTimeoutRef.current = window.setTimeout(() => setIsTyping(false), 500);
                 }}
                 onCompositionStart={() => {
+                  recordActivity();
                   isComposingRef.current = true;
                 }}
                 onCompositionEnd={(e) => {
-                  if (isSurrendered) return;
+                  recordActivity();
+                  if (isSurrendered || isPlayerAFK) return;
                   isComposingRef.current = false;
                   setGuessInput(e.currentTarget.value);
                   setLastKeystrokeTime(performance.now());
@@ -701,11 +728,13 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
                 }}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
-                disabled={isRoundSolved || isSurrendered || hasFinishedGame}
-                readOnly={isSurrendered || hasFinishedGame}
+                disabled={isRoundSolved || isSurrendered || isPlayerAFK || hasFinishedGame}
+                readOnly={isSurrendered || isPlayerAFK || hasFinishedGame}
                 placeholder={
                   hasFinishedGame
                     ? "🏁 Bạn đã hoàn thành tất cả câu đố! Đang theo dõi các đối thủ còn lại..."
+                    : isPlayerAFK
+                    ? "Bạn đã bị tính là AFK do không thao tác bàn phím trong 30 giây."
                     : isSurrendered
                     ? "Bạn đã đầu hàng. Đang theo dõi các người chơi khác..."
                     : isRoundSolved
@@ -713,7 +742,9 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
                     : "Nhập phán đoán của bạn và bấm Enter..."
                 }
                 className={`w-full h-12 px-4 rounded-xl bg-slate-950/90 border ${
-                  isSurrendered
+                  isPlayerAFK
+                    ? 'border-amber-500/40 text-amber-500/80 cursor-not-allowed'
+                    : isSurrendered
                     ? 'border-rose-500/40 text-slate-500 cursor-not-allowed'
                     : 'border-slate-800 text-white'
                 } font-medium text-base outline-none focus:ring-1 focus:ring-purple-400`}
@@ -725,7 +756,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
           <button
             id="btn-submit-mystery-guess"
             type="submit"
-            disabled={isRoundSolved || isSurrendered}
+            disabled={isRoundSolved || isSurrendered || isPlayerAFK}
             className="h-12 px-4 sm:px-5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
           >
             <span>ĐOÁN</span>
@@ -772,7 +803,11 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
                   </div>
                   <span className="font-mono text-xs font-bold text-amber-400">{p.score || 0}đ</span>
                 </div>
-                {p.isSurrendered ? (
+                {p.isAFK ? (
+                  <div className="text-[10px] font-bold text-amber-400 text-right">
+                    AFK
+                  </div>
+                ) : p.isSurrendered ? (
                   <div className="text-[10px] font-bold text-rose-400 text-right">
                     Đã đầu hàng
                   </div>
