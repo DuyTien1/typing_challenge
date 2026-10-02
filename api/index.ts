@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 // Bảo đảm định danh môi trường Vercel Serverless
 process.env.VERCEL = process.env.VERCEL || '1';
 
-import app, { app as namedApp } from '../server';
+import app, { app as namedApp } from '../server.ts';
 
 const expressApp = namedApp || app;
 
