@@ -60,10 +60,12 @@ export function normalizeDatabaseUrl(rawUrl: string): string {
 export function getRawDatabaseUrl(): string | undefined {
   const keys = [
     'DATABASE_URL',
+    'VITE_DATABASE_URL',
     'DATABASE_URI',
     'POSTGRES_URL',
     'POSTGRESQL_URL',
     'SUPABASE_DATABASE_URL',
+    'VITE_SUPABASE_DATABASE_URL',
     'SUPABASE_URL',
     'DB_URL',
   ];
@@ -102,7 +104,7 @@ export function getDbPool(): pg.Pool | null {
     pool = new Pool({
       connectionString,
       ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-      max: 20,
+      max: process.env.VERCEL ? 4 : 20, // Giới hạn connection pool trên Vercel Serverless Function tránh làm tràn quota của Supabase
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
     });
@@ -145,6 +147,13 @@ export async function initDatabase(): Promise<boolean> {
     }
   } catch (err: any) {
     console.error('[Database] ❌ Lỗi kết nối CSDL PostgreSQL Supabase:', err?.message || err);
+    if (pool) {
+      try {
+        await pool.end();
+      } catch {}
+      pool = null;
+    }
+    isInitialized = false;
     return false;
   }
 }
@@ -549,6 +558,124 @@ export async function dbSaveBannedUsers(bannedIdentifiers: string[]): Promise<vo
     console.error('[Database] Error saving banned users to PostgreSQL:', err);
   } finally {
     client.release();
+  }
+}
+
+/**
+ * Lưu hoặc cập nhật một phòng chơi vào Supabase (Hỗ trợ đa người chơi trên Vercel Serverless)
+ */
+export async function dbSaveRoom(room: any): Promise<void> {
+  const p = getDbPool();
+  if (!p || !room || !room.id) return;
+
+  try {
+    await p.query(`
+      INSERT INTO app_game_rooms (id, data, status, updated_at)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        data = EXCLUDED.data,
+        status = EXCLUDED.status,
+        updated_at = EXCLUDED.updated_at;
+    `, [
+      room.id,
+      JSON.stringify(room),
+      room.status || 'waiting',
+      Date.now(),
+    ]);
+  } catch (err) {
+    // Không log lỗi quá ồn ào khi phòng cập nhật liên tục
+  }
+}
+
+/**
+ * Tải một phòng chơi từ Supabase
+ */
+export async function dbLoadRoom(roomId: string): Promise<any | null> {
+  const p = getDbPool();
+  if (!p || !roomId) return null;
+
+  try {
+    const res = await p.query('SELECT data FROM app_game_rooms WHERE id = $1', [roomId]);
+    if (res.rows.length > 0 && res.rows[0].data) {
+      return res.rows[0].data;
+    }
+    return null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Tải tất cả các phòng đang chờ hoặc đang đua còn hoạt động (trong vòng 30 phút)
+ */
+export async function dbLoadActiveRooms(): Promise<any[] | null> {
+  const p = getDbPool();
+  if (!p) return null;
+
+  try {
+    const threshold = Date.now() - 30 * 60 * 1000;
+    const res = await p.query(
+      "SELECT data FROM app_game_rooms WHERE status != 'closed' AND updated_at > $1 ORDER BY updated_at DESC LIMIT 50",
+      [threshold]
+    );
+    return res.rows.map((r) => r.data);
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Đóng hoặc xóa phòng chơi khỏi Supabase
+ */
+export async function dbDeleteRoom(roomId: string): Promise<void> {
+  const p = getDbPool();
+  if (!p || !roomId) return;
+
+  try {
+    await p.query("UPDATE app_game_rooms SET status = 'closed', updated_at = $1 WHERE id = $2", [Date.now(), roomId]);
+  } catch (err) {
+    // Ignore
+  }
+}
+
+/**
+ * Lưu một tin nhắn chat vào Supabase (Đồng bộ tán gẫu thời gian thực trên Vercel Serverless)
+ */
+export async function dbSaveChatMessage(msg: any): Promise<void> {
+  const p = getDbPool();
+  if (!p || !msg || !msg.id) return;
+
+  try {
+    await p.query(`
+      INSERT INTO app_chat_messages (id, channel, data, timestamp)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO NOTHING;
+    `, [
+      msg.id,
+      msg.channel || 'global',
+      JSON.stringify(msg),
+      Number(msg.timestamp) || Date.now(),
+    ]);
+  } catch (err) {
+    // Ignore
+  }
+}
+
+/**
+ * Tải lịch sử tin nhắn chat mới nhất từ Supabase
+ */
+export async function dbLoadChatMessages(limit = 100): Promise<any[] | null> {
+  const p = getDbPool();
+  if (!p) return null;
+
+  try {
+    const res = await p.query(
+      'SELECT data FROM app_chat_messages ORDER BY timestamp DESC LIMIT $1',
+      [limit]
+    );
+    return res.rows.map((r) => r.data).reverse();
+  } catch (err) {
+    return null;
   }
 }
 
