@@ -49,7 +49,7 @@ Tài liệu này hướng dẫn chi tiết cách triển khai toàn bộ ứng d
 5. Trong giao diện cấu hình Deploy:
    - **Framework Preset:** Vercel sẽ tự động nhận diện là **Vite** (hoặc chọn Vite).
    - **Root Directory:** Để `./` (mặc định).
-   - **Build and Output Settings:** Đã được cấu hình tự động thông qua file `vercel.json` (Build command: `vite build`, Output directory: `dist`).
+   - **Build and Output Settings:** Đã được cấu hình tự động thông qua file `vercel.json` (Build command tự động đóng gói cả Vite Frontend lẫn Serverless API `api/index.js`, Output directory: `dist`).
 6. Mở rộng mục **Environment Variables** (Biến môi trường) và thêm các biến sau:
 
 | Tên Biến | Giá Trị Mẫu | Mô Tả |
@@ -57,6 +57,8 @@ Tài liệu này hướng dẫn chi tiết cách triển khai toàn bộ ứng d
 | `DATABASE_URL` | `postgresql://postgres.[REF]:[PASS]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres` | Chuỗi kết nối Supabase PostgreSQL Connection Pooler |
 | `GEMINI_API_KEY` | `AIzaSy...` | *(Tùy chọn)* API key của Google Gemini cho tính năng AI Huấn Luyện Viên cá nhân hóa |
 | `NODE_ENV` | `production` | Môi trường chạy production |
+
+> **⚠️ Lưu ý về DATABASE_URL:** Hãy dùng chuỗi kết nối **Connection Pooling** (port **6543**), thay `[PASS]` bằng mật khẩu Supabase của bạn (xóa bỏ dấu `[` và `]`).
 
 7. Bấm nút **Deploy**. Vercel sẽ tiến hành build frontend và đóng gói Serverless API trong khoảng 1 phút.
 
