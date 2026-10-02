@@ -12,6 +12,11 @@
     "migrate": "tsx scripts/migrate-to-supabase.ts",
     "lint": "tsc --noEmit"
   },
+  "allowScripts": {
+    "@google/genai": true,
+    "esbuild": true,
+    "protobufjs": true
+  },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",

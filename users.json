@@ -11,14 +11,11 @@
     "passwordHash": "c45ac5a87e2f6f1b9bc84b61cc3ff8e83711f0fabf808a4453016390b0991df1",
     "salt": "23705fec8b44e1cebe4a29079deb6f30",
     "isVerified": true,
-    "sessionTokens": [
-      "tok_1790607681880_99b31121f62f3e541fd18d50037ba876"
-    ],
+    "sessionTokens": [],
     "totalGames": 0,
     "bestWpm": 0,
     "bestWpmRecord": null,
     "matchHistory": [],
-    "detailedMatchHistory": [],
     "showcaseAchievements": [
       "speed_100",
       "pve_boss_win",
@@ -63,139 +60,6 @@
       "hidden_top1"
     ],
     "createdAt": 1700000000000,
-    "updatedAt": 1790607988026,
-    "cultivation": {
-      "level": 1,
-      "realmIndex": 0,
-      "tier": 1,
-      "realmName": "Luyện Khí Kỳ",
-      "subStage": "Sơ Kỳ",
-      "titleName": "Luyện Khí Tu Sĩ",
-      "exp": 0,
-      "maxExp": 138,
-      "thoNguyen": 228,
-      "maxThoNguyen": 240,
-      "lastThoNguyenDecay": 1790607977416,
-      "lastCultivateTime": 1790521577416,
-      "dailyExpEarned": 0,
-      "dailyExpDate": "2026-09-27",
-      "pillCount": {
-        "thoNguyen": 2,
-        "hoTam": 1,
-        "phaCanh": 1,
-        "tuViDan": 0,
-        "sieuCapTuViDan": 0,
-        "dinhTam": 1,
-        "ngungThan": 1
-      },
-      "dailyQuests": [
-        {
-          "id": "quest_meditation",
-          "name": "Tọa Thiền Nhập Định",
-          "desc": "Hoàn thành 1 bài thi đấu bất kỳ để ngưng tụ khí huyết",
-          "rewardExp": 300,
-          "progress": 0,
-          "target": 1,
-          "isCompleted": false,
-          "isClaimed": false
-        },
-        {
-          "id": "quest_accuracy",
-          "name": "Bách Phát Bách Trúng",
-          "desc": "Đạt độ chính xác ≥ 96% trong 1 trận đấu để rèn luyện tâm kiếm",
-          "rewardExp": 450,
-          "progress": 0,
-          "target": 1,
-          "isCompleted": false,
-          "isClaimed": false
-        },
-        {
-          "id": "quest_speed",
-          "name": "Lôi Đình Xuất Kích",
-          "desc": "Đạt WPM ≥ 50 trong 1 trận đấu để bứt phá tốc độ",
-          "rewardExp": 350,
-          "progress": 0,
-          "target": 1,
-          "isCompleted": false,
-          "isClaimed": false
-        },
-        {
-          "id": "quest_arena",
-          "name": "Trảm Yêu Phục Ma",
-          "desc": "Tham gia 1 trận Săn Boss, Đoán Chữ hoặc Ngẫu Hứng",
-          "rewardExp": 500,
-          "progress": 0,
-          "target": 1,
-          "isCompleted": false,
-          "isClaimed": false
-        }
-      ],
-      "dailyQuestsDate": "2026-09-27",
-      "tamPhap": {
-        "equipped": "than_hanh",
-        "matchesSinceHeal": 0,
-        "levels": {
-          "than_hanh": 1,
-          "bat_dong": 1,
-          "cuu_chuyen": 1
-        },
-        "exp": {
-          "than_hanh": 0,
-          "bat_dong": 0,
-          "cuu_chuyen": 0
-        }
-      },
-      "herbs": {
-        "uLan": 3,
-        "huyetTinh": 3,
-        "hoaAnh": 1,
-        "huyenThiet": 1,
-        "longTu": 0
-      },
-      "artifacts": {
-        "equipped": "thanh_van_kiem",
-        "levels": {
-          "thanh_van_kiem": 1,
-          "hao_thien_kinh": 0,
-          "cuu_pham_lien": 0,
-          "ban_co_phu": 0
-        },
-        "spiritAwakened": {
-          "thanh_van_kiem": false,
-          "hao_thien_kinh": false,
-          "cuu_pham_lien": false,
-          "ban_co_phu": false
-        },
-        "spiritAffection": {
-          "thanh_van_kiem": 10,
-          "hao_thien_kinh": 0,
-          "cuu_pham_lien": 0,
-          "ban_co_phu": 0
-        }
-      },
-      "activeBuffs": {
-        "dinhTamMatchesRemaining": 0,
-        "ngungThanMatchesRemaining": 0,
-        "kimCangImmunityUntil": 0
-      },
-      "sect": {
-        "sectId": "sect_thuc_son",
-        "sectName": "Thục Sơn Kiếm Phái",
-        "sectTag": "Thục Sơn",
-        "role": "noi_mon",
-        "contribution": 150,
-        "joinedAt": 1790521577416,
-        "tournamentWins": 0
-      },
-      "linhThach": 970,
-      "historyLog": [
-        "Đến Vạn Bảo Các dùng 30 Linh Thạch mua 1x U Lan Thảo",
-        "Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)"
-      ],
-      "shopPurchasesDate": "2026-09-28",
-      "shopPurchasesToday": {
-        "herb_ulan": 1
-      }
-    }
+    "updatedAt": 1700000000000
   }
 }

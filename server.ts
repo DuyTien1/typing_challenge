@@ -1,9 +1,9 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import crypto from 'crypto';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
 import {
@@ -20,12 +20,58 @@ import {
 } from './server/types';
 import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
 import { registerEconomyRoutes } from './server/economy';
+import {
+  isDatabaseConfigured,
+  initDatabase,
+  checkDatabaseHealth,
+  dbLoadUsers,
+  dbSaveUser,
+  dbLoadSects,
+  dbSaveSects,
+  dbLoadLeaderboard,
+  dbSaveLeaderboard,
+  dbLoadBannedUsers,
+  dbSaveBannedUsers,
+  dbSaveRoom,
+  dbLoadRoom,
+  dbLoadActiveRooms,
+  dbDeleteRoom,
+  dbSaveChatMessage,
+  dbLoadChatMessages,
+} from './server/db';
 
 // In-memory rooms store
 const rooms = new Map<string, GameRoom>();
 const sseClientsByRoom = new Map<string, Set<express.Response>>();
 
-const globalChatMessages: ServerChatMessage[] = [
+const roomChatMessages = new Map<string, ServerChatMessage[]>();
+
+// Helper to get safe writable storage path (Hỗ trợ Vercel Serverless /tmp)
+export function getSafeStoragePath(filename: string): string {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpDir = path.join('/tmp', 'fasttyping_data');
+    if (!fs.existsSync(tmpDir)) {
+      try {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      } catch {}
+    }
+    const tmpPath = path.join(tmpDir, filename);
+    if (!fs.existsSync(tmpPath)) {
+      const seedPath = path.join(process.cwd(), filename);
+      if (fs.existsSync(seedPath)) {
+        try {
+          fs.copyFileSync(seedPath, tmpPath);
+        } catch {}
+      }
+    }
+    return tmpPath;
+  }
+  return path.join(process.cwd(), filename);
+}
+
+const CHAT_FILE = getSafeStoragePath('chat_history.json');
+
+const DEFAULT_GLOBAL_CHAT: ServerChatMessage[] = [
   {
     id: 'sys-welcome',
     username: 'Hệ Thống',
@@ -38,10 +84,33 @@ const globalChatMessages: ServerChatMessage[] = [
   },
 ];
 
-const roomChatMessages = new Map<string, ServerChatMessage[]>();
+function loadChatFromFile(): ServerChatMessage[] {
+  try {
+    if (fs.existsSync(CHAT_FILE)) {
+      const content = fs.readFileSync(CHAT_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data) && data.length > 0) {
+        return data.slice(-150);
+      }
+    }
+  } catch (err) {
+    console.error('Error reading chat_history.json:', err);
+  }
+  return [...DEFAULT_GLOBAL_CHAT];
+}
+
+const globalChatMessages: ServerChatMessage[] = loadChatFromFile();
+
+function saveChatToFile() {
+  try {
+    fs.writeFileSync(CHAT_FILE, JSON.stringify(globalChatMessages.slice(-150), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving chat_history.json:', err);
+  }
+}
 
 // Real Leaderboard Storage (Persistent to leaderboard.json with Multi-Period & Top 20)
-const LEADERBOARD_FILE = path.join(process.cwd(), 'leaderboard.json');
+const LEADERBOARD_FILE = getSafeStoragePath('leaderboard.json');
 
 export function getVietnamDateStr(): string {
   const now = new Date();
@@ -86,7 +155,41 @@ function loadLeaderboardFromFile(): ServerMultiLeaderboard {
       const content = fs.readFileSync(LEADERBOARD_FILE, 'utf-8');
       const data = JSON.parse(content);
       if (data && typeof data === 'object') {
-        const mockNames = new Set(['GiaCátGõ', 'LướtGió', 'QuickFox', 'KếToánViên', 'ChớpNhoáng', 'ThámTửPhím', 'DũngSĩRồng', 'PhímThần_VN']);
+        const mockNames = new Set([
+          'GiaCátGõ',
+          'LướtGió',
+          'QuickFox',
+          'KếToánViên',
+          'ChớpNhoáng',
+          'ThámTửPhím',
+          'DũngSĩRồng',
+          'PhímThần_VN',
+          'testplayer1',
+          'Độc Cô Kiếm Tôn',
+          'Thanh Hư Chân Nhân',
+          'Lăng Phong Kiếm Sĩ',
+          'Vân Dao Kiếm Nữ',
+          'Hàn Lập',
+          'Diệp Thần',
+          'Trương Đan',
+          'Lục Tuyết',
+          'Cửu Thiên Thần Quân',
+          'Lôi Chấn Tử',
+          'Phong Lôi Tiên Tử',
+          'Thần Tiêu Kiếm Hiệp',
+          'Lôi Bạo Cuồng Đao',
+          'Lôi Đình Tiểu Sinh',
+          'Vô Nhai Kiếm Thánh',
+          'Tàng Kiếm Lão Nhân',
+          'Kiếm Vô Ngấn',
+          'Mặc Kiếm Khách',
+          'Tố Kiếm Đệ Tử',
+          'Tiêu Dao Tử',
+          'Cầm Họa Tiên Cô',
+          'Bạch Lộc Chân Quân',
+          'Lưu Vân Đạo Trưởng',
+          'Thính Phong Tử',
+        ]);
 
         // Check if file is already multi-period structure
         if (data.rankings && typeof data.rankings === 'object') {
@@ -196,6 +299,9 @@ function checkLeaderboardResets(): boolean {
 function saveLeaderboardToFile() {
   try {
     fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(serverLeaderboardData, null, 2), 'utf-8');
+    if (isDatabaseConfigured()) {
+      dbSaveLeaderboard(serverLeaderboardData).catch(() => {});
+    }
   } catch (err) {
     console.error('Error saving leaderboard file:', err);
   }
@@ -207,7 +313,7 @@ setInterval(() => {
 }, 30000);
 
 // User Account Storage (Persistent to users.json - no external database required)
-const USERS_FILE = path.join(process.cwd(), 'users.json');
+const USERS_FILE = getSafeStoragePath('users.json');
 
 function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
   let adminUser: ServerUserRecord | undefined;
@@ -291,11 +397,16 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
     if (fs.existsSync(USERS_FILE)) {
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
       const data = JSON.parse(content);
+      const DEFAULT_SECT_IDS = new Set(['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh']);
       if (Array.isArray(data)) {
         for (const u of data) {
           if (u && u.id) {
             if (!u.displayName) {
               u.displayName = u.username;
+              needsSave = true;
+            }
+            if (u.cultivation?.sect?.sectId && (DEFAULT_SECT_IDS.has(u.cultivation.sect.sectId) || u.cultivation.sect.sectId.startsWith('sect_thuc_son'))) {
+              delete u.cultivation.sect;
               needsSave = true;
             }
             map.set(u.id, u);
@@ -307,6 +418,10 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
             const rec = u as ServerUserRecord;
             if (!rec.displayName) {
               rec.displayName = rec.username;
+              needsSave = true;
+            }
+            if (rec.cultivation?.sect?.sectId && (DEFAULT_SECT_IDS.has(rec.cultivation.sect.sectId) || rec.cultivation.sect.sectId.startsWith('sect_thuc_son'))) {
+              delete rec.cultivation.sect;
               needsSave = true;
             }
             map.set(id, rec);
@@ -341,6 +456,11 @@ function saveUsersToFile() {
     const obj: Record<string, ServerUserRecord> = {};
     for (const [id, u] of serverUsers.entries()) {
       obj[id] = u;
+      if (isDatabaseConfigured()) {
+        dbSaveUser(u).catch((err) => {
+          console.error(`[Database] ❌ Lỗi lưu tài khoản ${u.username} vào PostgreSQL:`, err?.message || err);
+        });
+      }
     }
     fs.writeFileSync(USERS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
   } catch (err) {
@@ -366,7 +486,7 @@ export const XIANXIA_REALM_METAS = [
 // =========================================================================
 // HỆ THỐNG TÔNG MÔN - PERSISTENT STORAGE (sects.json)
 // =========================================================================
-const SECTS_FILE = path.join(process.cwd(), 'sects.json');
+const SECTS_FILE = getSafeStoragePath('sects.json');
 
 export interface ServerSectMemberRecord {
   userId: string;
@@ -408,562 +528,33 @@ export interface ServerSectRecord {
   slogan?: string;
   bannerColor?: string;
   weeklyTournamentPoints?: number;
+  weeklyWarPoints?: number;
+  lastWeekRank?: number;
   isHoldingThienCung?: boolean;
+  activeWeeklyBuff?: {
+    tuViBonusPct: number;
+    linhThachBonusPct: number;
+    title: string;
+    rank: number;
+    expiresAt: number;
+  };
+  warContributors?: Record<
+    string,
+    {
+      username: string;
+      displayName?: string;
+      avatar?: string;
+      points: number;
+      matchesCount: number;
+      lastActive: number;
+    }
+  >;
   members: ServerSectMemberRecord[];
   createdAt?: number;
   worldBoss?: any;
 }
 
-const DEFAULT_SERVER_SECTS: ServerSectRecord[] = [
-  {
-    id: 'sect_thuc_son',
-    name: 'Thục Sơn Kiếm Phái',
-    tag: 'Thục Sơn',
-    description: 'Kiếm tu đệ nhất thiên hạ, vạn kiếm quy tông, ngự kiếm trảm yêu trừ ma.',
-    leaderId: 'leader_thuc_son',
-    leaderName: 'Độc Cô Kiếm Tôn',
-    leaderAvatar: '⚔️',
-    leaderFrame: 'frame_xianxia_dokiep',
-    leaderRealmName: 'Độ Kiếp Kỳ',
-    leaderLevel: 820,
-    linhMachLevel: 3,
-    totalContribution: 24500,
-    memberCount: 8,
-    totalTuVi: 40007000,
-    avgLevel: 375,
-    avgRealmName: 'Hóa Thần Kỳ',
-    badgeIcon: '⚔️',
-    slogan: 'Vạn Kiếm Quy Nhất • Trảm Phá Thái Hư',
-    bannerColor: '#38bdf8',
-    weeklyTournamentPoints: 840,
-    isHoldingThienCung: true,
-    worldBoss: {
-      id: 'boss_hac_long',
-      name: 'Thái Cổ Hắc Long',
-      icon: '🐉',
-      hp: 154000,
-      maxHp: 200000,
-      level: 10,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'thuc_son_1',
-        username: 'Độc Cô Kiếm Tôn',
-        displayName: 'Độc Cô Kiếm Tôn',
-        avatar: '⚔️',
-        frame: 'frame_xianxia_dokiep',
-        role: 'chuong_mon',
-        contribution: 12000,
-        realmIndex: 8,
-        realmName: 'Độ Kiếp Kỳ',
-        realmIcon: '🌩️',
-        level: 820,
-        tier: 8,
-        exp: 820000,
-        tuViScore: 8820000,
-        joinedAt: Date.now() - 30 * 86400000,
-      },
-      {
-        userId: 'thuc_son_2',
-        username: 'Thanh Hư Chân Nhân',
-        displayName: 'Thanh Hư Chân Nhân',
-        avatar: '🧙‍♂️',
-        frame: 'frame_xianxia_daithua',
-        role: 'dai_truong_lao',
-        contribution: 5800,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 650,
-        tier: 6,
-        exp: 650000,
-        tuViScore: 7650000,
-        joinedAt: Date.now() - 25 * 86400000,
-      },
-      {
-        userId: 'thuc_son_3',
-        username: 'Lăng Phong Kiếm Sĩ',
-        displayName: 'Lăng Phong Kiếm Sĩ',
-        avatar: '🗡️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 2900,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 480,
-        tier: 5,
-        exp: 480000,
-        tuViScore: 6480000,
-        joinedAt: Date.now() - 20 * 86400000,
-      },
-      {
-        userId: 'thuc_son_4',
-        username: 'Vân Dao Kiếm Nữ',
-        displayName: 'Vân Dao Kiếm Nữ',
-        avatar: '🧝‍♀️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 2400,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 450,
-        tier: 4,
-        exp: 450000,
-        tuViScore: 6450000,
-        joinedAt: Date.now() - 18 * 86400000,
-      },
-      {
-        userId: 'thuc_son_5',
-        username: 'Hàn Lập',
-        displayName: 'Hàn Lập',
-        avatar: '🌿',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 850,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 270,
-        tier: 4,
-        exp: 270000,
-        tuViScore: 4270000,
-        joinedAt: Date.now() - 14 * 86400000,
-      },
-      {
-        userId: 'thuc_son_6',
-        username: 'Diệp Thần',
-        displayName: 'Diệp Thần',
-        avatar: '🔥',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 720,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 240,
-        tier: 3,
-        exp: 240000,
-        tuViScore: 4240000,
-        joinedAt: Date.now() - 12 * 86400000,
-      },
-      {
-        userId: 'thuc_son_7',
-        username: 'Trương Đan',
-        displayName: 'Trương Đan',
-        avatar: '🧱',
-        frame: 'frame_xianxia_trucco',
-        role: 'ngoai_mon',
-        contribution: 180,
-        realmIndex: 1,
-        realmName: 'Trúc Cơ Kỳ',
-        realmIcon: '🧱',
-        level: 55,
-        tier: 2,
-        exp: 55000,
-        tuViScore: 1055000,
-        joinedAt: Date.now() - 5 * 86400000,
-      },
-      {
-        userId: 'thuc_son_8',
-        username: 'Lục Tuyết',
-        displayName: 'Lục Tuyết',
-        avatar: '❄️',
-        frame: 'frame_xianxia_trucco',
-        role: 'ngoai_mon',
-        contribution: 150,
-        realmIndex: 1,
-        realmName: 'Trúc Cơ Kỳ',
-        realmIcon: '🧱',
-        level: 42,
-        tier: 1,
-        exp: 42000,
-        tuViScore: 1042000,
-        joinedAt: Date.now() - 3 * 86400000,
-      },
-    ],
-  },
-  {
-    id: 'sect_cuu_trong',
-    name: 'Cửu Trọng Thiên',
-    tag: 'Cửu Trọng',
-    description: 'Chưởng quản lôi đình cửu thiên, uy trấn bát hoang lục hợp vô địch.',
-    leaderId: 'leader_cuu_trong',
-    leaderName: 'Cửu Thiên Thần Quân',
-    leaderAvatar: '⚡',
-    leaderFrame: 'frame_xianxia_dokiep',
-    leaderRealmName: 'Độ Kiếp Kỳ',
-    leaderLevel: 850,
-    linhMachLevel: 4,
-    totalContribution: 38900,
-    memberCount: 6,
-    totalTuVi: 35900000,
-    avgLevel: 483,
-    avgRealmName: 'Hợp Thể Kỳ',
-    badgeIcon: '⚡',
-    slogan: 'Lôi Đình Vạn Trượng • Chấn Nhiếp Bát Hoang',
-    bannerColor: '#facc15',
-    weeklyTournamentPoints: 780,
-    isHoldingThienCung: false,
-    worldBoss: {
-      id: 'boss_hoa_phuong',
-      name: 'Cửu Thiên Hỏa Phượng',
-      icon: '🦅',
-      hp: 195000,
-      maxHp: 250000,
-      level: 12,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'cuu_trong_1',
-        username: 'Cửu Thiên Thần Quân',
-        displayName: 'Cửu Thiên Thần Quân',
-        avatar: '⚡',
-        frame: 'frame_xianxia_dokiep',
-        role: 'chuong_mon',
-        contribution: 15000,
-        realmIndex: 8,
-        realmName: 'Độ Kiếp Kỳ',
-        realmIcon: '🌩️',
-        level: 850,
-        tier: 9,
-        exp: 850000,
-        tuViScore: 8850000,
-        joinedAt: Date.now() - 35 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_2',
-        username: 'Lôi Chấn Tử',
-        displayName: 'Lôi Chấn Tử',
-        avatar: '🌩️',
-        frame: 'frame_xianxia_daithua',
-        role: 'dai_truong_lao',
-        contribution: 8200,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 680,
-        tier: 7,
-        exp: 680000,
-        tuViScore: 7680000,
-        joinedAt: Date.now() - 28 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_3',
-        username: 'Phong Lôi Tiên Tử',
-        displayName: 'Phong Lôi Tiên Tử',
-        avatar: '🌪️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 3200,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 490,
-        tier: 5,
-        exp: 490000,
-        tuViScore: 6490000,
-        joinedAt: Date.now() - 22 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_4',
-        username: 'Thần Tiêu Kiếm Hiệp',
-        displayName: 'Thần Tiêu Kiếm Hiệp',
-        avatar: '🗡️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'chan_truyen',
-        contribution: 2600,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 460,
-        tier: 4,
-        exp: 460000,
-        tuViScore: 6460000,
-        joinedAt: Date.now() - 17 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_5',
-        username: 'Lôi Bạo Cuồng Đao',
-        displayName: 'Lôi Bạo Cuồng Đao',
-        avatar: '⚔️',
-        frame: 'frame_xianxia_luyenhu',
-        role: 'noi_mon',
-        contribution: 980,
-        realmIndex: 5,
-        realmName: 'Luyện Hư Kỳ',
-        realmIcon: '🌀',
-        level: 360,
-        tier: 3,
-        exp: 360000,
-        tuViScore: 5360000,
-        joinedAt: Date.now() - 10 * 86400000,
-      },
-      {
-        userId: 'cuu_trong_6',
-        username: 'Lôi Đình Tiểu Sinh',
-        displayName: 'Lôi Đình Tiểu Sinh',
-        avatar: '👦',
-        frame: 'frame_xianxia_trucco',
-        role: 'ngoai_mon',
-        contribution: 120,
-        realmIndex: 1,
-        realmName: 'Trúc Cơ Kỳ',
-        realmIcon: '🧱',
-        level: 60,
-        tier: 2,
-        exp: 60000,
-        tuViScore: 1060000,
-        joinedAt: Date.now() - 4 * 86400000,
-      },
-    ],
-  },
-  {
-    id: 'sect_van_kiem',
-    name: 'Vạn Kiếm Quy Tông',
-    tag: 'Vạn Kiếm',
-    description: 'Kiếm ý thông thiên triệt địa, một kiếm phá vạn pháp khai mở thái hư.',
-    leaderId: 'leader_van_kiem',
-    leaderName: 'Vô Nhai Kiếm Thánh',
-    leaderAvatar: '🗡️',
-    leaderFrame: 'frame_xianxia_daithua',
-    leaderRealmName: 'Đại Thừa Kỳ',
-    leaderLevel: 710,
-    linhMachLevel: 3,
-    totalContribution: 29400,
-    memberCount: 5,
-    totalTuVi: 26065000,
-    avgLevel: 413,
-    avgRealmName: 'Hóa Thần Kỳ',
-    badgeIcon: '🗡️',
-    slogan: 'Nhất Kiếm Đoạt Mệnh • Khai Mở Càn Khôn',
-    bannerColor: '#a855f7',
-    weeklyTournamentPoints: 710,
-    isHoldingThienCung: false,
-    worldBoss: {
-      id: 'boss_bach_ho',
-      name: 'Thần Thú Bạch Hổ',
-      icon: '🐯',
-      hp: 140000,
-      maxHp: 200000,
-      level: 9,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'van_kiem_1',
-        username: 'Vô Nhai Kiếm Thánh',
-        displayName: 'Vô Nhai Kiếm Thánh',
-        avatar: '🗡️',
-        frame: 'frame_xianxia_daithua',
-        role: 'chuong_mon',
-        contribution: 11000,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 710,
-        tier: 8,
-        exp: 710000,
-        tuViScore: 7710000,
-        joinedAt: Date.now() - 29 * 86400000,
-      },
-      {
-        userId: 'van_kiem_2',
-        username: 'Tàng Kiếm Lão Nhân',
-        displayName: 'Tàng Kiếm Lão Nhân',
-        avatar: '🧙‍♂️',
-        frame: 'frame_xianxia_hopthe',
-        role: 'dai_truong_lao',
-        contribution: 6200,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 560,
-        tier: 6,
-        exp: 560000,
-        tuViScore: 6560000,
-        joinedAt: Date.now() - 21 * 86400000,
-      },
-      {
-        userId: 'van_kiem_3',
-        username: 'Kiếm Vô Ngấn',
-        displayName: 'Kiếm Vô Ngấn',
-        avatar: '⚔️',
-        frame: 'frame_xianxia_luyenhu',
-        role: 'chan_truyen',
-        contribution: 2700,
-        realmIndex: 5,
-        realmName: 'Luyện Hư Kỳ',
-        realmIcon: '🌀',
-        level: 410,
-        tier: 4,
-        exp: 410000,
-        tuViScore: 5410000,
-        joinedAt: Date.now() - 15 * 86400000,
-      },
-      {
-        userId: 'van_kiem_4',
-        username: 'Mặc Kiếm Khách',
-        displayName: 'Mặc Kiếm Khách',
-        avatar: '🥷',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 920,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 290,
-        tier: 3,
-        exp: 290000,
-        tuViScore: 4290000,
-        joinedAt: Date.now() - 9 * 86400000,
-      },
-      {
-        userId: 'van_kiem_5',
-        username: 'Tố Kiếm Đệ Tử',
-        displayName: 'Tố Kiếm Đệ Tử',
-        avatar: '🌸',
-        frame: 'frame_xianxia_ketdan',
-        role: 'ngoai_mon',
-        contribution: 210,
-        realmIndex: 2,
-        realmName: 'Kết Đan Kỳ',
-        realmIcon: '🔮',
-        level: 95,
-        tier: 2,
-        exp: 95000,
-        tuViScore: 2095000,
-        joinedAt: Date.now() - 4 * 86400000,
-      },
-    ],
-  },
-  {
-    id: 'sect_tieu_dao',
-    name: 'Tiêu Dao Cung',
-    tag: 'Tiêu Dao',
-    description: 'Tiêu dao tự tại giữa đất trời, tâm như chỉ thủy, thân tự phù vân ngao du vạn dặm.',
-    leaderId: 'leader_tieu_dao',
-    leaderName: 'Tiêu Dao Tử',
-    leaderAvatar: '🪷',
-    leaderFrame: 'frame_xianxia_daithua',
-    leaderRealmName: 'Đại Thừa Kỳ',
-    leaderLevel: 690,
-    linhMachLevel: 2,
-    totalContribution: 16800,
-    memberCount: 5,
-    totalTuVi: 25978000,
-    avgLevel: 395,
-    avgRealmName: 'Hóa Thần Kỳ',
-    badgeIcon: '🪷',
-    slogan: 'Tiêu Dao Tự Tại • Đạo Pháp Tự Nhiên',
-    bannerColor: '#34d399',
-    weeklyTournamentPoints: 620,
-    isHoldingThienCung: false,
-    worldBoss: {
-      id: 'boss_ky_lan',
-      name: 'Hồng Hoang Kỳ Lân',
-      icon: '🦄',
-      hp: 120000,
-      maxHp: 180000,
-      level: 8,
-      isDefeated: false,
-      lastResetTime: Date.now(),
-    },
-    members: [
-      {
-        userId: 'tieu_dao_1',
-        username: 'Tiêu Dao Tử',
-        displayName: 'Tiêu Dao Tử',
-        avatar: '🪷',
-        frame: 'frame_xianxia_daithua',
-        role: 'chuong_mon',
-        contribution: 8500,
-        realmIndex: 7,
-        realmName: 'Đại Thừa Kỳ',
-        realmIcon: '☀️',
-        level: 690,
-        tier: 7,
-        exp: 690000,
-        tuViScore: 7690000,
-        joinedAt: Date.now() - 27 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_2',
-        username: 'Cầm Họa Tiên Cô',
-        displayName: 'Cầm Họa Tiên Cô',
-        avatar: '🪕',
-        frame: 'frame_xianxia_hopthe',
-        role: 'dai_truong_lao',
-        contribution: 5100,
-        realmIndex: 6,
-        realmName: 'Hợp Thể Kỳ',
-        realmIcon: '⚡',
-        level: 530,
-        tier: 5,
-        exp: 530000,
-        tuViScore: 6530000,
-        joinedAt: Date.now() - 20 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_3',
-        username: 'Bạch Lộc Chân Quân',
-        displayName: 'Bạch Lộc Chân Quân',
-        avatar: '🦌',
-        frame: 'frame_xianxia_luyenhu',
-        role: 'chan_truyen',
-        contribution: 2300,
-        realmIndex: 5,
-        realmName: 'Luyện Hư Kỳ',
-        realmIcon: '🌀',
-        level: 390,
-        tier: 4,
-        exp: 390000,
-        tuViScore: 5390000,
-        joinedAt: Date.now() - 14 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_4',
-        username: 'Lưu Vân Đạo Trưởng',
-        displayName: 'Lưu Vân Đạo Trưởng',
-        avatar: '☁️',
-        frame: 'frame_xianxia_hoathan',
-        role: 'noi_mon',
-        contribution: 880,
-        realmIndex: 4,
-        realmName: 'Hóa Thần Kỳ',
-        realmIcon: '🌌',
-        level: 280,
-        tier: 3,
-        exp: 280000,
-        tuViScore: 4280000,
-        joinedAt: Date.now() - 8 * 86400000,
-      },
-      {
-        userId: 'tieu_dao_5',
-        username: 'Thính Phong Tử',
-        displayName: 'Thính Phong Tử',
-        avatar: '🍃',
-        frame: 'frame_xianxia_ketdan',
-        role: 'ngoai_mon',
-        contribution: 190,
-        realmIndex: 2,
-        realmName: 'Kết Đan Kỳ',
-        realmIcon: '🔮',
-        level: 88,
-        tier: 2,
-        exp: 88000,
-        tuViScore: 2088000,
-        joinedAt: Date.now() - 3 * 86400000,
-      },
-    ],
-  },
-];
+const DEFAULT_SERVER_SECTS: ServerSectRecord[] = []
 
 function recalculateSectStats(sect: ServerSectRecord) {
   if (!sect.members || !Array.isArray(sect.members)) {
@@ -981,13 +572,14 @@ function recalculateSectStats(sect: ServerSectRecord) {
 
 function loadSectsFromFile(): Map<string, ServerSectRecord> {
   const map = new Map<string, ServerSectRecord>();
+  const DEFAULT_SECT_IDS = new Set(['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh']);
   try {
     if (fs.existsSync(SECTS_FILE)) {
       const content = fs.readFileSync(SECTS_FILE, 'utf-8');
       const data = JSON.parse(content);
       if (Array.isArray(data)) {
         for (const s of data) {
-          if (s && s.id) {
+          if (s && s.id && !DEFAULT_SECT_IDS.has(s.id) && !s.id.startsWith('sect_thuc_son')) {
             recalculateSectStats(s);
             map.set(s.id, s);
           }
@@ -998,31 +590,10 @@ function loadSectsFromFile(): Map<string, ServerSectRecord> {
     console.error('Error reading sects.json:', err);
   }
 
-  // Ensure default sects exist if map is empty or missing them
-  if (map.size === 0) {
-    for (const s of DEFAULT_SERVER_SECTS) {
-      recalculateSectStats(s);
-      map.set(s.id, s);
-    }
-    try {
-      fs.writeFileSync(SECTS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
-    } catch {}
-  } else {
-    // Check if any default sects are missing
-    let needSave = false;
-    for (const d of DEFAULT_SERVER_SECTS) {
-      if (!map.has(d.id)) {
-        recalculateSectStats(d);
-        map.set(d.id, d);
-        needSave = true;
-      }
-    }
-    if (needSave) {
-      try {
-        fs.writeFileSync(SECTS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
-      } catch {}
-    }
-  }
+  // Tông môn hoàn toàn do người chơi tự sáng lập, không tự động sinh bất kỳ tông môn mặc định nào
+  try {
+    fs.writeFileSync(SECTS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
+  } catch {}
 
   return map;
 }
@@ -1033,10 +604,140 @@ function saveSectsToFile() {
   try {
     const arr = Array.from(serverSects.values());
     fs.writeFileSync(SECTS_FILE, JSON.stringify(arr, null, 2), 'utf-8');
+    if (isDatabaseConfigured()) {
+      dbSaveSects(arr).catch(() => {});
+    }
   } catch (err) {
     console.error('Error saving sects.json:', err);
   }
 }
+
+function ensureLeaderboardPopulated() {
+  let needsSave = false;
+  const now = Date.now();
+  const cultivators = Array.from(serverUsers.values()).filter(
+    (u) => u && u.id && u.id !== 'usr_admin_default' && u.username
+  );
+
+  for (const m of VALID_LEADERBOARD_MODES) {
+    if (!serverLeaderboardData.rankings[m]) {
+      serverLeaderboardData.rankings[m] = { daily: [], weekly: [], all_time: [] };
+    }
+    const currentAllTime = serverLeaderboardData.rankings[m].all_time || [];
+    if (currentAllTime.length < 15 && cultivators.length > 0) {
+      const entries: ServerLeaderboardEntry[] = cultivators.map((user) => {
+        const cult = user.cultivation || {};
+        const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+        const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+        const cultLevel = Number(cult.level) || 1;
+        const hash = (user.username || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+
+        let baseWpm = 65 + Math.floor((realmIndex * 3) + (cultLevel % 15));
+        if (m === 'vi_nodau') baseWpm += 6;
+        if (m === 'numpad') baseWpm = Math.max(50, baseWpm - 8);
+        if (m === 'san_boss') baseWpm += 4;
+        if (m === 'ngau_hung') baseWpm += 2;
+        if (m === 'doan_chu') baseWpm = Math.max(45, baseWpm - 10);
+
+        const wpm = user.bestWpm || baseWpm;
+        const score = wpm * 10;
+        const errors = (hash % 3);
+        const accuracy = 97 + (hash % 3);
+        const consistency = 88 + (hash % 10);
+
+        let sectName = cult.sect?.sectName || cult.sect?.name || cult.sectName;
+        let sectTag = cult.sect?.sectTag || cult.sect?.tag || cult.sectTag;
+        let sectRole = cult.sect?.role;
+
+        return {
+          rank: 1,
+          userId: user.id,
+          username: user.username,
+          displayName: user.displayName || user.username,
+          avatar: user.avatar || '⚡',
+          frame: user.frame || realmMeta.frameId,
+          wpm,
+          score,
+          errors,
+          accuracy,
+          consistency,
+          timestamp: now - (hash % 14) * 86400000,
+          isVerified: true,
+          realmName: realmMeta.name,
+          realmIcon: realmMeta.icon,
+          level: cultLevel,
+          sectName,
+          sectTag,
+          sectRole,
+          keyboardSwitch: 'blue',
+        };
+      });
+
+      const mergedMap = new Map<string, ServerLeaderboardEntry>();
+      for (const e of currentAllTime) {
+        if (e && e.username) mergedMap.set(e.username.toLowerCase(), e);
+      }
+      for (const e of entries) {
+        const key = e.username.toLowerCase();
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, e);
+        }
+      }
+
+      const isScoreMode = m === 'ngau_hung' || m === 'doan_chu';
+      const sorted = Array.from(mergedMap.values()).sort((a, b) => {
+        if (isScoreMode) {
+          if (b.score !== a.score) return b.score - a.score;
+        } else {
+          if (b.wpm !== a.wpm) return b.wpm - a.wpm;
+        }
+        if (a.errors !== b.errors) return a.errors - b.errors;
+        return a.timestamp - b.timestamp;
+      });
+
+      sorted.forEach((item, idx) => {
+        item.rank = idx + 1;
+      });
+
+      serverLeaderboardData.rankings[m].all_time = sorted.slice(0, 20);
+      serverLeaderboardData.rankings[m].weekly = sorted.slice(0, 20);
+      serverLeaderboardData.rankings[m].daily = sorted.slice(0, 20);
+
+      if (sorted.length > 0) {
+        const top1 = sorted[0];
+        serverLeaderboardData.highScores[m] = {
+          userId: top1.userId,
+          username: top1.username,
+          displayName: top1.displayName || top1.username,
+          avatar: top1.avatar,
+          frame: top1.frame || 'default',
+          wpm: top1.wpm,
+          score: top1.score,
+          errors: top1.errors,
+          accuracy: top1.accuracy || 98,
+          timestamp: top1.timestamp,
+          isVerified: true,
+          sectName: top1.sectName,
+          sectTag: top1.sectTag,
+          sectRole: top1.sectRole,
+          realmName: top1.realmName,
+          realmIcon: top1.realmIcon,
+          level: top1.level,
+        };
+      }
+      needsSave = true;
+    }
+  }
+
+  serverHighScores = serverLeaderboardData.highScores;
+
+  if (needsSave) {
+    saveLeaderboardToFile();
+  }
+}
+
+// Tự động kiểm tra và đảm bảo Bảng Vàng luôn đầy đủ các đại năng Tiên Giới
+ensureLeaderboardPopulated();
 
 function syncUserToSect(user: ServerUserRecord) {
   if (!user || !user.cultivation?.sect?.sectId) return;
@@ -1100,7 +801,7 @@ function syncUserToSect(user: ServerUserRecord) {
 // =========================================================================
 // BÀN CỔ THẦN THỨC - HỆ THỐNG TRỪNG PHẠT & PHONG ẤN GIAN LẬN (2H BAN)
 // =========================================================================
-const BANS_FILE = path.join(process.cwd(), 'banned_users.json');
+const BANS_FILE = getSafeStoragePath('banned_users.json');
 
 export interface ServerBanRecord {
   username: string;
@@ -1145,9 +846,114 @@ function saveBansToFile() {
       }
     }
     fs.writeFileSync(BANS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+    if (isDatabaseConfigured()) {
+      dbSaveBannedUsers(Object.keys(obj)).catch(() => {});
+    }
   } catch (err) {
     console.error('Error saving banned_users.json:', err);
   }
+}
+
+let isDbHydrated = false;
+let dbHydratePromise: Promise<boolean> | null = null;
+
+// Hàm bảo đảm kết nối và nạp toàn bộ dữ liệu từ Supabase PostgreSQL vào bộ nhớ (Tối ưu cho Vercel Serverless)
+export async function ensureDatabaseHydrated(): Promise<boolean> {
+  if (isDbHydrated) return true;
+  if (!isDatabaseConfigured()) return false;
+  if (dbHydratePromise) return dbHydratePromise;
+
+  dbHydratePromise = (async () => {
+    console.log('[Database] 🔌 Phát hiện cấu hình DATABASE_URL. Bắt đầu kết nối CSDL Supabase PostgreSQL...');
+    const ok = await initDatabase();
+    if (!ok) {
+      console.warn('[Database] ⚠️ Chưa thể kết nối tới Supabase. Hệ thống tạm thời sử dụng bộ nhớ cục bộ để đảm bảo ứng dụng hoạt động thông suốt.');
+      dbHydratePromise = null;
+      return false;
+    }
+    try {
+      // 1. Tải danh sách người dùng từ PostgreSQL
+      const dbUsers = await dbLoadUsers();
+      if (dbUsers && dbUsers.size > 0) {
+        for (const [id, u] of dbUsers.entries()) {
+          serverUsers.set(id, u);
+        }
+        console.log(`[Database] ✅ Đã nạp thành công ${serverUsers.size} tài khoản từ Supabase.`);
+      } else {
+        console.log('[Database] ℹ️ Supabase rỗng. Tự động đồng bộ tài khoản hiện có lên DB...');
+        for (const u of serverUsers.values()) {
+          await dbSaveUser(u);
+        }
+      }
+
+      // 2. Tải danh sách Tông môn từ PostgreSQL
+      const dbSectsList = await dbLoadSects();
+      if (dbSectsList && dbSectsList.length > 0) {
+        serverSects.clear();
+        for (const s of dbSectsList) {
+          serverSects.set(s.id, s);
+        }
+        console.log(`[Database] Đã nạp ${serverSects.size} tông môn từ Supabase.`);
+      } else {
+        await dbSaveSects(Array.from(serverSects.values()));
+      }
+
+      // 3. Tải Bảng xếp hạng từ PostgreSQL
+      const dbBoard = await dbLoadLeaderboard();
+      if (dbBoard) {
+        Object.assign(serverLeaderboardData, dbBoard);
+        console.log('[Database] Đã nạp Bảng xếp hạng từ Supabase.');
+      } else {
+        await dbSaveLeaderboard(serverLeaderboardData);
+      }
+
+      // 4. Tải danh sách tài khoản bị cấm từ PostgreSQL
+      const dbBans = await dbLoadBannedUsers();
+      if (dbBans && dbBans.length > 0) {
+        const now = Date.now();
+        for (const id of dbBans) {
+          serverBans.set(id, {
+            username: id,
+            reason: 'Bị cấm bởi Thiên Đạo',
+            durationMs: 365 * 24 * 3600 * 1000,
+            bannedUntil: now + 365 * 24 * 3600 * 1000,
+            bannedAt: now,
+            personaId: 'ban_co',
+          });
+        }
+      }
+
+      // 5. Tải danh sách phòng chơi đang hoạt động từ Supabase (Hỗ trợ đa người chơi trên Vercel Serverless)
+      const activeRooms = await dbLoadActiveRooms();
+      if (activeRooms && activeRooms.length > 0) {
+        for (const r of activeRooms) {
+          if (r && r.id) {
+            rooms.set(normalizeRoomCode(r.id), r);
+          }
+        }
+        console.log(`[Database] Đã đồng bộ ${activeRooms.length} phòng đua từ Supabase.`);
+      }
+
+      isDbHydrated = true;
+      return true;
+    } catch (err) {
+      console.error('[Database] Lỗi trong quá trình nạp dữ liệu ban đầu từ Supabase:', err);
+      dbHydratePromise = null;
+      return false;
+    }
+  })();
+
+  return dbHydratePromise;
+}
+
+if (isDatabaseConfigured()) {
+  ensureDatabaseHydrated().catch((err) => {
+    console.error('[Database] Không thể khởi tạo database:', err);
+  });
+} else {
+  console.warn('[Database] ⚠️ CẢNH BÁO: Chưa cấu hình biến môi trường DATABASE_URL!');
+  console.warn('[Database] ℹ️ Máy chủ đang chạy với bộ nhớ cục bộ. Trên Vercel, dữ liệu chỉ lưu tạm thời trong phiên làm việc.');
+  console.warn('[Database] 👉 Cách khắc phục: Vào Vercel Dashboard -> Project Settings -> Environment Variables -> thêm key "DATABASE_URL" chứa chuỗi kết nối Supabase PostgreSQL (Connection Pooler).');
 }
 
 function checkIsBanned(usernameOrId?: string): {
@@ -1443,7 +1249,7 @@ function getWhisperKey(id1: string, id2: string): string {
 // ==========================================
 // FRIENDS & DAO LU PERSISTENT STORAGE
 // ==========================================
-const FRIENDS_FILE = path.resolve(process.cwd(), 'friends.json');
+const FRIENDS_FILE = getSafeStoragePath('friends.json');
 const serverFriendships = new Map<string, ServerFriendshipRecord>();
 const serverFriendRequests = new Map<string, ServerFriendRequestRecord>();
 
@@ -1585,9 +1391,14 @@ function getUniqueUserKey(session: PresenceSession): string {
 
 function cleanStaleSessions(): boolean {
   const now = Date.now();
-  const TIMEOUT_MS = 7000; // Client sends ping every 3s, timeout after 7s of silence
+  const TIMEOUT_MS = 25000; // Cho phép tab có 25s thời gian chờ (tránh F5 reload bị mất session)
   let removed = false;
   for (const [tabId, session] of activePresenceSessions.entries()) {
+    if (session.tabId.startsWith('world_cultivator_')) {
+      activePresenceSessions.delete(tabId);
+      removed = true;
+      continue;
+    }
     if (now - session.lastSeen > TIMEOUT_MS) {
       activePresenceSessions.delete(tabId);
       removed = true;
@@ -1596,11 +1407,18 @@ function cleanStaleSessions(): boolean {
   return removed;
 }
 
+// Sẵn sàng public website: Không tạo hiện diện ảo, chỉ ghi nhận người chơi thực sự kết nối
+function syncWorldCultivatorsPresence() {
+  // Production clean: Chỉ ghi nhận người chơi thực sự kết nối
+}
+
 function getRealOnlineCount(): number {
   cleanStaleSessions();
   const uniqueUsers = new Set<string>();
   for (const session of activePresenceSessions.values()) {
-    uniqueUsers.add(getUniqueUserKey(session));
+    if (!session.tabId.startsWith('world_cultivator_')) {
+      uniqueUsers.add(getUniqueUserKey(session));
+    }
   }
   return uniqueUsers.size;
 }
@@ -1658,13 +1476,19 @@ function registerPresence(
 }
 
 function removePresence(tabId: string) {
-  if (!tabId) return;
-  const prevCount = getRealOnlineCount();
-  activePresenceSessions.delete(tabId);
-  const newCount = getRealOnlineCount();
-  if (newCount !== prevCount) {
-    broadcastOnlinePresence();
-  }
+  if (!tabId || tabId.startsWith('world_cultivator_')) return;
+  // Trì hoãn 10 giây trước khi xóa để người chơi F5/reload trang không bị mất kết nối và mất người chơi
+  setTimeout(() => {
+    const session = activePresenceSessions.get(tabId);
+    if (session && Date.now() - session.lastSeen > 8000) {
+      const prevCount = getRealOnlineCount();
+      activePresenceSessions.delete(tabId);
+      const newCount = getRealOnlineCount();
+      if (newCount !== prevCount) {
+        broadcastOnlinePresence();
+      }
+    }
+  }, 10000);
 }
 
 function broadcastOnlinePresence() {
@@ -1872,11 +1696,23 @@ function generateUniqueRoomCode(): string {
   return `VN-${Date.now().toString().slice(-4)}`;
 }
 
+function initWorldRooms() {
+  // Sẵn sàng public website: Không tạo phòng ảo hay bot mặc định
+}
+
+initWorldRooms();
+
 function cleanupInactiveRooms() {
   const now = Date.now();
   for (const [id, room] of rooms.entries()) {
+    const lastActive = room.lastActive || room.createdAt || now;
+    // Cho phép thời gian chờ phục hồi (grace period 60s) để người chơi có thể tải lại trang (F5) mà không bị mất phòng
+    if (now - lastActive < 60 * 1000) {
+      continue;
+    }
+
     const humanPlayers = room.players.filter((p) => !p.isBot);
-    // Phòng KHÔNG CÓ người chơi thực nào (chỉ còn bot hoặc 0 người) -> Xóa phòng ngay lập tức khỏi server
+    // Phòng KHÔNG CÓ người chơi thực nào quá 60s -> Xóa phòng
     if (humanPlayers.length === 0) {
       stopRoomBots(id, false);
       rooms.delete(id);
@@ -1886,10 +1722,10 @@ function cleanupInactiveRooms() {
       continue;
     }
 
-    // Nếu không còn bất kỳ client SSE nào kết nối và phòng đã không có hoạt động trong 30 giây
+    // Nếu không còn bất kỳ client SSE nào kết nối và phòng đã không có hoạt động trong 60 giây
     const clients = sseClientsByRoom.get(id);
     const hasActiveSse = clients && clients.size > 0;
-    if (!hasActiveSse && now - (room.lastActive || room.createdAt) > 30 * 1000) {
+    if (!hasActiveSse && now - lastActive > 60 * 1000) {
       stopRoomBots(id, false);
       rooms.delete(id);
       sseClientsByRoom.delete(id);
@@ -1898,7 +1734,7 @@ function cleanupInactiveRooms() {
       continue;
     }
 
-    if (now - (room.lastActive || room.createdAt) > 30 * 60 * 1000) {
+    if (now - (room.lastActive || room.createdAt) > 60 * 60 * 1000) {
       stopRoomBots(id, false);
       rooms.delete(id);
       sseClientsByRoom.delete(id);
@@ -2049,19 +1885,40 @@ function startRoomBots(roomId: string) {
   roomBotIntervals.set(norm, interval);
 }
 
-async function startServer() {
-  const app = express();
-  // In production (e.g. Render), respect assigned process.env.PORT, otherwise default to 3000 for local dev
-  const PORT = process.env.NODE_ENV === 'production'
-    ? (Number(process.env.PORT) || 3000)
-    : 3000;
+export const app = express();
 
-  app.set('trust proxy', 1);
+app.set('trust proxy', 1);
 
-  // Increase payload limit to 50MB to prevent PayloadTooLargeError on Render / production
-  // Supports large profiles, match histories, leaderboards, custom avatars, and system backups
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// CORS support cho Vercel & Production
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
+// Tự động kiểm tra và bảo đảm dữ liệu Supabase được nạp đầy đủ trước khi phục vụ API (cực kỳ quan trọng trên Vercel Serverless)
+app.use(async (_req, _res, next) => {
+  if (isDatabaseConfigured() && !isDbHydrated) {
+    try {
+      await ensureDatabaseHydrated();
+    } catch {
+      // Bỏ qua nếu đang xử lý song song
+    }
+  }
+  next();
+});
+
+// Increase payload limit to 50MB to prevent PayloadTooLargeError on Vercel / production
+// Supports large profiles, match histories, leaderboards, custom avatars, and system backups
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Gracefully handle PayloadTooLargeError and invalid JSON syntax from body-parser
   app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -2483,6 +2340,231 @@ async function startServer() {
     return 'Đại Viên Mãn';
   }
 
+  // GET /api/player/profile/:identifier: Comprehensive player preview profile inspection
+  app.get('/api/player/profile/:identifier', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const identifier = decodeURIComponent(req.params.identifier || '').trim();
+    if (!identifier) {
+      res.status(400).json({ success: false, error: 'Thiếu định danh người chơi' });
+      return;
+    }
+
+    const clean = identifier.toLowerCase();
+    const user = (serverUsers.get(identifier) || null) || getUserByUsername(identifier) || getUserByDisplayNameOrUsername(identifier);
+
+    if (!user) {
+      // Check if user exists in any serverSect member records
+      for (const s of serverSects.values()) {
+        const m = (s.members || []).find((x: any) =>
+          x.userId === identifier ||
+          (x.username && x.username.toLowerCase() === clean) ||
+          (x.displayName && x.displayName.toLowerCase() === clean)
+        );
+        if (m) {
+          const rMeta = XIANXIA_REALM_METAS[m.realmIndex] || XIANXIA_REALM_METAS[0];
+          res.json({
+            success: true,
+            profile: {
+              userId: m.userId,
+              username: m.username,
+              displayName: m.displayName || m.username,
+              avatar: m.avatar || '⚡',
+              frame: m.frame || rMeta.frameId,
+              isVerified: true,
+              isAdmin: false,
+              totalGames: 10,
+              bestWpm: 0,
+              bestWpmRecord: null,
+              showcaseAchievements: [],
+              unlockedAchievementsCount: 5,
+              keyboardSwitch: 'Cherry MX Blue Clicky',
+              isOnline: false,
+              cultivation: {
+                level: m.level || 1,
+                realmIndex: m.realmIndex || 0,
+                tier: m.tier || 1,
+                realmName: m.realmName || rMeta.name,
+                realmIcon: m.realmIcon || rMeta.icon,
+                titleName: rMeta.titleName,
+                badge: rMeta.badge,
+                subStage: getSubStageName(m.tier || 1),
+                exp: m.exp || 0,
+                maxExp: 1000,
+                tuViScore: m.tuViScore || 0,
+                thoNguyen: 240,
+                linhThach: 100,
+                sect: {
+                  sectId: s.id,
+                  sectName: s.name,
+                  sectTag: s.tag,
+                  role: m.role,
+                  contribution: m.contribution || 0,
+                },
+              },
+              sectInfo: {
+                id: s.id,
+                name: s.name,
+                tag: s.tag,
+                role: m.role,
+                badgeIcon: s.badgeIcon || '🏰',
+                slogan: s.slogan || s.description || '',
+                bannerColor: s.bannerColor || '#f59e0b',
+                linhMachLevel: s.linhMachLevel || 1,
+                memberCount: s.members?.length || 1,
+              },
+            },
+          });
+          return;
+        }
+      }
+
+      res.status(404).json({ success: false, error: 'Không tìm thấy thông tin người chơi này' });
+      return;
+    }
+
+    const cult = user.cultivation || {};
+    const rIdx = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+    const rMeta = XIANXIA_REALM_METAS[rIdx] || XIANXIA_REALM_METAS[0];
+
+    let sectName = cult.sect?.sectName || cult.sect?.name || cult.sectName || undefined;
+    let sectTag = cult.sect?.sectTag || cult.sect?.tag || cult.sectTag || undefined;
+    let sectRole = cult.sect?.role || undefined;
+    let sectId = cult.sect?.sectId || undefined;
+    let sectContribution = cult.sect?.contribution || 0;
+    let sectBadgeIcon = '🏰';
+    let sectSlogan = '';
+    let sectColor = '#f59e0b';
+    let sectLinhMach = 1;
+    let sectMemberCount = 1;
+
+    // Resolve from serverSects if sectId is known
+    if (sectId && serverSects.has(sectId)) {
+      const s = serverSects.get(sectId)!;
+      sectName = s.name;
+      sectTag = s.tag;
+      sectBadgeIcon = s.badgeIcon || '🏰';
+      sectSlogan = s.slogan || s.description || '';
+      sectColor = s.bannerColor || '#f59e0b';
+      sectLinhMach = s.linhMachLevel || 1;
+      sectMemberCount = s.members?.length || 1;
+    }
+
+    // Fallback: search across all serverSects
+    if (!sectName) {
+      const uLower = user.username.toLowerCase();
+      for (const s of serverSects.values()) {
+        const m = (s.members || []).find((x: any) =>
+          (x.userId && x.userId === user.id) ||
+          (x.username && x.username.toLowerCase() === uLower)
+        );
+        if (m) {
+          sectId = s.id;
+          sectName = s.name;
+          sectTag = s.tag;
+          sectRole = m.role;
+          sectContribution = m.contribution || 0;
+          sectBadgeIcon = s.badgeIcon || '🏰';
+          sectSlogan = s.slogan || s.description || '';
+          sectColor = s.bannerColor || '#f59e0b';
+          sectLinhMach = s.linhMachLevel || 1;
+          sectMemberCount = s.members?.length || 1;
+          break;
+        } else if (s.leaderName && s.leaderName.toLowerCase() === uLower) {
+          sectId = s.id;
+          sectName = s.name;
+          sectTag = s.tag;
+          sectRole = 'chuong_mon';
+          sectBadgeIcon = s.badgeIcon || '🏰';
+          sectSlogan = s.slogan || s.description || '';
+          sectColor = s.bannerColor || '#f59e0b';
+          sectLinhMach = s.linhMachLevel || 1;
+          sectMemberCount = s.members?.length || 1;
+          break;
+        }
+      }
+    }
+
+    // Check online status in activePresenceSessions
+    let isOnline = false;
+    for (const session of activePresenceSessions.values()) {
+      if (session.userId === user.id || (session.username && session.username.toLowerCase() === clean)) {
+        isOnline = true;
+        break;
+      }
+    }
+
+    // Resolve mode high score records for this user
+    const modeRecords: Record<string, { wpm: number; accuracy?: number; timestamp?: number }> = {};
+    if (serverLeaderboardData && serverLeaderboardData.highScores) {
+      for (const [modeKey, recordItem] of Object.entries(serverLeaderboardData.highScores)) {
+        const record = recordItem as any;
+        if (record && (record.username?.toLowerCase() === clean || record.userId === user.id)) {
+          modeRecords[modeKey] = {
+            wpm: Number(record.wpm) || 0,
+            accuracy: record.accuracy !== undefined ? Number(record.accuracy) : 99,
+            timestamp: Number(record.timestamp) || Date.now(),
+          };
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      profile: {
+        userId: user.id,
+        username: user.username,
+        displayName: user.displayName || user.username,
+        avatar: user.avatar || '⚡',
+        frame: user.frame || rMeta.frameId,
+        isAdmin: !!user.isAdmin,
+        isVerified: !!user.isVerified,
+        totalGames: user.totalGames || 0,
+        bestWpm: user.bestWpm || 0,
+        bestWpmRecord: user.bestWpmRecord || null,
+        showcaseAchievements: user.showcaseAchievements || [],
+        unlockedAchievementsCount: user.unlockedAchievements?.length || 0,
+        unlockedAchievements: user.unlockedAchievements || [],
+        accuracy: (user as any).accuracy !== undefined ? (user as any).accuracy : 98.6,
+        consistency: (user as any).consistency !== undefined ? (user as any).consistency : 94,
+        modeRecords,
+        keyboardSwitch: (user as any).keyboardSwitch || 'Cherry MX Blue Clicky',
+        isOnline,
+        cultivation: {
+          level: Number(cult.level) || 1,
+          realmIndex: rIdx,
+          tier: Number(cult.tier) || 1,
+          realmName: rMeta.name,
+          realmIcon: rMeta.icon,
+          titleName: rMeta.titleName,
+          badge: rMeta.badge,
+          subStage: getSubStageName(Number(cult.tier) || 1),
+          exp: Number(cult.exp) || 0,
+          maxExp: Number(cult.maxExp) || 500,
+          thoNguyen: cult.thoNguyen !== undefined ? Number(cult.thoNguyen) : 240,
+          linhThach: Number(cult.linhThach) || 0,
+          sect: sectName ? {
+            sectId: sectId || '',
+            sectName,
+            sectTag: sectTag || '',
+            role: sectRole || 'noi_mon',
+            contribution: sectContribution,
+          } : undefined,
+        },
+        sectInfo: sectName ? {
+          id: sectId || '',
+          name: sectName,
+          tag: sectTag || '',
+          role: sectRole || 'noi_mon',
+          badgeIcon: sectBadgeIcon,
+          slogan: sectSlogan,
+          bannerColor: sectColor,
+          linhMachLevel: sectLinhMach,
+          memberCount: sectMemberCount,
+        } : null,
+      },
+    });
+  });
+
   function buildCultivationLeaderboardSnapshot() {
     const map = new Map<string, any>();
 
@@ -2498,6 +2580,29 @@ async function startServer() {
       const rawTho = cult.thoNguyen !== undefined ? Number(cult.thoNguyen) : 240;
       const thoNguyen = !isNaN(rawTho) && rawTho >= 0 ? rawTho : 240;
       const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
+
+      let sectName = cult.sect?.sectName || cult.sect?.name || cult.sectName || undefined;
+      let sectTag = cult.sect?.sectTag || cult.sect?.tag || cult.sectTag || undefined;
+      let sectRole = cult.sect?.role || undefined;
+
+      // Fallback: search in serverSects
+      if (!sectName) {
+        const uLower = (user.username || '').toLowerCase();
+        for (const s of serverSects.values()) {
+          const m = (s.members || []).find((x: any) => (x.userId && x.userId === user.id) || (x.username && x.username.toLowerCase() === uLower));
+          if (m) {
+            sectName = s.name;
+            sectTag = s.tag;
+            sectRole = m.role;
+            break;
+          } else if (s.leaderName && s.leaderName.toLowerCase() === uLower) {
+            sectName = s.name;
+            sectTag = s.tag;
+            sectRole = 'chuong_mon';
+            break;
+          }
+        }
+      }
 
       map.set(user.username.toLowerCase(), {
         id: user.id,
@@ -2517,6 +2622,9 @@ async function startServer() {
         maxExp,
         thoNguyen,
         isRegistered: true,
+        sectName,
+        sectTag,
+        sectRole,
       });
     }
 
@@ -2570,7 +2678,28 @@ async function startServer() {
     const thoNguyen = !isNaN(rawTho) && rawTho >= 0 ? rawTho : 240;
     const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
 
+    let sectName = cult.sect?.sectName || cult.sect?.name || cult.sectName || undefined;
+    let sectTag = cult.sect?.sectTag || cult.sect?.tag || cult.sectTag || undefined;
+    let sectRole = cult.sect?.role || undefined;
+
     const uLower = String(user.username || '').toLowerCase();
+    if (!sectName) {
+      for (const s of serverSects.values()) {
+        const m = (s.members || []).find((x: any) => (x.userId && x.userId === user.id) || (x.username && x.username.toLowerCase() === uLower));
+        if (m) {
+          sectName = s.name;
+          sectTag = s.tag;
+          sectRole = m.role;
+          break;
+        } else if (s.leaderName && s.leaderName.toLowerCase() === uLower) {
+          sectName = s.name;
+          sectTag = s.tag;
+          sectRole = 'chuong_mon';
+          break;
+        }
+      }
+    }
+
     const existingIndex = cachedCultivationRankedList.findIndex((item) => (item.username || '').toLowerCase() === uLower);
     if (existingIndex !== -1) {
       cachedCultivationRankedList[existingIndex] = {
@@ -2587,6 +2716,9 @@ async function startServer() {
         exp,
         maxExp,
         thoNguyen,
+        sectName,
+        sectTag,
+        sectRole,
       };
     }
 
@@ -2606,6 +2738,9 @@ async function startServer() {
         exp,
         maxExp,
         thoNguyen,
+        sectName,
+        sectTag,
+        sectRole,
       };
     }
   }
@@ -2643,7 +2778,6 @@ async function startServer() {
   });
 
   // Server background task: Decay Thọ Nguyên (cứ 2 giờ -1) & Tâm Ma (sau 48h không tu luyện)
-  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
   const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -2714,37 +2848,79 @@ async function startServer() {
     }
   }, 60000); // Check every 60 seconds
 
-  // Health check
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', activeRooms: rooms.size, registeredUsers: serverUsers.size });
+  // Health check & Live Database Connection status
+  app.get('/api/health', async (_req, res) => {
+    const dbHealth = await checkDatabaseHealth();
+    res.json({
+      status: dbHealth.connected ? 'ok' : 'degraded',
+      database: dbHealth,
+      activeRooms: rooms.size,
+      registeredUsers: serverUsers.size,
+      serverless: Boolean(process.env.VERCEL),
+      timestamp: Date.now(),
+    });
   });
 
-  // Get all active rooms (chỉ lấy các phòng có ít nhất 1 người chơi thực và chưa kết thúc)
-  app.get('/api/rooms', (_req, res) => {
+  // Dedicated Supabase PostgreSQL Database Healthcheck Endpoint
+  app.get(['/api/db-health', '/api/healthcheck'], async (_req, res) => {
+    const dbHealth = await checkDatabaseHealth();
+    const isHealthy = dbHealth.connected;
+    const responsePayload = {
+      status: isHealthy ? 'healthy' : (dbHealth.configured ? 'unhealthy' : 'unconfigured'),
+      database: {
+        ...dbHealth,
+        provider: dbHealth.configured ? 'supabase_postgresql' : 'local_json_storage',
+        databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+        serverless: Boolean(process.env.VERCEL),
+      },
+      message: isHealthy 
+        ? 'Kết nối Supabase PostgreSQL hoạt động ổn định và sẵn sàng.' 
+        : (dbHealth.configured 
+          ? `Lỗi kết nối Supabase: ${dbHealth.error || 'Không thể truy vấn CSDL'}` 
+          : 'Chưa cấu hình DATABASE_URL. Đang dùng bộ nhớ cục bộ.'),
+      timestamp: Date.now(),
+    };
+    res.status(isHealthy ? 200 : (dbHealth.configured ? 503 : 200)).json(responsePayload);
+  });
+
+  // Get all active rooms
+  app.get('/api/rooms', async (_req, res) => {
     cleanupInactiveRooms();
+    if (isDatabaseConfigured()) {
+      try {
+        const activeRooms = await dbLoadActiveRooms();
+        if (activeRooms && activeRooms.length > 0) {
+          for (const r of activeRooms) {
+            if (r && r.id && !rooms.has(normalizeRoomCode(r.id))) {
+              rooms.set(normalizeRoomCode(r.id), r);
+            }
+          }
+        }
+      } catch {}
+    }
     const list = Array.from(rooms.values()).filter(
-      (r) => r.status !== 'finished' && r.players.some((p) => !p.isBot)
+      (r) => r.status !== 'finished' && r.players.length > 0
     );
     res.json({ success: true, rooms: list });
   });
 
   // Get specific room by code
-  app.get('/api/rooms/:id', (req, res) => {
+  app.get('/api/rooms/:id', async (req, res) => {
     const norm = normalizeRoomCode(req.params.id);
-    const room = rooms.get(norm);
+    let room = rooms.get(norm);
+    if (!room && isDatabaseConfigured()) {
+      try {
+        room = await dbLoadRoom(norm);
+        if (room) {
+          rooms.set(norm, room);
+        }
+      } catch {}
+    }
     if (!room) {
-      res.status(404).json({ success: false, error: 'Room not found' });
+      res.status(404).json({ success: false, error: 'Phòng không tồn tại hoặc đã kết thúc' });
       return;
     }
-    const humanPlayers = room.players.filter((p) => !p.isBot);
-    if (humanPlayers.length === 0) {
-      stopRoomBots(norm, false);
-      rooms.delete(norm);
-      sseClientsByRoom.delete(norm);
-      roomChatMessages.delete(norm);
-      res.status(404).json({ success: false, error: 'Phòng không còn người chơi thực' });
-      return;
-    }
+    room.lastActive = Date.now();
     res.json({ success: true, room });
   });
 
@@ -2795,13 +2971,16 @@ async function startServer() {
     };
 
     rooms.set(code, newRoom);
+    if (isDatabaseConfigured()) {
+      dbSaveRoom(newRoom).catch(() => {});
+    }
     broadcastToRoom(code, { type: 'room_updated', room: newRoom });
 
     res.json({ success: true, room: newRoom, isHost: true });
   });
 
   // Join room by code
-  app.post('/api/rooms/join', (req, res) => {
+  app.post('/api/rooms/join', async (req, res) => {
     const { rawCode, player, currentMode } = req.body;
     if (!rawCode || !player) {
       res.status(400).json({ success: false, error: 'Vui lòng nhập mã phòng hợp lệ.' });
@@ -2819,7 +2998,15 @@ async function startServer() {
     }
 
     const normCode = normalizeRoomCode(rawCode);
-    const room = rooms.get(normCode);
+    let room = rooms.get(normCode);
+    if (!room && isDatabaseConfigured()) {
+      try {
+        room = await dbLoadRoom(normCode);
+        if (room) {
+          rooms.set(normCode, room);
+        }
+      } catch {}
+    }
 
     if (!room) {
       res.json({
@@ -2885,7 +3072,7 @@ async function startServer() {
 
     const guestPlayer: Player = {
       ...player,
-      isBot: false,
+      isBot: Boolean(player.isBot),
       progress: 0,
       wpm: 0,
       score: 0,
@@ -3336,18 +3523,19 @@ async function startServer() {
       return;
     }
 
-    const { playerId, inMatch, isSurrendered, isFinished } = req.body;
+    const { playerId, inMatch, isSurrendered, isFinished, isAFK } = req.body;
     const player = room.players.find((p) => p.id === playerId);
     if (player) {
       if (typeof inMatch === 'boolean') player.inMatch = inMatch;
       if (typeof isSurrendered === 'boolean') player.isSurrendered = isSurrendered;
       if (typeof isFinished === 'boolean') player.isFinished = isFinished;
+      if (typeof isAFK === 'boolean') player.isAFK = isAFK;
 
-      // Khi người chơi cuối cùng đầu hàng hoặc out trong phòng đang thi đấu (playing):
+      // Khi người chơi cuối cùng đầu hàng, AFK hoặc out trong phòng đang thi đấu (playing):
       // Kết thúc phòng ngay lập tức và tổng kết mà không đợi hết thời gian, bot lập tức về phòng chờ
       if (room.status === 'playing') {
         const activeHumanPlayers = humanPlayers.filter(
-          (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false
+          (p) => !p.isSurrendered && !p.isFinished && p.inMatch !== false && !p.isAFK
         );
         if (activeHumanPlayers.length === 0) {
           room.status = 'finished';
@@ -3426,12 +3614,18 @@ async function startServer() {
       return;
     }
 
-    const { playerId } = req.body;
+    const { playerId, isUnload } = req.body;
+    if (isUnload) {
+      room.lastActive = Date.now();
+      res.json({ success: true, pendingGrace: true });
+      return;
+    }
+
     const wasHost = room.hostId === playerId;
     room.players = room.players.filter((p) => p.id !== playerId);
 
     const humanPlayers = room.players.filter((p) => !p.isBot);
-    if (humanPlayers.length === 0) {
+    if (humanPlayers.length === 0 && !room.isWorldRoom) {
       stopRoomBots(norm, false);
       rooms.delete(norm);
       sseClientsByRoom.delete(norm);
@@ -3743,6 +3937,7 @@ async function startServer() {
     if (targetChannel === 'global') {
       globalChatMessages.push(newMsg);
       if (globalChatMessages.length > 200) globalChatMessages.shift();
+      saveChatToFile();
       broadcastGlobalChat(newMsg);
 
       // Khi người chơi nhắc đến Linh Lung Tiên Đồng trong chat (@Linh Lung, @Tiên Đồng...)
@@ -4615,6 +4810,7 @@ Hãy đáp lại trực tiếp cho @${cleanUser}:
 
     globalChatMessages.push(replyMsg);
     if (globalChatMessages.length > 200) globalChatMessages.shift();
+    saveChatToFile();
     broadcastGlobalChat(replyMsg);
   }
 
@@ -6001,8 +6197,20 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       badgeIcon: cleanIcon,
       slogan: cleanSlogan,
       bannerColor: cleanColor,
-      weeklyTournamentPoints: 100,
+      weeklyTournamentPoints: 0,
+      weeklyWarPoints: 0,
+      warContributors: {},
       isHoldingThienCung: false,
+      worldBoss: {
+        id: `boss_${sectId}`,
+        name: 'Thái Cổ Hắc Long',
+        icon: '🐉',
+        hp: 150000,
+        maxHp: 150000,
+        level: 10,
+        isDefeated: false,
+        lastResetTime: Date.now(),
+      },
       members: [founderMember],
       createdAt: Date.now(),
     };
@@ -6411,6 +6619,535 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     });
   });
 
+  // =========================================================================
+  // VẠN PHÁI TRANH PHONG (ĐẠI SỰ KIỆN CUỐI TUẦN T7 & CN • TỔNG KẾT 20H CHỦ NHẬT)
+  // =========================================================================
+
+  let lastSectWarSettlementKey = '';
+  let sectWarPreviousWinner: {
+    sectId: string;
+    sectName: string;
+    tag: string;
+    badgeIcon: string;
+    leaderName: string;
+    points: number;
+    settledAt: number;
+  } | null = null;
+
+  // Schedule helper theo múi giờ Việt Nam (UTC+7)
+  function getVNDateString(timestamp: number = Date.now()): string {
+    const VN_OFFSET = 7 * 3600 * 1000;
+    const nowVN = new Date(timestamp + VN_OFFSET);
+    return `${nowVN.getUTCFullYear()}-${String(nowVN.getUTCMonth() + 1).padStart(2, '0')}-${String(nowVN.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  // Quản lý số lượt xuất chiến Vạn Phái Tranh Phong trong ngày (Mỗi người chơi tối đa 3 lần/ngày)
+  const MAX_DAILY_SECT_WAR_ATTEMPTS = 3;
+  const sectWarDailyAttempts = new Map<string, number>(); // key: `${username.toLowerCase()}_${dateStr}` => attempts count
+
+  // Cơ chế tính điểm Tông Môn công bằng:
+  // - Top 5 thành viên điểm cao nhất Tông Môn đóng góp 100% điểm (Đảm bảo tông môn ít người có cao thủ vẫn thừa sức đua tranh)
+  // - Các thành viên còn lại (từ thứ 6 trở đi) đóng góp 15% điểm (Ghi nhận quân số đoàn kết, có lợi thế nhẹ nhưng không quá nhiều)
+  function recalculateSectWarPoints(sect: ServerSectRecord) {
+    if (!sect.warContributors || typeof sect.warContributors !== 'object') {
+      sect.warContributors = {};
+    }
+    const contributors = Object.values(sect.warContributors);
+    if (contributors.length === 0) {
+      return;
+    }
+    contributors.sort((a, b) => (b.points || 0) - (a.points || 0));
+    const top5Points = contributors.slice(0, 5).reduce((sum, c) => sum + (c.points || 0), 0);
+    const remainingPoints = contributors.slice(5).reduce((sum, c) => sum + Math.round((c.points || 0) * 0.15), 0);
+    sect.weeklyWarPoints = top5Points + remainingPoints;
+  }
+
+  function getSectWarSchedule() {
+    const now = Date.now();
+    const VN_OFFSET = 7 * 3600 * 1000;
+    const nowVN = new Date(now + VN_OFFSET);
+    const day = nowVN.getUTCDay(); // 0 = Chủ Nhật, 1 = T2, ..., 6 = Thứ Bảy
+    const hour = nowVN.getUTCHours();
+    const minute = nowVN.getUTCMinutes();
+
+    // Sự kiện diễn ra liên tục 2 ngày:
+    // - Toàn bộ ngày Thứ Bảy (day === 6, từ 00:00:00)
+    // - Ngày Chủ Nhật đến trước 20h00 (day === 0 && hour < 20)
+    const isActive = day === 6 || (day === 0 && hour < 20);
+
+    // Cơ chế Giờ Vàng đã được LOẠI BỎ hoàn toàn để đảm bảo công bằng cho mọi đạo hữu mọi khung giờ
+    const isHappyHour = false;
+    const happyHourMultiplier = 1;
+    const happyHourNotice = undefined;
+
+    // Thời điểm chốt sổ tiếp theo (20:00 Chủ Nhật gần nhất theo giờ VN)
+    let daysUntilSunday = (7 - day) % 7;
+    if (day === 0 && hour >= 20) {
+      daysUntilSunday = 7;
+    }
+    const targetVN = new Date(nowVN);
+    targetVN.setUTCDate(targetVN.getUTCDate() + daysUntilSunday);
+    targetVN.setUTCHours(20, 0, 0, 0);
+    const nextSettlementTimestamp = targetVN.getTime() - VN_OFFSET;
+    const timeRemainingMs = Math.max(0, nextSettlementTimestamp - now);
+
+    return {
+      isActive,
+      phase: isActive ? ('active' as const) : ('settled_rest' as const),
+      isHappyHour,
+      happyHourMultiplier,
+      happyHourNotice,
+      nextSettlementTimestamp,
+      timeRemainingMs,
+    };
+  }
+
+  // Hàm Tổng Kết Mùa Giải Vạn Phái Tranh Phong vào 20:00 Chủ Nhật
+  function settleSectWarSeason() {
+    console.log('[Sect War] Đang tiến hành tổng kết đại sự kiện Vạn Phái Tranh Phong tuần này...');
+    const allSects = Array.from(serverSects.values());
+    allSects.sort((a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0));
+
+    // Lọc các tông môn thực sự tham gia và có điểm chiến công (> 0)
+    const participatingSects = allSects.filter((s) => (s.weeklyWarPoints || 0) > 0);
+
+    if (participatingSects.length === 0) {
+      console.log('[Sect War] Không có tông môn nào tham gia sự kiện tuần này (0 điểm).');
+      // Reset an toàn không lỗi
+      allSects.forEach((s) => {
+        s.weeklyTournamentPoints = 0;
+        s.weeklyWarPoints = 0;
+        s.isHoldingThienCung = false;
+        s.warContributors = {};
+        recalculateSectStats(s);
+      });
+      sectWarPreviousWinner = null;
+      saveSectsToFile();
+      broadcastSectAnnouncement(
+        '⚔️ [THIÊN ĐẠO ĐẠI THỐNG KẾT] Kết giới Thái Cổ Linh Mạch đã khép lại lúc 20:00! Tuần này không có Tông Môn nào xuất chiến tham gia tranh đoạt, danh hiệu Thiên Hạ Đệ Nhất tạm thời bỏ trống. Hẹn gặp lại các Tông Môn vào Thứ Bảy tuần tới!'
+      );
+      return;
+    }
+
+    const top1 = participatingSects[0];
+    const top2 = participatingSects[1] || null;
+    const top3 = participatingSects[2] || null;
+    const now = Date.now();
+    const SEVEN_DAYS_MS = 7 * 86400000;
+
+    // Lưu người chiến thắng tuần này
+    if (top1) {
+      sectWarPreviousWinner = {
+        sectId: top1.id,
+        sectName: top1.name,
+        tag: top1.tag,
+        badgeIcon: top1.badgeIcon,
+        leaderName: top1.leaderName,
+        points: top1.weeklyWarPoints || 0,
+        settledAt: now,
+      };
+
+      // Trao danh hiệu và buff Top 1: Thiên Hạ Đệ Nhất Phái (+20% Tu Vi, +15% Linh Thạch)
+      top1.isHoldingThienCung = true;
+      top1.activeWeeklyBuff = {
+        tuViBonusPct: 20,
+        linhThachBonusPct: 15,
+        title: 'Thiên Hạ Đệ Nhất Phái',
+        rank: 1,
+        expiresAt: now + SEVEN_DAYS_MS,
+      };
+
+      // Thưởng Linh Thạch cho đệ tử tham chiến trong Top 1
+      for (const m of top1.members) {
+        const u = serverUsers.get(m.userId);
+        if (u && u.cultivation) {
+          u.cultivation.linhThach = (u.cultivation.linhThach || 0) + 500;
+          if (!u.cultivation.historyLog) u.cultivation.historyLog = [];
+          u.cultivation.historyLog.unshift(`👑 [VẠN PHÁI TRANH PHONG] Tông môn ${top1.name} đoạt ngôi Thiên Hạ Đệ Nhất! Nhận thưởng tuần +500 Linh Thạch và Buff +20% Tu Vi!`);
+          serverUsers.set(u.id, u);
+        }
+      }
+    }
+
+    // Trao buff Top 2: Tông Môn Nhị Phẩm (+15% Tu Vi, +10% Linh Thạch)
+    if (top2) {
+      top2.isHoldingThienCung = false;
+      top2.activeWeeklyBuff = {
+        tuViBonusPct: 15,
+        linhThachBonusPct: 10,
+        title: 'Tông Môn Nhị Phẩm',
+        rank: 2,
+        expiresAt: now + SEVEN_DAYS_MS,
+      };
+      for (const m of top2.members) {
+        const u = serverUsers.get(m.userId);
+        if (u && u.cultivation) {
+          u.cultivation.linhThach = (u.cultivation.linhThach || 0) + 300;
+          serverUsers.set(u.id, u);
+        }
+      }
+    }
+
+    // Trao buff Top 3: Tông Môn Tam Phẩm (+10% Tu Vi, +5% Linh Thạch)
+    if (top3) {
+      top3.isHoldingThienCung = false;
+      top3.activeWeeklyBuff = {
+        tuViBonusPct: 10,
+        linhThachBonusPct: 5,
+        title: 'Tông Môn Tam Phẩm',
+        rank: 3,
+        expiresAt: now + SEVEN_DAYS_MS,
+      };
+      for (const m of top3.members) {
+        const u = serverUsers.get(m.userId);
+        if (u && u.cultivation) {
+          u.cultivation.linhThach = (u.cultivation.linhThach || 0) + 150;
+          serverUsers.set(u.id, u);
+        }
+      }
+    }
+
+    // Gán thứ hạng tuần trước và reset điểm chiến tuần cho tất cả các tông môn
+    allSects.forEach((s, idx) => {
+      s.lastWeekRank = idx + 1;
+      s.weeklyTournamentPoints = s.weeklyWarPoints || 0;
+      s.weeklyWarPoints = 0;
+      s.warContributors = {};
+      recalculateSectStats(s);
+    });
+
+    saveSectsToFile();
+    saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      dbSaveSects(Array.from(serverSects.values())).catch(() => {});
+    }
+
+    // Phát đại thông báo thiên đạo toàn cõi Tiên Giới
+    const leaderTitle = top1 ? `Chưởng Môn ${top1.leaderName}` : 'Quần Hùng';
+    broadcastSectAnnouncement(
+      `👑 [THIÊN ĐẠO ĐẠI THỐNG KẾT] Kết giới Thái Cổ Linh Mạch đã khép lại lúc 20:00! Chúc mừng [${top1.name}] dưới sự thống lĩnh của ${leaderTitle} đã xuất sắc đoạt ngôi THIÊN HẠ ĐỆ NHẤT PHÁI với ${(sectWarPreviousWinner?.points || 0).toLocaleString()} Điểm Chiến! Toàn tông môn nhận bùa lợi 7 ngày!`
+    );
+  }
+
+  // Tự động kiểm tra thời gian 20:00 Chủ Nhật mỗi 15 giây
+  setInterval(() => {
+    const now = Date.now();
+    const VN_OFFSET = 7 * 3600 * 1000;
+    const nowVN = new Date(now + VN_OFFSET);
+    const day = nowVN.getUTCDay(); // 0 = Sunday
+    const hour = nowVN.getUTCHours();
+    const minute = nowVN.getUTCMinutes();
+
+    // Trigger đúng vào khung 20:00 - 20:05 Chủ Nhật
+    if (day === 0 && hour === 20 && minute < 5) {
+      const seasonKey = `${nowVN.getUTCFullYear()}-${nowVN.getUTCMonth() + 1}-${nowVN.getUTCDate()}`;
+      if (lastSectWarSettlementKey !== seasonKey) {
+        lastSectWarSettlementKey = seasonKey;
+        settleSectWarSeason();
+      }
+    }
+  }, 15000);
+
+  // GET /api/sects/war/status: Trạng thái sự kiện cuối tuần, BXH & Đếm ngược
+  app.get('/api/sects/war/status', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const schedule = getSectWarSchedule();
+
+    const authHeader = req.headers.authorization;
+    const currentUser = getUserByToken(authHeader);
+
+    const sects = Array.from(serverSects.values()).map((s) => {
+      recalculateSectStats(s);
+      return s;
+    });
+
+    // Sắp xếp theo điểm chiến công tuần này
+    sects.sort((a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0));
+
+    const topSects = sects.map((s, idx) => ({
+      id: s.id,
+      name: s.name,
+      tag: s.tag,
+      badgeIcon: s.badgeIcon || '⚔️',
+      bannerColor: s.bannerColor || '#38bdf8',
+      leaderName: s.leaderName,
+      leaderAvatar: s.leaderAvatar || '👑',
+      weeklyWarPoints: s.weeklyWarPoints || 0,
+      memberCount: s.memberCount || 1,
+      isHoldingThienCung: Boolean(s.isHoldingThienCung || (idx === 0 && (s.weeklyWarPoints || 0) > 0)),
+      rank: idx + 1,
+    }));
+
+    let mySectWarStats: any = null;
+    if (currentUser?.cultivation?.sect?.sectId) {
+      const mySectId = currentUser.cultivation.sect.sectId;
+      const mySect = serverSects.get(mySectId);
+      if (mySect) {
+        const myRank = sects.findIndex((s) => s.id === mySectId) + 1;
+        const contribRecord = mySect.warContributors?.[currentUser.username] || {
+          points: 0,
+          matchesCount: 0,
+        };
+
+        const contributorsList = Object.values(mySect.warContributors || {}).sort(
+          (a, b) => b.points - a.points
+        );
+
+        mySectWarStats = {
+          sectId: mySect.id,
+          sectName: mySect.name,
+          rank: myRank || sects.length,
+          weeklyWarPoints: mySect.weeklyWarPoints || 0,
+          myContributionPoints: contribRecord.points || 0,
+          myMatchesCount: contribRecord.matchesCount || 0,
+          topContributors: contributorsList.slice(0, 10),
+        };
+      }
+    }
+
+    const todayKey = getVNDateString();
+    let dailyAttemptsUsed = 0;
+    if (currentUser?.username) {
+      dailyAttemptsUsed = sectWarDailyAttempts.get(`${currentUser.username.toLowerCase()}_${todayKey}`) || 0;
+    }
+    const dailyAttemptsLeft = Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - dailyAttemptsUsed);
+
+    res.json({
+      success: true,
+      ...schedule,
+      dailyAttemptsMax: MAX_DAILY_SECT_WAR_ATTEMPTS,
+      dailyAttemptsUsed,
+      dailyAttemptsLeft,
+      topSects,
+      previousWinner: sectWarPreviousWinner,
+      mySectWarStats,
+    });
+  });
+
+  // POST /api/sects/war/contribute: Cống hiến điểm sau khi kết thúc lượt Xuất Chiến Đơn 3 Ải
+  app.post('/api/sects/war/contribute', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập để đóng góp điểm chiến công!' });
+      return;
+    }
+
+    const mySectId = user.cultivation?.sect?.sectId;
+    if (!mySectId) {
+      res.status(400).json({ success: false, error: 'Đạo hữu chưa gia nhập tông môn nào!' });
+      return;
+    }
+
+    const sect = serverSects.get(mySectId);
+    if (!sect) {
+      res.status(404).json({ success: false, error: 'Tông môn không tồn tại!' });
+      return;
+    }
+
+    // Kiểm tra nghiêm ngặt khung giờ sự kiện Vạn Phái Tranh Phong (T7 & CN đến 20:00)
+    const schedule = getSectWarSchedule();
+    if (!schedule.isActive) {
+      res.status(400).json({
+        success: false,
+        error: 'Đại sự kiện Vạn Phái Tranh Phong hiện chưa mở hoặc đã kết thúc! Sự kiện chỉ mở từ 00:00 Thứ Bảy đến 20:00 Chủ Nhật hàng tuần (theo giờ Việt Nam).',
+        isActive: false,
+      });
+      return;
+    }
+
+    const todayKey = getVNDateString();
+    const userKey = `${user.username.toLowerCase()}_${todayKey}`;
+    const attemptsUsed = sectWarDailyAttempts.get(userKey) || 0;
+
+    // Giới hạn nghiêm ngặt 3 lượt xuất chiến mỗi ngày trong suốt sự kiện
+    if (attemptsUsed >= MAX_DAILY_SECT_WAR_ATTEMPTS) {
+      res.status(400).json({
+        success: false,
+        error: `Hôm nay đạo hữu đã sử dụng hết ${MAX_DAILY_SECT_WAR_ATTEMPTS}/${MAX_DAILY_SECT_WAR_ATTEMPTS} lượt xuất chiến! Hãy quay lại vào ngày mai để tiếp tục cống hiến cho tông môn.`,
+        dailyAttemptsUsed: attemptsUsed,
+        dailyAttemptsLeft: 0,
+        dailyAttemptsMax: MAX_DAILY_SECT_WAR_ATTEMPTS,
+      });
+      return;
+    }
+
+    const { wpm = 0, accuracy = 100, completedAllStages = true } = req.body;
+    const numWpm = Math.max(0, Number(wpm) || 0);
+    const numAcc = Math.max(0, Math.min(100, Number(accuracy) || 100));
+
+    // Công thức tính điểm Chiến Công cá nhân:
+    // Tốc độ WPM hiệu dụng + Bonus hoàn thành 3 Ải liên hoàn (25 điểm)
+    const basePts = Math.max(1, Math.round(((numWpm * (numAcc / 100)) / 10)));
+    const stageBonus = completedAllStages ? 25 : 10;
+    const addedPoints = basePts + stageBonus;
+
+    if (!sect.warContributors) sect.warContributors = {};
+    const existing = sect.warContributors[user.username] || {
+      username: user.username,
+      displayName: user.displayName || user.username,
+      avatar: user.avatar || '🧘',
+      points: 0,
+      matchesCount: 0,
+      lastActive: Date.now(),
+    };
+
+    existing.points += addedPoints;
+    existing.matchesCount += 1;
+    existing.lastActive = Date.now();
+    sect.warContributors[user.username] = existing;
+
+    // Tăng số lượt xuất chiến hôm nay của người chơi
+    const newAttemptsUsed = attemptsUsed + 1;
+    sectWarDailyAttempts.set(userKey, newAttemptsUsed);
+
+    // Tính lại Điểm Tổng Môn Phái: Top 5 đóng góp 100% + Các thành viên còn lại đóng góp 15%
+    recalculateSectWarPoints(sect);
+    recalculateSectStats(sect);
+    saveSectsToFile();
+
+    // Sắp xếp lại thứ hạng
+    const allSects = Array.from(serverSects.values()).sort(
+      (a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0)
+    );
+    const currentRank = allSects.findIndex((s) => s.id === sect.id) + 1;
+
+    res.json({
+      success: true,
+      addedPoints,
+      userTotalPoints: existing.points,
+      totalWeeklyPoints: sect.weeklyWarPoints,
+      dailyAttemptsUsed: newAttemptsUsed,
+      dailyAttemptsLeft: Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - newAttemptsUsed),
+      dailyAttemptsMax: MAX_DAILY_SECT_WAR_ATTEMPTS,
+      currentRank,
+      isHappyHour: false,
+      sectName: sect.name,
+      isActive: schedule.isActive,
+    });
+  });
+
+  // POST /api/sects/war/penalize-surrender: Khấu trừ 1 lượt bài thi khi đầu hàng 3 lần liên tiếp
+  app.post('/api/sects/war/penalize-surrender', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập!' });
+      return;
+    }
+
+    const todayKey = getVNDateString();
+    const userKey = `${user.username.toLowerCase()}_${todayKey}`;
+    const attemptsUsed = sectWarDailyAttempts.get(userKey) || 0;
+    const newAttemptsUsed = Math.min(MAX_DAILY_SECT_WAR_ATTEMPTS, attemptsUsed + 1);
+    sectWarDailyAttempts.set(userKey, newAttemptsUsed);
+
+    res.json({
+      success: true,
+      deducted: true,
+      dailyAttemptsUsed: newAttemptsUsed,
+      dailyAttemptsLeft: Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - newAttemptsUsed),
+      dailyAttemptsMax: MAX_DAILY_SECT_WAR_ATTEMPTS,
+      message: `Đã khấu trừ 1 lượt xuất chiến bài thi Tông Môn do đầu hàng 3 lần liên tiếp! Còn ${Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - newAttemptsUsed)}/${MAX_DAILY_SECT_WAR_ATTEMPTS} lượt hôm nay.`,
+    });
+  });
+
+  // Helper enrich entry with latest sect, realm, switch, and profile info
+  function enrichLeaderboardEntry(entry: ServerLeaderboardEntry): ServerLeaderboardEntry {
+    const user =
+      (entry.userId ? serverUsers.get(entry.userId) : null) ||
+      getUserByUsername(entry.username) ||
+      getUserByDisplayNameOrUsername(entry.username) ||
+      (entry.displayName ? getUserByDisplayNameOrUsername(entry.displayName) : null);
+
+    let sectName = entry.sectName;
+    let sectTag = entry.sectTag;
+    let sectRole = entry.sectRole;
+    let realmName = entry.realmName;
+    let realmIcon = entry.realmIcon;
+    let level = entry.level;
+    let avatar = entry.avatar;
+    let frame = entry.frame;
+    let displayName = entry.displayName || entry.username;
+    let keyboardSwitch = entry.keyboardSwitch;
+
+    if (user) {
+      displayName = user.displayName || user.username || displayName;
+      avatar = user.avatar || avatar;
+      frame = user.frame || frame;
+      keyboardSwitch = (user as any).keyboardSwitch || keyboardSwitch;
+
+      if (user.cultivation) {
+        const cult = user.cultivation;
+        const rIdx = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
+        const rMeta = XIANXIA_REALM_METAS[rIdx] || XIANXIA_REALM_METAS[0];
+        realmName = rMeta.name;
+        realmIcon = rMeta.icon;
+        level = Number(cult.level) || level;
+
+        if (cult.sect) {
+          sectName = cult.sect.sectName || cult.sect.name || cult.sectName || sectName;
+          sectTag = cult.sect.sectTag || cult.sect.tag || cult.sectTag || sectTag;
+          sectRole = cult.sect.role || sectRole;
+          if ((!sectName || !sectTag) && cult.sect.sectId && serverSects.has(cult.sect.sectId)) {
+            const s = serverSects.get(cult.sect.sectId)!;
+            sectName = s.name || sectName;
+            sectTag = s.tag || sectTag;
+            sectRole = sectRole || 'noi_mon';
+          }
+        } else if (cult.sectName) {
+          sectName = cult.sectName;
+          sectTag = cult.sectTag;
+        }
+      }
+    }
+
+    // Also check if user is a member of any serverSects
+    if (!sectName) {
+      const uLower = (entry.username || '').toLowerCase();
+      const dLower = (displayName || '').toLowerCase();
+      for (const sect of serverSects.values()) {
+        const member = (sect.members || []).find((m: any) =>
+          (entry.userId && m.userId === entry.userId) ||
+          (user && m.userId === user.id) ||
+          (m.username && m.username.toLowerCase() === uLower) ||
+          (m.displayName && m.displayName.toLowerCase() === dLower)
+        );
+        if (member) {
+          sectName = sect.name;
+          sectTag = sect.tag;
+          sectRole = member.role || 'noi_mon';
+          break;
+        } else if (
+          (sect.leaderName && sect.leaderName.toLowerCase() === uLower) ||
+          (sect.leaderName && sect.leaderName.toLowerCase() === dLower) ||
+          (user && sect.leaderId === user.id)
+        ) {
+          sectName = sect.name;
+          sectTag = sect.tag;
+          sectRole = 'chuong_mon';
+          break;
+        }
+      }
+    }
+
+    return {
+      ...entry,
+      displayName,
+      avatar,
+      frame,
+      realmName: realmName || 'Luyện Khí Kỳ',
+      realmIcon: realmIcon || '🌿',
+      level: level || 1,
+      sectName: sectName || undefined,
+      sectTag: sectTag || undefined,
+      sectRole: sectRole || undefined,
+      keyboardSwitch: keyboardSwitch || 'Cherry MX Blue Clicky',
+    };
+  }
+
   // GET /api/leaderboard: Get real server-wide high scores with multi-period Top 20
   app.get('/api/leaderboard', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -6420,25 +7157,49 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     for (const [key, rawVal] of Object.entries(serverLeaderboardData.highScores)) {
       const val = rawVal as ServerHighScoreRecord | null;
       if (val) {
-        let user: ServerUserRecord | null = null;
-        if (val.userId && serverUsers.has(val.userId)) {
-          user = serverUsers.get(val.userId) || null;
-        } else if (val.username) {
-          user = getUserByUsername(val.username);
-        }
+        const enriched = enrichLeaderboardEntry({
+          rank: 1,
+          userId: val.userId,
+          username: val.username,
+          displayName: val.displayName || val.username,
+          avatar: val.avatar,
+          frame: val.frame,
+          wpm: val.wpm,
+          score: val.score,
+          errors: val.errors,
+          accuracy: val.accuracy || 100,
+          timestamp: val.timestamp,
+        });
         enrichedScores[key] = {
           ...val,
-          displayName: user?.displayName || val.displayName || val.username,
+          displayName: enriched.displayName,
+          avatar: enriched.avatar,
+          frame: enriched.frame,
+          sectName: enriched.sectName,
+          sectTag: enriched.sectTag,
+          sectRole: enriched.sectRole,
+          realmName: enriched.realmName,
+          realmIcon: enriched.realmIcon,
+          level: enriched.level,
         };
       } else {
         enrichedScores[key] = null;
       }
     }
 
+    const enrichedRankings: Record<string, { daily: ServerLeaderboardEntry[]; weekly: ServerLeaderboardEntry[]; all_time: ServerLeaderboardEntry[] }> = {};
+    for (const m of VALID_LEADERBOARD_MODES) {
+      enrichedRankings[m] = {
+        daily: (serverLeaderboardData.rankings[m]?.daily || []).map(enrichLeaderboardEntry),
+        weekly: (serverLeaderboardData.rankings[m]?.weekly || []).map(enrichLeaderboardEntry),
+        all_time: (serverLeaderboardData.rankings[m]?.all_time || []).map(enrichLeaderboardEntry),
+      };
+    }
+
     res.json({
       success: true,
       highScores: enrichedScores,
-      rankings: serverLeaderboardData.rankings,
+      rankings: enrichedRankings,
       lastResetDate: serverLeaderboardData.lastResetDate,
       lastResetWeek: serverLeaderboardData.lastResetWeek,
     });
@@ -6616,8 +7377,42 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     const cult = authenticatedUser.cultivation || {};
     const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
     const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
-    const sectName = cult.sect?.name || cult.sectName || undefined;
-    const sectTag = cult.sect?.tag || cult.sectTag || undefined;
+    let sectName = cult.sect?.sectName || cult.sect?.name || cult.sectName || undefined;
+    let sectTag = cult.sect?.sectTag || cult.sect?.tag || cult.sectTag || undefined;
+    let sectRole = cult.sect?.role || undefined;
+
+    if (!sectName && cult.sect?.sectId && serverSects.has(cult.sect.sectId)) {
+      const s = serverSects.get(cult.sect.sectId)!;
+      sectName = s.name;
+      sectTag = s.tag;
+    }
+
+    if (!sectName) {
+      const uLower = authenticatedUser.username.toLowerCase();
+      const dLower = (authenticatedUser.displayName || '').toLowerCase();
+      for (const s of serverSects.values()) {
+        const m = (s.members || []).find((x: any) =>
+          (x.userId && x.userId === authenticatedUser.id) ||
+          (x.username && x.username.toLowerCase() === uLower) ||
+          (x.displayName && x.displayName.toLowerCase() === dLower)
+        );
+        if (m) {
+          sectName = s.name;
+          sectTag = s.tag;
+          sectRole = m.role;
+          break;
+        } else if (
+          (s.leaderName && s.leaderName.toLowerCase() === uLower) ||
+          (s.leaderName && s.leaderName.toLowerCase() === dLower)
+        ) {
+          sectName = s.name;
+          sectTag = s.tag;
+          sectRole = 'chuong_mon';
+          break;
+        }
+      }
+    }
+
     const effectiveSwitch = String(keyboardSwitch || (authenticatedUser as any).keyboardSwitch || 'Cherry MX Blue Clicky').slice(0, 40);
 
     // Cập nhật switch bàn phím vào tài khoản người chơi nếu có
@@ -6646,6 +7441,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       level: Number(cult.level) || 1,
       sectName,
       sectTag,
+      sectRole,
       keyboardSwitch: effectiveSwitch,
     };
 
@@ -7575,40 +8371,74 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
           });
         }
 
-        const dur = m.durationSeconds || 60;
-        if (Array.isArray(m.keystrokes) && m.keystrokes.length > 0) {
-          m.keystrokes.forEach((k: any) => {
-            if (!k.isCorrect) {
-              totalErrors++;
-              const sec = k.timeMs / 1000;
-              if (sec <= dur * 0.25) introErrors++;
-              else if (sec <= dur * 0.55) accelErrors++;
-              else if (sec <= dur * 0.8) sustainErrors++;
-              else endgameErrors++;
-            }
-          });
-        } else if (Array.isArray(m.chartData) && m.chartData.length > 0) {
-          m.chartData.forEach((pt: any) => {
-            const err = pt.errors || 0;
-            if (err > 0) {
+        const dur = Math.max(10, m.durationSeconds || 60);
+        const p1 = dur * 0.25;
+        const p2 = dur * 0.55;
+        const p3 = dur * 0.8;
+
+        const isFlawless = m.accuracy === 100 || (m.totalErrors === 0 && (m.incorrectWords === 0 || !m.incorrectWords));
+        if (isFlawless) {
+          return;
+        }
+
+        let matchErrorsFound = 0;
+
+        if (Array.isArray(m.chartData) && m.chartData.length > 0) {
+          const errPoints = m.chartData.filter((pt: any) => (pt.errors || 0) > 0);
+          if (errPoints.length > 0) {
+            errPoints.forEach((pt: any) => {
+              const err = pt.errors || 1;
+              matchErrorsFound += err;
               totalErrors += err;
-              if (pt.second <= dur * 0.25) introErrors += err;
-              else if (pt.second <= dur * 0.55) accelErrors += err;
-              else if (pt.second <= dur * 0.8) sustainErrors += err;
+              if (pt.second <= p1) introErrors += err;
+              else if (pt.second <= p2) accelErrors += err;
+              else if (pt.second <= p3) sustainErrors += err;
               else endgameErrors += err;
+            });
+          }
+        }
+
+        if (Array.isArray(m.keystrokes) && m.keystrokes.length > 0) {
+          const firstTime = m.keystrokes[0]?.timeMs || 0;
+          const isAbsolute = firstTime > 10000;
+          const offset = isAbsolute ? firstTime : 0;
+          let lastErrTime = -1;
+
+          m.keystrokes.forEach((k: any) => {
+            const relMs = Math.max(0, (k.timeMs || 0) - offset);
+            const sec = relMs / 1000;
+            const isErr = k.isCorrect === false || k.key === 'Backspace';
+
+            if (isErr) {
+              if (matchErrorsFound === 0) {
+                totalErrors++;
+                if (sec <= p1) introErrors++;
+                else if (sec <= p2) accelErrors++;
+                else if (sec <= p3) sustainErrors++;
+                else endgameErrors++;
+              }
+              lastErrTime = relMs;
             }
           });
-        } else {
-          const err = m.incorrectWords || 2;
-          totalErrors += err;
-          introErrors += Math.round(err * 0.2);
-          accelErrors += Math.round(err * 0.35);
-          sustainErrors += Math.round(err * 0.2);
-          endgameErrors += Math.max(0, err - Math.round(err * 0.75));
+        }
+
+        if (matchErrorsFound === 0) {
+          const declared = m.totalErrors ?? m.incorrectWords ?? (m.mistakes ? m.mistakes.reduce((s: number, x: any) => s + (x.count || 1), 0) : 0);
+          if (declared > 0) {
+            totalErrors += declared;
+            const e1 = Math.round(declared * 0.2);
+            const e2 = Math.round(declared * 0.35);
+            const e3 = Math.round(declared * 0.2);
+            const e4 = Math.max(0, declared - e1 - e2 - e3);
+            introErrors += e1;
+            accelErrors += e2;
+            sustainErrors += e3;
+            endgameErrors += e4;
+          }
         }
       });
 
-      const safeTotal = Math.max(1, totalErrors);
+      const safeTotal = totalErrors > 0 ? totalErrors : 1;
 
       const reqMode = String(req.body?.mode || '').toLowerCase();
       const matchSubMode = String(selectedMatch?.subMode || completed[0]?.subMode || '').toLowerCase();
@@ -7960,63 +8790,10 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
     res.json({ success: true, highScores: serverHighScores });
   });
 
-  // GET /api/chat/stream: SSE real-time stream for global chat, presence, and leaderboard
-  app.get('/api/chat/stream', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
-
-    const tabId = req.query.tabId
-      ? String(req.query.tabId).trim()
-      : (req.query.userId ? String(req.query.userId).trim() : `tab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
-    const userId = req.query.userId
-      ? String(req.query.userId).trim()
-      : `guest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-    const initialMeta = extractSessionMetaFromReq(req);
-    registerPresence(tabId, userId, initialMeta);
-    sseGlobalClients.set(res, tabId);
-    sseGlobalChatClients.add(res);
-
-    // Initial sync of chat messages, real online count, and leaderboard
-    res.write(`data: ${JSON.stringify({ type: 'init_chat', messages: globalChatMessages })}\n\n`);
-    res.write(`data: ${JSON.stringify({ type: 'online_count', count: getRealOnlineCount() })}\n\n`);
-    res.write(`data: ${JSON.stringify({ type: 'leaderboard_updated', highScores: serverHighScores })}\n\n`);
-
-    // Broadcast presence update to all connected users
-    broadcastOnlinePresence();
-
-    let isCleanedUp = false;
-    const cleanup = () => {
-      if (isCleanedUp) return;
-      isCleanedUp = true;
-      clearInterval(heartbeat);
-      sseGlobalChatClients.delete(res);
-      sseGlobalClients.delete(res);
-      removePresence(tabId);
-      broadcastOnlinePresence();
-    };
-
-    const heartbeat = setInterval(() => {
-      try {
-        res.write(': heartbeat\n\n');
-      } catch {
-        cleanup();
-      }
-    }, 6000);
-
-    req.on('close', cleanup);
-    req.on('end', cleanup);
-    res.on('close', cleanup);
-    res.on('finish', cleanup);
-    res.on('error', cleanup);
-  });
-
   // POST /api/chat/clear: Clear global chat (admin action)
   app.post('/api/chat/clear', (_req, res) => {
     globalChatMessages.length = 0;
+    saveChatToFile();
     broadcastGlobalChatClear();
     res.json({ success: true });
   });
@@ -8024,29 +8801,49 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
   // HỆ THỐNG VẠN BẢO CÁC, PHƯỜNG THỊ P2P & QUẢN TRỊ KINH TẾ
   registerEconomyRoutes(app, serverUsers, getUserByToken, saveUsersToFile);
 
-  const httpServer = http.createServer(app);
+  // Fallback 404 JSON response for any undefined /api routes
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ success: false, error: 'Endpoint API không tồn tại (404 Not Found)' });
+  });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: { server: httpServer },
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+  export const httpServer = http.createServer(app);
+
+  export async function startServer() {
+    const PORT = Number(process.env.PORT) || 3000;
+
+    // Static public directory (favicon, og-images, etc.)
+    app.use(express.static(path.join(process.cwd(), 'public')));
+
+    // Vite middleware for development; static dist bundle for production
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: { server: httpServer },
+        },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else if (!process.env.VERCEL) {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+
+    httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
     });
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
-}
+  // Khởi động HTTP Server khi chạy môi trường máy chủ độc lập (AI Studio / Docker / Local)
+  // Trên Vercel, ứng dụng chạy dưới dạng Serverless Functions thông qua api/index.ts (không gọi listen)
+  if (!process.env.VERCEL) {
+    startServer().catch((err) => {
+      console.error('Failed to start server:', err);
+    });
+  }
 
-startServer();
+  export default app;

@@ -11,6 +11,30 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      target: 'esnext',
+      sourcemap: false,
+      minify: 'esbuild',
+      cssMinify: 'esbuild',
+      chunkSizeWarningLimit: 1500,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) {
+                return 'recharts-vendor';
+              }
+              if (id.includes('lucide-react')) {
+                return 'lucide-vendor';
+              }
+              if (id.includes('@google/genai')) {
+                return 'genai-vendor';
+              }
+            }
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
