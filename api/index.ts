@@ -7,10 +7,21 @@ import app, { app as namedApp } from '../server';
 
 const expressApp = namedApp || app;
 
-export default function handler(req: Request, res: Response) {
-  // Đảm bảo URL luôn có tiền tố /api để khớp chuẩn xác với các route Express trên Vercel Serverless
-  if (req.url && !req.url.startsWith('/api')) {
-    req.url = `/api${req.url.startsWith('/') ? '' : '/'}${req.url}`;
+export default async function handler(req: Request, res: Response) {
+  try {
+    // Đảm bảo URL luôn có tiền tố /api để khớp chuẩn xác với các route Express trên Vercel Serverless
+    if (req.url && !req.url.startsWith('/api')) {
+      req.url = `/api${req.url.startsWith('/') ? '' : '/'}${req.url}`;
+    }
+    return (expressApp as any)(req, res);
+  } catch (err: any) {
+    console.error('[Vercel Serverless Function] Exception in handler:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: 'Lỗi thực thi Serverless Function.',
+        message: err?.message || String(err),
+      });
+    }
   }
-  return (expressApp as any)(req, res);
 }

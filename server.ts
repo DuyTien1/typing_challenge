@@ -962,61 +962,70 @@ function checkIsBanned(usernameOrId?: string): {
   remainingMs: number;
   remainingMinutes: number;
 } {
-  if (!usernameOrId) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
-  const key = String(usernameOrId).trim().toLowerCase();
-  if (!key) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+  try {
+    if (!usernameOrId) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+    const key = String(usernameOrId).trim().toLowerCase();
+    if (!key) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
 
-  const now = Date.now();
-  let record = serverBans.get(key);
+    const now = Date.now();
+    let record = serverBans?.get(key);
 
-  if (!record) {
-    for (const b of serverBans.values()) {
-      if ((b.username && b.username.toLowerCase() === key) || (b.userId && b.userId.toLowerCase() === key)) {
-        record = b;
-        break;
+    if (!record && serverBans) {
+      for (const b of serverBans.values()) {
+        if (b && ((b.username && String(b.username).toLowerCase() === key) || (b.userId && String(b.userId).toLowerCase() === key))) {
+          record = b;
+          break;
+        }
       }
     }
-  }
 
-  if (record) {
-    if (record.bannedUntil > now) {
-      const remainingMs = record.bannedUntil - now;
+    if (record) {
+      if (record.bannedUntil && record.bannedUntil > now) {
+        const remainingMs = record.bannedUntil - now;
+        return {
+          isBanned: true,
+          record,
+          remainingMs,
+          remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
+        };
+      } else {
+        // Hết hạn 2 giờ -> tự động giải trừ phong ấn
+        if (serverBans) serverBans.delete(key);
+        try {
+          saveBansToFile();
+        } catch {}
+      }
+    }
+
+    // Kiểm tra tài khoản trong serverUsers
+    const user = getUserByUsername(usernameOrId) || (serverUsers ? serverUsers.get(usernameOrId) : null);
+    if (user && (user as any).bannedUntil && (user as any).bannedUntil > now) {
+      const remainingMs = (user as any).bannedUntil - now;
+      const rec: ServerBanRecord = {
+        username: user.username || String(usernameOrId),
+        userId: user.id,
+        bannedAt: (user as any).bannedAt || now,
+        bannedUntil: (user as any).bannedUntil,
+        durationMs: (user as any).bannedDurationMs || (2 * 60 * 60 * 1000),
+        reason: (user as any).banReason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro',
+        personaId: 'ban_co',
+      };
+      if (serverBans && user.username) {
+        serverBans.set(String(user.username).toLowerCase(), rec);
+      }
       return {
         isBanned: true,
-        record,
+        record: rec,
         remainingMs,
         remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
       };
-    } else {
-      // Hết hạn 2 giờ -> tự động giải trừ phong ấn
-      serverBans.delete(key);
-      saveBansToFile();
     }
-  }
 
-  // Kiểm tra tài khoản trong serverUsers
-  const user = getUserByUsername(usernameOrId) || serverUsers.get(usernameOrId);
-  if (user && (user as any).bannedUntil && (user as any).bannedUntil > now) {
-    const remainingMs = (user as any).bannedUntil - now;
-    const rec: ServerBanRecord = {
-      username: user.username,
-      userId: user.id,
-      bannedAt: (user as any).bannedAt || now,
-      bannedUntil: (user as any).bannedUntil,
-      durationMs: (user as any).bannedDurationMs || (2 * 60 * 60 * 1000),
-      reason: (user as any).banReason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro',
-      personaId: 'ban_co',
-    };
-    serverBans.set(user.username.toLowerCase(), rec);
-    return {
-      isBanned: true,
-      record: rec,
-      remainingMs,
-      remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
-    };
+    return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+  } catch (err) {
+    console.error('Error in checkIsBanned:', err);
+    return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
   }
-
-  return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
 }
 
 let syncUserCultivationToCache: ((user: ServerUserRecord) => void) | null = null;
@@ -1101,11 +1110,11 @@ function executeApplyBan(params: {
 }
 
 function getUserByToken(rawToken?: string): ServerUserRecord | null {
-  if (!rawToken) return null;
-  const cleanToken = rawToken.replace(/^Bearer\s+/i, '').trim();
+  if (!rawToken || !serverUsers) return null;
+  const cleanToken = String(rawToken).replace(/^Bearer\s+/i, '').trim();
   if (!cleanToken) return null;
   for (const user of serverUsers.values()) {
-    if (user.sessionTokens && user.sessionTokens.includes(cleanToken)) {
+    if (user && Array.isArray(user.sessionTokens) && user.sessionTokens.includes(cleanToken)) {
       return user;
     }
   }
@@ -1113,10 +1122,10 @@ function getUserByToken(rawToken?: string): ServerUserRecord | null {
 }
 
 function getUserByEmail(email?: string): ServerUserRecord | null {
-  if (!email) return null;
-  const lower = email.trim().toLowerCase();
+  if (!email || !serverUsers) return null;
+  const lower = String(email).trim().toLowerCase();
   for (const user of serverUsers.values()) {
-    if (user.email.toLowerCase() === lower) {
+    if (user && user.email && String(user.email).trim().toLowerCase() === lower) {
       return user;
     }
   }
@@ -1124,10 +1133,10 @@ function getUserByEmail(email?: string): ServerUserRecord | null {
 }
 
 function getUserByUsername(username?: string): ServerUserRecord | null {
-  if (!username) return null;
-  const lower = username.trim().toLowerCase();
+  if (!username || !serverUsers) return null;
+  const lower = String(username).trim().toLowerCase();
   for (const user of serverUsers.values()) {
-    if (user.username && user.username.trim().toLowerCase() === lower) {
+    if (user && user.username && String(user.username).trim().toLowerCase() === lower) {
       return user;
     }
   }
@@ -1135,29 +1144,31 @@ function getUserByUsername(username?: string): ServerUserRecord | null {
 }
 
 function getUserByUsernameOrEmail(identifier?: string): ServerUserRecord | null {
-  if (!identifier) return null;
-  const clean = identifier.trim().toLowerCase();
+  if (!identifier || !serverUsers) return null;
+  const clean = String(identifier).trim().toLowerCase();
   for (const user of serverUsers.values()) {
-    if (
-      (user.username && user.username.toLowerCase() === clean) ||
-      (user.email && user.email.toLowerCase() === clean)
-    ) {
-      return user;
+    if (user) {
+      const uName = user.username ? String(user.username).trim().toLowerCase() : '';
+      const uEmail = user.email ? String(user.email).trim().toLowerCase() : '';
+      if (uName === clean || uEmail === clean) {
+        return user;
+      }
     }
   }
   return null;
 }
 
 function getUserByDisplayNameOrUsername(identifier?: string): ServerUserRecord | null {
-  if (!identifier) return null;
-  const clean = identifier.trim().toLowerCase();
+  if (!identifier || !serverUsers) return null;
+  const clean = String(identifier).trim().toLowerCase();
   for (const user of serverUsers.values()) {
-    if (
-      (user.displayName && user.displayName.toLowerCase() === clean) ||
-      (user.username && user.username.toLowerCase() === clean) ||
-      (user.id && user.id.toLowerCase() === clean)
-    ) {
-      return user;
+    if (user) {
+      const uDisplay = user.displayName ? String(user.displayName).trim().toLowerCase() : '';
+      const uName = user.username ? String(user.username).trim().toLowerCase() : '';
+      const uId = user.id ? String(user.id).trim().toLowerCase() : '';
+      if (uDisplay === clean || uName === clean || uId === clean) {
+        return user;
+      }
     }
   }
   return null;
@@ -5141,26 +5152,40 @@ Yêu cầu:
 
   // GET /api/user/ban-status: Kiểm tra thời hạn thụ án cấm đấu 2 giờ
   app.get('/api/user/ban-status', (req, res) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    const username = String(req.query.username || '').trim();
-    const userId = String(req.query.userId || '').trim();
-    const authHeader = req.headers.authorization;
-    const user = getUserByToken(authHeader);
+    try {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      const query = req.query || {};
+      const username = String(query.username || '').trim();
+      const userId = String(query.userId || '').trim();
+      const headers = req.headers || {};
+      const authHeader = typeof headers.authorization === 'string' ? headers.authorization : undefined;
+      const user = authHeader ? getUserByToken(authHeader) : null;
 
-    let banCheck = username ? checkIsBanned(username) : { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
-    if (!banCheck.isBanned && userId) {
-      banCheck = checkIsBanned(userId);
-    }
-    if (!banCheck.isBanned && user) {
-      banCheck = checkIsBanned(user.username);
-      if (!banCheck.isBanned && user.id) {
-        banCheck = checkIsBanned(user.id);
+      let banCheck = username ? checkIsBanned(username) : { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+      if (!banCheck.isBanned && userId) {
+        banCheck = checkIsBanned(userId);
       }
+      if (!banCheck.isBanned && user) {
+        if (user.username) {
+          banCheck = checkIsBanned(user.username);
+        }
+        if (!banCheck.isBanned && user.id) {
+          banCheck = checkIsBanned(user.id);
+        }
+      }
+      return res.json({
+        success: true,
+        ...banCheck,
+      });
+    } catch (err: any) {
+      console.error('Error handling /api/user/ban-status:', err);
+      return res.json({
+        success: true,
+        isBanned: false,
+        remainingMs: 0,
+        remainingMinutes: 0,
+      });
     }
-    res.json({
-      success: true,
-      ...banCheck,
-    });
   });
 
   // POST /api/admin/unban: Quản trị viên hóa giải phong ấn
@@ -8804,6 +8829,17 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
   // Fallback 404 JSON response for any undefined /api routes
   app.all('/api/*', (_req, res) => {
     res.status(404).json({ success: false, error: 'Endpoint API không tồn tại (404 Not Found)' });
+  });
+
+  // Global Express Error Handling Middleware (Ngăn chặn hoàn toàn lỗi 500 FUNCTION_INVOCATION_FAILED trên Vercel)
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('[Express Global Error Handler]:', err);
+    if (!res.headersSent) {
+      res.status(err?.status || err?.statusCode || 500).json({
+        success: false,
+        error: err?.message || 'Lỗi xử lý nội bộ máy chủ.',
+      });
+    }
   });
 
   export const httpServer = http.createServer(app);
