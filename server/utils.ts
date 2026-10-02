@@ -62,17 +62,5 @@ export function hashPassword(password: string, salt: string): string {
 }
 
 export function getSafeStoragePath(filename: string): string {
-  if (process.env.VERCEL) {
-    const tmpPath = path.join('/tmp', filename);
-    const origPath = path.join(process.cwd(), filename);
-    if (!fs.existsSync(tmpPath) && fs.existsSync(origPath)) {
-      try {
-        fs.copyFileSync(origPath, tmpPath);
-      } catch {
-        // ignore
-      }
-    }
-    return tmpPath;
-  }
   return path.join(process.cwd(), filename);
 }

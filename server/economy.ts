@@ -3,6 +3,7 @@ import path from 'path';
 import express from 'express';
 import { ShopItem, MarketListing, MarketLog, ServerUserRecord } from './types';
 import { getSafeStoragePath } from './utils';
+import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog } from './db';
 
 const SHOP_CONFIG_FILE = getSafeStoragePath('shop_config.json');
 const MARKET_FILE = getSafeStoragePath('market.json');
@@ -79,6 +80,27 @@ export function loadEconomyData() {
   } catch (err) {
     console.error('Error loading market.json:', err);
   }
+
+  // Hydrate from PostgreSQL if DATABASE_URL is configured
+  if (isDatabaseConfigured()) {
+    dbLoadMarket().then((dbData) => {
+      if (dbData && dbData.listings && dbData.listings.length > 0) {
+        marketListings.clear();
+        for (const item of dbData.listings) {
+          if (item && item.id) {
+            marketListings.set(item.id, item);
+          }
+        }
+        if (dbData.logs && dbData.logs.length > 0) {
+          marketLogs.length = 0;
+          marketLogs.push(...dbData.logs);
+        }
+        console.log(`[Database] Hydrated ${marketListings.size} market listings from PostgreSQL.`);
+      }
+    }).catch((err) => {
+      console.error('[Database] Failed to hydrate market from PostgreSQL:', err);
+    });
+  }
 }
 
 export function saveMarketData() {
@@ -90,6 +112,11 @@ export function saveMarketData() {
       logs: marketLogs.slice(-100),
     };
     fs.writeFileSync(MARKET_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    if (isDatabaseConfigured()) {
+      for (const item of marketListings.values()) {
+        dbSaveMarketListing(item).catch(() => {});
+      }
+    }
   } catch (err) {
     console.error('Error saving market.json:', err);
   }
@@ -112,6 +139,9 @@ function addMarketLog(log: Omit<MarketLog, 'id' | 'timestamp'>) {
   marketLogs.unshift(entry);
   if (marketLogs.length > 100) marketLogs.pop();
   saveMarketData();
+  if (isDatabaseConfigured()) {
+    dbSaveMarketLog(entry).catch(() => {});
+  }
 }
 
 // Return items to seller inventory when listing is cancelled/expired/taken down

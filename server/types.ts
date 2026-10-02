@@ -20,6 +20,8 @@ export interface Player {
   isSurrendered: boolean;
   isAFK: boolean;
   isBot?: boolean;
+  isLoggedIn?: boolean;
+  cultivation?: any;
   botTargetWpm?: number;
   inMatch?: boolean;
 }
@@ -30,6 +32,7 @@ export interface GameRoom {
   hostId: string;
   hostName: string;
   isQuickRoom: boolean;
+  isWorldRoom?: boolean;
   status: 'waiting' | 'playing' | 'finished';
   matchId?: string;
   createdAt: number;
