@@ -16,9 +16,11 @@ import {
   LogOut,
   Lock,
   History,
-  Check
+  Check,
+  Database
 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
+import { DatabaseHealthModal } from './DatabaseHealthModal';
 import { 
   UI_STYLES, 
   UIStyleId, 
@@ -119,6 +121,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getInitialHeaderUIStyle());
   const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
+  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const styleDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -166,7 +169,8 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isMoreMenuOpen]);
 
   return (
-    <header className="w-full border-b border-[var(--theme-border,#1e293b)] bg-[var(--theme-card,#131926)]/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-4 py-2 transition-colors duration-300">
+    <>
+      <header className="w-full border-b border-[var(--theme-border,#1e293b)] bg-[var(--theme-card,#131926)]/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-4 py-2 transition-colors duration-300">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo & Branding - Click to return to Home/Lobby */}
         <div
@@ -744,6 +748,34 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
 
+                {/* Section: Kiểm Tra CSDL Supabase */}
+                <div className="space-y-1">
+                  <button
+                    id="menu-item-db-health"
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setIsMoreMenuOpen(false);
+                      setIsDbModalOpen(true);
+                    }}
+                    className="w-full flex items-center justify-between p-2 rounded-xl border border-emerald-500/30 hover:border-emerald-400/80 bg-emerald-500/10 hover:bg-emerald-500/20 text-left text-emerald-300 hover:text-emerald-200 transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Database className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-emerald-300 flex items-center gap-1.5">
+                          <span>Trạng Thái CSDL Supabase</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        </div>
+                        <div className="text-[10px] text-emerald-400/70 truncate">Kiểm tra kết nối DATABASE_URL</div>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-emerald-400/70 group-hover:text-emerald-300 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
+                  </button>
+                </div>
+
                 {/* Section 4: Tài Khoản (Đăng Nhập / Đăng Xuất) */}
                 <div className="pt-1.5 border-t border-slate-800/80">
                   {isLoggedIn ? (
@@ -798,6 +830,13 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
     </header>
+
+    {/* Database Health Diagnostic Modal */}
+    <DatabaseHealthModal
+      isOpen={isDbModalOpen}
+      onClose={() => setIsDbModalOpen(false)}
+    />
+  </>
   );
 };
 

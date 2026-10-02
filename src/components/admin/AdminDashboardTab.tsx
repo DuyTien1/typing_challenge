@@ -15,9 +15,15 @@ import {
   Clock, 
   ArrowUpRight,
   Sparkles,
-  Zap
+  Zap,
+  CheckCircle2,
+  AlertTriangle,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { soundFx } from '../../utils/audio';
+import { checkDatabaseHealth, DatabaseHealthData, HealthCheckResponse } from '../../utils/dbHealth';
+import { DatabaseHealthModal } from '../DatabaseHealthModal';
 
 interface SystemStats {
   onlineCount: number;
@@ -48,6 +54,21 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [dbHealth, setDbHealth] = useState<HealthCheckResponse | null>(null);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+
+  const fetchDbHealth = async () => {
+    try {
+      setDbLoading(true);
+      const res = await checkDatabaseHealth();
+      setDbHealth(res);
+    } catch (err) {
+      console.error('Failed to fetch DB health:', err);
+    } finally {
+      setDbLoading(false);
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -68,8 +89,12 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
 
   useEffect(() => {
     fetchStats();
+    fetchDbHealth();
     if (!autoRefresh) return;
-    const interval = setInterval(fetchStats, 5000);
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchDbHealth();
+    }, 10000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
@@ -271,6 +296,103 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
         </div>
       </div>
 
+      {/* Supabase PostgreSQL Live Health & Telemetry Card */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-lg relative overflow-hidden">
+        <div className={`absolute top-0 right-0 w-48 h-48 rounded-full blur-3xl pointer-events-none ${
+          dbHealth?.database?.connected ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+        }`} />
+
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border shadow-xs ${
+              dbHealth?.database?.connected
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                : dbHealth?.database?.configured
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-400'
+                  : 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+            }`}>
+              <Database className="w-5 h-5" />
+            </div>
+
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                  Cơ Sở Dữ Liệu Supabase PostgreSQL
+                </h4>
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
+                  dbHealth?.database?.connected
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                    : dbHealth?.database?.configured
+                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-400'
+                      : 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    dbHealth?.database?.connected ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'
+                  }`} />
+                  <span>
+                    {dbHealth?.database?.connected
+                      ? `ĐÃ KẾT NỐI (${dbHealth.database.latencyMs ?? '--'}ms)`
+                      : dbHealth?.database?.configured
+                        ? 'LỖI KẾT NỐI'
+                        : 'CHƯA CẤU HÌNH'}
+                  </span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-slate-800 border border-slate-700 text-slate-300">
+                  DATABASE_URL
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-400 mt-1">
+                {dbHealth?.database?.connected
+                  ? 'Hạ tầng Supabase Pooler đã kết nối thành công. Tất cả tiến trình tu vi, bảng vàng, bang hội và chat đều được lưu trữ bền vững.'
+                  : (dbHealth?.database?.error || 'Chưa thiết lập biến môi trường DATABASE_URL trên Vercel.')}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1 text-slate-300 font-medium">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Bảng CSDL: {dbHealth?.database?.tablesVerified ? '5/5 Bảng Sẵn Sàng' : 'Đang đồng bộ'}</span>
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1 text-slate-300 font-medium">
+                  <Server className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Môi trường: {dbHealth?.database?.serverless ? 'Vercel Serverless' : 'Node Server'}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                fetchDbHealth();
+                showToast('Đang ping kiểm tra kết nối Supabase...');
+              }}
+              disabled={dbLoading}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Ping kiểm tra lại kết nối Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${dbLoading ? 'animate-spin text-amber-400' : ''}`} />
+              <span>{dbLoading ? 'Đang ping...' : 'Ping CSDL'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playKeyClick();
+                setIsDbModalOpen(true);
+              }}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-xs shadow-emerald-950/40 border border-emerald-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Chẩn Đoán Chi Tiết</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Quick Operations Grid */}
       <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
         <h4 className="text-xs font-black uppercase text-slate-300 tracking-wider flex items-center gap-2">
@@ -352,6 +474,12 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Database Health Diagnostic Modal */}
+      <DatabaseHealthModal
+        isOpen={isDbModalOpen}
+        onClose={() => setIsDbModalOpen(false)}
+      />
     </div>
   );
 };

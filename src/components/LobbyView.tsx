@@ -16,6 +16,7 @@ import {
   Gamepad2
 } from 'lucide-react';
 import { SectWarLobbyBanner } from './SectWarLobbyBanner';
+import { SystemStatus } from './SystemStatus';
 
 interface LobbyViewProps {
   currentMode: GameMode;
@@ -432,6 +433,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           );
         })}
       </div>
+
+      {/* Real-time System Status Card (Supabase Database Health, Latency & Server Availability) */}
+      <SystemStatus variant="card" className="mt-2" />
     </div>
   );
 };

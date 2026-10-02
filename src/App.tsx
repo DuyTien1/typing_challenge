@@ -38,6 +38,7 @@ import { HeavenlyTickerBanner } from './components/HeavenlyTickerBanner';
 import { HeavenlyChronicleModal } from './components/HeavenlyChronicleModal';
 import { DaoDecreeModal } from './components/DaoDecreeModal';
 import { BanPenaltyModal } from './components/BanPenaltyModal';
+import { SystemStatus } from './components/SystemStatus';
 import { useChatEngine } from './hooks/useChatEngine';
 import { useCultivationEngine } from './hooks/useCultivationEngine';
 import { useRoomEngine } from './hooks/useRoomEngine';
@@ -3949,13 +3950,21 @@ export default function App() {
 
       {/* Footer - Tự động ẩn trên mobile dọc và khi mở Chat hoặc Sổ Tay để tránh che khuất bàn phím ảo */}
       {!(isChatOpen || isFriendsOpen) && (
-        <footer className="border-t border-slate-800/80 bg-slate-950/60 py-3 px-4 text-center text-xs text-slate-500 hidden sm:block">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-            <span>FastTyping Challenge • Đấu trường gõ phím Tiếng Việt thời gian thực</span>
-            <span className="flex items-center gap-2 text-slate-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              copyright Nguyễn Duy Tiến - niTe
-            </span>
+        <footer className="border-t border-slate-800/80 bg-slate-950/70 py-2.5 px-4 text-xs text-slate-500">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 text-center sm:text-left">
+              <span className="font-bold text-slate-300">FastTyping Challenge</span>
+              <span className="hidden sm:inline text-slate-600">•</span>
+              <span className="hidden sm:inline text-slate-400">Đấu trường gõ phím Tiếng Việt thời gian thực</span>
+            </div>
+
+            {/* Visual System Status Component (Database connection health, Latency & Server Availability) */}
+            <div className="flex items-center gap-3">
+              <SystemStatus variant="bar" />
+              <span className="hidden lg:flex items-center gap-1.5 text-slate-500 text-[11px]">
+                copyright Nguyễn Duy Tiến - niTe
+              </span>
+            </div>
           </div>
         </footer>
       )}
