@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "prebuild": "rm -f api/index.js",
     "build": "node --max-old-space-size=4096 node_modules/vite/bin/vite.js build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
     "vercel-build": "vite build",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist server.js api/index.js",
     "migrate": "tsx scripts/migrate-to-supabase.ts",
     "lint": "tsc --noEmit"
   },
