@@ -1,0 +1,10 @@
+{
+  "listings": [],
+  "taxRate": 0.05,
+  "stats": {
+    "totalVolume": 0,
+    "totalTaxBurned": 0,
+    "totalTradesCount": 0
+  },
+  "logs": []
+}

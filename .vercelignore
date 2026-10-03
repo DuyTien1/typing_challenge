@@ -1,0 +1,22 @@
+# Vercel Deployment Ignore File
+# Ngăn chặn xung đột tên file api/index.js và api/index.ts
+api/index.js
+api/*.js
+
+# Cục bộ và cache build
+.git
+.github
+node_modules
+dist
+dist-ssr
+*.local
+server.js
+
+# File dữ liệu JSON lưu trữ cục bộ
+banned_users.json
+friends.json
+leaderboard.json
+market.json
+sects.json
+users.json
+shop_config.json

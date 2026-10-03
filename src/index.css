@@ -1,0 +1,1807 @@
+@import "tailwindcss";
+
+:root {
+  --theme-bg: #0a0e17;
+  --theme-card: #0f1a26;
+  --theme-main: #10b981;
+  --theme-sub: #476175;
+  --theme-text: #e2f1ec;
+  --theme-error: #f43f5e;
+  --theme-border: #1b3832;
+  --theme-radius: 1rem;
+  --theme-glow: 0 0 20px rgba(16, 185, 129, 0.4);
+  --typing-font: 'JetBrains Mono', monospace;
+}
+
+/* Global smooth transition for UI styles & themes */
+html, body {
+  background-color: var(--theme-bg, #0a0e17);
+  color: var(--theme-text, #f8fafc);
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.25s ease, box-shadow 0.35s ease;
+}
+
+/* UI Style 1: Tiên Hiệp (Cửu Trọng Thiên Đạo) - Bích Ngọc Các nổi bật, có chiều sâu */
+[data-ui-style="xianxia"] {
+  --theme-bg: #080d16;
+  --theme-card: #122033;
+  --theme-main: #10b981;
+  --theme-sub: #5c7b94;
+  --theme-text: #f0fdf7;
+  --theme-error: #f43f5e;
+  --theme-border: #1d3d54;
+  --theme-radius: 1rem;
+  --theme-glow: 0 0 25px rgba(16, 185, 129, 0.45);
+}
+
+[data-ui-style="xianxia"] .bg-slate-900\/70,
+[data-ui-style="xianxia"] .bg-slate-900 {
+  background-color: rgba(18, 32, 51, 0.9) !important;
+  border-color: rgba(29, 61, 84, 0.9) !important;
+}
+
+/* UI Style 2: Cổ Điển (Cố Hương Thi Viện) - Bìa da thuộc & gỗ mun ấm cúng, tương phản rõ rệt */
+[data-ui-style="classic"] {
+  --theme-bg: #171412;
+  --theme-card: #26201b;
+  --theme-main: #f59e0b;
+  --theme-sub: #a18f80;
+  --theme-text: #fef3c7;
+  --theme-error: #dc2626;
+  --theme-border: #4d3d32;
+  --theme-radius: 0.375rem;
+  --theme-glow: 0 0 20px rgba(245, 158, 11, 0.4);
+}
+
+[data-ui-style="classic"] .bg-slate-900\/70,
+[data-ui-style="classic"] .bg-slate-900 {
+  background-color: rgba(38, 32, 27, 0.9) !important;
+  border-color: rgba(77, 61, 50, 0.9) !important;
+}
+
+/* UI Style 3: Khoa Học Viễn Tưởng (Tân Thế Kỷ 2099) - Kính Hologram dạ quang sắc bén */
+[data-ui-style="cyberpunk"] {
+  --theme-bg: #030612;
+  --theme-card: #0d1738;
+  --theme-main: #00f0ff;
+  --theme-sub: #3e6280;
+  --theme-text: #e0f7fa;
+  --theme-error: #ff0055;
+  --theme-border: rgba(0, 240, 255, 0.45);
+  --theme-radius: 0.125rem;
+  --theme-glow: 0 0 28px rgba(0, 240, 255, 0.6);
+}
+
+[data-ui-style="cyberpunk"] .bg-slate-900\/70,
+[data-ui-style="cyberpunk"] .bg-slate-900 {
+  background-color: rgba(13, 23, 56, 0.9) !important;
+  border-color: rgba(0, 240, 255, 0.35) !important;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.08) !important;
+}
+
+/* UI Style 4: Tối Giản Tinh Tế (Bạch Dạ Thuần Khiết) - Nền sáng sạch sẽ, thẻ nổi bật tương phản sắc nét, chống chìm hoàn toàn */
+[data-ui-style="minimal"],
+[data-theme-category="light"] {
+  --theme-bg: #f8fafc;
+  --theme-card: #ffffff;
+  --theme-main: #2563eb;
+  --theme-sub: #334155;
+  --theme-text: #0f172a;
+  --theme-error: #dc2626;
+  --theme-border: #cbd5e1;
+  --theme-radius: 0.75rem;
+  --theme-glow: 0 4px 14px -2px rgba(37, 99, 235, 0.15);
+}
+
+/* Thẻ chính, Modal, Bảng điều khiển, Hộp nội dung nổi bật có chiều sâu */
+[data-ui-style="minimal"] .bg-slate-950,
+[data-ui-style="minimal"] .bg-slate-950\/95,
+[data-ui-style="minimal"] .bg-slate-950\/90,
+[data-ui-style="minimal"] .bg-slate-950\/85,
+[data-ui-style="minimal"] .bg-slate-950\/80,
+[data-ui-style="minimal"] .bg-slate-950\/75,
+[data-ui-style="minimal"] .bg-slate-950\/70,
+[data-ui-style="minimal"] .bg-slate-950\/60,
+[data-ui-style="minimal"] .bg-slate-950\/50,
+[data-ui-style="minimal"] .bg-slate-950\/40,
+[data-ui-style="minimal"] .bg-slate-950\/30,
+[data-ui-style="minimal"] .bg-slate-900,
+[data-ui-style="minimal"] .bg-slate-900\/95,
+[data-ui-style="minimal"] .bg-slate-900\/90,
+[data-ui-style="minimal"] .bg-slate-900\/85,
+[data-ui-style="minimal"] .bg-slate-900\/80,
+[data-ui-style="minimal"] .bg-slate-900\/70,
+[data-ui-style="minimal"] .bg-slate-900\/60,
+[data-ui-style="minimal"] .bg-slate-900\/50,
+[data-ui-style="minimal"] .bg-slate-900\/40,
+[data-ui-style="minimal"] .bg-slate-900\/30,
+[data-ui-style="minimal"] .bg-slate-900\/20,
+[data-ui-style="minimal"] .bg-slate-850,
+[data-ui-style="minimal"] .bg-slate-850\/90,
+[data-ui-style="minimal"] .bg-\[\#141824\],
+[data-theme-category="light"] .bg-slate-950,
+[data-theme-category="light"] .bg-slate-950\/95,
+[data-theme-category="light"] .bg-slate-950\/90,
+[data-theme-category="light"] .bg-slate-950\/85,
+[data-theme-category="light"] .bg-slate-950\/80,
+[data-theme-category="light"] .bg-slate-950\/75,
+[data-theme-category="light"] .bg-slate-950\/70,
+[data-theme-category="light"] .bg-slate-950\/60,
+[data-theme-category="light"] .bg-slate-950\/50,
+[data-theme-category="light"] .bg-slate-950\/40,
+[data-theme-category="light"] .bg-slate-950\/30,
+[data-theme-category="light"] .bg-slate-900,
+[data-theme-category="light"] .bg-slate-900\/95,
+[data-theme-category="light"] .bg-slate-900\/90,
+[data-theme-category="light"] .bg-slate-900\/85,
+[data-theme-category="light"] .bg-slate-900\/80,
+[data-theme-category="light"] .bg-slate-900\/70,
+[data-theme-category="light"] .bg-slate-900\/60,
+[data-theme-category="light"] .bg-slate-900\/50,
+[data-theme-category="light"] .bg-slate-900\/40,
+[data-theme-category="light"] .bg-slate-900\/30,
+[data-theme-category="light"] .bg-slate-900\/20,
+[data-theme-category="light"] .bg-slate-850,
+[data-theme-category="light"] .bg-slate-850\/90,
+[data-theme-category="light"] .bg-\[\#141824\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* Thẻ phụ, ô danh sách con, khe người chơi, hộp thống kê phụ */
+[data-ui-style="minimal"] .bg-slate-800,
+[data-ui-style="minimal"] .bg-slate-800\/95,
+[data-ui-style="minimal"] .bg-slate-800\/90,
+[data-ui-style="minimal"] .bg-slate-800\/80,
+[data-ui-style="minimal"] .bg-slate-800\/70,
+[data-ui-style="minimal"] .bg-slate-800\/60,
+[data-ui-style="minimal"] .bg-slate-800\/50,
+[data-ui-style="minimal"] .bg-slate-800\/40,
+[data-ui-style="minimal"] .bg-slate-800\/30,
+[data-ui-style="minimal"] .bg-slate-700\/40,
+[data-ui-style="minimal"] .bg-slate-700\/30,
+[data-theme-category="light"] .bg-slate-800,
+[data-theme-category="light"] .bg-slate-800\/95,
+[data-theme-category="light"] .bg-slate-800\/90,
+[data-theme-category="light"] .bg-slate-800\/80,
+[data-theme-category="light"] .bg-slate-800\/70,
+[data-theme-category="light"] .bg-slate-800\/60,
+[data-theme-category="light"] .bg-slate-800\/50,
+[data-theme-category="light"] .bg-slate-800\/40,
+[data-theme-category="light"] .bg-slate-800\/30,
+[data-theme-category="light"] .bg-slate-700\/40,
+[data-theme-category="light"] .bg-slate-700\/30 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Hộp mờ đen trở thành thẻ sáng tao nhã */
+[data-ui-style="minimal"] .bg-black\/50,
+[data-ui-style="minimal"] .bg-black\/40,
+[data-ui-style="minimal"] .bg-black\/30,
+[data-ui-style="minimal"] .bg-black\/20,
+[data-theme-category="light"] .bg-black\/50,
+[data-theme-category="light"] .bg-black\/40,
+[data-theme-category="light"] .bg-black\/30,
+[data-theme-category="light"] .bg-black\/20 {
+  background-color: rgba(241, 245, 249, 0.9) !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Gradients thanh header và sảnh */
+[data-ui-style="minimal"] .from-slate-900,
+[data-ui-style="minimal"] .to-slate-900,
+[data-ui-style="minimal"] .via-\[\#131926\],
+[data-theme-category="light"] .from-slate-900,
+[data-theme-category="light"] .to-slate-900,
+[data-theme-category="light"] .via-\[\#131926\] {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-to: #f8fafc !important;
+  --tw-gradient-stops: #ffffff, #f8fafc, #ffffff !important;
+}
+
+/* Toàn bộ viền trong chế độ tối giản - sắc sảo, chống chìm */
+[data-ui-style="minimal"] .border-slate-800,
+[data-ui-style="minimal"] .border-slate-800\/80,
+[data-ui-style="minimal"] .border-slate-800\/60,
+[data-ui-style="minimal"] .border-slate-800\/40,
+[data-ui-style="minimal"] .border-slate-700,
+[data-ui-style="minimal"] .border-slate-700\/90,
+[data-ui-style="minimal"] .border-slate-700\/80,
+[data-ui-style="minimal"] .border-slate-700\/70,
+[data-ui-style="minimal"] .border-slate-700\/60,
+[data-ui-style="minimal"] .border-slate-700\/50,
+[data-ui-style="minimal"] .border-white\/10,
+[data-ui-style="minimal"] .border-white\/5,
+[data-theme-category="light"] .border-slate-800,
+[data-theme-category="light"] .border-slate-800\/80,
+[data-theme-category="light"] .border-slate-800\/60,
+[data-theme-category="light"] .border-slate-800\/40,
+[data-theme-category="light"] .border-slate-700,
+[data-theme-category="light"] .border-slate-700\/90,
+[data-theme-category="light"] .border-slate-700\/80,
+[data-theme-category="light"] .border-slate-700\/70,
+[data-theme-category="light"] .border-slate-700\/60,
+[data-theme-category="light"] .border-slate-700\/50,
+[data-theme-category="light"] .border-white\/10,
+[data-theme-category="light"] .border-white\/5 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Văn bản chính, tiêu đề, số liệu và tên người chơi */
+[data-ui-style="minimal"] .text-white,
+[data-ui-style="minimal"] .text-slate-100,
+[data-ui-style="minimal"] .text-slate-200,
+[data-theme-category="light"] .text-white,
+[data-theme-category="light"] .text-slate-100,
+[data-theme-category="light"] .text-slate-200 {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] .text-slate-300,
+[data-theme-category="light"] .text-slate-300 {
+  color: #1e293b !important;
+}
+
+/* Văn bản phụ, chú thích, gợi ý - độ tương phản cao sắc nét */
+[data-ui-style="minimal"] .text-slate-400,
+[data-ui-style="minimal"] .text-gray-400,
+[data-theme-category="light"] .text-slate-400,
+[data-theme-category="light"] .text-gray-400 {
+  color: #334155 !important;
+}
+
+[data-ui-style="minimal"] .text-slate-500,
+[data-ui-style="minimal"] .text-gray-500,
+[data-ui-style="minimal"] .text-slate-600,
+[data-theme-category="light"] .text-slate-500,
+[data-theme-category="light"] .text-gray-500,
+[data-theme-category="light"] .text-slate-600 {
+  color: #475569 !important;
+}
+
+[data-ui-style="minimal"] .text-white\/90,
+[data-ui-style="minimal"] .text-white\/80,
+[data-ui-style="minimal"] .text-white\/70,
+[data-ui-style="minimal"] .text-white\/60,
+[data-theme-category="light"] .text-white\/90,
+[data-theme-category="light"] .text-white\/80,
+[data-theme-category="light"] .text-white\/70,
+[data-theme-category="light"] .text-white\/60 {
+  color: #334155 !important;
+}
+
+/* Đảm bảo các nút có nền màu đậm (đỏ, hồng, xanh) vẫn giữ chữ trắng sắc nét */
+[data-ui-style="minimal"] .bg-red-600 .text-white,
+[data-ui-style="minimal"] .bg-red-500 .text-white,
+[data-ui-style="minimal"] .bg-rose-600 .text-white,
+[data-ui-style="minimal"] .bg-emerald-600 .text-white,
+[data-ui-style="minimal"] .bg-blue-600 .text-white,
+[data-ui-style="minimal"] .bg-indigo-600 .text-white,
+[data-ui-style="minimal"] button.bg-red-600,
+[data-ui-style="minimal"] button.bg-rose-600,
+[data-theme-category="light"] .bg-red-600 .text-white,
+[data-theme-category="light"] .bg-red-500 .text-white,
+[data-theme-category="light"] .bg-rose-600 .text-white,
+[data-theme-category="light"] .bg-emerald-600 .text-white,
+[data-theme-category="light"] .bg-blue-600 .text-white,
+[data-theme-category="light"] .bg-indigo-600 .text-white,
+[data-theme-category="light"] button.bg-red-600,
+[data-theme-category="light"] button.bg-rose-600 {
+  color: #ffffff !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Vàng / Hổ Phách */
+[data-ui-style="minimal"] .bg-amber-950\/80,
+[data-ui-style="minimal"] .bg-amber-950\/60,
+[data-ui-style="minimal"] .bg-yellow-950\/80,
+[data-ui-style="minimal"] .bg-amber-500\/10,
+[data-ui-style="minimal"] .bg-amber-500\/15,
+[data-ui-style="minimal"] .bg-amber-500\/20,
+[data-theme-category="light"] .bg-amber-950\/80,
+[data-theme-category="light"] .bg-amber-950\/60,
+[data-theme-category="light"] .bg-yellow-950\/80,
+[data-theme-category="light"] .bg-amber-500\/10,
+[data-theme-category="light"] .bg-amber-500\/15,
+[data-theme-category="light"] .bg-amber-500\/20 {
+  background-color: #fef3c7 !important;
+  border-color: #fcd34d !important;
+  color: #b45309 !important;
+}
+
+[data-ui-style="minimal"] .text-amber-300,
+[data-ui-style="minimal"] .text-amber-400,
+[data-ui-style="minimal"] .text-yellow-300,
+[data-ui-style="minimal"] .text-yellow-400,
+[data-theme-category="light"] .text-amber-300,
+[data-theme-category="light"] .text-amber-400,
+[data-theme-category="light"] .text-yellow-300,
+[data-theme-category="light"] .text-yellow-400 {
+  color: #b45309 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Xanh Dương / Trời */
+[data-ui-style="minimal"] .bg-sky-950\/80,
+[data-ui-style="minimal"] .bg-sky-950\/60,
+[data-ui-style="minimal"] .bg-sky-500\/10,
+[data-ui-style="minimal"] .bg-sky-500\/15,
+[data-ui-style="minimal"] .bg-sky-500\/20,
+[data-theme-category="light"] .bg-sky-950\/80,
+[data-theme-category="light"] .bg-sky-950\/60,
+[data-theme-category="light"] .bg-sky-500\/10,
+[data-theme-category="light"] .bg-sky-500\/15,
+[data-theme-category="light"] .bg-sky-500\/20 {
+  background-color: #e0f2fe !important;
+  border-color: #7dd3fc !important;
+  color: #0369a1 !important;
+}
+
+[data-ui-style="minimal"] .text-sky-300,
+[data-ui-style="minimal"] .text-sky-400,
+[data-theme-category="light"] .text-sky-300,
+[data-theme-category="light"] .text-sky-400 {
+  color: #0284c7 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Cyan */
+[data-ui-style="minimal"] .bg-cyan-950\/80,
+[data-ui-style="minimal"] .bg-cyan-950\/60,
+[data-ui-style="minimal"] .bg-cyan-500\/10,
+[data-ui-style="minimal"] .bg-cyan-500\/20,
+[data-theme-category="light"] .bg-cyan-950\/80,
+[data-theme-category="light"] .bg-cyan-950\/60,
+[data-theme-category="light"] .bg-cyan-500\/10,
+[data-theme-category="light"] .bg-cyan-500\/20 {
+  background-color: #cffafe !important;
+  border-color: #67e8f9 !important;
+  color: #0e7490 !important;
+}
+
+[data-ui-style="minimal"] .text-cyan-300,
+[data-ui-style="minimal"] .text-cyan-400,
+[data-theme-category="light"] .text-cyan-300,
+[data-theme-category="light"] .text-cyan-400 {
+  color: #0891b2 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Ngọc Lục Bảo (Emerald / Green) */
+[data-ui-style="minimal"] .bg-emerald-950\/80,
+[data-ui-style="minimal"] .bg-emerald-950\/60,
+[data-ui-style="minimal"] .bg-emerald-950\/50,
+[data-ui-style="minimal"] .bg-emerald-950\/40,
+[data-ui-style="minimal"] .bg-emerald-500\/10,
+[data-ui-style="minimal"] .bg-emerald-500\/20,
+[data-theme-category="light"] .bg-emerald-950\/80,
+[data-theme-category="light"] .bg-emerald-950\/60,
+[data-theme-category="light"] .bg-emerald-950\/50,
+[data-theme-category="light"] .bg-emerald-950\/40,
+[data-theme-category="light"] .bg-emerald-500\/10,
+[data-theme-category="light"] .bg-emerald-500\/20 {
+  background-color: #d1fae5 !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+
+[data-ui-style="minimal"] .text-emerald-300,
+[data-ui-style="minimal"] .text-emerald-400,
+[data-theme-category="light"] .text-emerald-300,
+[data-theme-category="light"] .text-emerald-400 {
+  color: #059669 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Hồng / Đỏ (Rose / Red) */
+[data-ui-style="minimal"] .bg-rose-950\/80,
+[data-ui-style="minimal"] .bg-rose-950\/60,
+[data-ui-style="minimal"] .bg-red-950\/80,
+[data-ui-style="minimal"] .bg-rose-500\/10,
+[data-ui-style="minimal"] .bg-rose-500\/20,
+[data-ui-style="minimal"] .bg-red-500\/10,
+[data-ui-style="minimal"] .bg-red-500\/20,
+[data-theme-category="light"] .bg-rose-950\/80,
+[data-theme-category="light"] .bg-rose-950\/60,
+[data-theme-category="light"] .bg-red-950\/80,
+[data-theme-category="light"] .bg-rose-500\/10,
+[data-theme-category="light"] .bg-rose-500\/20,
+[data-theme-category="light"] .bg-red-500\/10,
+[data-theme-category="light"] .bg-red-500\/20 {
+  background-color: #ffe4e6 !important;
+  border-color: #fda4af !important;
+  color: #be123c !important;
+}
+
+[data-ui-style="minimal"] .text-rose-300,
+[data-ui-style="minimal"] .text-rose-400,
+[data-ui-style="minimal"] .text-red-300,
+[data-ui-style="minimal"] .text-red-400,
+[data-theme-category="light"] .text-rose-300,
+[data-theme-category="light"] .text-rose-400,
+[data-theme-category="light"] .text-red-300,
+[data-theme-category="light"] .text-red-400 {
+  color: #e11d48 !important;
+}
+
+/* Huy hiệu & điểm nhấn màu Tím (Purple / Pink) */
+[data-ui-style="minimal"] .bg-purple-950\/80,
+[data-ui-style="minimal"] .bg-purple-950\/60,
+[data-ui-style="minimal"] .bg-purple-500\/10,
+[data-ui-style="minimal"] .bg-purple-500\/20,
+[data-ui-style="minimal"] .bg-pink-950\/80,
+[data-ui-style="minimal"] .bg-pink-500\/10,
+[data-ui-style="minimal"] .bg-pink-500\/20,
+[data-theme-category="light"] .bg-purple-950\/80,
+[data-theme-category="light"] .bg-purple-950\/60,
+[data-theme-category="light"] .bg-purple-500\/10,
+[data-theme-category="light"] .bg-purple-500\/20,
+[data-theme-category="light"] .bg-pink-950\/80,
+[data-theme-category="light"] .bg-pink-500\/10,
+[data-theme-category="light"] .bg-pink-500\/20 {
+  background-color: #f3e8ff !important;
+  border-color: #d8b4fe !important;
+  color: #6d28d9 !important;
+}
+
+[data-ui-style="minimal"] .text-purple-300,
+[data-ui-style="minimal"] .text-purple-400,
+[data-ui-style="minimal"] .text-pink-300,
+[data-ui-style="minimal"] .text-pink-400,
+[data-theme-category="light"] .text-purple-300,
+[data-theme-category="light"] .text-purple-400,
+[data-theme-category="light"] .text-pink-300,
+[data-theme-category="light"] .text-pink-400 {
+  color: #7c3aed !important;
+}
+
+/* Phím tắt bàn phím <kbd> nổi khối chân thực */
+[data-ui-style="minimal"] kbd,
+[data-theme-category="light"] kbd {
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Input, Textarea, Select */
+[data-ui-style="minimal"] input,
+[data-ui-style="minimal"] textarea,
+[data-ui-style="minimal"] select,
+[data-theme-category="light"] input,
+[data-theme-category="light"] textarea,
+[data-theme-category="light"] select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] input::placeholder,
+[data-ui-style="minimal"] textarea::placeholder,
+[data-theme-category="light"] input::placeholder,
+[data-theme-category="light"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Tối ưu chữ gõ trong Đấu Trường Gõ Phím (TypingArena) - Chữ rõ nét tuyệt đối */
+[data-ui-style="minimal"] [data-char-status="pending"],
+[data-theme-category="light"] [data-char-status="pending"] {
+  color: #334155 !important;
+  opacity: 1 !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="past-correct"],
+[data-theme-category="light"] [data-char-status="past-correct"] {
+  color: #475569 !important;
+  opacity: 0.85 !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="correct"],
+[data-theme-category="light"] [data-char-status="correct"] {
+  color: #2563eb !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="incorrect"],
+[data-theme-category="light"] [data-char-status="incorrect"] {
+  color: #dc2626 !important;
+  background-color: #fee2e2 !important;
+  font-weight: 700 !important;
+  border-radius: 2px !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="past-incorrect"],
+[data-theme-category="light"] [data-char-status="past-incorrect"] {
+  color: #dc2626 !important;
+  opacity: 0.9 !important;
+  text-decoration: line-through !important;
+}
+
+[data-ui-style="minimal"] [data-char-status="current-active"],
+[data-theme-category="light"] [data-char-status="current-active"] {
+  color: #2563eb !important;
+  font-weight: 700 !important;
+}
+
+/* Con trỏ Monkeytype trong chế độ Tối Giản */
+[data-ui-style="minimal"] .monkeytype-caret,
+[data-ui-style="minimal"] .monkeytype-caret-bar,
+[data-theme-category="light"] .monkeytype-caret,
+[data-theme-category="light"] .monkeytype-caret-bar {
+  background-color: #2563eb !important;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.7) !important;
+}
+
+/* Trạng thái Hover, Phân chia danh sách và Nền mờ Modal trong chế độ Tối Giản */
+[data-ui-style="minimal"] .hover\:bg-slate-900:hover,
+[data-ui-style="minimal"] .hover\:bg-slate-850:hover,
+[data-ui-style="minimal"] .hover\:bg-slate-800:hover,
+[data-ui-style="minimal"] .hover\:bg-slate-700:hover,
+[data-theme-category="light"] .hover\:bg-slate-900:hover,
+[data-theme-category="light"] .hover\:bg-slate-850:hover,
+[data-theme-category="light"] .hover\:bg-slate-800:hover,
+[data-theme-category="light"] .hover\:bg-slate-700:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] .hover\:text-white:hover,
+[data-theme-category="light"] .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] .divide-slate-800,
+[data-ui-style="minimal"] .divide-slate-800\/80,
+[data-ui-style="minimal"] .divide-slate-700,
+[data-theme-category="light"] .divide-slate-800,
+[data-theme-category="light"] .divide-slate-800\/80,
+[data-theme-category="light"] .divide-slate-700 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Nền mờ phía sau Modal / Dialog - Đậm nét, tập trung thị giác vào thẻ */
+[data-ui-style="minimal"] .bg-slate-950\/85,
+[data-ui-style="minimal"] .bg-slate-950\/75,
+[data-theme-category="light"] .bg-slate-950\/85,
+[data-theme-category="light"] .bg-slate-950\/75 {
+  background-color: rgba(15, 23, 42, 0.55) !important;
+}
+
+/* =====================================================================
+   TỐI ƯU TOÀN DIỆN PHONG CÁCH TỐI GIẢN NỀN TRẮNG (MINIMAL & LIGHT THEMES)
+   Đảm bảo 100% chữ, huy hiệu, bảng vàng, khí linh, động phủ không bị chìm
+   ===================================================================== */
+
+/* 1. Xử lý triệt để Gradients nền tối thành dải màu sáng tao nhã */
+[data-ui-style="minimal"] .from-slate-950,
+[data-ui-style="minimal"] .from-slate-900,
+[data-ui-style="minimal"] .from-slate-850,
+[data-ui-style="minimal"] .from-slate-800,
+[data-ui-style="minimal"] .from-amber-950\/40,
+[data-ui-style="minimal"] .from-amber-950\/50,
+[data-ui-style="minimal"] .from-amber-950\/60,
+[data-ui-style="minimal"] .from-purple-950\/90,
+[data-ui-style="minimal"] .from-purple-950\/80,
+[data-ui-style="minimal"] .from-purple-950\/60,
+[data-ui-style="minimal"] .from-emerald-950\/60,
+[data-ui-style="minimal"] .from-cyan-950\/60,
+[data-theme-category="light"] .from-slate-950,
+[data-theme-category="light"] .from-slate-900,
+[data-theme-category="light"] .from-slate-850,
+[data-theme-category="light"] .from-slate-800,
+[data-theme-category="light"] .from-amber-950\/40,
+[data-theme-category="light"] .from-amber-950\/50,
+[data-theme-category="light"] .from-amber-950\/60,
+[data-theme-category="light"] .from-purple-950\/90,
+[data-theme-category="light"] .from-purple-950\/80,
+[data-theme-category="light"] .from-purple-950\/60,
+[data-theme-category="light"] .from-emerald-950\/60,
+[data-theme-category="light"] .from-cyan-950\/60 {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-to: #f8fafc !important;
+  --tw-gradient-stops: #ffffff, #f8fafc !important;
+}
+
+[data-ui-style="minimal"] .via-slate-950,
+[data-ui-style="minimal"] .via-slate-900,
+[data-ui-style="minimal"] .via-slate-850,
+[data-ui-style="minimal"] .via-slate-800,
+[data-ui-style="minimal"] .via-yellow-950\/20,
+[data-ui-style="minimal"] .via-orange-950\/20,
+[data-ui-style="minimal"] .via-purple-950\/30,
+[data-theme-category="light"] .via-slate-950,
+[data-theme-category="light"] .via-slate-900,
+[data-theme-category="light"] .via-slate-850,
+[data-theme-category="light"] .via-slate-800,
+[data-theme-category="light"] .via-yellow-950\/20,
+[data-theme-category="light"] .via-orange-950\/20,
+[data-theme-category="light"] .via-purple-950\/30 {
+  --tw-gradient-stops: var(--tw-gradient-from), #ffffff, var(--tw-gradient-to) !important;
+}
+
+[data-ui-style="minimal"] .to-slate-950,
+[data-ui-style="minimal"] .to-slate-900,
+[data-ui-style="minimal"] .to-slate-850,
+[data-ui-style="minimal"] .to-slate-800,
+[data-ui-style="minimal"] .to-slate-950\/70,
+[data-theme-category="light"] .to-slate-950,
+[data-theme-category="light"] .to-slate-900,
+[data-theme-category="light"] .to-slate-850,
+[data-theme-category="light"] .to-slate-800,
+[data-theme-category="light"] .to-slate-950\/70 {
+  --tw-gradient-to: #f1f5f9 !important;
+}
+
+/* Gradients mã màu tối HEX (#181126, #210d32, v.v.) */
+[data-ui-style="minimal"] .from-\[\#181126\],
+[data-ui-style="minimal"] .from-\[\#210d32\],
+[data-ui-style="minimal"] .from-\[\#170e2b\],
+[data-ui-style="minimal"] .from-\[\#100c1e\],
+[data-ui-style="minimal"] .from-\[\#0d0917\],
+[data-ui-style="minimal"] .from-\[\#0c0a14\],
+[data-ui-style="minimal"] .from-\[\#120e1e\],
+[data-ui-style="minimal"] .from-\[\#160c25\],
+[data-theme-category="light"] .from-\[\#181126\],
+[data-theme-category="light"] .from-\[\#210d32\],
+[data-theme-category="light"] .from-\[\#170e2b\],
+[data-theme-category="light"] .from-\[\#100c1e\],
+[data-theme-category="light"] .from-\[\#0d0917\],
+[data-theme-category="light"] .from-\[\#0c0a14\],
+[data-theme-category="light"] .from-\[\#120e1e\],
+[data-theme-category="light"] .from-\[\#160c25\] {
+  --tw-gradient-from: #ffffff !important;
+  --tw-gradient-stops: #ffffff, #fdf4ff, #ffffff !important;
+}
+
+[data-ui-style="minimal"] .via-\[\#120e1e\],
+[data-ui-style="minimal"] .via-\[\#160c25\],
+[data-ui-style="minimal"] .via-\[\#100c1e\],
+[data-theme-category="light"] .via-\[\#120e1e\],
+[data-theme-category="light"] .via-\[\#160c25\],
+[data-theme-category="light"] .via-\[\#100c1e\] {
+  --tw-gradient-stops: var(--tw-gradient-from), #faf5ff, var(--tw-gradient-to) !important;
+}
+
+[data-ui-style="minimal"] .to-\[\#0c0a14\],
+[data-ui-style="minimal"] .to-\[\#0d0917\],
+[data-theme-category="light"] .to-\[\#0c0a14\],
+[data-theme-category="light"] .to-\[\#0d0917\] {
+  --tw-gradient-to: #ffffff !important;
+}
+
+/* 2. BẢNG VÀNG PHONG THẦN (LeaderboardModal) */
+/* Hộp Bục Vinh Quang 3D (Podium Base) */
+[data-ui-style="minimal"] .bg-gradient-to-b.from-slate-950.via-slate-900.to-slate-950,
+[data-theme-category="light"] .bg-gradient-to-b.from-slate-950.via-slate-900.to-slate-950 {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Bệ Quán Quân #1 (Top 1) */
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-700,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-700 {
+  background: linear-gradient(0deg, #f59e0b 0%, #fbbf24 60%, #fef08a 100%) !important;
+  border-top: 2px solid #b45309 !important;
+}
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-700 span,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-700 span {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Bệ Á Quân #2 (Top 2) */
+[data-ui-style="minimal"] .bg-gradient-to-t.from-slate-800.to-slate-700,
+[data-theme-category="light"] .bg-gradient-to-t.from-slate-800.to-slate-700 {
+  background: linear-gradient(0deg, #94a3b8 0%, #cbd5e1 60%, #f1f5f9 100%) !important;
+  border-top: 2px solid #64748b !important;
+}
+[data-ui-style="minimal"] .bg-gradient-to-t.from-slate-800.to-slate-700 span,
+[data-theme-category="light"] .bg-gradient-to-t.from-slate-800.to-slate-700 span {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Bệ Quý Quân #3 (Top 3) */
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-900,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-900 {
+  background: linear-gradient(0deg, #d97706 0%, #f59e0b 60%, #ffedd5 100%) !important;
+  border-top: 2px solid #92400e !important;
+}
+[data-ui-style="minimal"] .bg-gradient-to-t.from-amber-900 span,
+[data-theme-category="light"] .bg-gradient-to-t.from-amber-900 span {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Thẻ dòng Top 1 trong danh sách */
+[data-ui-style="minimal"] .from-amber-950\/40.via-yellow-950\/20,
+[data-theme-category="light"] .from-amber-950\/40.via-yellow-950\/20 {
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #ffffff 100%) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 2px 6px -1px rgba(245, 158, 11, 0.15) !important;
+}
+
+/* Thẻ dòng Top 2 trong danh sách */
+[data-ui-style="minimal"] .from-slate-800\/40.via-slate-900\/30,
+[data-theme-category="light"] .from-slate-800\/40.via-slate-900\/30 {
+  background: linear-gradient(90deg, #f1f5f9 0%, #f8fafc 50%, #ffffff 100%) !important;
+  border-color: #94a3b8 !important;
+}
+
+/* Thẻ dòng Top 3 trong danh sách */
+[data-ui-style="minimal"] .from-amber-950\/30.via-orange-950\/20,
+[data-theme-category="light"] .from-amber-950\/30.via-orange-950\/20 {
+  background: linear-gradient(90deg, #ffedd5 0%, #fff7ed 50%, #ffffff 100%) !important;
+  border-color: #fb923c !important;
+}
+
+/* 3. KHÍ LINH & CHIẾU THƯ THIÊN ĐẠO (HeavenlyDao / HeavenlyChronicleModal / DaoDecreeModal) */
+/* Thẻ Chiếu Thư Toàn Văn (DaoDecreeModal) */
+[data-ui-style="minimal"] #dao-decree-scroll-card,
+[data-theme-category="light"] #dao-decree-scroll-card,
+[data-ui-style="minimal"] .bg-gradient-to-b.from-\[\#181126\].via-\[\#120e1e\].to-\[\#0c0a14\],
+[data-theme-category="light"] .bg-gradient-to-b.from-\[\#181126\].via-\[\#120e1e\].to-\[\#0c0a14\] {
+  background: #ffffff !important;
+  border-color: #f59e0b !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #dao-decree-content-box,
+[data-theme-category="light"] #dao-decree-content-box,
+[data-ui-style="minimal"] .bg-amber-950\/20,
+[data-theme-category="light"] .bg-amber-950\/20 {
+  background-color: #fefce8 !important;
+  border-color: #fde047 !important;
+}
+
+[data-ui-style="minimal"] #dao-decree-content-box p,
+[data-theme-category="light"] #dao-decree-content-box p,
+[data-ui-style="minimal"] .bg-amber-950\/20 p,
+[data-theme-category="light"] .bg-amber-950\/20 p {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+/* Tiêu đề vàng kim chuyển thành màu hổ phách sắc nét trên nền trắng */
+[data-ui-style="minimal"] .bg-gradient-to-r.from-amber-200.via-amber-400.to-yellow-200,
+[data-theme-category="light"] .bg-gradient-to-r.from-amber-200.via-amber-400.to-yellow-200 {
+  -webkit-text-fill-color: #92400e !important;
+  color: #92400e !important;
+  text-shadow: none !important;
+}
+
+/* Khối Chiếu Thư trong Biên Niên Sử (HeavenlyChronicleModal) */
+[data-ui-style="minimal"] .bg-slate-900\/80,
+[data-theme-category="light"] .bg-slate-900\/80 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Khung trò chuyện Thỉnh Cầu Khí Linh (Oracle) */
+[data-ui-style="minimal"] .bg-purple-600\/30,
+[data-theme-category="light"] .bg-purple-600\/30 {
+  background-color: #f3e8ff !important;
+  border-color: #c4b5fd !important;
+  color: #581c87 !important;
+  font-weight: 600 !important;
+}
+
+/* 4. LUYỆN KHÍ & ĐỘNG PHỦ (CultivationModal) */
+/* Khung Avatar Tọa Thiền & Động Phủ */
+[data-ui-style="minimal"] .bg-gradient-to-r.from-amber-500\/20.via-yellow-500\/15.to-purple-500\/15,
+[data-theme-category="light"] .bg-gradient-to-r.from-amber-500\/20.via-yellow-500\/15.to-purple-500\/15 {
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #f5f3ff 100%) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 2px 8px -2px rgba(245, 158, 11, 0.15) !important;
+}
+
+/* Thẻ cảnh giới hiện tại & Động Phủ */
+[data-ui-style="minimal"] .bg-amber-500\/10,
+[data-ui-style="minimal"] .bg-amber-500\/15,
+[data-theme-category="light"] .bg-amber-500\/10,
+[data-theme-category="light"] .bg-amber-500\/15 {
+  background-color: #fefce8 !important;
+  border-color: #fde047 !important;
+  color: #92400e !important;
+}
+
+/* 5. TỔNG KẾT TRẬN ĐẤU (GameOverModal) */
+[data-ui-style="minimal"] .bg-slate-900.border.border-slate-700\/80,
+[data-theme-category="light"] .bg-slate-900.border.border-slate-700\/80 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* 6. NGƯỜI CHƠI ĐANG TRỰC TUYẾN (OnlineUsersModal) */
+[data-ui-style="minimal"] #modal-admin-online-users > div,
+[data-theme-category="light"] #modal-admin-online-users > div,
+[data-ui-style="minimal"] .bg-\[\#121622\],
+[data-theme-category="light"] .bg-\[\#121622\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-900\/90,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-900\/90 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-950\/70,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-950\/70 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users input,
+[data-theme-category="light"] #modal-admin-online-users input {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/80,
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/90,
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/70,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/80,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/90,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/70 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-850\/80:hover,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-850\/80:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-emerald-950\/20,
+[data-theme-category="light"] #modal-admin-online-users .bg-emerald-950\/20 {
+  background-color: #f0fdf4 !important;
+  border-color: #86efac !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .bg-emerald-950\/20:hover,
+[data-theme-category="light"] #modal-admin-online-users .bg-emerald-950\/20:hover {
+  background-color: #dcfce7 !important;
+  border-color: #4ade80 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-white,
+[data-theme-category="light"] #modal-admin-online-users .text-white {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-200,
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-300,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-200,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-300 {
+  color: #1e293b !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-400,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-400 {
+  color: #475569 !important;
+}
+
+[data-ui-style="minimal"] #modal-admin-online-users .text-slate-500,
+[data-theme-category="light"] #modal-admin-online-users .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Các hộp thông số nhỏ trong chi tiết người chơi */
+[data-ui-style="minimal"] #modal-admin-online-users .bg-slate-900\/80,
+[data-theme-category="light"] #modal-admin-online-users .bg-slate-900\/80 {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* 7. THANH THÔNG BÁO KHÍ LINH (Header & Ticker) */
+[data-ui-style="minimal"] #khi-linh-ticker-banner,
+[data-theme-category="light"] #khi-linh-ticker-banner {
+  background: linear-gradient(90deg, #fdf4ff 0%, #ffffff 40%, #fefce8 100%) !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-banner span.font-bold,
+[data-theme-category="light"] #khi-linh-ticker-banner span.font-bold,
+[data-ui-style="minimal"] #khi-linh-ticker-banner span.font-black,
+[data-theme-category="light"] #khi-linh-ticker-banner span.font-black {
+  color: #6b21a8 !important;
+  text-shadow: none !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-banner .text-slate-300,
+[data-theme-category="light"] #khi-linh-ticker-banner .text-slate-300,
+[data-ui-style="minimal"] #khi-linh-ticker-banner .text-slate-200,
+[data-theme-category="light"] #khi-linh-ticker-banner .text-slate-200 {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-banner:hover .text-slate-300,
+[data-theme-category="light"] #khi-linh-ticker-banner:hover .text-slate-300 {
+  color: #581c87 !important;
+}
+
+[data-ui-style="minimal"] #khi-linh-ticker-minimized,
+[data-theme-category="light"] #khi-linh-ticker-minimized {
+  background: #ffffff !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Banner Chiếu Thư Phong Thần phá kỷ lục toàn server */
+[data-ui-style="minimal"] #breaking-record-banner,
+[data-theme-category="light"] #breaking-record-banner {
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #fef3c7 100%) !important;
+  border: 2px solid #f59e0b !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.25) !important;
+}
+
+[data-ui-style="minimal"] #breaking-record-banner .text-white,
+[data-theme-category="light"] #breaking-record-banner .text-white {
+  color: #0f172a !important;
+}
+
+[data-ui-style="minimal"] #breaking-record-banner .text-yellow-300,
+[data-theme-category="light"] #breaking-record-banner .text-yellow-300,
+[data-ui-style="minimal"] #breaking-record-banner .text-amber-300,
+[data-theme-category="light"] #breaking-record-banner .text-amber-300 {
+  color: #92400e !important;
+  font-weight: 800 !important;
+}
+
+/* UI Style 5: Hắc Ám Ma Vực (U Minh Hàn Ngục) - Tro tàn dung nham sắc sảo, nổi khối */
+[data-ui-style="abyss"] {
+  --theme-bg: #080205;
+  --theme-card: #1c0c16;
+  --theme-main: #ef4444;
+  --theme-sub: #7c3743;
+  --theme-text: #fee2e2;
+  --theme-error: #991b1b;
+  --theme-border: #4d1522;
+  --theme-radius: 0.5rem;
+  --theme-glow: 0 0 25px rgba(239, 68, 68, 0.55);
+}
+
+[data-ui-style="abyss"] .bg-slate-900\/70,
+[data-ui-style="abyss"] .bg-slate-900 {
+  background-color: rgba(28, 12, 22, 0.9) !important;
+  border-color: rgba(77, 21, 34, 0.9) !important;
+}
+
+@keyframes tribulationScreenShake {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-3px, 2px) rotate(-0.5deg); }
+  40% { transform: translate(3px, -2px) rotate(0.5deg); }
+  60% { transform: translate(-2px, -1px) rotate(-0.3deg); }
+  80% { transform: translate(2px, 1px) rotate(0.3deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.animate-tribulation-shake {
+  animation: tribulationScreenShake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Caret Contraction & Expansion (No blinking, shrinks to center and expands back out) */
+@keyframes caretContractExpand {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.12);
+  }
+}
+
+.monkeytype-caret-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2.5px;
+  pointer-events: none;
+  z-index: 30;
+  transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1), height 0.08s ease-out, opacity 0.15s ease;
+  will-change: transform;
+  transform: translateZ(0);
+  contain: layout paint;
+}
+
+.monkeytype-caret-bar {
+  width: 100%;
+  height: 100%;
+  background-color: var(--theme-main, #fbbf24);
+  border-radius: 2px;
+  box-shadow: 0 0 12px var(--theme-main, rgba(251, 191, 36, 0.9));
+  transform-origin: center center;
+  transition: transform 0.08s ease-out;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.monkeytype-caret-bar.contracting {
+  animation: caretContractExpand 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.monkeytype-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2.5px;
+  background-color: var(--theme-main, #fbbf24);
+  border-radius: 2px;
+  box-shadow: 0 0 12px var(--theme-main, rgba(251, 191, 36, 0.9));
+  pointer-events: none;
+  z-index: 30;
+  transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1), height 0.08s ease-out, opacity 0.15s ease;
+  will-change: transform;
+  transform: translateZ(0);
+  contain: layout paint;
+}
+
+.monkeytype-caret.blinking {
+  transform-origin: center center;
+  animation: caretContractExpand 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* === POWERFUL ADMIN & TITLE HALOS === */
+@keyframes adminConicRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes championFlameAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(244, 63, 94, 0.7), 0 0 30px rgba(239, 68, 68, 0.4), inset 0 0 12px rgba(251, 146, 60, 0.3);
+    border-color: #f43f5e;
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.9), 0 0 45px rgba(245, 158, 11, 0.6), inset 0 0 16px rgba(239, 68, 68, 0.5);
+    border-color: #fb923c;
+  }
+}
+
+@keyframes lightningStormAura {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(250, 204, 21, 0.7), 0 0 28px rgba(234, 179, 8, 0.4);
+    border-color: #facc15;
+  }
+  25% {
+    box-shadow: 0 0 26px rgba(255, 255, 255, 0.95), 0 0 40px rgba(250, 204, 21, 0.8);
+    border-color: #ffffff;
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(250, 204, 21, 0.85), 0 0 32px rgba(202, 138, 4, 0.5);
+    border-color: #eab308;
+  }
+}
+
+@keyframes dragonDarkBloodAura {
+  0%, 100% {
+    box-shadow: 0 0 18px rgba(220, 38, 38, 0.8), 0 0 35px rgba(153, 27, 27, 0.6), inset 0 0 14px rgba(239, 68, 68, 0.4);
+    border-color: #dc2626;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(239, 68, 68, 1), 0 0 55px rgba(185, 28, 28, 0.8), inset 0 0 20px rgba(249, 115, 22, 0.6);
+    border-color: #f97316;
+  }
+}
+
+@keyframes cosmicCyanAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.7), 0 0 30px rgba(14, 165, 233, 0.4);
+    border-color: #38bdf8;
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(34, 211, 238, 0.9), 0 0 45px rgba(59, 130, 246, 0.6);
+    border-color: #22d3ee;
+  }
+}
+
+@keyframes matrixEmeraldAura {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.7), 0 0 28px rgba(16, 185, 129, 0.4);
+    border-color: #34d399;
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.9), 0 0 40px rgba(5, 150, 105, 0.6);
+    border-color: #10b981;
+  }
+}
+
+@keyframes arcanePurpleAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(192, 132, 252, 0.7), 0 0 30px rgba(168, 85, 247, 0.4);
+    border-color: #c084fc;
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(217, 70, 239, 0.9), 0 0 45px rgba(147, 51, 234, 0.6);
+    border-color: #d946ef;
+  }
+}
+
+/* Rotating Conic Ring for Root Admin */
+.admin-conic-glow {
+  position: absolute;
+  inset: -3.5px;
+  border-radius: 18px;
+  background: conic-gradient(from 0deg, #f59e0b, #ef4444, #fbbf24, #f59e0b, #fbbf24, #ffffff, #f59e0b);
+  animation: adminConicRotate 3.2s linear infinite;
+  filter: blur(4px);
+  z-index: 0;
+  opacity: 0.95;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.admin-conic-sharp {
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  background: conic-gradient(from 0deg, #f59e0b, #ef4444, #fbbf24, #f59e0b, #fbbf24, #ffffff, #f59e0b);
+  animation: adminConicRotate 3.2s linear infinite;
+  z-index: 1;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.frame-admin-box {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.8), 0 0 40px rgba(239, 68, 68, 0.5), inset 0 0 15px rgba(251, 191, 36, 0.4);
+  transform: translateZ(0);
+}
+
+.frame-flame-box {
+  animation: championFlameAura 2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.frame-lightning-box {
+  animation: lightningStormAura 1.8s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.frame-dragon-box {
+  animation: dragonDarkBloodAura 2.2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.frame-cosmic-box {
+  animation: cosmicCyanAura 2.4s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.frame-matrix-box {
+  animation: matrixEmeraldAura 2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.frame-arcane-box {
+  animation: arcanePurpleAura 2.2s ease-in-out infinite;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+/* === CHAMPION TOP MULTIPLAYER AURA ANIMATIONS === */
+@keyframes championTopViDauAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(244, 63, 94, 0.8), 0 0 32px rgba(239, 68, 68, 0.5), inset 0 0 12px rgba(251, 146, 60, 0.4);
+    border-color: #f43f5e;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(239, 68, 68, 1), 0 0 52px rgba(245, 158, 11, 0.7), inset 0 0 18px rgba(239, 68, 68, 0.6);
+    border-color: #fb923c;
+  }
+}
+
+@keyframes championTopViNodauAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(250, 204, 21, 0.8), 0 0 30px rgba(234, 179, 8, 0.5);
+    border-color: #facc15;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(255, 255, 255, 0.95), 0 0 45px rgba(250, 204, 21, 0.85);
+    border-color: #ffffff;
+  }
+}
+
+@keyframes championTopEnAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.8), 0 0 32px rgba(14, 165, 233, 0.5);
+    border-color: #38bdf8;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(34, 211, 238, 1), 0 0 48px rgba(59, 130, 246, 0.7);
+    border-color: #22d3ee;
+  }
+}
+
+@keyframes championTopNumpadAura {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(52, 211, 153, 0.8), 0 0 30px rgba(16, 185, 129, 0.5);
+    border-color: #34d399;
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(16, 185, 129, 1), 0 0 44px rgba(5, 150, 105, 0.7);
+    border-color: #10b981;
+  }
+}
+
+@keyframes championTopNgauHungAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(251, 146, 60, 0.8), 0 0 32px rgba(239, 68, 68, 0.5);
+    border-color: #fb923c;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(249, 115, 22, 1), 0 0 48px rgba(234, 88, 12, 0.7);
+    border-color: #fdba74;
+  }
+}
+
+@keyframes championTopDoanChuAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.8), 0 0 32px rgba(168, 85, 247, 0.5);
+    border-color: #c084fc;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(217, 70, 239, 1), 0 0 48px rgba(147, 51, 234, 0.7);
+    border-color: #d946ef;
+  }
+}
+
+@keyframes championTopSanBossAura {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.9), 0 0 40px rgba(185, 28, 28, 0.7), inset 0 0 15px rgba(239, 68, 68, 0.5);
+    border-color: #ef4444;
+  }
+  50% {
+    box-shadow: 0 0 34px rgba(239, 68, 68, 1), 0 0 60px rgba(220, 38, 38, 0.9), inset 0 0 22px rgba(249, 115, 22, 0.7);
+    border-color: #f97316;
+  }
+}
+
+@keyframes championTopOutplayAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(34, 211, 238, 0.8), 0 0 32px rgba(6, 182, 212, 0.5);
+    border-color: #22d3ee;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(56, 189, 248, 1), 0 0 48px rgba(14, 165, 233, 0.7);
+    border-color: #38bdf8;
+  }
+}
+
+.frame-top-vi-dau-box { animation: championTopViDauAura 2s ease-in-out infinite; }
+.frame-top-vi-nodau-box { animation: championTopViNodauAura 1.8s ease-in-out infinite; }
+.frame-top-en-box { animation: championTopEnAura 2.2s ease-in-out infinite; }
+.frame-top-numpad-box { animation: championTopNumpadAura 2s ease-in-out infinite; }
+.frame-top-ngau-hung-box { animation: championTopNgauHungAura 1.9s ease-in-out infinite; }
+.frame-top-doan-chu-box { animation: championTopDoanChuAura 2.2s ease-in-out infinite; }
+.frame-top-san-boss-box { animation: championTopSanBossAura 2.1s ease-in-out infinite; }
+.frame-top-outplay-box { animation: championTopOutplayAura 2.3s ease-in-out infinite; }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Smooth enter animation for players & bots entering waiting room slots */
+@keyframes slotEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-slot-enter {
+  animation: slotEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* ========================================================================= */
+/* CUSTOM LUXURY THEMED SCROLLBAR - APPLIED GLOBALLY TO ALL SCROLLBARS      */
+/* ========================================================================= */
+
+/* Firefox standard */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.4) rgba(15, 23, 42, 0.6);
+}
+
+/* WebKit (Chrome, Edge, Safari, Opera) */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.65);
+  border-radius: 9999px;
+  margin: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.4), rgba(217, 119, 6, 0.45));
+  border-radius: 9999px;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  transition: all 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.85), rgba(245, 158, 11, 0.9));
+  border-color: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #fbbf24;
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.8);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ========================================================================= */
+/* CUSTOM NUMBER INPUT SPINNER BUTTONS (TĂNG / GIẢM)                         */
+/* ========================================================================= */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  cursor: pointer;
+  opacity: 0.75;
+  filter: invert(0.85) sepia(100%) saturate(400%) hue-rotate(5deg);
+  transition: opacity 0.15s ease, filter 0.15s ease;
+  height: 24px;
+}
+
+input[type="number"]::-webkit-inner-spin-button:hover,
+input[type="number"]::-webkit-outer-spin-button:hover {
+  opacity: 1;
+  filter: invert(0.95) sepia(100%) saturate(800%) hue-rotate(15deg) drop-shadow(0 0 5px rgba(251, 191, 36, 0.8));
+}
+
+/* ========================================================================= */
+/* XIANXIA 12 REALMS CULTIVATION AVATAR FRAME GLOWS & AURAS                 */
+/* ========================================================================= */
+
+@keyframes xianxiaLuyenKhiAura {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.7), 0 0 24px rgba(5, 150, 105, 0.4);
+    border-color: #10b981;
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(52, 211, 153, 0.9), 0 0 35px rgba(16, 185, 129, 0.6);
+    border-color: #6ee7b7;
+  }
+}
+
+@keyframes xianxiaTrucCoAura {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(6, 182, 212, 0.75), 0 0 26px rgba(14, 165, 233, 0.45);
+    border-color: #06b6d4;
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(34, 211, 238, 0.95), 0 0 38px rgba(56, 189, 248, 0.65);
+    border-color: #67e8f9;
+  }
+}
+
+@keyframes xianxiaKetDanAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.8), 0 0 32px rgba(234, 179, 8, 0.5), inset 0 0 10px rgba(251, 191, 36, 0.3);
+    border-color: #fbbf24;
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(251, 191, 36, 1), 0 0 46px rgba(245, 158, 11, 0.75), inset 0 0 15px rgba(245, 158, 11, 0.5);
+    border-color: #fef08a;
+  }
+}
+
+@keyframes xianxiaNguyenAnhAura {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.8), 0 0 32px rgba(147, 51, 234, 0.5);
+    border-color: #a855f7;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(192, 132, 252, 0.95), 0 0 50px rgba(217, 70, 239, 0.7);
+    border-color: #d8b4fe;
+  }
+}
+
+@keyframes xianxiaHoaThanAura {
+  0%, 100% {
+    box-shadow: 0 0 18px rgba(99, 102, 241, 0.85), 0 0 36px rgba(79, 70, 229, 0.55);
+    border-color: #818cf8;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(129, 140, 248, 1), 0 0 55px rgba(56, 189, 248, 0.75);
+    border-color: #a5b4fc;
+  }
+}
+
+@keyframes xianxiaLuyenHuAura {
+  0%, 100% {
+    box-shadow: 0 0 18px rgba(59, 130, 246, 0.85), 0 0 36px rgba(37, 99, 235, 0.55);
+    border-color: #60a5fa;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(96, 165, 250, 1), 0 0 55px rgba(20, 184, 166, 0.75);
+    border-color: #93c5fd;
+  }
+}
+
+@keyframes xianxiaHopTheAura {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(234, 179, 8, 0.9), 0 0 40px rgba(245, 158, 11, 0.65), inset 0 0 12px rgba(253, 224, 71, 0.4);
+    border-color: #facc15;
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(254, 240, 138, 1), 0 0 60px rgba(234, 179, 8, 0.9), inset 0 0 18px rgba(250, 204, 21, 0.6);
+    border-color: #fef08a;
+  }
+}
+
+@keyframes xianxiaDaiThuaAura {
+  0%, 100% {
+    box-shadow: 0 0 22px rgba(249, 115, 22, 0.9), 0 0 44px rgba(234, 88, 12, 0.65), inset 0 0 14px rgba(251, 146, 60, 0.4);
+    border-color: #fb923c;
+  }
+  50% {
+    box-shadow: 0 0 36px rgba(251, 146, 60, 1), 0 0 65px rgba(239, 68, 68, 0.85), inset 0 0 20px rgba(249, 115, 22, 0.7);
+    border-color: #fed7aa;
+  }
+}
+
+@keyframes xianxiaDoKiepAura {
+  0%, 100% {
+    box-shadow: 0 0 24px rgba(244, 63, 94, 0.95), 0 0 48px rgba(168, 85, 247, 0.7), inset 0 0 15px rgba(239, 68, 68, 0.5);
+    border-color: #f43f5e;
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(239, 68, 68, 1), 0 0 75px rgba(217, 70, 239, 0.9), inset 0 0 22px rgba(244, 63, 94, 0.8);
+    border-color: #fda4af;
+  }
+}
+
+@keyframes xianxiaKimTienAura {
+  0%, 100% {
+    box-shadow: 0 0 26px rgba(253, 224, 71, 1), 0 0 52px rgba(250, 204, 21, 0.8), inset 0 0 16px rgba(255, 255, 255, 0.6);
+    border-color: #fef08a;
+  }
+  50% {
+    box-shadow: 0 0 42px rgba(255, 255, 255, 1), 0 0 80px rgba(253, 224, 71, 0.95), inset 0 0 25px rgba(250, 204, 21, 0.85);
+    border-color: #ffffff;
+  }
+}
+
+@keyframes xianxiaDaiLaAura {
+  0%, 100% {
+    box-shadow: 0 0 28px rgba(217, 70, 239, 1), 0 0 56px rgba(168, 85, 247, 0.85), inset 0 0 18px rgba(244, 114, 182, 0.6);
+    border-color: #e879f9;
+  }
+  50% {
+    box-shadow: 0 0 46px rgba(244, 114, 182, 1), 0 0 85px rgba(56, 189, 248, 0.95), inset 0 0 26px rgba(217, 70, 239, 0.85);
+    border-color: #f5d0fe;
+  }
+}
+
+@keyframes xianxiaThienTonAura {
+  0%, 100% {
+    box-shadow: 0 0 32px rgba(251, 191, 36, 1), 0 0 65px rgba(239, 68, 68, 0.85), inset 0 0 20px rgba(254, 240, 138, 0.8);
+    border-color: #fbbf24;
+  }
+  33% {
+    box-shadow: 0 0 45px rgba(239, 68, 68, 1), 0 0 85px rgba(245, 158, 11, 0.95), inset 0 0 28px rgba(251, 191, 36, 0.9);
+    border-color: #f87171;
+  }
+  66% {
+    box-shadow: 0 0 50px rgba(255, 255, 255, 1), 0 0 95px rgba(251, 191, 36, 1), inset 0 0 32px rgba(255, 255, 255, 0.95);
+    border-color: #ffffff;
+  }
+}
+
+.frame-xianxia-luyenkhi-box { animation: xianxiaLuyenKhiAura 2.2s ease-in-out infinite; }
+.frame-xianxia-trucco-box { animation: xianxiaTrucCoAura 2.2s ease-in-out infinite; }
+.frame-xianxia-ketdan-box { animation: xianxiaKetDanAura 2s ease-in-out infinite; }
+.frame-xianxia-nguyenanh-box { animation: xianxiaNguyenAnhAura 2.2s ease-in-out infinite; }
+.frame-xianxia-hoathan-box { animation: xianxiaHoaThanAura 2.4s ease-in-out infinite; }
+.frame-xianxia-luyenhu-box { animation: xianxiaLuyenHuAura 2.4s ease-in-out infinite; }
+.frame-xianxia-hopthe-box { animation: xianxiaHopTheAura 1.8s ease-in-out infinite; }
+.frame-xianxia-daithua-box { animation: xianxiaDaiThuaAura 2s ease-in-out infinite; }
+.frame-xianxia-dokiep-box { animation: xianxiaDoKiepAura 1.8s ease-in-out infinite; }
+.frame-xianxia-kimtien-box { animation: xianxiaKimTienAura 2s ease-in-out infinite; }
+.frame-xianxia-daila-box { animation: xianxiaDaiLaAura 2s ease-in-out infinite; }
+.frame-xianxia-thienton-box { animation: xianxiaThienTonAura 2.2s ease-in-out infinite; }
+
+/* === EPIC BOSS ARENA SKILL ANIMATIONS === */
+@keyframes bossEarthquake {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-6px, 4px) rotate(-1deg); }
+  20% { transform: translate(6px, -4px) rotate(1deg); }
+  30% { transform: translate(-7px, -3px) rotate(-1.2deg); }
+  40% { transform: translate(7px, 3px) rotate(1.2deg); }
+  50% { transform: translate(-4px, 5px) rotate(-0.8deg); }
+  60% { transform: translate(5px, -5px) rotate(0.8deg); }
+  70% { transform: translate(-6px, 3px) rotate(-1deg); }
+  80% { transform: translate(6px, -3px) rotate(1deg); }
+  90% { transform: translate(-3px, 4px) rotate(-0.5deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+.animate-boss-earthquake {
+  animation: bossEarthquake 0.22s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
+}
+
+@keyframes bossReverseRift {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(168, 85, 247, 0.6), inset 0 0 15px rgba(217, 70, 239, 0.4);
+    border-color: rgba(192, 132, 252, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 45px rgba(192, 132, 252, 0.9), inset 0 0 25px rgba(168, 85, 247, 0.6);
+    border-color: rgba(232, 121, 249, 1);
+  }
+}
+
+.animate-boss-reverse {
+  animation: bossReverseRift 1.4s ease-in-out infinite;
+}
+
+@keyframes bossTitanFlame {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(234, 179, 8, 0.6), inset 0 0 15px rgba(245, 158, 11, 0.35);
+    border-color: rgba(250, 204, 21, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 45px rgba(245, 158, 11, 0.95), inset 0 0 28px rgba(234, 179, 8, 0.55);
+    border-color: rgba(251, 191, 36, 1);
+  }
+}
+
+.animate-boss-capslock {
+  animation: bossTitanFlame 1.2s ease-in-out infinite;
+}
+
+@keyframes bossShieldGlow {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(14, 165, 233, 0.7), inset 0 0 16px rgba(56, 189, 248, 0.4);
+    border-color: rgba(56, 189, 248, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 45px rgba(56, 189, 248, 0.95), inset 0 0 26px rgba(14, 165, 233, 0.6);
+    border-color: rgba(125, 211, 252, 1);
+  }
+}
+
+.animate-boss-shield {
+  animation: bossShieldGlow 1.2s ease-in-out infinite;
+}
+
+@keyframes bossSmokePulse {
+  0%, 100% {
+    opacity: 0.88;
+    backdrop-filter: blur(5px);
+  }
+  50% {
+    opacity: 0.96;
+    backdrop-filter: blur(8px);
+  }
+}
+
+.animate-boss-smoke {
+  animation: bossSmokePulse 2s ease-in-out infinite;
+}
+
+/* === 12 HÀO QUANG CẢNH GIỚI TU TIÊN (XIANXIA REALM AURAS) === */
+@keyframes xianxiaAuraRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes xianxiaAuraPulse {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.08); }
+}
+
+@keyframes xianxiaChaoticSwirl {
+  0% { transform: rotate(0deg) scale(1); filter: hue-rotate(0deg); }
+  50% { transform: rotate(180deg) scale(1.1); filter: hue-rotate(180deg); }
+  100% { transform: rotate(360deg) scale(1); filter: hue-rotate(360deg); }
+}
+
+@keyframes lightningStrikeFlash {
+  0%, 100% { opacity: 0; }
+  10%, 25% { opacity: 0.85; background-color: rgba(255, 255, 255, 0.4); }
+  15% { opacity: 0.2; }
+  20% { opacity: 0.95; background-color: rgba(254, 240, 138, 0.5); }
+  35% { opacity: 0; }
+}
+
+@keyframes swordSlashGlow {
+  0% { transform: translateX(-100%) rotate(45deg); opacity: 0; }
+  50% { opacity: 1; filter: drop-shadow(0 0 15px #facc15); }
+  100% { transform: translateX(200%) rotate(45deg); opacity: 0; }
+}
+
+.tribulation-flash-screen {
+  animation: lightningStrikeFlash 0.6s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+
+/* Base Halo Ring Container */
+.realm-aura-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.realm-aura-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* 0. Luyện Khí Kỳ - Thanh Mộc Khí Tức */
+.realm-aura-0 {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(5, 150, 105, 0.15) 60%, transparent 80%);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+  animation: xianxiaAuraPulse 3s ease-in-out infinite;
+}
+
+/* 1. Trúc Cơ Kỳ - Lam Thủy Đạo Cơ */
+.realm-aura-1 {
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.5) 0%, rgba(14, 165, 233, 0.2) 65%, transparent 85%);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.55), inset 0 0 8px rgba(6, 182, 212, 0.25);
+  animation: xianxiaAuraPulse 2.8s ease-in-out infinite;
+}
+
+/* 2. Kết Đan Kỳ - Kim Đan Cửu Chuyển */
+.realm-aura-2 {
+  background: conic-gradient(from 0deg, rgba(251, 191, 36, 0.7), rgba(245, 158, 11, 0.4), rgba(252, 211, 77, 0.8), rgba(251, 191, 36, 0.7));
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.65), 0 0 30px rgba(245, 158, 11, 0.3);
+  animation: xianxiaAuraRotate 8s linear infinite;
+  filter: blur(2.5px);
+}
+
+/* 3. Nguyên Anh Kỳ - Tử Phủ Chân Thần */
+.realm-aura-3 {
+  background: conic-gradient(from 180deg, rgba(168, 85, 247, 0.8), rgba(217, 70, 239, 0.5), rgba(192, 132, 252, 0.85), rgba(168, 85, 247, 0.8));
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.7), 0 0 35px rgba(217, 70, 239, 0.4);
+  animation: xianxiaAuraRotate 7s linear infinite;
+  filter: blur(2.5px);
+}
+
+/* 4. Hóa Thần Kỳ - Tinh Thần Ý Cảnh */
+.realm-aura-4 {
+  background: conic-gradient(from 90deg, rgba(99, 102, 241, 0.85), rgba(56, 189, 248, 0.6), rgba(129, 140, 248, 0.9), rgba(99, 102, 241, 0.85));
+  box-shadow: 0 0 22px rgba(99, 102, 241, 0.75), 0 0 40px rgba(56, 189, 248, 0.45);
+  animation: xianxiaAuraRotate 6s linear infinite;
+  filter: blur(3px);
+}
+
+/* 5. Luyện Hư Kỳ - Hư Không Vô Cực */
+.realm-aura-5 {
+  background: radial-gradient(circle, rgba(203, 213, 225, 0.7) 0%, rgba(71, 85, 105, 0.4) 60%, rgba(15, 23, 42, 0.9) 100%);
+  box-shadow: 0 0 24px rgba(226, 232, 240, 0.65), 0 0 42px rgba(148, 163, 184, 0.4);
+  animation: xianxiaAuraPulse 2.4s ease-in-out infinite;
+  filter: blur(2px);
+}
+
+/* 6. Hợp Thể Kỳ - Lôi Đình Tẩy Lễ */
+.realm-aura-6 {
+  background: conic-gradient(from 45deg, #facc15, #ea580c, #fef08a, #facc15);
+  box-shadow: 0 0 25px rgba(250, 204, 21, 0.85), 0 0 45px rgba(234, 88, 12, 0.55);
+  animation: xianxiaAuraRotate 4.5s linear infinite;
+  filter: blur(3px);
+}
+
+/* 7. Đại Thừa Kỳ - Thái Dương Chí Tôn */
+.realm-aura-7 {
+  background: conic-gradient(from 0deg, #f97316, #ef4444, #fbbf24, #f97316);
+  box-shadow: 0 0 28px rgba(249, 115, 22, 0.9), 0 0 50px rgba(239, 68, 68, 0.6);
+  animation: xianxiaAuraRotate 4s linear infinite;
+  filter: blur(3.5px);
+}
+
+/* 8. Độ Kiếp Kỳ - Cửu Sắc Thiên Lôi */
+.realm-aura-8 {
+  background: conic-gradient(from 0deg, #f43f5e, #a855f7, #38bdf8, #facc15, #f43f5e);
+  box-shadow: 0 0 30px rgba(244, 63, 94, 0.95), 0 0 55px rgba(168, 85, 247, 0.7);
+  animation: xianxiaAuraRotate 3.2s linear infinite;
+  filter: blur(3.5px);
+}
+
+/* 9. Kim Tiên - Kim Thân Bất Hủ */
+.realm-aura-9 {
+  background: conic-gradient(from 0deg, #fde047, #f59e0b, #ffffff, #fde047);
+  box-shadow: 0 0 32px rgba(253, 224, 71, 1), 0 0 60px rgba(245, 158, 11, 0.8), inset 0 0 15px rgba(255, 255, 255, 0.8);
+  animation: xianxiaAuraRotate 3s linear infinite;
+  filter: blur(3.5px);
+}
+
+/* 10. Đại La Tiên - Vạn Pháp Thời Không */
+.realm-aura-10 {
+  background: conic-gradient(from 0deg, #e879f9, #6366f1, #38bdf8, #f43f5e, #e879f9);
+  box-shadow: 0 0 35px rgba(232, 121, 249, 1), 0 0 65px rgba(99, 102, 241, 0.8);
+  animation: xianxiaAuraRotate 2.5s linear infinite;
+  filter: blur(4px);
+}
+
+/* 11. Thiên Tôn - Hỗn Độn Vô Thượng Thần Hoàng */
+.realm-aura-11 {
+  background: conic-gradient(from 0deg, #fbbf24, #ef4444, #8b5cf6, #06b6d4, #10b981, #ffffff, #fbbf24);
+  box-shadow: 0 0 40px rgba(251, 191, 36, 1), 0 0 75px rgba(239, 68, 68, 0.9), 0 0 100px rgba(139, 92, 246, 0.6);
+  animation: xianxiaChaoticSwirl 4s linear infinite;
+  filter: blur(4px);
+}
+
+/* === HÀNG PHỤC MA TÔN BOSS BATTLE ANIMATIONS === */
+@keyframes bossDamageFloat {
+  0% {
+    transform: translateY(0) scale(0.9);
+    opacity: 1;
+  }
+  30% {
+    transform: translateY(-16px) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-40px) scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-boss-damage-float {
+  animation: bossDamageFloat 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes bossEnrageGlow {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(220, 38, 38, 0.5), inset 0 0 20px rgba(185, 28, 28, 0.3);
+    border-color: rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 45px rgba(239, 68, 68, 0.9), inset 0 0 35px rgba(220, 38, 38, 0.6);
+    border-color: rgba(254, 202, 202, 0.9);
+  }
+}
+
+.animate-boss-enrage {
+  animation: bossEnrageGlow 1.8s ease-in-out infinite;
+}
