@@ -1,0 +1,50 @@
+{
+  "highScores": {
+    "vi_dau": null,
+    "vi_nodau": null,
+    "en": null,
+    "numpad": null,
+    "ngau_hung": null,
+    "doan_chu": null,
+    "san_boss": null
+  },
+  "rankings": {
+    "vi_dau": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    },
+    "vi_nodau": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    },
+    "en": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    },
+    "numpad": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    },
+    "ngau_hung": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    },
+    "doan_chu": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    },
+    "san_boss": {
+      "daily": [],
+      "weekly": [],
+      "all_time": []
+    }
+  },
+  "lastResetDate": "2026-10-01",
+  "lastResetWeek": "2026-W40"
+}
