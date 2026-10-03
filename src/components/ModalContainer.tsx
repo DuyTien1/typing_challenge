@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import {
   HighScoreRecord,
   UserAccount,
@@ -10,6 +10,7 @@ import { CultivationState, saveStoredCultivationState } from '../utils/cultivati
 import { XIANXIA_ACHIEVEMENTS } from '../utils/achievements';
 import { updateUserProfile, getStoredAuthToken } from '../utils/auth';
 import { soundFx } from '../utils/audio';
+import { Sparkles, CheckCircle2, Gift, X } from 'lucide-react';
 
 // Lazy-loaded modal components for performance and code splitting
 const LeaderboardModal = React.lazy(() =>
@@ -98,6 +99,8 @@ export interface ModalContainerProps {
   onChangeFrame: (newFrame: string) => void;
   showcaseAchievements: string[];
   onChangeShowcaseAchievements: (ids: string[]) => void;
+  friendsList?: any[];
+  onlineSeconds?: number;
   onAuthSuccess: (user: UserAccount) => void;
   onModalCreateNewRoom: (mode: GameMode, difficulty: any) => Promise<void>;
   onModalJoinExistingRoom: (roomId: string, mode: GameMode) => Promise<boolean>;
@@ -167,6 +170,8 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   onChangeFrame,
   showcaseAchievements,
   onChangeShowcaseAchievements,
+  friendsList,
+  onlineSeconds,
   onAuthSuccess,
   onModalCreateNewRoom,
   onModalJoinExistingRoom,
@@ -179,6 +184,32 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   onOpenWhisper,
   onAddFriend,
 }) => {
+  // Toast thông báo dành riêng cho Admin Dashboard khi thực thi ban thưởng
+  const [adminRewardToast, setAdminRewardToast] = useState<{
+    id: string;
+    title: string;
+    message: string;
+    timestamp: number;
+  } | null>(null);
+
+  const triggerAdminRewardToast = (message: string, title = 'BAN THƯỞNG THÀNH CÔNG') => {
+    setAdminRewardToast({
+      id: 'admin_toast_' + Date.now(),
+      title,
+      message,
+      timestamp: Date.now(),
+    });
+    soundFx.playSuccess();
+  };
+
+  useEffect(() => {
+    if (!adminRewardToast) return;
+    const timer = setTimeout(() => {
+      setAdminRewardToast(null);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [adminRewardToast]);
+
   // Master Escape handler: Closes whichever modal is currently active
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -284,9 +315,16 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           currentUser={currentUser}
           defaultConfig={defaultConfig}
           cultivationState={cultivationState}
+          onRewardSuccess={(msg) => {
+            triggerAdminRewardToast(msg, 'BAN THƯỞNG THÀNH CÔNG');
+          }}
           onUpdateCultivationState={(next) => {
             setCultivationState(next);
             saveStoredCultivationState(next);
+            triggerAdminRewardToast(
+              `Đã cập nhật cảnh giới & tài nguyên Tu Tiên cho @${username}!`,
+              'ĐỒNG BỘ TU TIÊN'
+            );
             if (currentUser) {
               setCurrentUser((prev) => (prev ? { ...prev, cultivation: next } : prev));
               const token = getStoredAuthToken();
@@ -328,6 +366,11 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           matchHistory={matchHistory}
           isLoggedIn={!!currentUser}
           currentUser={currentUser}
+          cultivationLevel={cultivationState?.level}
+          cultivationRealmIndex={cultivationState?.realmIndex}
+          cultivationState={cultivationState}
+          onlineSeconds={onlineSeconds}
+          friendsList={friendsList}
           onOpenAuthModal={(mode) => {
             setAuthModalInitialTab(mode || 'login');
             setIsAuthModalOpen(true);
@@ -361,7 +404,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         userAvatar={avatar}
         userFrame={userFrame}
         onSelectFrame={onChangeFrame}
-        isLoggedIn={Boolean(currentUser)}
+        isLoggedIn={Boolean(currentUser || getStoredAuthToken())}
         onOpenAuthModal={() => {
           setIsCultivationOpen(false);
           setAuthModalInitialTab('login');
@@ -370,18 +413,27 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         onStartSectBoss={onStartSectBoss}
         onStartSectTournament={onStartSectTournament}
         onUpdateState={(next) => {
-          if (!currentUser) return;
           setCultivationState(next);
           saveStoredCultivationState(next);
+          if (currentUser) {
+            setCurrentUser((prev) => (prev ? { ...prev, cultivation: next } : prev));
+          }
           const token = getStoredAuthToken();
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (token) headers['Authorization'] = `Bearer ${token}`;
-          if (currentUser.username) headers['x-username'] = currentUser.username;
-          fetch('/api/cultivation', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ cultivation: next, username: currentUser.username, userId: currentUser.id }),
-          }).catch(() => {});
+          const targetUsername = currentUser?.username || username;
+          if (token || currentUser) {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            if (targetUsername) headers['x-username'] = targetUsername;
+            fetch('/api/cultivation', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                cultivation: next,
+                username: targetUsername,
+                userId: currentUser?.id,
+              }),
+            }).catch(() => {});
+          }
         }}
       />
 
@@ -421,6 +473,47 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           }}
           highScores={highScores}
         />
+      )}
+
+      {/* 9. Floating Admin Reward Success Toast / Notification */}
+      {adminRewardToast && (
+        <div className="fixed top-5 right-5 z-[999999] max-w-md w-[92vw] sm:w-[420px] animate-in slide-in-from-top-4 fade-in duration-300 pointer-events-auto">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-950/95 border-2 border-emerald-500/70 shadow-2xl shadow-emerald-950/80 backdrop-blur-xl flex items-start gap-3 text-slate-100 ring-2 ring-emerald-500/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/35 border border-emerald-500/50 flex items-center justify-center shrink-0 shadow-inner">
+              <Gift className="w-5 h-5 text-emerald-400 animate-bounce" />
+            </div>
+
+            <div className="flex-1 min-w-0 pr-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                  <span>{adminRewardToast.title}</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {new Date(adminRewardToast.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              </div>
+
+              <p className="text-xs font-bold text-white mt-1.5 leading-snug">
+                {adminRewardToast.message}
+              </p>
+
+              <div className="text-[10px] text-emerald-300/80 mt-1 flex items-center gap-1 font-medium">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>Dữ liệu đã được lưu vĩnh viễn & phát sóng Chiếu Thư toàn hệ thống.</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAdminRewardToast(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0"
+              title="Đóng thông báo"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       )}
     </Suspense>
   );

@@ -1891,6 +1891,10 @@ export function subscribeToGlobalChat(
             ev.type === 'friend_requests_count'
           ) {
             if (onFriendEvent) onFriendEvent(ev);
+          } else if (ev.type === 'cultivation_reward_received' && ev.cultivation) {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('cultivation_reward_received', { detail: ev }));
+            }
           }
         } catch {
           // Ignore

@@ -130,7 +130,7 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   // Fetch updated sects and war status from server on mount
   useEffect(() => {
     fetchServerSects().then((res) => {
-      if (res.success && Array.isArray(res.sects) && res.sects.length > 0) {
+      if (res && res.success && Array.isArray(res.sects)) {
         setSects(res.sects);
         saveStoredSects(res.sects);
       }
@@ -368,39 +368,53 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
     if (!newSectName.trim() || !newSectTag.trim()) return;
 
     soundFx.playKeyClick();
-    const res = createSect(
-      state,
-      newSectName,
-      newSectTag,
-      newSectDesc,
-      newSectIcon,
-      username,
-      userAvatar,
-      userFrame
-    );
 
-    if (res.success) {
-      soundFx.playVictory();
-      onUpdateState(res.updatedState);
-      setNotice(res.message);
-      setShowCreateModal(false);
+    // 1. Gọi Server API trước
+    const serverRes = await serverCreateSect({
+      name: newSectName.trim(),
+      tag: newSectTag.trim(),
+      description: newSectDesc.trim(),
+      slogan: newSectSlogan.trim(),
+      badgeIcon: newSectIcon,
+      bannerColor: newSectColor,
+    });
 
-      // Call server API
-      await serverCreateSect({
-        name: newSectName,
-        tag: newSectTag,
-        description: newSectDesc,
-        slogan: newSectSlogan,
-        badgeIcon: newSectIcon,
-        bannerColor: newSectColor,
-      });
-
-      const serverSectsList = await fetchServerSects();
-      if (serverSectsList.success) setSects(serverSectsList.sects);
-      else setSects(getStoredSects());
-    } else {
+    if (!serverRes.success) {
       soundFx.playError();
-      setNotice(res.message);
+      setNotice(serverRes.error || serverRes.message || 'Khai sơn lập phái thất bại trên máy chủ!');
+      return;
+    }
+
+    // 2. Server phản hồi thành công -> Cập nhật trạng thái và thông báo người chơi
+    soundFx.playVictory();
+    setShowCreateModal(false);
+    setNotice(serverRes.message || `Chúc mừng đạo hữu sáng lập ${newSectName} [${newSectTag}], tôn xưng Chưởng Môn!`);
+
+    if (serverRes.cultivation) {
+      onUpdateState({ ...state, ...serverRes.cultivation });
+    } else {
+      const res = createSect(
+        state,
+        newSectName,
+        newSectTag,
+        newSectDesc,
+        newSectIcon,
+        username,
+        userAvatar,
+        userFrame
+      );
+      if (res.success) {
+        onUpdateState(res.updatedState);
+      }
+    }
+
+    // 3. Tải lại danh sách Tông Môn từ Server
+    const serverSectsList = await fetchServerSects();
+    if (serverSectsList.success && Array.isArray(serverSectsList.sects)) {
+      setSects(serverSectsList.sects);
+      saveStoredSects(serverSectsList.sects);
+    } else if (serverRes.sect) {
+      setSects((prev) => [serverRes.sect!, ...prev]);
     }
   };
 
@@ -1583,6 +1597,40 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
                 <span className="text-[11px] font-bold text-amber-300 bg-amber-500/20 px-3 py-1 rounded-lg border border-amber-400/30 inline-block">
                   ✨ Đang hưởng Buff +20% Tu Vi & +15% Linh Thạch
                 </span>
+              </div>
+            </div>
+          )}
+
+          {/* Khi chưa có Tông Môn */}
+          {!mySect && (
+            <div className="p-6 rounded-2xl bg-slate-950/80 border border-amber-500/30 text-center space-y-3">
+              <span className="text-4xl block">🏛️</span>
+              <h5 className="text-sm font-bold text-amber-300">Đạo Hữu Chưa Gia Nhập Hoặc Sáng Lập Tông Môn</h5>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Đại sự kiện Vạn Phái Tranh Phong là chiến trường quy tụ sức mạnh của các Tông Môn. Hãy <strong>Khai Sơn Lập Phái</strong> hoặc <strong>Gia Nhập môn phái</strong> để cùng các đồng môn xuất chiến và giành ngôi Thiên Hạ Đệ Nhất!
+              </p>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setShowCreateModal(true);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 font-black text-xs inline-flex items-center gap-1.5 hover:brightness-110 shadow-md cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Khai Sơn Lập Phái Ngay</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setActiveTab('overview');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Xem Bảng Tông Môn</span>
+                </button>
               </div>
             </div>
           )}

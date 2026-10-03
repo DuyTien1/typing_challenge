@@ -916,8 +916,8 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                                   Thành viên
                                 </span>
                               ) : (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded border border-slate-700/60 bg-slate-800/80 text-slate-400 shrink-0 leading-none">
-                                  Khách
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 shrink-0 leading-none" title="Tán tu chỉ có thể thi đấu, không nhận được tu vi hay vật phẩm">
+                                  Tán Tu
                                 </span>
                               )
                             )}

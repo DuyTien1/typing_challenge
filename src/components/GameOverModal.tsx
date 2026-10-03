@@ -394,11 +394,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     Linh Đài Tu Tiên
                   </span>
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300">
-                    Khóa ở chế độ Khách
+                    Khóa ở chế độ Tán Tu
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Chế độ Khách không được thưởng Tu Vi và không thể vào Linh Đài. Đăng nhập để kích hoạt con đường tu tiên!
+                  Tán tu chỉ có thể thi đấu rèn luyện tốc ký, không thể nhận Tu Vi, Linh Thạch, Thành Tựu hay bất kỳ vật phẩm tu tiên nào. Đăng nhập để kích hoạt con đường tu tiên!
                 </p>
               </div>
             </div>

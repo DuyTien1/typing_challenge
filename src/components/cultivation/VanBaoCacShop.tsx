@@ -149,7 +149,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
         }
         setTimeout(() => {
           setBuyingItem(null);
-        }, 1200);
+        }, 500);
       } else {
         soundFx.playError();
         setNotice({ type: 'error', message: data.error || 'Giao dịch thất bại!' });

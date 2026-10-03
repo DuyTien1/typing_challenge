@@ -45,3 +45,12 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Local fallback data files (Credentials and state should stay in Supabase)
+users.json
+banned_users.json
+sects.json
+rooms.json
+leaderboard.json
+market_*.json
+
+

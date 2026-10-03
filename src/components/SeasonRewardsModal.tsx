@@ -38,7 +38,7 @@ export const SeasonRewardsModal: React.FC<SeasonRewardsModalProps> = ({
 
   const handleClaim = async () => {
     if (!currentUser) {
-      setStatusMsg({ type: 'error', text: 'Đạo hữu cần đăng nhập tài khoản để nhận phần thưởng!' });
+      setStatusMsg({ type: 'error', text: 'Tán tu chỉ có thể thi đấu, không thể nhận phần thưởng. Hãy đăng nhập tài khoản chính thức!' });
       return;
     }
     setClaiming(true);

@@ -792,7 +792,7 @@ export function createInitialCultivationState(): CultivationState {
       kimCangImmunityUntil: 0,
     },
     sect: undefined,
-    linhThach: 150,
+    linhThach: 0,
     historyLog: ['Bắt đầu bước vào con đường tu tiên: Luyện Khí Kỳ Tầng 1 (Sơ Kỳ)'],
   };
 }

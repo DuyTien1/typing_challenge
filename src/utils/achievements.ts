@@ -1,5 +1,18 @@
 import { HighScoreRecord } from '../types';
 import { MatchRecord } from './matchHistory';
+import {
+  getAccountOnlineSeconds,
+  saveAccountOnlineSeconds,
+  addAccountOnlineSeconds,
+  formatOnlineDuration,
+} from './onlineTracker';
+
+export {
+  getAccountOnlineSeconds,
+  saveAccountOnlineSeconds,
+  addAccountOnlineSeconds,
+  formatOnlineDuration,
+};
 
 export type AchievementBranch =
   | 'speed'
@@ -8,7 +21,10 @@ export type AchievementBranch =
   | 'pve'
   | 'numpad'
   | 'streak'
-  | 'hidden';
+  | 'hidden'
+  | 'online_time'
+  | 'social'
+  | 'cultivation';
 
 export type XianxiaRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
@@ -76,658 +92,35 @@ export const BRANCH_DEFINITIONS: Record<
     icon: '🔮',
     color: 'text-purple-400 border-purple-500/40 bg-purple-500/10',
   },
+  online_time: {
+    name: 'Động Phủ Tọa Thiền',
+    desc: 'Tĩnh tọa ngưng thần, thổ nạp nhật nguyệt, tích lũy thời gian gắn bó tu hành cùng FastTyping',
+    icon: '⏳',
+    color: 'text-indigo-400 border-indigo-500/40 bg-indigo-500/10',
+  },
+  social: {
+    name: 'Tông Môn Vạn Đạo',
+    desc: 'Kết nghĩa kim lan, bái nhập tiên môn, chung vai sát cánh cùng chư vị đạo lữ',
+    icon: '⛩️',
+    color: 'text-pink-400 border-pink-500/40 bg-pink-500/10',
+  },
+  cultivation: {
+    name: 'Đan Đạo & Khí Thần',
+    desc: 'Dẫn hỏa luyện đan, rèn đúc chí bảo, siêu thoát phàm thai đắc chứng trường sinh',
+    icon: '🏺',
+    color: 'text-cyan-400 border-cyan-500/40 bg-cyan-500/10',
+  },
 };
 
-export const XIANXIA_ACHIEVEMENTS: XianxiaAchievement[] = [
-  // ==================== NHÁNH 1: TẬT PHONG KIẾM QUYẾT (WPM) ====================
-  {
-    id: 'speed_40',
-    name: 'Ngự Kiếm Sơ Nhập',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '🗡️',
-    title: 'Kiếm Đồng Nhập Môn',
-    realm: 'Luyện Khí Tầng 1',
-    req: 'Đạt tốc độ 40+ WPM ở bất kỳ chế độ chơi nào',
-    rarity: 'common',
-    colorClass: 'text-slate-200',
-    borderClass: 'border-slate-500/60',
-    glowClass: 'from-slate-600/20 to-slate-800/10',
-    badgeBg: 'bg-slate-800/80 text-slate-200 border-slate-600',
-  },
-  {
-    id: 'speed_60',
-    name: 'Phong Hành Bộ Pháp',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '🍃',
-    title: 'Ngự Phong Kiếm Khách',
-    realm: 'Trúc Cơ Kỳ',
-    req: 'Đạt tốc độ 60+ WPM ở bất kỳ chế độ chơi nào',
-    rarity: 'rare',
-    colorClass: 'text-emerald-300',
-    borderClass: 'border-emerald-500/70',
-    glowClass: 'from-emerald-500/25 via-teal-500/15 to-transparent',
-    badgeBg: 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60',
-  },
-  {
-    id: 'speed_80',
-    name: 'Truy Phong Đoạt Mệnh',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '🌪️',
-    title: 'Vô Ảnh Kiếm Tôn',
-    realm: 'Kim Đan Kỳ',
-    req: 'Đạt tốc độ 80+ WPM ở bất kỳ chế độ chơi nào',
-    rarity: 'epic',
-    colorClass: 'text-sky-300',
-    borderClass: 'border-sky-500/80 shadow-[0_0_12px_rgba(56,189,248,0.35)]',
-    glowClass: 'from-sky-500/30 via-cyan-500/15 to-transparent',
-    badgeBg: 'bg-sky-950/80 text-sky-300 border-sky-400/70',
-  },
-  {
-    id: 'speed_100',
-    name: 'Lôi Đình Điện Trảm',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '⚡',
-    title: 'Lôi Đình Kiếm Tiên',
-    realm: 'Nguyên Anh Kỳ',
-    req: 'Đạt tốc độ 100+ WPM ở bất kỳ chế độ chơi nào',
-    rarity: 'legendary',
-    colorClass: 'text-purple-300',
-    borderClass: 'border-purple-400 shadow-[0_0_16px_rgba(192,132,252,0.45)]',
-    glowClass: 'from-purple-600/30 via-fuchsia-500/20 to-transparent',
-    badgeBg: 'bg-purple-950/80 text-purple-200 border-purple-400/80',
-  },
-  {
-    id: 'speed_120',
-    name: 'Thuấn Di Thần Thông',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '✨',
-    title: 'Tật Phong Tiên Tôn',
-    realm: 'Hóa Thần Kỳ',
-    req: 'Đạt tốc độ 120+ WPM ở bất kỳ chế độ chơi nào',
-    rarity: 'legendary',
-    colorClass: 'text-amber-300',
-    borderClass: 'border-amber-400 ring-1 ring-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.5)]',
-    glowClass: 'from-amber-500/35 via-yellow-400/20 to-orange-500/20',
-    badgeBg: 'bg-amber-950/90 text-amber-200 border-amber-400',
-  },
-  {
-    id: 'speed_140',
-    name: 'Phá Toái Hư Không',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '🌌',
-    title: 'Thần Tốc Kiếm Đế',
-    realm: 'Độ Kiếp Kỳ',
-    req: 'Đạt tốc độ 140+ WPM ở bất kỳ chế độ chơi nào',
-    rarity: 'mythic',
-    colorClass: 'text-rose-300',
-    borderClass: 'border-rose-400 ring-2 ring-rose-500/60 shadow-[0_0_25px_rgba(244,63,94,0.6)]',
-    glowClass: 'from-rose-600/40 via-red-500/25 to-amber-500/20',
-    badgeBg: 'bg-rose-950/90 text-rose-200 border-rose-400',
-  },
-  {
-    id: 'speed_160',
-    name: 'Hỗn Độn Vô Cực',
-    branch: 'speed',
-    branchName: 'Tật Phong Kiếm Quyết',
-    icon: '👑',
-    title: 'Hỗn Độn Kiếm Tổ',
-    realm: 'Đại Thừa Chí Tôn',
-    req: 'Đạt tốc độ thần thánh 160+ WPM',
-    rarity: 'mythic',
-    colorClass: 'text-yellow-200',
-    borderClass: 'border-yellow-300 ring-2 ring-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.8)]',
-    glowClass: 'from-yellow-500/40 via-amber-400/30 to-red-500/30',
-    badgeBg: 'bg-yellow-950/90 text-yellow-100 border-yellow-300',
-  },
+import {
+  XIANXIA_ACHIEVEMENTS,
+  REALM_ACHIEVEMENT_MAPPING,
+} from '../data/achievementsList';
 
-  // ==================== NHÁNH 2: TÂM KIẾM VÔ TẠP (ACCURACY) ====================
-  {
-    id: 'acc_95',
-    name: 'Tâm Như Chỉ Thủy',
-    branch: 'accuracy',
-    branchName: 'Tâm Kiếm Vô Tạp',
-    icon: '💧',
-    title: 'Tĩnh Tâm Cư Sĩ',
-    realm: 'Tĩnh Niệm Sơ Giai',
-    req: 'Đạt độ chính xác ≥ 95% trong một ván đấu hoàn chỉnh',
-    rarity: 'common',
-    colorClass: 'text-teal-200',
-    borderClass: 'border-teal-500/60',
-    glowClass: 'from-teal-600/20 to-teal-900/10',
-    badgeBg: 'bg-teal-950/80 text-teal-200 border-teal-500/60',
-  },
-  {
-    id: 'acc_98',
-    name: 'Minh Kính Chỉ Thủy',
-    branch: 'accuracy',
-    branchName: 'Tâm Kiếm Vô Tạp',
-    icon: '🪞',
-    title: 'Chân Đạo Hành Giả',
-    realm: 'Minh Tâm Trung Giai',
-    req: 'Đạt độ chính xác ≥ 98% trong một ván đấu hoàn chỉnh',
-    rarity: 'rare',
-    colorClass: 'text-cyan-300',
-    borderClass: 'border-cyan-500/70',
-    glowClass: 'from-cyan-500/25 to-blue-900/10',
-    badgeBg: 'bg-cyan-950/80 text-cyan-200 border-cyan-400/70',
-  },
-  {
-    id: 'acc_100_once',
-    name: 'Vạn Kiếm Quy Nhất',
-    branch: 'accuracy',
-    branchName: 'Tâm Kiếm Vô Tạp',
-    icon: '🎯',
-    title: 'Vô Tạp Chân Quân',
-    realm: 'Viên Mãn Thuần Khiết',
-    req: 'Đạt độ chính xác 100% tuyệt đối không gõ sai ký tự nào',
-    rarity: 'epic',
-    colorClass: 'text-emerald-300',
-    borderClass: 'border-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.4)]',
-    glowClass: 'from-emerald-500/30 to-teal-500/15',
-    badgeBg: 'bg-emerald-950/80 text-emerald-200 border-emerald-400',
-  },
-  {
-    id: 'acc_100_3x',
-    name: 'Đạo Tâm Bất Diệt',
-    branch: 'accuracy',
-    branchName: 'Tâm Kiếm Vô Tạp',
-    icon: '🛡️',
-    title: 'Bất Diệt Kiếm Thánh',
-    realm: 'Bất Diệt Đạo Cốt',
-    req: 'Tích lũy 3 ván đấu đạt 100% độ chính xác trong lịch sử',
-    rarity: 'legendary',
-    colorClass: 'text-blue-300',
-    borderClass: 'border-blue-400 shadow-[0_0_18px_rgba(96,165,250,0.5)]',
-    glowClass: 'from-blue-600/35 to-indigo-600/20',
-    badgeBg: 'bg-blue-950/90 text-blue-200 border-blue-400',
-  },
-  {
-    id: 'acc_100_10x',
-    name: 'Luyện Thần Hóa Hư',
-    branch: 'accuracy',
-    branchName: 'Tâm Kiếm Vô Tạp',
-    icon: '💎',
-    title: 'Thiên Đạo Vô Khuyết Giả',
-    realm: 'Vô Cực Hoàn Hảo',
-    req: 'Tích lũy 10 ván đấu đạt 100% độ chính xác trong lịch sử',
-    rarity: 'mythic',
-    colorClass: 'text-fuchsia-300',
-    borderClass: 'border-fuchsia-400 ring-2 ring-fuchsia-400/50 shadow-[0_0_24px_rgba(232,121,249,0.6)]',
-    glowClass: 'from-fuchsia-600/40 via-purple-500/25 to-indigo-500/20',
-    badgeBg: 'bg-fuchsia-950/90 text-fuchsia-200 border-fuchsia-400',
-  },
-
-  // ==================== NHÁNH 3: BÁCH CHIẾN ĐĂNG TIÊN (SỐ TRẬN) ====================
-  {
-    id: 'matches_10',
-    name: 'Luyện Khí Trúc Cơ',
-    branch: 'matches',
-    branchName: 'Bách Chiến Đăng Tiên',
-    icon: '🌱',
-    title: 'Tu Tiên Tân Tú',
-    realm: 'Luyện Khí Viên Mãn',
-    req: 'Hoàn thành 10 trận thi đấu',
-    rarity: 'common',
-    colorClass: 'text-slate-300',
-    borderClass: 'border-slate-500/60',
-    glowClass: 'from-slate-700/20 to-slate-900/10',
-    badgeBg: 'bg-slate-800/80 text-slate-300 border-slate-600',
-  },
-  {
-    id: 'matches_30',
-    name: 'Kim Đan Tụ Đỉnh',
-    branch: 'matches',
-    branchName: 'Bách Chiến Đăng Tiên',
-    icon: '🔮',
-    title: 'Kim Đan Đạo Trưởng',
-    realm: 'Kim Đan Viên Mãn',
-    req: 'Hoàn thành 30 trận thi đấu',
-    rarity: 'rare',
-    colorClass: 'text-amber-300',
-    borderClass: 'border-amber-500/70',
-    glowClass: 'from-amber-500/25 to-yellow-500/15',
-    badgeBg: 'bg-amber-950/80 text-amber-300 border-amber-500/60',
-  },
-  {
-    id: 'matches_75',
-    name: 'Nguyên Anh Hóa Hình',
-    branch: 'matches',
-    branchName: 'Bách Chiến Đăng Tiên',
-    icon: '🧘‍♂️',
-    title: 'Nguyên Anh Lão Tổ',
-    realm: 'Nguyên Anh Hóa Thần',
-    req: 'Hoàn thành 75 trận thi đấu',
-    rarity: 'epic',
-    colorClass: 'text-purple-300',
-    borderClass: 'border-purple-500/80 shadow-[0_0_12px_rgba(168,85,247,0.35)]',
-    glowClass: 'from-purple-500/30 to-violet-500/15',
-    badgeBg: 'bg-purple-950/80 text-purple-200 border-purple-400/70',
-  },
-  {
-    id: 'matches_150',
-    name: 'Hóa Thần Chi Cảnh',
-    branch: 'matches',
-    branchName: 'Bách Chiến Đăng Tiên',
-    icon: '⚡',
-    title: 'Hóa Thần Chân Nhân',
-    realm: 'Hóa Thần Xuất Thế',
-    req: 'Hoàn thành 150 trận thi đấu',
-    rarity: 'legendary',
-    colorClass: 'text-orange-300',
-    borderClass: 'border-orange-400 shadow-[0_0_16px_rgba(251,146,60,0.5)]',
-    glowClass: 'from-orange-500/35 to-amber-500/20',
-    badgeBg: 'bg-orange-950/90 text-orange-200 border-orange-400',
-  },
-  {
-    id: 'matches_300',
-    name: 'Độ Kiếp Phi Thăng',
-    branch: 'matches',
-    branchName: 'Bách Chiến Đăng Tiên',
-    icon: '🌌',
-    title: 'Cửu Trọng Tiên Tôn',
-    realm: 'Cửu Trọng Thiên Kiếp',
-    req: 'Hoàn thành 300 trận thi đấu',
-    rarity: 'mythic',
-    colorClass: 'text-sky-200',
-    borderClass: 'border-sky-300 ring-2 ring-sky-400/60 shadow-[0_0_22px_rgba(56,189,248,0.6)]',
-    glowClass: 'from-sky-600/40 via-blue-500/25 to-indigo-500/20',
-    badgeBg: 'bg-sky-950/90 text-sky-100 border-sky-300',
-  },
-  {
-    id: 'matches_500',
-    name: 'Vạn Cổ Trường Tồn',
-    branch: 'matches',
-    branchName: 'Bách Chiến Đăng Tiên',
-    icon: '👑',
-    title: 'Vạn Kiếp Thần Đế',
-    realm: 'Bất Hủ Bất Diệt',
-    req: 'Hoàn thành 500 trận thi đấu chấn động tam giới',
-    rarity: 'mythic',
-    colorClass: 'text-amber-200',
-    borderClass: 'border-amber-300 ring-2 ring-amber-400 shadow-[0_0_28px_rgba(251,191,36,0.7)]',
-    glowClass: 'from-amber-500/45 via-yellow-400/30 to-red-500/25',
-    badgeBg: 'bg-amber-950/90 text-amber-100 border-amber-300',
-  },
-
-  // ==================== NHÁNH 4: TRU MA & BÍ CẢNH (BOSS & CHẾ ĐỘ PHỤ) ====================
-  {
-    id: 'pve_boss_win',
-    name: 'Trảm Yêu Phục Ma',
-    branch: 'pve',
-    branchName: 'Tru Ma & Bí Cảnh',
-    icon: '🐉',
-    title: 'Trấn Ma Tiên Sứ',
-    realm: 'Bí Cảnh Trấn Phục',
-    req: 'Đánh bại Boss Ma Long trong Chế độ Săn Boss',
-    rarity: 'epic',
-    colorClass: 'text-red-400',
-    borderClass: 'border-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]',
-    glowClass: 'from-red-600/30 to-orange-600/15',
-    badgeBg: 'bg-red-950/80 text-red-200 border-red-500/70',
-  },
-  {
-    id: 'pve_boss_hell',
-    name: 'Thí Ma Đoạt Đỉnh',
-    branch: 'pve',
-    branchName: 'Tru Ma & Bí Cảnh',
-    icon: '🔥',
-    title: 'Tru Tiên Thí Ma Giả',
-    realm: 'Ma Giới Thí Thần',
-    req: 'Hạ gục Boss ở độ khó Huyền Thoại hoặc Địa Ngục',
-    rarity: 'mythic',
-    colorClass: 'text-rose-300',
-    borderClass: 'border-rose-500 ring-2 ring-rose-500 shadow-[0_0_22px_rgba(244,63,94,0.6)]',
-    glowClass: 'from-rose-700/40 via-red-600/25 to-amber-500/20',
-    badgeBg: 'bg-rose-950/90 text-rose-200 border-rose-400',
-  },
-  {
-    id: 'pve_mystery_word',
-    name: 'Thiên Cơ Thần Toán',
-    branch: 'pve',
-    branchName: 'Tru Ma & Bí Cảnh',
-    icon: '🔮',
-    title: 'Thiên Cơ Đạo Sĩ',
-    realm: 'Thiên Cơ Thông Hiểu',
-    req: 'Giải đố chuẩn xác từ khóa bí ẩn trong Chế độ Đoán Chữ',
-    rarity: 'rare',
-    colorClass: 'text-purple-300',
-    borderClass: 'border-purple-500/70',
-    glowClass: 'from-purple-500/25 to-fuchsia-500/15',
-    badgeBg: 'bg-purple-950/80 text-purple-200 border-purple-400/60',
-  },
-  {
-    id: 'pve_rush_high',
-    name: 'Cực Tốc Lôi Đình',
-    branch: 'pve',
-    branchName: 'Tru Ma & Bí Cảnh',
-    icon: '🌪️',
-    title: 'Bá Vương Chớp Nhoáng',
-    realm: 'Cực Tốc Thần Thông',
-    req: 'Hoàn thành vòng thi Chế độ Ngẫu Hứng (Rush) xuất sắc',
-    rarity: 'epic',
-    colorClass: 'text-orange-300',
-    borderClass: 'border-orange-500/80 shadow-[0_0_14px_rgba(249,115,22,0.4)]',
-    glowClass: 'from-orange-500/30 to-amber-500/15',
-    badgeBg: 'bg-orange-950/80 text-orange-200 border-orange-400/70',
-  },
-  {
-    id: 'pve_outplay_beat',
-    name: 'Chiến Thắng Tâm Ma',
-    branch: 'pve',
-    branchName: 'Tru Ma & Bí Cảnh',
-    icon: '🎯',
-    title: 'Tâm Ma Phá Giải Giả',
-    realm: 'Đột Phá Bản Thân',
-    req: 'Chiến thắng bóng ma của chính mình trong Chế độ Outplay',
-    rarity: 'legendary',
-    colorClass: 'text-cyan-300',
-    borderClass: 'border-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.5)]',
-    glowClass: 'from-cyan-500/35 to-blue-500/20',
-    badgeBg: 'bg-cyan-950/90 text-cyan-200 border-cyan-400',
-  },
-
-  // ==================== NHÁNH 5: THẦN SỐ TRẬN PHÁP (NUMPAD) ====================
-  {
-    id: 'numpad_intro',
-    name: 'Khởi Động Bát Quái',
-    branch: 'numpad',
-    branchName: 'Thần Số Trận Pháp',
-    icon: '🔢',
-    title: 'Bát Quái Học Đồ',
-    realm: 'Trận Đồ Sơ Khởi',
-    req: 'Hoàn thành 1 ván chế độ Bàn Phím Số (Numpad)',
-    rarity: 'common',
-    colorClass: 'text-teal-200',
-    borderClass: 'border-teal-500/60',
-    glowClass: 'from-teal-600/20 to-teal-800/10',
-    badgeBg: 'bg-teal-950/80 text-teal-200 border-teal-500/60',
-  },
-  {
-    id: 'numpad_50',
-    name: 'Lạc Thư Biến Huyễn',
-    branch: 'numpad',
-    branchName: 'Thần Số Trận Pháp',
-    icon: '🧮',
-    title: 'Lạc Thư Trận Sư',
-    realm: 'Biến Huyễn Nhập Đạo',
-    req: 'Đạt tốc độ 50+ WPM ở Chế độ Bàn Phím Số (Numpad)',
-    rarity: 'rare',
-    colorClass: 'text-emerald-300',
-    borderClass: 'border-emerald-500/70',
-    glowClass: 'from-emerald-500/25 to-teal-500/15',
-    badgeBg: 'bg-emerald-950/80 text-emerald-200 border-emerald-400/60',
-  },
-  {
-    id: 'numpad_75',
-    name: 'Hà Đồ Huyền Cơ',
-    branch: 'numpad',
-    branchName: 'Thần Số Trận Pháp',
-    icon: '📜',
-    title: 'Trận Đạo Tông Sư',
-    realm: 'Hà Đồ Huyền Môn',
-    req: 'Đạt tốc độ 75+ WPM ở Chế độ Bàn Phím Số (Numpad)',
-    rarity: 'epic',
-    colorClass: 'text-teal-300',
-    borderClass: 'border-teal-400 shadow-[0_0_14px_rgba(45,212,191,0.4)]',
-    glowClass: 'from-teal-500/30 to-cyan-500/15',
-    badgeBg: 'bg-teal-950/80 text-teal-200 border-teal-400',
-  },
-  {
-    id: 'numpad_100',
-    name: 'Thiên Đạo Số Quyết',
-    branch: 'numpad',
-    branchName: 'Thần Số Trận Pháp',
-    icon: '⚡',
-    title: 'Số Đạo Tiên Quân',
-    realm: 'Thiên Số Chí Tôn',
-    req: 'Đạt tốc độ thần tốc 100+ WPM ở Chế độ Bàn Phím Số (Numpad)',
-    rarity: 'legendary',
-    colorClass: 'text-amber-300',
-    borderClass: 'border-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.5)]',
-    glowClass: 'from-amber-500/35 to-yellow-500/20',
-    badgeBg: 'bg-amber-950/90 text-amber-200 border-amber-400',
-  },
-
-  // ==================== NHÁNH 6: BÁCH THẮNG TRANH HÙNG (CHIẾN TÍCH PHÒNG ĐẤU) ====================
-  {
-    id: 'pvp_first_win',
-    name: 'Sơ Lộ Phong Mang',
-    branch: 'streak',
-    branchName: 'Bách Thắng Tranh Hùng',
-    icon: '🗡️',
-    title: 'Kiếm Xuất Giang Hồ',
-    realm: 'Tụ Khí Tranh Tài',
-    req: 'Chiến thắng 1 ván đấu nhiều người trong phòng chờ',
-    rarity: 'rare',
-    colorClass: 'text-sky-300',
-    borderClass: 'border-sky-500/70',
-    glowClass: 'from-sky-500/25 to-blue-500/15',
-    badgeBg: 'bg-sky-950/80 text-sky-200 border-sky-400/60',
-  },
-  {
-    id: 'pvp_streak_3',
-    name: 'Tam Liên Tuyệt Đỉnh',
-    branch: 'streak',
-    branchName: 'Bách Thắng Tranh Hùng',
-    icon: '🔥',
-    title: 'Tam Liên Kiếm Vương',
-    realm: 'Khí Thế Như Hồng',
-    req: 'Đạt chuỗi thắng 3 trận liên tiếp trong lịch sử đấu',
-    rarity: 'epic',
-    colorClass: 'text-orange-300',
-    borderClass: 'border-orange-400 shadow-[0_0_14px_rgba(251,146,60,0.4)]',
-    glowClass: 'from-orange-500/30 to-red-500/15',
-    badgeBg: 'bg-orange-950/80 text-orange-200 border-orange-400',
-  },
-  {
-    id: 'pvp_streak_5',
-    name: 'Ngũ Liên Bất Bại',
-    branch: 'streak',
-    branchName: 'Bách Thắng Tranh Hùng',
-    icon: '⚔️',
-    title: 'Bách Chiến Bất Bại',
-    realm: 'Độc Cô Cầu Bại',
-    req: 'Đạt chuỗi thắng 5 trận liên tiếp trong lịch sử đấu',
-    rarity: 'legendary',
-    colorClass: 'text-red-300',
-    borderClass: 'border-red-400 shadow-[0_0_18px_rgba(248,113,113,0.5)]',
-    glowClass: 'from-red-600/35 to-orange-500/20',
-    badgeBg: 'bg-red-950/90 text-red-200 border-red-400',
-  },
-  {
-    id: 'pvp_streak_8',
-    name: 'Thiên Hạ Độc Tôn',
-    branch: 'streak',
-    branchName: 'Bách Thắng Tranh Hùng',
-    icon: '👑',
-    title: 'Thiên Hạ Đệ Nhất Kiêm',
-    realm: 'Chư Thiên Độc Tôn',
-    req: 'Đạt chuỗi thắng áp đảo 8 trận liên tiếp',
-    rarity: 'mythic',
-    colorClass: 'text-amber-200',
-    borderClass: 'border-amber-300 ring-2 ring-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.65)]',
-    glowClass: 'from-amber-500/40 via-yellow-400/25 to-red-500/25',
-    badgeBg: 'bg-amber-950/90 text-amber-100 border-amber-300',
-  },
-
-  // ==================== NHÁNH 7: KỲ NGỘ ẨN THẾ (NHIỀU THÀNH TỰU ẨN TIÊN HIỆP) ====================
-  {
-    id: 'hidden_room_full',
-    name: 'Cửu Tiên Tề Tụ',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '🏯',
-    title: 'Chúng Tiên Minh Chủ',
-    realm: 'Vạn Tiên Triều Bái',
-    req: 'Tham gia hoặc làm chủ một phòng thi đấu đầy đủ 8/8 người chơi',
-    rarity: 'legendary',
-    colorClass: 'text-purple-300',
-    borderClass: 'border-purple-400 shadow-[0_0_18px_rgba(192,132,252,0.5)]',
-    glowClass: 'from-purple-600/35 to-indigo-600/20',
-    badgeBg: 'bg-purple-950/90 text-purple-200 border-purple-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Nơi đạo hữu tề tựu đông đảo nhất chốn nhân gian...',
-  },
-  {
-    id: 'hidden_comeback',
-    name: 'Nghịch Thiên Cải Mệnh',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '⚡',
-    title: 'Nghịch Thiên Chân Nhân',
-    realm: 'Phá Toái Kiếp Nạn',
-    req: 'Lội ngược dòng giành chiến thắng ngoạn mục ở ván đấu đối kháng nhiều người',
-    rarity: 'legendary',
-    colorClass: 'text-amber-300',
-    borderClass: 'border-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.5)]',
-    glowClass: 'from-amber-500/35 to-red-500/20',
-    badgeBg: 'bg-amber-950/90 text-amber-200 border-amber-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Trong hiểm cảnh sinh cơ, chuyển bại thành thắng...',
-  },
-  {
-    id: 'hidden_midnight',
-    name: 'Dạ Lộ Tu Tiên',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '🌙',
-    title: 'Dạ Du Tiên Tôn',
-    realm: 'Dạ Hành Hóa Cảnh',
-    req: 'Luyện kiếm vào khung giờ đêm khuya huyền bí (từ 23:00 đến 05:00 sáng)',
-    rarity: 'rare',
-    colorClass: 'text-indigo-300',
-    borderClass: 'border-indigo-400 shadow-[0_0_14px_rgba(129,140,248,0.4)]',
-    glowClass: 'from-indigo-600/30 to-purple-900/20',
-    badgeBg: 'bg-indigo-950/90 text-indigo-200 border-indigo-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Khi vạn vật chìm vào giấc ngủ, tiếng gõ phím vẫn vang rền...',
-  },
-  {
-    id: 'hidden_flawless_fast',
-    name: 'Bất Động Minh Vương',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '🗿',
-    title: 'Minh Vương Bất Động',
-    realm: 'Kiên Bất Khả Tồi',
-    req: 'Hoàn thành ván đấu với tốc độ trên 75 WPM và độ chính xác 100% không tì vết',
-    rarity: 'legendary',
-    colorClass: 'text-emerald-300',
-    borderClass: 'border-emerald-400 ring-1 ring-emerald-400/50 shadow-[0_0_20px_rgba(52,211,153,0.5)]',
-    glowClass: 'from-emerald-500/35 to-teal-500/20',
-    badgeBg: 'bg-emerald-950/90 text-emerald-100 border-emerald-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Vừa nhanh như chớp, vừa chuẩn xác không một hạt bụi...',
-  },
-  {
-    id: 'hidden_unyielding',
-    name: 'Bất Khuất Đạo Tâm',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '🛡️',
-    title: 'Bất Khuất Đạo Giả',
-    realm: 'Vững Như Bàn Thạch',
-    req: 'Thi đấu ít nhất 10 trận mà không từng một lần bấm Đầu hàng',
-    rarity: 'epic',
-    colorClass: 'text-blue-300',
-    borderClass: 'border-blue-400 shadow-[0_0_14px_rgba(96,165,250,0.4)]',
-    glowClass: 'from-blue-600/30 to-sky-600/15',
-    badgeBg: 'bg-blue-950/90 text-blue-200 border-blue-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Dù phong ba bão táp, kiếm ý quyết không rời tay...',
-  },
-  {
-    id: 'hidden_top_glory',
-    name: 'Kỳ Lân Xuất Thế',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '🐉',
-    title: 'Thiên Bảng Đệ Nhất Nhân',
-    realm: 'Bảng Vàng Đề Danh',
-    req: 'Đạt danh hiệu Top 1 Quán Quân bảng xếp hạng hoặc WPM vượt 110 WPM',
-    rarity: 'mythic',
-    colorClass: 'text-amber-200',
-    borderClass: 'border-amber-300 ring-2 ring-amber-400 shadow-[0_0_28px_rgba(251,191,36,0.7)]',
-    glowClass: 'from-amber-500/40 via-yellow-400/30 to-red-500/25',
-    badgeBg: 'bg-amber-950/90 text-amber-100 border-amber-300',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Tên khắc trên bia đá chấn động chư thiên vạn giới...',
-  },
-  {
-    id: 'hidden_all_modes',
-    name: 'Toàn Năng Tông Sư',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '📚',
-    title: 'Bách Khoa Tiên Quân',
-    realm: 'Vạn Pháp Thông Suốt',
-    req: 'Trải nghiệm thi đấu ở ít nhất 5 chế độ chơi khác nhau trong hệ thống',
-    rarity: 'epic',
-    colorClass: 'text-teal-300',
-    borderClass: 'border-teal-400 shadow-[0_0_14px_rgba(45,212,191,0.4)]',
-    glowClass: 'from-teal-500/30 to-emerald-500/15',
-    badgeBg: 'bg-teal-950/90 text-teal-200 border-teal-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Đi khắp các bí cảnh, lĩnh hội đủ các chiêu pháp...',
-  },
-  {
-    id: 'hidden_aura_frame',
-    name: 'Kim Thân Hộ Thể',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '✨',
-    title: 'Kim Thân Bất Hoại',
-    realm: 'Thánh Thể Xuất Khiếu',
-    req: 'Sở hữu và trang bị khung hào quang cấp Huyền Thoại hoặc Thần Thoại',
-    rarity: 'rare',
-    colorClass: 'text-yellow-300',
-    borderClass: 'border-yellow-400 shadow-[0_0_14px_rgba(250,204,21,0.4)]',
-    glowClass: 'from-yellow-500/30 to-amber-500/15',
-    badgeBg: 'bg-yellow-950/90 text-yellow-200 border-yellow-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Hào quang rực rỡ tỏa sáng quanh thần hồn đại năng...',
-  },
-  {
-    id: 'hidden_verified_dao',
-    name: 'Chính Tông Tiên Cốt',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '📜',
-    title: 'Chính Tông Đạo Trưởng',
-    realm: 'Ghi Tên Tiên Tịch',
-    req: 'Tạo tài khoản và đăng nhập chính thức trên hệ thống FastTyping',
-    rarity: 'common',
-    colorClass: 'text-emerald-300',
-    borderClass: 'border-emerald-500/60',
-    glowClass: 'from-emerald-600/20 to-teal-800/10',
-    badgeBg: 'bg-emerald-950/80 text-emerald-200 border-emerald-500/60',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Bái nhập môn phái, ghi danh vào bảng vàng tiên tịch...',
-  },
-  {
-    id: 'hidden_steady_heart',
-    name: 'Bình Thản Như Nước',
-    branch: 'hidden',
-    branchName: 'Kỳ Ngộ Ẩn Thế',
-    icon: '🌊',
-    title: 'Đạo Tâm Vững Bàn Thạch',
-    realm: 'Tâm Cảnh Như Gương',
-    req: 'Đạt chuỗi 5 ván đấu liên tiếp với độ chính xác đều từ 96% trở lên',
-    rarity: 'legendary',
-    colorClass: 'text-sky-300',
-    borderClass: 'border-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.5)]',
-    glowClass: 'from-sky-500/35 to-blue-500/20',
-    badgeBg: 'bg-sky-950/90 text-sky-200 border-sky-400',
-    isHidden: true,
-    secretHint: 'Cơ duyên: Không nóng không vội, từng phím gõ đều trầm ổn như núi cao...',
-  },
-];
+export {
+  XIANXIA_ACHIEVEMENTS,
+  REALM_ACHIEVEMENT_MAPPING,
+};
 
 const UNLOCKED_KEY_PREFIX = 'fasttyping_unlocked_achievements_';
 const LEGACY_UNLOCKED_KEY = 'fasttyping_unlocked_achievements';
@@ -811,76 +204,6 @@ export function getAchievementById(id: string): XianxiaAchievement | undefined {
 }
 
 /**
- * Bảng liên kết giữa Thành Tựu và Cảnh Giới Tu Tiên (0: Luyện Khí -> 11: Thiên Tôn)
- * Giúp tự động mở khóa toàn bộ thành tựu thuộc các cảnh giới tương ứng khi thăng cấp
- */
-export const REALM_ACHIEVEMENT_MAPPING: Record<string, number> = {
-  // Realm 0: Luyện Khí Kỳ (Lv 1 - 30)
-  speed_40: 0,
-  acc_95: 0,
-  matches_10: 0,
-  numpad_intro: 0,
-  pvp_first_win: 0,
-  hidden_midnight: 0,
-  hidden_verified_dao: 0,
-
-  // Realm 1: Trúc Cơ Kỳ (Lv 31 - 70)
-  speed_60: 1,
-  acc_98: 1,
-  pve_mystery_word: 1,
-  numpad_50: 1,
-  pvp_streak_3: 1,
-  hidden_unyielding: 1,
-
-  // Realm 2: Kết Đan Kỳ / Kim Đan (Lv 71 - 130)
-  speed_80: 2,
-  acc_100_once: 2,
-  matches_30: 2,
-  pve_boss_win: 2,
-  pve_rush_high: 2,
-  numpad_75: 2,
-  hidden_flawless_fast: 2,
-
-  // Realm 3: Nguyên Anh Kỳ (Lv 131 - 210)
-  speed_100: 3,
-  acc_100_3x: 3,
-  matches_75: 3,
-  pve_outplay_beat: 3,
-  pvp_streak_5: 3,
-  hidden_all_modes: 3,
-
-  // Realm 4: Hóa Thần Kỳ (Lv 211 - 310)
-  speed_120: 4,
-  matches_150: 4,
-  hidden_room_full: 4,
-  hidden_steady_heart: 4,
-
-  // Realm 5: Luyện Hư Kỳ (Lv 311 - 430)
-  hidden_comeback: 5,
-
-  // Realm 6: Hợp Thể Kỳ (Lv 431 - 570)
-  acc_100_10x: 6,
-
-  // Realm 7: Đại Thừa Kỳ (Lv 571 - 720)
-  speed_160: 7,
-  pve_boss_hell: 7,
-  numpad_100: 7,
-
-  // Realm 8: Độ Kiếp Kỳ (Lv 721 - 870)
-  speed_140: 8,
-  matches_300: 8,
-  hidden_top_glory: 8,
-
-  // Realm 9: Kim Tiên (Lv 871 - 940)
-  matches_500: 9,
-  hidden_aura_frame: 9,
-
-  // Realm 10: Đại La Tiên (Lv 941 - 980)
-  // Realm 11: Thiên Tôn (Lv 981 - 1000)
-  pvp_streak_8: 11,
-};
-
-/**
  * Lấy danh sách ID thành tựu tương ứng với cảnh giới (<= realmIndex)
  */
 export function getAchievementsUpToRealm(realmIndex: number): string[] {
@@ -935,6 +258,9 @@ export function calculatePlayerAchievements(params: {
   initialUnlocked?: string[];
   cultivationLevel?: number;
   cultivationRealmIndex?: number;
+  cultivationState?: any;
+  onlineSeconds?: number;
+  friendsList?: any[];
 }): {
   unlockedMap: Record<string, boolean>;
   unlockedList: XianxiaAchievement[];
@@ -957,10 +283,12 @@ export function calculatePlayerAchievements(params: {
     initialUnlocked = [],
     cultivationLevel,
     cultivationRealmIndex,
+    cultivationState,
+    onlineSeconds,
+    friendsList = [],
   } = params;
 
   // QUY ĐỊNH CỐT LÕI: CHỈ NGƯỜI CHƠI ĐÃ ĐĂNG NHẬP HOẶC CÓ QUYỀN ADMIN MỚI CÓ THỂ HOÀN THÀNH THÀNH TỰU
-  // Nếu chưa đăng nhập (Khách / Guest) và không phải Admin, toàn bộ thành tựu đều ở trạng thái KHÓA (0/35)
   if (!isLoggedIn && !isAdmin) {
     const lockedMap: Record<string, boolean> = {};
     for (const ach of XIANXIA_ACHIEVEMENTS) {
@@ -978,12 +306,14 @@ export function calculatePlayerAchievements(params: {
 
   // Tự động kiểm tra cảnh giới tu tiên từ bộ nhớ nếu không được truyền vào
   let effectiveRealmIndex = cultivationRealmIndex;
-  if (effectiveRealmIndex === undefined && typeof window !== 'undefined') {
+  let effectiveCult = cultivationState;
+  if (typeof window !== 'undefined') {
     try {
       const rawCult = localStorage.getItem('fasttyping_cultivation_state_v1');
       if (rawCult) {
         const parsed = JSON.parse(rawCult);
-        if (typeof parsed?.realmIndex === 'number') {
+        if (!effectiveCult) effectiveCult = parsed;
+        if (effectiveRealmIndex === undefined && typeof parsed?.realmIndex === 'number') {
           effectiveRealmIndex = parsed.realmIndex;
         }
       }
@@ -1008,7 +338,6 @@ export function calculatePlayerAchievements(params: {
   }
 
   // QUY TẮC CỐT LÕI: Lọc chỉ lấy các trận đấu ĐÃ HOÀN THÀNH HỢP LỆ
-  // Bỏ qua toàn bộ các trận đầu hàng, AFK, out phòng sớm hoặc ván chưa hoàn thành
   const completedMatchHistory = matchHistory.filter(
     (m) => m.isCompleted !== false && m.result !== 'Đầu hàng' && m.result !== 'AFK'
   );
@@ -1020,7 +349,7 @@ export function calculatePlayerAchievements(params: {
   const surrenderedCount = matchHistory.filter((m) => m.result === 'Đầu hàng' || m.result === 'AFK' || m.isCompleted === false).length;
   const uniqueModes = new Set(completedMatchHistory.map((m) => m.modeId || m.mode));
 
-  // Kiểm tra chuỗi thắng (phải là trận hoàn thành và kết quả Thắng; nếu gặp trận Đầu hàng hoặc chưa hoàn thành thì chuỗi bị ngắt)
+  // Kiểm tra chuỗi thắng
   let maxWinStreak = 0;
   let currentStreak = 0;
   for (const m of [...matchHistory].reverse()) {
@@ -1032,7 +361,7 @@ export function calculatePlayerAchievements(params: {
     }
   }
 
-  // Kiểm tra chuỗi 5 ván ổn định độ chính xác >= 96% (chỉ tính trận hoàn thành)
+  // Kiểm tra chuỗi ổn định độ chính xác >= 96%
   let steadyAccStreak = 0;
   let maxSteadyAccStreak = 0;
   for (const m of completedMatchHistory) {
@@ -1044,15 +373,61 @@ export function calculatePlayerAchievements(params: {
     }
   }
 
-  // Kiểm tra giờ đêm (23h - 5h) (chỉ tính trận hoàn thành)
+  // Kiểm tra giờ đêm (23h - 5h) & bình minh (5h - 7h)
   const now = new Date();
   const currentHour = now.getHours();
   const isNightTimeNow = currentHour >= 23 || currentHour < 5;
+  const isDawnTimeNow = currentHour >= 5 && currentHour < 7;
   const hasNightMatch = completedMatchHistory.some((m) => {
     const d = new Date(m.timestamp);
     const h = d.getHours();
     return h >= 23 || h < 5;
   });
+  const hasDawnMatch = completedMatchHistory.some((m) => {
+    const d = new Date(m.timestamp);
+    const h = d.getHours();
+    return h >= 5 && h < 7;
+  });
+
+  // Kiểm tra số ván đấu trong cùng ngày hôm nay (15 ván)
+  const todayStr = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  const matchesTodayCount = completedMatchHistory.filter((m) => {
+    const d = new Date(m.timestamp);
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` === todayStr;
+  }).length;
+
+  // Thời gian online tích lũy (giây)
+  const effectiveOnlineSeconds = onlineSeconds !== undefined ? onlineSeconds : getAccountOnlineSeconds(accountKey);
+
+  // Số lượng bạn bè
+  let effectiveFriendsCount = friendsList.length;
+  let hasDaoLu = friendsList.some((f) => f.isDaoLu);
+  if (effectiveFriendsCount === 0 && typeof window !== 'undefined') {
+    try {
+      const rawFriends = localStorage.getItem('fasttyping_friends_cache');
+      if (rawFriends) {
+        const parsed = JSON.parse(rawFriends);
+        if (Array.isArray(parsed)) {
+          effectiveFriendsCount = parsed.length;
+          hasDaoLu = parsed.some((f: any) => f.isDaoLu);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Tương tác xã hội & chat
+  let hasSentChat = false;
+  let hasGiftedTea = false;
+  if (typeof window !== 'undefined') {
+    try {
+      hasSentChat = Boolean(localStorage.getItem(`fasttyping_chat_sent_${accountKey}`));
+      hasGiftedTea = Boolean(localStorage.getItem(`fasttyping_tea_gifted_${accountKey}`));
+    } catch {
+      // ignore
+    }
+  }
 
   // Kiểm tra Top 1 bảng xếp hạng
   let isLeaderboardTop1 = false;
@@ -1081,35 +456,59 @@ export function calculatePlayerAchievements(params: {
 
     if (!isMet) {
       switch (ach.id) {
-      // Tật Phong Kiếm Quyết
+      // Tật Phong Kiếm Quyết (Speed)
       case 'speed_40':
         isMet = maxMatchWpm >= 40;
+        break;
+      case 'speed_50':
+        isMet = maxMatchWpm >= 50;
         break;
       case 'speed_60':
         isMet = maxMatchWpm >= 60;
         break;
+      case 'speed_70':
+        isMet = maxMatchWpm >= 70;
+        break;
       case 'speed_80':
         isMet = maxMatchWpm >= 80;
+        break;
+      case 'speed_90':
+        isMet = maxMatchWpm >= 90;
         break;
       case 'speed_100':
         isMet = maxMatchWpm >= 100;
         break;
+      case 'speed_110':
+        isMet = maxMatchWpm >= 110;
+        break;
       case 'speed_120':
         isMet = maxMatchWpm >= 120;
+        break;
+      case 'speed_130':
+        isMet = maxMatchWpm >= 130;
         break;
       case 'speed_140':
         isMet = maxMatchWpm >= 140;
         break;
+      case 'speed_150':
+        isMet = maxMatchWpm >= 150;
+        break;
       case 'speed_160':
         isMet = maxMatchWpm >= 160;
         break;
+      case 'speed_180':
+        isMet = maxMatchWpm >= 180;
+        break;
 
-      // Tâm Kiếm Vô Tạp
+      // Tâm Kiếm Vô Tạp (Accuracy)
       case 'acc_95':
         isMet = completedMatchHistory.some((m) => m.accuracy >= 95);
         break;
       case 'acc_98':
         isMet = completedMatchHistory.some((m) => m.accuracy >= 98);
+        break;
+      case 'acc_99':
+        isMet = completedMatchHistory.some((m) => m.accuracy >= 99);
         break;
       case 'acc_100_once':
         isMet = accurate100Count >= 1;
@@ -1117,22 +516,46 @@ export function calculatePlayerAchievements(params: {
       case 'acc_100_3x':
         isMet = accurate100Count >= 3;
         break;
+      case 'acc_100_5x':
+        isMet = accurate100Count >= 5;
+        break;
       case 'acc_100_10x':
         isMet = accurate100Count >= 10;
         break;
+      case 'acc_100_20x':
+        isMet = accurate100Count >= 20;
+        break;
+      case 'acc_speed_combo':
+        isMet = completedMatchHistory.some((m) => m.wpm >= 80 && m.accuracy === 100);
+        break;
+      case 'acc_streak_10':
+        isMet = maxSteadyAccStreak >= 10;
+        break;
 
-      // Bách Chiến Đăng Tiên
+      // Bách Chiến Đăng Tiên (Matches)
+      case 'matches_1':
+        isMet = effectiveTotalMatches >= 1;
+        break;
       case 'matches_10':
         isMet = effectiveTotalMatches >= 10;
         break;
       case 'matches_30':
         isMet = effectiveTotalMatches >= 30;
         break;
+      case 'matches_50':
+        isMet = effectiveTotalMatches >= 50;
+        break;
       case 'matches_75':
         isMet = effectiveTotalMatches >= 75;
         break;
+      case 'matches_100':
+        isMet = effectiveTotalMatches >= 100;
+        break;
       case 'matches_150':
         isMet = effectiveTotalMatches >= 150;
+        break;
+      case 'matches_200':
+        isMet = effectiveTotalMatches >= 200;
         break;
       case 'matches_300':
         isMet = effectiveTotalMatches >= 300;
@@ -1140,43 +563,79 @@ export function calculatePlayerAchievements(params: {
       case 'matches_500':
         isMet = effectiveTotalMatches >= 500;
         break;
+      case 'matches_750':
+        isMet = effectiveTotalMatches >= 750;
+        break;
+      case 'matches_1000':
+        isMet = effectiveTotalMatches >= 1000;
+        break;
 
-      // Tru Ma & Bí Cảnh
+      // Tru Ma & Bí Cảnh (PvE & Special Modes)
       case 'pve_boss_win':
         isMet = completedMatchHistory.some((m) => m.modeId === 'san_boss' && m.result === 'Thắng');
         break;
       case 'pve_boss_hell':
         isMet = completedMatchHistory.some(
-          (m) => m.modeId === 'san_boss' && m.result === 'Thắng' && (m.mode.includes('Địa Ngục') || m.mode.includes('Huyền Thoại'))
+          (m) => m.modeId === 'san_boss' && m.result === 'Thắng' && (m.mode?.includes('Địa Ngục') || m.mode?.includes('Huyền Thoại'))
         );
+        break;
+      case 'pve_boss_5x':
+        isMet = completedMatchHistory.filter((m) => m.modeId === 'san_boss' && m.result === 'Thắng').length >= 5;
         break;
       case 'pve_mystery_word':
         isMet = completedMatchHistory.some((m) => m.modeId === 'doan_chu' && (m.score || 0) > 0);
         break;
+      case 'pve_mystery_5x':
+        isMet = completedMatchHistory.filter((m) => m.modeId === 'doan_chu' && (m.score || 0) > 0).length >= 5;
+        break;
       case 'pve_rush_high':
         isMet = completedMatchHistory.some((m) => m.modeId === 'ngau_hung' && ((m.score || 0) >= 100 || m.wpm >= 60));
         break;
+      case 'pve_rush_master':
+        isMet = completedMatchHistory.some((m) => m.modeId === 'ngau_hung' && (m.wpm >= 80 || (m.score || 0) >= 150));
+        break;
       case 'pve_outplay_beat':
         isMet = completedMatchHistory.some((m) => m.modeId === 'outplay' && m.result === 'Thắng');
+        break;
+      case 'pve_outplay_streak':
+        isMet = completedMatchHistory.filter((m) => m.modeId === 'outplay' && m.result === 'Thắng').length >= 3;
         break;
 
       // Thần Số Trận Pháp (Numpad)
       case 'numpad_intro':
         isMet = completedMatchHistory.some((m) => m.modeId === 'numpad');
         break;
+      case 'numpad_40':
+        isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 40);
+        break;
       case 'numpad_50':
         isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 50);
+        break;
+      case 'numpad_60':
+        isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 60);
         break;
       case 'numpad_75':
         isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 75);
         break;
+      case 'numpad_90':
+        isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 90);
+        break;
       case 'numpad_100':
         isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 100);
         break;
+      case 'numpad_120':
+        isMet = completedMatchHistory.some((m) => m.modeId === 'numpad' && m.wpm >= 120);
+        break;
+      case 'numpad_10_matches':
+        isMet = completedMatchHistory.filter((m) => m.modeId === 'numpad').length >= 10;
+        break;
 
-      // Bách Thắng Tranh Hùng
+      // Bách Thắng Tranh Hùng (Streak & PvP)
       case 'pvp_first_win':
         isMet = completedMatchHistory.some((m) => m.playType === 'multiplayer' && m.result === 'Thắng');
+        break;
+      case 'pvp_wins_5':
+        isMet = completedMatchHistory.filter((m) => m.playType === 'multiplayer' && m.result === 'Thắng').length >= 5;
         break;
       case 'pvp_streak_3':
         isMet = maxWinStreak >= 3;
@@ -1184,11 +643,20 @@ export function calculatePlayerAchievements(params: {
       case 'pvp_streak_5':
         isMet = maxWinStreak >= 5;
         break;
+      case 'pvp_wins_20':
+        isMet = completedMatchHistory.filter((m) => m.playType === 'multiplayer' && m.result === 'Thắng').length >= 20;
+        break;
       case 'pvp_streak_8':
         isMet = maxWinStreak >= 8;
         break;
+      case 'pvp_streak_10':
+        isMet = maxWinStreak >= 10;
+        break;
+      case 'pvp_room_8_top1':
+        isMet = roomPlayerCount >= 6 && completedMatchHistory.some((m) => m.playType === 'multiplayer' && m.result === 'Thắng');
+        break;
 
-      // Kỳ Ngộ Ẩn Thế (Thành tựu ẩn)
+      // Kỳ Ngộ Ẩn Thế (Hidden)
       case 'hidden_room_full':
         isMet = roomPlayerCount >= 8;
         break;
@@ -1197,6 +665,9 @@ export function calculatePlayerAchievements(params: {
         break;
       case 'hidden_midnight':
         isMet = isNightTimeNow || hasNightMatch;
+        break;
+      case 'hidden_dawn':
+        isMet = isDawnTimeNow || hasDawnMatch;
         break;
       case 'hidden_flawless_fast':
         isMet = completedMatchHistory.some((m) => m.wpm >= 75 && m.accuracy === 100);
@@ -1218,6 +689,102 @@ export function calculatePlayerAchievements(params: {
         break;
       case 'hidden_steady_heart':
         isMet = maxSteadyAccStreak >= 5;
+        break;
+      case 'hidden_lucky_wpm':
+        isMet = completedMatchHistory.some((m) => [77, 88, 99, 100].includes(Math.round(m.wpm)));
+        break;
+      case 'hidden_endurance':
+        isMet = matchesTodayCount >= 15;
+        break;
+      case 'hidden_speed_god':
+        isMet = completedMatchHistory.some((m) => m.wpm >= 130 && m.accuracy >= 98);
+        break;
+
+      // NHÁNH MỚI 1: ĐỘNG PHỦ TỌA THIỀN (ONLINE TIME)
+      case 'online_10m':
+        isMet = effectiveOnlineSeconds >= 600;
+        break;
+      case 'online_30m':
+        isMet = effectiveOnlineSeconds >= 1800;
+        break;
+      case 'online_1h':
+        isMet = effectiveOnlineSeconds >= 3600;
+        break;
+      case 'online_3h':
+        isMet = effectiveOnlineSeconds >= 10800;
+        break;
+      case 'online_6h':
+        isMet = effectiveOnlineSeconds >= 21600;
+        break;
+      case 'online_12h':
+        isMet = effectiveOnlineSeconds >= 43200;
+        break;
+      case 'online_24h':
+        isMet = effectiveOnlineSeconds >= 86400;
+        break;
+      case 'online_50h':
+        isMet = effectiveOnlineSeconds >= 180000;
+        break;
+      case 'online_100h':
+        isMet = effectiveOnlineSeconds >= 360000;
+        break;
+
+      // NHÁNH MỚI 2: TÔNG MÔN VẠN ĐẠO (SOCIAL & SECT)
+      case 'social_join_sect':
+        isMet = Boolean(effectiveCult?.sect?.sectId || effectiveCult?.sectId);
+        break;
+      case 'social_first_friend':
+        isMet = effectiveFriendsCount >= 1;
+        break;
+      case 'social_chat_world':
+        isMet = hasSentChat;
+        break;
+      case 'social_gift_tea':
+        isMet = hasGiftedTea;
+        break;
+      case 'social_dao_lu':
+        isMet = hasDaoLu;
+        break;
+      case 'social_sect_war':
+        isMet = Boolean(effectiveCult?.sect?.contribution > 0) || completedMatchHistory.some((m) => m.subMode === 'sect_tournament');
+        break;
+      case 'social_sect_officer':
+        isMet = ['chuong_mon', 'dai_truong_lao'].includes(effectiveCult?.sect?.role);
+        break;
+      case 'social_friends_5':
+        isMet = effectiveFriendsCount >= 5;
+        break;
+
+      // NHÁNH MỚI 3: ĐAN ĐẠO & KHÍ THẦN (CULTIVATION, ARTIFACTS & ALCHEMY)
+      case 'cult_craft_pill':
+        isMet = Boolean(effectiveCult?.historyLog?.some((log: string) => log.includes('Luyện Đan')) || effectiveCult?.pillCount?.hoTam > 0 || effectiveCult?.pillCount?.phaCanh > 0 || effectiveCult?.pillCount?.tuViDan > 0);
+        break;
+      case 'cult_upgrade_artifact':
+        isMet = Boolean(effectiveCult?.artifacts && Object.values(effectiveCult.artifacts).some((art: any) => art && typeof art.level === 'number' && art.level > 1));
+        break;
+      case 'cult_breakthrough_trucco':
+        isMet = (effectiveRealmIndex !== undefined && effectiveRealmIndex >= 1) || (effectiveCult?.level || 0) >= 31;
+        break;
+      case 'cult_breakthrough_kindan':
+        isMet = (effectiveRealmIndex !== undefined && effectiveRealmIndex >= 2) || (effectiveCult?.level || 0) >= 71;
+        break;
+      case 'cult_breakthrough_nguyenanh':
+        isMet = (effectiveRealmIndex !== undefined && effectiveRealmIndex >= 3) || (effectiveCult?.level || 0) >= 131;
+        break;
+      case 'cult_tuvi_10k':
+        isMet = (effectiveCult?.exp || 0) >= 10000 || (effectiveCult?.level || 0) >= 30;
+        break;
+      case 'cult_tuvi_50k':
+        isMet = (effectiveCult?.exp || 0) >= 50000 || (effectiveCult?.level || 0) >= 70;
+        break;
+      case 'cult_all_herbs':
+        isMet = Boolean(
+          effectiveCult?.herbs &&
+          Object.values(effectiveCult.herbs).filter((c: any) => typeof c === 'number' && c > 0).length >= 5
+        );
+        break;
+      case 'cult_high_pill':
+        isMet = Boolean(effectiveCult?.activeBuffs?.pill || (effectiveCult?.pillCount?.sieuCapTuViDan || 0) > 0);
         break;
       }
     }
@@ -1272,6 +839,9 @@ export function checkNewAchievementsOnMatchEnd(params: {
   initialUnlocked?: string[];
   cultivationLevel?: number;
   cultivationRealmIndex?: number;
+  cultivationState?: any;
+  onlineSeconds?: number;
+  friendsList?: any[];
   isMatchCompleted?: boolean;
 }): XianxiaAchievement[] {
   // Người chơi chưa đăng nhập hoặc trận đấu chưa hoàn thành (đầu hàng, out phòng) -> không bao giờ tính thành tựu

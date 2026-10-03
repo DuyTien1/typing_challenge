@@ -170,6 +170,7 @@ export interface ServerUserRecord {
   bestWpm?: number;
   bestWpmRecord?: any;
   totalGames?: number;
+  totalOnlineSeconds?: number;
   matchHistory?: any[];
   createdAt: number;
   updatedAt: number;

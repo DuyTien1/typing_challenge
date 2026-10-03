@@ -17,9 +17,13 @@ import {
   Sparkles,
   Zap,
   Lock,
-  Unlock
+  Unlock,
+  Coins,
+  Plus
 } from 'lucide-react';
 import { soundFx } from '../../utils/audio';
+import { CultivationState, saveStoredCultivationState } from '../../utils/cultivation';
+import { getStoredAuthToken } from '../../utils/auth';
 
 export interface AdminUserData {
   id: string;
@@ -43,11 +47,19 @@ export interface AdminUserData {
 
 interface AdminUsersTabProps {
   currentUsername: string;
+  currentUser?: { id?: string; username?: string } | null;
+  cultivationState?: CultivationState;
+  onUpdateCultivationState?: (nextState: CultivationState) => void;
+  onRewardSuccess?: (msg: string) => void;
   showToast: (msg: string) => void;
 }
 
 export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   currentUsername,
+  currentUser,
+  cultivationState,
+  onUpdateCultivationState,
+  onRewardSuccess,
   showToast,
 }) => {
   const [users, setUsers] = useState<AdminUserData[]>([]);
@@ -63,19 +75,26 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   // Form states
   const [banDurationMinutes, setBanDurationMinutes] = useState(120); // 2 hours default
   const [banReason, setBanReason] = useState('Nghi vấn Auto/Macro phím hoặc bất thường WPM');
-  const [rewardStones, setRewardStones] = useState(500);
-  const [rewardExp, setRewardExp] = useState(1000);
+  const [rewardStones, setRewardStones] = useState(1000);
+  const [rewardExp, setRewardExp] = useState(2500);
+  const [rewardThoNguyen, setRewardThoNguyen] = useState(0);
+  const [rewardHoTam, setRewardHoTam] = useState(0);
+  const [rewardPhaCanh, setRewardPhaCanh] = useState(0);
   const [newPasswordInput, setNewPasswordInput] = useState('fasttyping123');
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
+      const token = getStoredAuthToken();
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`/api/admin/users?_t=${Date.now()}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
+        headers,
       });
       if (res.ok) {
         const data = await res.json();
@@ -109,7 +128,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     setSelectedUser(null);
 
     // INSTANT OPTIMISTIC UI UPDATE:
-    // If deleting, immediately remove user from local state so it vanishes in 0ms!
     if (currentAction === 'delete') {
       setUsers((prev) => prev.filter((u) => u.id !== targetUserId && u.username.toLowerCase() !== targetUsername.toLowerCase()));
     } else if (currentAction === 'ban') {
@@ -143,6 +161,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       } else if (currentAction === 'reward') {
         body.spiritStones = rewardStones;
         body.exp = rewardExp;
+        if (rewardThoNguyen > 0) body.thoNguyenPills = rewardThoNguyen;
+        if (rewardHoTam > 0) body.hoTamPills = rewardHoTam;
+        if (rewardPhaCanh > 0) body.phaCanhPills = rewardPhaCanh;
       } else if (currentAction === 'reset_pwd') {
         body.action = 'reset_password';
         body.newPassword = newPasswordInput;
@@ -150,16 +171,58 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         body.action = 'delete';
       }
 
+      const token = getStoredAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/admin/users/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
       });
 
       const data = await res.json();
       if (data.success) {
         soundFx.playSuccess();
-        showToast(data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${playerDisplayName}` : 'Thao tác thành công!'));
+        const successMsg = data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${playerDisplayName}` : 'Thao tác thành công!');
+        showToast(successMsg);
+
+        if (currentAction === 'reward' && onRewardSuccess) {
+          onRewardSuccess(successMsg);
+        }
+
+        // If rewarding current user, immediately synchronize their React state & LocalStorage
+        if (currentAction === 'reward' && data.cultivation) {
+          const isTargetCurrent =
+            (currentUser?.id && (targetUserId === currentUser.id || targetUser.id === currentUser.id)) ||
+            (currentUser?.username && targetUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
+            (currentUsername && targetUsername.toLowerCase() === currentUsername.toLowerCase());
+
+          if (isTargetCurrent && onUpdateCultivationState) {
+            onUpdateCultivationState(data.cultivation);
+            saveStoredCultivationState(data.cultivation);
+          }
+        }
+
+        // Always update user item in table with latest cultivation data
+        if (currentAction === 'reward') {
+          setUsers((prev) => prev.map((u) => {
+            if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
+              const cult = data.cultivation;
+              const stones = cult && typeof cult.linhThach === 'number'
+                ? cult.linhThach
+                : (cult && typeof cult.spiritStones === 'number' ? cult.spiritStones : (u.spiritStones || 0) + rewardStones);
+              return {
+                ...u,
+                spiritStones: stones,
+                cultivationRealm: (cult && cult.realmName) || u.cultivationRealm,
+                cultivationTier: (cult && cult.tier) || u.cultivationTier,
+              };
+            }
+            return u;
+          }));
+        }
+
         // Sync with backend to ensure perfect consistency
         fetchUsers();
       } else {
@@ -615,11 +678,34 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
             {/* REWARD FORM */}
             {actionType === 'reward' && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    💎 Thêm Linh Thạch
-                  </label>
+              <div className="space-y-3.5">
+                {/* User Current Status Summary */}
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Cảnh Giới Hiện Tại</span>
+                    <span className="font-bold text-amber-300">
+                      {selectedUser.cultivationRealm || 'Luyện Khí Kỳ'} T.{selectedUser.cultivationTier || 1}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-400 block text-[10px]">Linh Thạch Hiện Có</span>
+                    <span className="font-bold text-emerald-400 font-mono">
+                      💎 {(selectedUser.spiritStones || 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Linh Thạch Input & Presets */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <span className="text-emerald-400">💎</span>
+                      <span>Thêm Linh Thạch</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                      +{rewardStones.toLocaleString()} viên
+                    </span>
+                  </div>
                   <input
                     type="number"
                     min={0}
@@ -628,12 +714,41 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     onChange={(e) => setRewardStones(Math.max(0, Number(e.target.value)))}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
                   />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[500, 1000, 5000, 20000, 50000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => {
+                          soundFx.playKeyClick();
+                          setRewardStones((prev) => prev + amt);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white text-[10px] font-bold border border-slate-700 transition-colors cursor-pointer"
+                      >
+                        +{amt >= 1000 ? `${amt / 1000}k` : amt}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setRewardStones(0)}
+                      className="px-2 py-1 rounded-lg bg-slate-800/60 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 text-[10px] font-semibold transition-colors cursor-pointer"
+                    >
+                      Xóa
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    ⚡ Thêm Tu Vi EXP
-                  </label>
+                {/* Tu Vi EXP Input & Presets */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Thêm Tu Vi EXP (Tự động thăng cấp)</span>
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-mono font-bold">
+                      +{rewardExp.toLocaleString()} EXP
+                    </span>
+                  </div>
                   <input
                     type="number"
                     min={0}
@@ -642,6 +757,70 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     onChange={(e) => setRewardExp(Math.max(0, Number(e.target.value)))}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
                   />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[1000, 2500, 5000, 10000, 50000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => {
+                          soundFx.playKeyClick();
+                          setRewardExp((prev) => prev + amt);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white text-[10px] font-bold border border-slate-700 transition-colors cursor-pointer"
+                      >
+                        +{amt >= 1000 ? `${amt / 1000}k` : amt}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setRewardExp(0)}
+                      className="px-2 py-1 rounded-lg bg-slate-800/60 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 text-[10px] font-semibold transition-colors cursor-pointer"
+                    >
+                      Xóa
+                    </button>
+                  </div>
+                </div>
+
+                {/* Đan Dược Phụ Trợ */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-800">
+                  <label className="text-[11px] font-semibold text-slate-400 block">
+                    💊 Tặng Thêm Đan Dược Quý (Tùy chọn)
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block truncate">Thọ Nguyên (+5)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rewardThoNguyen}
+                        onChange={(e) => setRewardThoNguyen(Math.max(0, Number(e.target.value)))}
+                        className="w-full text-center mt-1 px-1 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs text-emerald-400 font-mono font-bold"
+                      />
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block truncate">Hộ Tâm (Giữ tầng)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rewardHoTam}
+                        onChange={(e) => setRewardHoTam(Math.max(0, Number(e.target.value)))}
+                        className="w-full text-center mt-1 px-1 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs text-amber-400 font-mono font-bold"
+                      />
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block truncate">Phá Cảnh (+15%)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rewardPhaCanh}
+                        onChange={(e) => setRewardPhaCanh(Math.max(0, Number(e.target.value)))}
+                        className="w-full text-center mt-1 px-1 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs text-purple-400 font-mono font-bold"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

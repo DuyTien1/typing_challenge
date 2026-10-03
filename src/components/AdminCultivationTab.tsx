@@ -34,6 +34,7 @@ interface AdminCultivationTabProps {
   cultivationState?: CultivationState;
   onUpdateCultivationState?: (nextState: CultivationState) => void;
   onSyncAchievements?: (unlockedIds: string[]) => void;
+  onRewardSuccess?: (msg: string) => void;
   currentUsername?: string;
   currentUser?: { id?: string; username?: string } | null;
   showToast: (msg: string) => void;
@@ -43,27 +44,31 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
   cultivationState,
   onUpdateCultivationState,
   onSyncAchievements,
+  onRewardSuccess,
   currentUsername = 'Admin',
   currentUser,
   showToast,
 }) => {
-  // Lấy trạng thái hiện tại
-  const current = cultivationState || loadStoredCultivationState();
+  // Lấy trạng thái hiện tại kèm đồng bộ tức thời
+  const [internalState, setInternalState] = useState<CultivationState>(() => cultivationState || loadStoredCultivationState());
+  const current = internalState;
 
   // State điều khiển cấp độ tra cứu / mô phỏng
   const [targetLevel, setTargetLevel] = useState<number>(current.level || 1);
   const [selectedRealmIdx, setSelectedRealmIdx] = useState<number>(current.realmIndex || 0);
   const [selectedTier, setSelectedTier] = useState<number>(current.tier || 1);
   const [unbanInput, setUnbanInput] = useState<string>('');
+  const [confirmResetAch, setConfirmResetAch] = useState<boolean>(false);
 
   // Đồng bộ khi cultivationState bên ngoài thay đổi
   useEffect(() => {
     if (cultivationState) {
+      setInternalState(cultivationState);
       setTargetLevel(cultivationState.level);
       setSelectedRealmIdx(cultivationState.realmIndex);
       setSelectedTier(cultivationState.tier);
     }
-  }, [cultivationState?.level, cultivationState?.realmIndex, cultivationState?.tier]);
+  }, [cultivationState]);
 
   // Thông tin tính toán theo targetLevel
   const previewInfo = useMemo(() => {
@@ -109,6 +114,15 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
     setTargetLevel(newLvl);
   };
 
+  // Áp dụng trạng thái tu vi mới lập tức với 0ms delay
+  const commitCultivationState = (nextState: CultivationState) => {
+    setInternalState(nextState);
+    saveStoredCultivationState(nextState);
+    if (onUpdateCultivationState) {
+      onUpdateCultivationState(nextState);
+    }
+  };
+
   // Thực hiện gán / chuyển cấp độ tu tiên cho bản thân (tự do chuyển bất kỳ cấp độ 1 - 1000, đồng bộ tức thì với Linh Đài Tu Tiên)
   const handleApplyLevel = (lvlToApply: number) => {
     const clamped = Math.max(1, Math.min(1000, Math.round(lvlToApply)));
@@ -119,11 +133,7 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
       refillThoNguyen: true,
     });
 
-    if (onUpdateCultivationState) {
-      onUpdateCultivationState(nextState);
-    } else {
-      saveStoredCultivationState(nextState);
-    }
+    commitCultivationState(nextState);
 
     setTargetLevel(nextState.level);
     setSelectedRealmIdx(nextState.realmIndex);
@@ -161,17 +171,22 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
     showToast(`🏆 Đã mở khóa ${achIds.length} thành tựu tương ứng với cảnh giới hiện tại!`);
   };
 
-  // Khôi phục / Đặt lại thành tựu về mặc định
+  // Khôi phục / Đặt lại thành tựu về mặc định (2-click safe reset, không phụ thuộc window.confirm)
   const handleResetAchievements = () => {
-    if (window.confirm('Bạn có chắc chắn muốn đặt lại (khóa lại) toàn bộ thành tựu của tài khoản này không?')) {
-      const accountKey = currentUser?.id || currentUsername || 'Admin';
-      resetAchievementsForUser(accountKey);
-      if (onSyncAchievements) {
-        onSyncAchievements([]);
-      }
+    if (!confirmResetAch) {
       soundFx.playKeyClick();
-      showToast(`🔄 Đã đặt lại thành tựu của tài khoản ${accountKey} về ban đầu!`);
+      setConfirmResetAch(true);
+      setTimeout(() => setConfirmResetAch(false), 4000);
+      return;
     }
+    setConfirmResetAch(false);
+    const accountKey = currentUser?.id || currentUsername || 'Admin';
+    resetAchievementsForUser(accountKey);
+    if (onSyncAchievements) {
+      onSyncAchievements([]);
+    }
+    soundFx.playKeyClick();
+    showToast(`🔄 Đã đặt lại thành tựu của tài khoản ${accountKey} về ban đầu!`);
   };
 
   // Tiện ích: Bơm đầy đan dược
@@ -182,51 +197,93 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
       phaCanh: 99,
       tuViDan: 99,
       sieuCapTuViDan: 99,
+      dinhTam: 99,
+      ngungThan: 99,
     };
+    const log = `💊 [Admin Can Thiệp] Bơm đầy 99 Đan Dược mọi loại vào Túi Trữ Vật`;
     const nextState: CultivationState = {
       ...current,
       pillCount: updatedPills,
+      historyLog: [log, ...(Array.isArray(current.historyLog) ? current.historyLog.slice(0, 19) : [])],
     };
-    if (onUpdateCultivationState) {
-      onUpdateCultivationState(nextState);
-    } else {
-      saveStoredCultivationState(nextState);
-    }
+    commitCultivationState(nextState);
     soundFx.playVictory();
-    showToast('💊 Đã bơm đầy 99 Đan Dược tất cả các loại vào Túi Trữ Vật!');
+    const msg = '💊 Đã bơm đầy 99 Đan Dược tất cả các loại vào Túi Trữ Vật!';
+    showToast(msg);
+    if (onRewardSuccess) onRewardSuccess(msg);
   };
 
   // Tiện ích: Hồi đầy thọ nguyên
   const handleRefillThoNguyenNow = () => {
     const realm = XIANXIA_REALMS[current.realmIndex];
+    const log = `💖 [Admin Can Thiệp] Hồi phục toàn vẹn 100% Thọ Nguyên`;
     const nextState: CultivationState = {
       ...current,
       thoNguyen: realm.maxThoNguyen,
       maxThoNguyen: realm.maxThoNguyen,
+      lastThoNguyenDecay: Date.now(),
+      historyLog: [log, ...(Array.isArray(current.historyLog) ? current.historyLog.slice(0, 19) : [])],
     };
-    if (onUpdateCultivationState) {
-      onUpdateCultivationState(nextState);
-    } else {
-      saveStoredCultivationState(nextState);
-    }
+    commitCultivationState(nextState);
     soundFx.playVictory();
-    showToast(`💖 Đã hồi đầy 100% Thọ Nguyên (${realm.maxThoNguyen}/${realm.maxThoNguyen})!`);
+    const msg = `💖 Đã hồi đầy 100% Thọ Nguyên (${realm.maxThoNguyen}/${realm.maxThoNguyen})!`;
+    showToast(msg);
+    if (onRewardSuccess) onRewardSuccess(msg);
   };
 
-  // Tiện ích: Thêm Tu Vi EXP
+  // Tiện ích: Thêm Tu Vi EXP kèm tính toán thăng tầng / cấp độ chính xác
   const handleAddExp = (amount: number) => {
-    const nextExp = Math.min(current.maxExp - 1, current.exp + amount);
+    let curExp = (Number(current.exp) || 0) + amount;
+    let tier = typeof current.tier === 'number' ? current.tier : 1;
+    let realmIdx = typeof current.realmIndex === 'number' ? current.realmIndex : 0;
+    let level = typeof current.level === 'number' ? current.level : 1;
+    let maxExp = typeof current.maxExp === 'number' && current.maxExp > 0 ? current.maxExp : 100;
+
+    // Tự động thăng tầng nếu tích lũy vượt ngưỡng maxExp (Tầng 1 -> 10)
+    while (curExp >= maxExp && tier < 10) {
+      curExp -= maxExp;
+      tier += 1;
+      level = Math.min(1000, level + 1);
+      maxExp = Math.round(maxExp * 1.25);
+    }
+    if (tier >= 10 && curExp > maxExp) {
+      curExp = maxExp; // Khống chế tại đỉnh phong Tầng 10 chờ Độ Kiếp
+    }
+
+    const subStage = getSubStage(tier);
+    const realm = XIANXIA_REALMS[realmIdx];
+    const log = `✨ [Tu Vi Thần Tốc] Nhận +${amount.toLocaleString()} Tu Vi (${realm.name} Tầng ${tier})`;
+
     const nextState: CultivationState = {
       ...current,
-      exp: nextExp,
+      exp: curExp,
+      tier,
+      level,
+      maxExp,
+      subStage,
+      realmName: realm.name,
+      titleName: realm.titleName,
+      historyLog: [log, ...(Array.isArray(current.historyLog) ? current.historyLog.slice(0, 19) : [])],
     };
-    if (onUpdateCultivationState) {
-      onUpdateCultivationState(nextState);
-    } else {
-      saveStoredCultivationState(nextState);
-    }
-    soundFx.playKeyClick();
-    showToast(`✨ Đã thêm +${amount.toLocaleString()} Tu Vi EXP cho bản thân!`);
+
+    commitCultivationState(nextState);
+    soundFx.playVictory();
+    showToast(`✨ Đã thêm +${amount.toLocaleString()} Tu Vi EXP! Cảnh giới hiện tại: Tầng ${tier} (${subStage})`);
+  };
+
+  // Tiện ích: Thêm Linh Thạch tức thì
+  const handleAddLinhThach = (amount: number) => {
+    const curStones = Number(current.linhThach) || 0;
+    const nextStones = curStones + amount;
+    const log = `💎 [Admin Can Thiệp] Nhận thêm +${amount.toLocaleString()} Linh Thạch`;
+    const nextState: CultivationState = {
+      ...current,
+      linhThach: nextStones,
+      historyLog: [log, ...(Array.isArray(current.historyLog) ? current.historyLog.slice(0, 19) : [])],
+    };
+    commitCultivationState(nextState);
+    soundFx.playVictory();
+    showToast(`💎 Đã thêm +${amount.toLocaleString()} Linh Thạch! Tổng có: ${nextStones.toLocaleString()} viên`);
   };
 
   const currentRealmConfig = XIANXIA_REALMS[current.realmIndex] || XIANXIA_REALMS[0];
@@ -273,10 +330,23 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
             </div>
           </div>
 
-          {/* Chỉ số Thọ Nguyên & Tu Vi EXP */}
-          <div className="flex flex-wrap items-center gap-4 text-xs">
+          {/* Chỉ số Thọ Nguyên, Linh Thạch & Tu Vi EXP */}
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {/* Linh Thạch */}
+            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5 shadow-sm">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm font-bold">
+                💎
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Linh Thạch</div>
+                <div className="font-mono font-black text-amber-300">
+                  {(current.linhThach || 0).toLocaleString()} <span className="text-slate-500 font-normal">viên</span>
+                </div>
+              </div>
+            </div>
+
             {/* Thọ Nguyên */}
-            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5">
+            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5 shadow-sm">
               <div className="w-7 h-7 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center">
                 <Heart className="w-4 h-4 fill-rose-500/30 text-rose-400" />
               </div>
@@ -289,7 +359,7 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
             </div>
 
             {/* Tu Vi EXP */}
-            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5">
+            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5 shadow-sm">
               <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-emerald-400" />
               </div>
@@ -302,7 +372,7 @@ export const AdminCultivationTab: React.FC<AdminCultivationTabProps> = ({
             </div>
 
             {/* Đan Dược */}
-            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5">
+            <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-2.5 shadow-sm">
               <div className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
                 <Package className="w-4 h-4 text-purple-400" />
               </div>

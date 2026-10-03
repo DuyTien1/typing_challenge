@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS app_sects (
   exp INTEGER DEFAULT 0,
   members JSONB DEFAULT '[]'::jsonb,
   buffs JSONB DEFAULT '{}'::jsonb,
+  data JSONB,
   created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

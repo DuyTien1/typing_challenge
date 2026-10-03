@@ -154,8 +154,11 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
     []
   );
 
-  // Directly add Tu Vi (e.g., from gifts, tea, mentor guidance)
+  // Directly add Tu Vi (e.g., from gifts, tea, mentor guidance) - Strictly blocked for Tán Tu / unauthenticated players
   const addDirectTuVi = useCallback((bonus: number) => {
+    const token = getStoredAuthToken();
+    if (!token) return;
+
     setCultivationState((prev) => {
       const updated = {
         ...prev,

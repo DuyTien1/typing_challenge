@@ -196,7 +196,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     setLoadingSects(true);
     try {
       const data = await fetchSectLeaderboard();
-      if (data && data.success && Array.isArray(data.topSects) && data.topSects.length > 0) {
+      if (data && data.success && Array.isArray(data.topSects)) {
         setSectList(data.topSects);
       } else {
         setSectList(getSectsLeaderboard());

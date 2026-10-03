@@ -16,11 +16,9 @@ import {
   LogOut,
   Lock,
   History,
-  Check,
-  Database
+  Check
 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
-import { DatabaseHealthModal } from './DatabaseHealthModal';
 import { 
   UI_STYLES, 
   UIStyleId, 
@@ -121,7 +119,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [currentUIStyleId, setCurrentUIStyleId] = useState<UIStyleId>(() => getInitialHeaderUIStyle());
   const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
-  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const styleDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -169,8 +166,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isMoreMenuOpen]);
 
   return (
-    <>
-      <header className="w-full border-b border-[var(--theme-border,#1e293b)] bg-[var(--theme-card,#131926)]/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-4 py-2 transition-colors duration-300">
+    <header className="w-full border-b border-[var(--theme-border,#1e293b)] bg-[var(--theme-card,#131926)]/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-4 py-2 transition-colors duration-300">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo & Branding - Click to return to Home/Lobby */}
         <div
@@ -477,7 +473,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                     <div className="min-w-0">
                       <div className="font-bold text-white text-xs truncate flex items-center gap-1.5">
-                        <span className="truncate">{username || (isLoggedIn ? 'Thành viên' : 'Khách')}</span>
+                        <span className="truncate">{username || (isLoggedIn ? 'Thành viên' : 'Tán Tu')}</span>
                         {isAdmin && (
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono font-bold shrink-0">
                             ADMIN
@@ -485,7 +481,7 @@ export const Header: React.FC<HeaderProps> = ({
                         )}
                       </div>
                       <div className="text-[10px] text-slate-400 truncate">
-                        {isAdmin ? 'Quản trị viên hệ thống' : (isLoggedIn ? 'Tài khoản chính thức' : 'Chế độ khách tạm thời')}
+                        {isAdmin ? 'Quản trị viên hệ thống' : (isLoggedIn ? 'Tài khoản chính thức' : 'Chế độ Tán Tu (chưa đăng nhập)')}
                       </div>
                     </div>
                   </div>
@@ -496,7 +492,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   ) : (
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
-                      Khách
+                      Tán Tu
                     </span>
                   )}
                 </div>
@@ -667,7 +663,7 @@ export const Header: React.FC<HeaderProps> = ({
                           ? 'border-amber-500/30 hover:border-amber-400/70 bg-amber-500/5 hover:bg-amber-500/15 text-slate-300 hover:text-white'
                           : 'border-emerald-500/40 hover:border-emerald-400/80 bg-emerald-950/20 hover:bg-emerald-950/40 text-slate-200 hover:text-white'
                       }`}
-                      title={!isLoggedIn ? 'Khóa ở chế độ Khách - Đăng nhập để mở khóa' : undefined}
+                      title={!isLoggedIn ? 'Khóa ở chế độ Tán Tu - Đăng nhập để mở khóa' : undefined}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 group-hover:scale-105 transition-transform ${
@@ -683,7 +679,7 @@ export const Header: React.FC<HeaderProps> = ({
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
                             {!isLoggedIn 
-                              ? 'Khóa ở chế độ Khách (Đăng nhập để vào)'
+                              ? 'Khóa ở chế độ Tán Tu (Đăng nhập để vào)'
                               : `${cultivationRealmName || 'Luyện Khí'} T.${cultivationTier || 1} • ${cultivationSubStage || 'Sơ Kỳ'}`}
                           </div>
                         </div>
@@ -748,34 +744,6 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
 
-                {/* Section: Kiểm Tra CSDL Supabase */}
-                <div className="space-y-1">
-                  <button
-                    id="menu-item-db-health"
-                    type="button"
-                    onClick={() => {
-                      soundFx.playKeyClick();
-                      setIsMoreMenuOpen(false);
-                      setIsDbModalOpen(true);
-                    }}
-                    className="w-full flex items-center justify-between p-2 rounded-xl border border-emerald-500/30 hover:border-emerald-400/80 bg-emerald-500/10 hover:bg-emerald-500/20 text-left text-emerald-300 hover:text-emerald-200 transition-all duration-150 cursor-pointer group shadow-xs active:scale-[0.99]"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                        <Database className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-bold text-xs text-emerald-300 flex items-center gap-1.5">
-                          <span>Trạng Thái CSDL Supabase</span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        </div>
-                        <div className="text-[10px] text-emerald-400/70 truncate">Kiểm tra kết nối DATABASE_URL</div>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-emerald-400/70 group-hover:text-emerald-300 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
-                  </button>
-                </div>
-
                 {/* Section 4: Tài Khoản (Đăng Nhập / Đăng Xuất) */}
                 <div className="pt-1.5 border-t border-slate-800/80">
                   {isLoggedIn ? (
@@ -830,13 +798,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
     </header>
-
-    {/* Database Health Diagnostic Modal */}
-    <DatabaseHealthModal
-      isOpen={isDbModalOpen}
-      onClose={() => setIsDbModalOpen(false)}
-    />
-  </>
   );
 };
 

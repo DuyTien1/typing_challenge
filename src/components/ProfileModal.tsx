@@ -49,6 +49,11 @@ interface ProfileModalProps {
   matchHistory?: MatchRecord[];
   isLoggedIn?: boolean;
   currentUser?: UserAccount | null;
+  cultivationLevel?: number;
+  cultivationRealmIndex?: number;
+  cultivationState?: any;
+  onlineSeconds?: number;
+  friendsList?: any[];
   onOpenAuthModal?: (mode?: 'login' | 'register') => void;
   onLogout?: () => void;
   onChangeUsername: (name: string) => void;
@@ -85,6 +90,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   matchHistory,
   isLoggedIn = false,
   currentUser = null,
+  cultivationLevel,
+  cultivationRealmIndex,
+  cultivationState,
+  onlineSeconds,
+  friendsList,
   onOpenAuthModal,
   onLogout,
   onChangeUsername,
@@ -357,6 +367,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             matchHistory={history}
             highScores={highScores}
             showcaseAchievements={(isLoggedIn || isAdmin) ? currentShowcase : []}
+            cultivationLevel={cultivationLevel}
+            cultivationRealmIndex={cultivationRealmIndex}
+            cultivationState={cultivationState}
+            onlineSeconds={onlineSeconds}
+            friendsList={friendsList}
             onShowcaseChange={handleShowcaseChange}
             onOpenAuthModal={onOpenAuthModal}
           />
@@ -371,10 +386,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>Chế độ Khách (Chưa đăng nhập)</span>
+                  <span>Chế độ Tán Tu (Chưa đăng nhập)</span>
                 </div>
                 <p className="text-[11px] text-slate-300">
-                  Tạo tài khoản hoặc đăng nhập để lưu kỷ lục chính thức, đổi tên, avatar & khung hào quang!
+                  Tán tu chỉ có thể chơi tập luyện, không thể nhận Tu Vi, Linh Thạch, Thành Tựu hay vật phẩm. Đăng nhập để kích hoạt con đường tu tiên!
                 </p>
               </div>
             </div>

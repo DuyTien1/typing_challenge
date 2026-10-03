@@ -7,12 +7,14 @@ import {
   calculatePlayerAchievements, 
   getShowcaseAchievements, 
   setShowcaseAchievements,
-  getAchievementById
+  getAchievementById,
+  getAccountOnlineSeconds,
+  formatOnlineDuration
 } from '../utils/achievements';
 import { MatchRecord } from '../utils/matchHistory';
 import { HighScoreRecord } from '../types';
 import { soundFx } from '../utils/audio';
-import { Sparkles, Trophy, Check, X, Lock, HelpCircle, ShieldCheck, Flame, Zap } from 'lucide-react';
+import { Sparkles, Trophy, Check, X, Lock, HelpCircle, ShieldCheck, Flame, Zap, Clock } from 'lucide-react';
 
 interface AchievementsSectionProps {
   bestWpm: number;
@@ -25,6 +27,11 @@ interface AchievementsSectionProps {
   matchHistory?: MatchRecord[];
   highScores?: Record<string, HighScoreRecord | null>;
   showcaseAchievements?: string[];
+  cultivationLevel?: number;
+  cultivationRealmIndex?: number;
+  cultivationState?: any;
+  onlineSeconds?: number;
+  friendsList?: any[];
   onShowcaseChange?: (newShowcase: string[]) => void;
   onOpenAuthModal?: (mode?: 'login' | 'register') => void;
 }
@@ -48,6 +55,11 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
   matchHistory = [],
   highScores = {},
   showcaseAchievements: propShowcase,
+  cultivationLevel,
+  cultivationRealmIndex,
+  cultivationState,
+  onlineSeconds: propOnlineSeconds,
+  friendsList,
   onShowcaseChange,
   onOpenAuthModal,
 }) => {
@@ -77,6 +89,10 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
     }
   }, [effectiveIsLoggedIn, propShowcase, userId, isAdmin]);
 
+  const currentOnlineSeconds = propOnlineSeconds !== undefined
+    ? propOnlineSeconds
+    : getAccountOnlineSeconds(userId || (isAdmin ? 'Admin' : username));
+
   // Tính toán trạng thái mở khóa của toàn bộ thành tựu (CHỈ khi đã đăng nhập hoặc có quyền Admin)
   const { unlockedMap, unlockedCount, totalCount, isLockedDueToGuest } = useMemo(() => {
     return calculatePlayerAchievements({
@@ -89,8 +105,28 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
       userId,
       matchHistory,
       highScores,
+      cultivationLevel,
+      cultivationRealmIndex,
+      cultivationState,
+      onlineSeconds: currentOnlineSeconds,
+      friendsList,
     });
-  }, [bestWpm, totalGames, username, frame, effectiveIsLoggedIn, isAdmin, userId, matchHistory, highScores]);
+  }, [
+    bestWpm,
+    totalGames,
+    username,
+    frame,
+    effectiveIsLoggedIn,
+    isAdmin,
+    userId,
+    matchHistory,
+    highScores,
+    cultivationLevel,
+    cultivationRealmIndex,
+    cultivationState,
+    currentOnlineSeconds,
+    friendsList,
+  ]);
 
   // Gợi ý thành tựu khả dĩ tiếp theo
   const nextSuggestions = useMemo(() => {
@@ -104,11 +140,15 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
         list.push({ ach, reason: `Chỉ còn ${parseInt(ach.id.replace('matches_', '')) - totalGames} trận đấu` });
       } else if (ach.branch === 'accuracy') {
         list.push({ ach, reason: 'Nâng cao độ chính xác trong trận đấu tiếp theo' });
+      } else if (ach.branch === 'online_time') {
+        const targetSec = ach.id === 'online_10m' ? 600 : ach.id === 'online_30m' ? 1800 : ach.id === 'online_1h' ? 3600 : ach.id === 'online_3h' ? 10800 : ach.id === 'online_6h' ? 21600 : ach.id === 'online_12h' ? 43200 : ach.id === 'online_24h' ? 86400 : ach.id === 'online_50h' ? 180000 : 360000;
+        const remMin = Math.max(1, Math.ceil((targetSec - currentOnlineSeconds) / 60));
+        list.push({ ach, reason: `Cần tọa thiền thêm ~${remMin} phút` });
       }
-      if (list.length >= 2) break;
+      if (list.length >= 3) break;
     }
     return list;
-  }, [unlockedMap, bestWpm, totalGames, isLoggedIn]);
+  }, [unlockedMap, bestWpm, totalGames, isLoggedIn, currentOnlineSeconds]);
 
   // Bộ lọc danh sách thành tựu hiển thị
   const filteredAchievements = useMemo(() => {
@@ -425,6 +465,31 @@ export const AchievementsSection: React.FC<AchievementsSectionProps> = ({
           );
         })}
       </div>
+
+      {/* Thông tin thời gian tọa thiền trực tiếp khi xem nhánh Online */}
+      {selectedBranch === 'online_time' && (
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-950/70 via-slate-900 to-purple-950/50 border border-indigo-500/40 flex items-center justify-between gap-3 text-left animate-fadeIn">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <span>Động Phủ Tọa Thiền Tích Lũy</span>
+                <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 text-[10px] font-mono">
+                  {Math.floor(currentOnlineSeconds / 60)} phút
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Đạo hữu đã gắn bó tu hành: <strong className="text-amber-300">{formatOnlineDuration(currentOnlineSeconds)}</strong>
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono font-bold text-indigo-300 shrink-0 px-2.5 py-1 rounded-lg bg-indigo-900/40 border border-indigo-500/30">
+            {unlockedMap['online_10m'] ? (unlockedMap['online_100h'] ? 'Viên Mãn 9/9' : 'Đang Tĩnh Tu') : 'Khởi Định'}
+          </span>
+        </div>
+      )}
 
       {/* 4. DANH SÁCH CÁC THÀNH TỰU TIÊN HIỆP (GRID) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[440px] overflow-y-auto pr-1">

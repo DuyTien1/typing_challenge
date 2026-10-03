@@ -56,7 +56,41 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [dbHealth, setDbHealth] = useState<HealthCheckResponse | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
+  const [cleanLoading, setCleanLoading] = useState(false);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+
+  const handleCleanAutoData = async () => {
+    if (!window.confirm('Xác nhận xóa bỏ toàn bộ tông môn tạo tự động và tài khoản ảo khỏi cơ sở dữ liệu Supabase? Hành động này sẽ bảo toàn tài khoản Admin và tài khoản người chơi thật.')) {
+      return;
+    }
+    soundFx.playKeyClick();
+    setCleanLoading(true);
+    try {
+      const token = localStorage.getItem('fasttyping_token');
+      const res = await fetch('/api/admin/database/clean-auto-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const data = await res.json();
+      if (data.success) {
+        soundFx.playVictory();
+        showToast(data.message || 'Đã dọn dẹp dữ liệu tự sinh thành công!');
+        fetchStats();
+        fetchDbHealth();
+      } else {
+        soundFx.playError();
+        showToast(data.error || 'Lỗi khi dọn dẹp dữ liệu');
+      }
+    } catch {
+      soundFx.playError();
+      showToast('Lỗi kết nối khi dọn dẹp CSDL');
+    } finally {
+      setCleanLoading(false);
+    }
+  };
 
   const fetchDbHealth = async () => {
     try {
@@ -362,7 +396,18 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
+            <button
+              type="button"
+              onClick={handleCleanAutoData}
+              disabled={cleanLoading}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Xóa bỏ toàn bộ tông môn tạo tự động và tài khoản bot/ảo trong Supabase"
+            >
+              <Trash2 className={`w-3.5 h-3.5 ${cleanLoading ? 'animate-spin' : ''}`} />
+              <span>{cleanLoading ? 'Đang dọn...' : 'Xóa Dữ Liệu Tự Động'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {

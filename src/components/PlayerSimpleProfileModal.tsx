@@ -248,6 +248,26 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
   const resolvedRealm = useMemo(() => {
     if (!player) return null;
 
+    const isGuestUser = isActuallyMe
+      ? !currentUser
+      : (!player.userId && (player.username.startsWith('Tán Tu') || player.username.startsWith('TayGõ') || player.username.startsWith('Khách')));
+
+    if (isGuestUser) {
+      return {
+        name: 'Tán Tu (Chưa Đăng Nhập)',
+        icon: '🌱',
+        titleName: 'Tán Tu',
+        subStage: 'Phàm Nhân',
+        level: 0,
+        exp: 0,
+        maxExp: 1000,
+        thoNguyen: 100,
+        linhThach: 0,
+        colorClass: 'text-slate-400',
+        isGuest: true,
+      };
+    }
+
     const rName =
       serverProfile?.cultivation?.realmName ||
       (isActuallyMe ? (currentUser?.cultivation?.realmName || cultivationState?.realmName) : null) ||
@@ -302,6 +322,7 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
       thoNguyen,
       linhThach,
       colorClass: match.colorClass,
+      isGuest: false,
     };
   }, [player, serverProfile, isActuallyMe, currentUser, cultivationState]);
 
@@ -785,6 +806,12 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
                         <span><strong className="text-cyan-300">{resolvedRealm?.linhThach || 0}</strong> Linh Thạch</span>
                       </span>
                     </div>
+
+                    {resolvedRealm?.isGuest && (
+                      <div className="mt-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 font-normal leading-relaxed">
+                        Tán tu chỉ có thể tham gia thi đấu rèn luyện tốc ký, không thể nhận Tu Vi, Linh Thạch, Thành Tựu hay bất kỳ vật phẩm tu tiên nào.
+                      </div>
+                    )}
                   </div>
                 </div>
 

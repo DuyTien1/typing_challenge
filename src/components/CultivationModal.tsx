@@ -9,6 +9,8 @@ import {
   useThoNguyenPill,
   useTuViPill,
   useSieuCapTuViPill,
+  useDinhTamPill,
+  useNgungThanPill,
   getTodayDateString,
   TWO_HOURS_MS,
   DAILY_MATCH_EXP_CAP,
@@ -89,6 +91,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     }
   }, [initialTab, isOpen]);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
   const [usePhaCanh, setUsePhaCanh] = useState(false);
   const [useHoTam, setUseHoTam] = useState(false);
   const [isTribulationModalOpen, setIsTribulationModalOpen] = useState(false);
@@ -97,6 +100,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     message: string;
   } | null>(null);
   const [checkInNotice, setCheckInNotice] = useState<string | null>(null);
+  const [questNotice, setQuestNotice] = useState<string | null>(null);
   const [pillNotice, setPillNotice] = useState<string | null>(null);
   const [nextDecayRemainingSec, setNextDecayRemainingSec] = useState<number>(7200);
   const [showDay7RewardInfo, setShowDay7RewardInfo] = useState(false);
@@ -178,10 +182,10 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
             Linh Đài Tu Tiên
           </h2>
           <div className="inline-block px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-xs font-bold text-amber-300 mb-4">
-            Khóa Ở Chế Độ Khách
+            Khóa Ở Chế Độ Tán Tu
           </div>
           <p className="text-xs text-slate-300 leading-relaxed mb-6">
-            Chế độ Khách không được tích lũy Tu Vi khi thi đấu và không thể truy cập Linh Đài Tu Tiên. Hãy đăng nhập tài khoản chính thức để bắt đầu con đường tu tiên, độ kiếp thăng cấp và nhận đan dược!
+            Đạo hữu hiện đang ở thân phận Tán Tu. Tán tu chỉ có thể tập luyện và thi đấu gõ phím, tuyệt đối không thể nhận Tu Vi, Linh Thạch, Thành Tựu, Đan Dược hay bất kỳ vật phẩm tu tiên nào khác. Hãy đăng nhập tài khoản chính thức để gia nhập giới tu tiên, độ kiếp thăng cấp và tích lũy thần binh bảo vật!
           </p>
           <div className="flex flex-col sm:flex-row gap-2.5">
             <button
@@ -249,7 +253,11 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     const result = claimDailyQuestReward(state, questId);
     if (result.expGained > 0) {
       soundFx.playSuccess();
+      setQuestNotice(result.message);
       onUpdateState(result.updatedState);
+    } else {
+      soundFx.playKeyClick();
+      setQuestNotice(result.message);
     }
   };
 
@@ -261,6 +269,9 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
       soundFx.playSuccess();
       setPillNotice(result.message);
       onUpdateState(result.updatedState);
+    } else {
+      soundFx.playError();
+      setPillNotice(result.message);
     }
   };
 
@@ -271,6 +282,9 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
       soundFx.playSuccess();
       setPillNotice(result.message);
       onUpdateState(result.updatedState);
+    } else {
+      soundFx.playError();
+      setPillNotice(result.message);
     }
   };
 
@@ -281,6 +295,35 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
       soundFx.playVictory();
       setPillNotice(result.message);
       onUpdateState(result.updatedState);
+    } else {
+      soundFx.playError();
+      setPillNotice(result.message);
+    }
+  };
+
+  const handleUseDinhTamPill = () => {
+    soundFx.playKeyClick();
+    const result = useDinhTamPill(state);
+    if (result.success) {
+      soundFx.playSuccess();
+      setPillNotice(result.message);
+      onUpdateState(result.updatedState);
+    } else {
+      soundFx.playError();
+      setPillNotice(result.message);
+    }
+  };
+
+  const handleUseNgungThanPill = () => {
+    soundFx.playKeyClick();
+    const result = useNgungThanPill(state);
+    if (result.success) {
+      soundFx.playSuccess();
+      setPillNotice(result.message);
+      onUpdateState(result.updatedState);
+    } else {
+      soundFx.playError();
+      setPillNotice(result.message);
     }
   };
 
@@ -362,23 +405,32 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           </div>
         </div>
 
-        {/* Tab Navigation (Fixed under header) */}
-        <div className="shrink-0 flex border-b border-slate-800 bg-slate-950/60 px-6 gap-2 overflow-x-auto">
+        {/* Tab Navigation (Fixed under header, supports mouse wheel horizontal scrolling) */}
+        <div
+          ref={tabBarRef}
+          onWheel={(e) => {
+            if (tabBarRef.current && e.deltaY !== 0) {
+              tabBarRef.current.scrollLeft += e.deltaY;
+            }
+          }}
+          className="shrink-0 flex border-b border-slate-800 bg-slate-950/60 px-6 gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700/50"
+        >
           {[
             { id: 'overview', label: 'Động Phủ Tu Tiên', icon: Sparkles },
+            { id: 'checkin', label: 'Điểm Danh Hàng Ngày', icon: CalendarCheck },
+            { id: 'quests', label: 'Nhiệm Vụ Hàng Ngày', icon: Award },
             { id: 'van_bao_cac', label: 'Vạn Bảo Các', icon: ShoppingBag },
             { id: 'phuong_thi', label: 'Phường Thị P2P', icon: Scale },
             { id: 'alchemy', label: 'Luyện Đan Phòng', icon: Flame },
             { id: 'artifacts', label: 'Pháp Bảo & Tâm Pháp', icon: Swords },
             { id: 'sects', label: 'Tông Môn & Linh Mạch', icon: Users },
-            { id: 'checkin', label: 'Điểm Danh Hàng Ngày', icon: CalendarCheck },
-            { id: 'quests', label: 'Nhiệm Vụ Hàng Ngày', icon: Award },
             { id: 'realms', label: '12 Cảnh Giới Tiên Lộ', icon: Compass },
             { id: 'history', label: 'Ký Sự Đạo Lộ', icon: Scroll },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             const showCheckInBadge = tab.id === 'checkin' && !hasCheckedInToday;
+            const unclaimedQuestsCount = tab.id === 'quests' ? (state.dailyQuests?.filter((q) => q.isCompleted && !q.isClaimed).length || 0) : 0;
             return (
               <button
                 key={tab.id}
@@ -395,7 +447,12 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                 <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-slate-500'}`} />
                 <span>{tab.label}</span>
                 {showCheckInBadge && (
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" title="Chưa điểm danh hôm nay" />
+                )}
+                {unclaimedQuestsCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-bold text-[10px] animate-pulse shrink-0" title={`${unclaimedQuestsCount} nhiệm vụ chưa nhận thưởng`}>
+                    {unclaimedQuestsCount}
+                  </span>
                 )}
               </button>
             );
@@ -768,9 +825,55 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                       {(state.pillCount.sieuCapTuViDan || 0) > 0 && (
                         <button
                           onClick={handleUseSieuCapTuViPill}
-                          className="text-[11px] font-bold px-3 py-1 rounded-lg bg-purple-500/25 text-purple-200 hover:bg-purple-500/40 border border-purple-400/50 shadow-[0_0_10px_rgba(168,85,247,0.3)] transition-colors"
+                          className="text-[11px] font-bold px-3 py-1 rounded-lg bg-purple-500/25 text-purple-200 hover:bg-purple-500/40 border border-purple-400/50 shadow-[0_0_10px_rgba(168,85,247,0.3)] transition-colors cursor-pointer"
                         >
                           Uống (+7K)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Định Tâm Đan */}
+                  <div className="p-3 rounded-xl bg-slate-900 border border-indigo-500/30 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-indigo-300 block">🧘 Định Tâm Đan</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400">Giảm 50% phạt sai WPM</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-indigo-300 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+                        {state.pillCount.dinhTam || 0}
+                      </span>
+                      {(state.pillCount.dinhTam || 0) > 0 && (
+                        <button
+                          onClick={handleUseDinhTamPill}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/40 transition-colors cursor-pointer"
+                        >
+                          Uống
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Ngưng Thần Đan */}
+                  <div className="p-3 rounded-xl bg-slate-900 border border-cyan-500/30 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-cyan-300 block">👁️ Ngưng Thần Đan</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400">+20% rớt dược thảo</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-cyan-300 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+                        {state.pillCount.ngungThan || 0}
+                      </span>
+                      {(state.pillCount.ngungThan || 0) > 0 && (
+                        <button
+                          onClick={handleUseNgungThanPill}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 transition-colors cursor-pointer"
+                        >
+                          Uống
                         </button>
                       )}
                     </div>
@@ -1185,6 +1288,22 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           {/* DAILY QUESTS TAB */}
           {activeTab === 'quests' && (
             <div className="space-y-4">
+              {questNotice && (
+                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-amber-400/60 text-xs sm:text-sm text-amber-200 flex items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>{questNotice}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuestNotice(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/60 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-amber-300">Tu Luyện Hàng Ngày</h3>

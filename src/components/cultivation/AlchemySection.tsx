@@ -125,6 +125,42 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
     }, 100);
   };
 
+  // Thực hiện chế tạo tức thì (1 phím) không cần đợi ấn chú
+  const handleQuickCraft = () => {
+    if (!canCraft || isForging) return;
+    soundFx.playKeyClick();
+    setIsForging(true);
+    const res = craftAlchemyInteractive(state, selectedRecipeId, {
+      isGoodRhythm: false,
+      isOverheatFail: false,
+    });
+    setIsForging(false);
+    setIncantationPrompt('');
+    setTypedIncantation('');
+    if (res.exploded) {
+      soundFx.playFurnaceExplode();
+      setCraftNotice({
+        isSuper: false,
+        isExploded: true,
+        message: res.message,
+      });
+      onUpdateState(res.updatedState);
+    } else if (res.success) {
+      soundFx.playAlchemySuccess(res.isSuperTier);
+      setCraftNotice({
+        isSuper: res.isSuperTier,
+        message: res.message,
+      });
+      onUpdateState(res.updatedState);
+    } else {
+      soundFx.playError();
+      setCraftNotice({
+        isSuper: false,
+        message: res.message,
+      });
+    }
+  };
+
   // Thực hiện chế tạo sau khi kết thúc chuỗi ấn chú
   const performDirectCraft = (isGoodRhythm: boolean, isOverheatFail: boolean) => {
     setIsForging(true);
@@ -161,7 +197,7 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
           message: res.message,
         });
       }
-    }, 900);
+    }, isInteractiveMode ? 500 : 150);
   };
 
   // Lắng nghe người chơi gõ thần số ấn chú điều tiết chân hỏa (chỉ chấp nhận số 0-9)
@@ -642,31 +678,47 @@ export const AlchemySection: React.FC<AlchemySectionProps> = ({ state, onUpdateS
 
           {/* Action Button */}
           {!incantationPrompt && (
-            <button
-              onClick={startFurnaceRitual}
-              disabled={!canCraft || isForging}
-              className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
-                canCraft && !isForging
-                  ? 'bg-gradient-to-r from-amber-400 via-orange-500 to-yellow-400 text-slate-950 hover:brightness-110 shadow-orange-500/30 active:scale-98'
-                  : 'bg-slate-800 text-slate-500 border border-slate-700 opacity-60 cursor-not-allowed'
-              }`}
-            >
-              {isForging ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                  <span>Chân Hỏa Thiêu Đốt... Khai Lò...</span>
-                </>
-              ) : canCraft ? (
-                <>
-                  <Flame className="w-4 h-4" />
-                  <span>
-                    {isInteractiveMode ? 'Khai Lò • Điều Tiết Chân Hỏa' : 'Khai Lò Luyện Đan Tự Động'}
-                  </span>
-                </>
-              ) : (
-                <span>Chưa Đủ Dược Liệu</span>
-              )}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <button
+                type="button"
+                onClick={startFurnaceRitual}
+                disabled={!canCraft || isForging}
+                className={`flex-1 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
+                  canCraft && !isForging
+                    ? 'bg-gradient-to-r from-amber-400 via-orange-500 to-yellow-400 text-slate-950 hover:brightness-110 shadow-orange-500/30 active:scale-98'
+                    : 'bg-slate-800 text-slate-500 border border-slate-700 opacity-60 cursor-not-allowed'
+                }`}
+              >
+                {isForging ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Đang Khai Lò...</span>
+                  </>
+                ) : canCraft ? (
+                  <>
+                    <Flame className="w-4 h-4" />
+                    <span>Khai Lò • Điều Tiết Chân Hỏa</span>
+                  </>
+                ) : (
+                  <span>Chưa Đủ Dược Liệu</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleQuickCraft}
+                disabled={!canCraft || isForging}
+                className={`py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  canCraft && !isForging
+                    ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 hover:border-amber-400 active:scale-98'
+                    : 'bg-slate-900 text-slate-600 border border-slate-800 opacity-50 cursor-not-allowed'
+                }`}
+                title="Luyện nhanh 1 chạm, nhận ngay đan dược"
+              >
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>Luyện Nhanh (1 Phím)</span>
+              </button>
+            </div>
           )}
         </div>
       </div>

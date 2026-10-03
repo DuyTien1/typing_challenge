@@ -98,6 +98,7 @@ interface AdminModalProps {
   cultivationState?: CultivationState;
   onUpdateCultivationState?: (nextState: CultivationState) => void;
   onSyncAchievements?: (unlockedIds: string[]) => void;
+  onRewardSuccess?: (message: string) => void;
 }
 
 type AdminTab = 
@@ -134,6 +135,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   cultivationState,
   onUpdateCultivationState,
   onSyncAchievements,
+  onRewardSuccess,
 }) => {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -268,7 +270,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
-    }, 3000);
+    }, 3500);
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -879,6 +881,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               {activeTab === 'users' && (
                 <AdminUsersTab
                   currentUsername={currentUsername}
+                  currentUser={currentUser}
+                  cultivationState={cultivationState}
+                  onUpdateCultivationState={onUpdateCultivationState}
+                  onRewardSuccess={onRewardSuccess}
                   showToast={showToast}
                 />
               )}
@@ -2255,6 +2261,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   cultivationState={cultivationState}
                   onUpdateCultivationState={onUpdateCultivationState}
                   onSyncAchievements={onSyncAchievements}
+                  onRewardSuccess={onRewardSuccess}
                   currentUsername={currentUsername}
                   currentUser={currentUser}
                   showToast={showToast}

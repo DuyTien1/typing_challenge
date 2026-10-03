@@ -270,6 +270,7 @@ export async function updateUserProfile(updates: {
   bestWpm?: number;
   bestWpmRecord?: any;
   totalGames?: number;
+  totalOnlineSeconds?: number;
   matchHistory?: any[];
   cultivation?: any;
 }): Promise<AuthResponse> {

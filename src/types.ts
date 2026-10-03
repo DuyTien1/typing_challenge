@@ -625,6 +625,7 @@ export interface UserAccount {
   bestWpm?: number;
   bestWpmRecord?: any;
   totalGames?: number;
+  totalOnlineSeconds?: number;
   matchHistory?: any[];
 }
 

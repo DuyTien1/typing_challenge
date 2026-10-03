@@ -38,7 +38,6 @@ import { HeavenlyTickerBanner } from './components/HeavenlyTickerBanner';
 import { HeavenlyChronicleModal } from './components/HeavenlyChronicleModal';
 import { DaoDecreeModal } from './components/DaoDecreeModal';
 import { BanPenaltyModal } from './components/BanPenaltyModal';
-import { SystemStatus } from './components/SystemStatus';
 import { useChatEngine } from './hooks/useChatEngine';
 import { useCultivationEngine } from './hooks/useCultivationEngine';
 import { useRoomEngine } from './hooks/useRoomEngine';
@@ -58,6 +57,7 @@ import {
   executeBanPenalty,
   syncServerBanStatus,
 } from './utils/banManager';
+import { initGlobalHorizontalWheelScroll } from './utils/horizontalScroll';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
 import { resolveBestWpmRecord, isOutplayMode } from './components/WpmRecordBadge';
 import { fetchCurrentUser, logoutUser, updateUserProfile, getStoredAuthToken, loginWithEmail, getStoredCachedUser } from './utils/auth';
@@ -111,6 +111,9 @@ import {
   setStoredUnlockedAchievements,
   XianxiaAchievement,
   XIANXIA_ACHIEVEMENTS,
+  getAccountOnlineSeconds,
+  addAccountOnlineSeconds,
+  saveAccountOnlineSeconds,
 } from './utils/achievements';
 import { 
   MatchRecord, 
@@ -335,12 +338,31 @@ const BOT_NAMES = [
 export default function App() {
   // User Profile: Persistent across tabs with fallback
   const [username, setUsername] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'NgườiChơi_1';
-    const localUser = localStorage.getItem('fasttyping_user');
+    if (typeof window === 'undefined') return 'Tán Tu 100';
+    let localUser = localStorage.getItem('fasttyping_user');
+    // Tự động chuyển đổi các tiền tố cũ như TayGõ_xxx, NgườiChơi_xxx, Khách_xxx sang Tán Tu xxx
+    if (localUser && (localUser.startsWith('TayGõ') || localUser.startsWith('NgườiChơi') || localUser.startsWith('Khách_'))) {
+      const numPart = localUser.replace(/\D/g, '') || Math.floor(Math.random() * 900 + 100);
+      localUser = `Tán Tu ${numPart}`;
+      try {
+        localStorage.setItem('fasttyping_user', localUser);
+        sessionStorage.setItem('fasttyping_user_session', localUser);
+      } catch {}
+      return localUser;
+    }
     if (localUser) return localUser;
     const sessionUser = sessionStorage.getItem('fasttyping_user_session');
+    if (sessionUser && (sessionUser.startsWith('TayGõ') || sessionUser.startsWith('NgườiChơi') || sessionUser.startsWith('Khách_'))) {
+      const numPart = sessionUser.replace(/\D/g, '') || Math.floor(Math.random() * 900 + 100);
+      const newName = `Tán Tu ${numPart}`;
+      try {
+        localStorage.setItem('fasttyping_user', newName);
+        sessionStorage.setItem('fasttyping_user_session', newName);
+      } catch {}
+      return newName;
+    }
     if (sessionUser) return sessionUser;
-    const defaultName = 'TayGõ_' + Math.floor(Math.random() * 900 + 100);
+    const defaultName = 'Tán Tu ' + Math.floor(Math.random() * 900 + 100);
     try {
       localStorage.setItem('fasttyping_user', defaultName);
       sessionStorage.setItem('fasttyping_user_session', defaultName);
@@ -532,6 +554,11 @@ export default function App() {
     };
   }, []);
 
+  // Hỗ trợ cuộn chuột lăn để cuộn ngang tự động cho toàn bộ tab, thanh điều hướng và vùng cuộn ngang trên website
+  useEffect(() => {
+    return initGlobalHorizontalWheelScroll();
+  }, []);
+
   // Match History state & tracking
   const [matchHistory, setMatchHistory] = useState<MatchRecord[]>(() => getStoredMatchHistory());
   const currentMatchRecordedRef = useRef<boolean>(false);
@@ -605,7 +632,7 @@ export default function App() {
     setMatchHistory((prev) => [newRecord, ...prev.filter((m) => m.id !== newRecord.id)].slice(0, 20));
 
     // Cập nhật Tu Vi và nhiệm vụ hàng ngày KHI VÀ CHỈ KHI hoàn thành toàn bộ trận đấu VÀ người chơi ĐÃ ĐĂNG NHẬP
-    // QUY TẮC: Chế độ Khách (chưa đăng nhập) TUYỆT ĐỐI KHÔNG ĐƯỢC THƯỞNG TU VI
+    // QUY TẮC: Chế độ Tán Tu (chưa đăng nhập) TUYỆT ĐỐI KHÔNG ĐƯỢC THƯỞNG TU VI, LINH THẠCH HAY DƯỢC LIỆU
     const userNow = currentUserRef.current;
     if (isActuallyCompleted && userNow) {
       const currentList = playersRef.current && playersRef.current.length > 0 ? playersRef.current : players;
@@ -619,13 +646,16 @@ export default function App() {
         players: currentList,
         friendsList,
       });
+    } else {
+      // Tán Tu không được nhận bất kỳ thu hoạch tu tiên hay vật phẩm nào
+      setCultivationMatchHarvest(null);
     }
 
     // KIỂM TRA VÀ BẬT THÔNG BÁO THÀNH TỰU TIÊN HIỆP MỚI NGAY KHI VỪA KẾT THÚC TRẬN ĐẤU:
     // QUY TẮC BẮT BUỘC:
     // 1. Chỉ người chơi ĐÃ ĐĂNG NHẬP (userNow !== null) mới được tính thành tựu.
     // 2. Trận đấu PHẢI THỰC SỰ HOÀN THÀNH (isActuallyCompleted === true).
-    // Nếu đầu hàng, out phòng hoặc chưa đăng nhập: TUYỆT ĐỐI KHÔNG TÍNH THÀNH TỰU VÀ KHÔNG TĂNG SỐ TRẬN HOÀN THÀNH.
+    // Nếu đầu hàng, out phòng hoặc là Tán Tu: TUYỆT ĐỐI KHÔNG TÍNH THÀNH TỰU VÀ KHÔNG TĂNG SỐ TRẬN HOÀN THÀNH.
     if (userNow) {
       try {
         const nextTotalGames = isActuallyCompleted ? (totalGamesRef.current || 0) + 1 : (totalGamesRef.current || 0);
@@ -638,11 +668,17 @@ export default function App() {
             username: usernameRef.current || userNow.username,
             frame: userFrameRef.current || userNow.frame || 'default',
             isLoggedIn: true,
+            isAdmin: Boolean(userNow.isAdmin || isAdmin),
             userId: userNow.id,
             matchHistory: [newRecord, ...matchHistory],
             highScores: highScoresRef.current || {},
             roomPlayerCount: playersRef.current?.length || 1,
             initialUnlocked: userNow.unlockedAchievements || [],
+            cultivationLevel: cultivationStateRef.current?.level || cultivationState.level,
+            cultivationRealmIndex: cultivationStateRef.current?.realmIndex || cultivationState.realmIndex,
+            cultivationState: cultivationStateRef.current || cultivationState,
+            onlineSeconds: getAccountOnlineSeconds(userNow.id) || userNow.totalOnlineSeconds || 0,
+            friendsList: friendsList,
             isMatchCompleted: true,
           });
 
@@ -917,8 +953,8 @@ export default function App() {
       username: username,
       icon: avatar,
       frame: userFrame,
-      showcaseAchievements: currentUser?.showcaseAchievements || getShowcaseAchievements(),
-      cultivation: {
+      showcaseAchievements: currentUser ? (currentUser.showcaseAchievements || getShowcaseAchievements()) : [],
+      cultivation: currentUser ? {
         level: cultivationState.level,
         realmIndex: cultivationState.realmIndex,
         tier: cultivationState.tier,
@@ -926,7 +962,7 @@ export default function App() {
         subStage: getSubStage(cultivationState.tier),
         thoNguyen: cultivationState.thoNguyen,
         maxThoNguyen: cultivationState.maxThoNguyen,
-      },
+      } : undefined,
       bestWpm: bestWpm,
       bestWpmRecord: bestWpmRecord || undefined,
       totalGames: totalGames,
@@ -1046,6 +1082,34 @@ export default function App() {
       setFriendRequestsCount(0);
     }
   }, [currentUser, isFriendsOpen]);
+
+  // Theo dõi thời gian online / tọa thiền của tài khoản trên website (Động Phủ Tọa Thiền)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const userId = currentUser.id;
+
+    if (currentUser.totalOnlineSeconds && getAccountOnlineSeconds(userId) === 0) {
+      saveAccountOnlineSeconds(currentUser.totalOnlineSeconds, userId);
+    }
+
+    let accumulatedUnsyncedSeconds = 0;
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      const updated = addAccountOnlineSeconds(10, userId);
+      accumulatedUnsyncedSeconds += 10;
+
+      // Đồng bộ lên server mỗi 60 giây
+      if (accumulatedUnsyncedSeconds >= 60) {
+        accumulatedUnsyncedSeconds = 0;
+        updateUserProfile({ totalOnlineSeconds: updated }).catch(() => {});
+        setCurrentUser((prev) => (prev && prev.id === userId ? { ...prev, totalOnlineSeconds: updated } : prev));
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
 
   // Lắng nghe Thiên Đạo Chiếu Thư theo thời gian thực
   useEffect(() => {
@@ -1178,25 +1242,29 @@ export default function App() {
           });
           soundFx.playWhisperPing();
         } else if (ev.type === 'tea_gift_received') {
-          const bonus = ev.tuViBonus || 50;
-          setFriendInviteToast({
-            id: `tg_${Date.now()}`,
-            type: 'tea_gift',
-            fromName: ev.fromName || 'Đạo Hữu',
-            tuViBonus: bonus,
-          });
-          addDirectTuVi(bonus);
-          soundFx.playVictory();
+          if (currentUserRef.current) {
+            const bonus = ev.tuViBonus || 50;
+            setFriendInviteToast({
+              id: `tg_${Date.now()}`,
+              type: 'tea_gift',
+              fromName: ev.fromName || 'Đạo Hữu',
+              tuViBonus: bonus,
+            });
+            addDirectTuVi(bonus);
+            soundFx.playVictory();
+          }
         } else if (ev.type === 'mentor_guidance_received') {
-          const bonus = ev.tuViBonus || 30;
-          setFriendInviteToast({
-            id: `mg_${Date.now()}`,
-            type: 'guidance',
-            fromName: ev.fromName || 'Tiền Bối',
-            tuViBonus: bonus,
-          });
-          addDirectTuVi(bonus);
-          soundFx.playVictory();
+          if (currentUserRef.current) {
+            const bonus = ev.tuViBonus || 30;
+            setFriendInviteToast({
+              id: `mg_${Date.now()}`,
+              type: 'guidance',
+              fromName: ev.fromName || 'Tiền Bối',
+              tuViBonus: bonus,
+            });
+            addDirectTuVi(bonus);
+            soundFx.playVictory();
+          }
         } else if (ev.type === 'daolu_proposal_received') {
           setFriendInviteToast({
             id: `dl_${Date.now()}`,
@@ -2394,8 +2462,8 @@ export default function App() {
       isCompleted: isMatchCompleted,
     });
 
-    // Trừ huyết lượng Thần Thú Trấn Giới Tông Môn nếu đang thi đấu trong ngữ cảnh Vây Quét Thần Thú
-    if (sectMatchContextRef.current && sectMatchContextRef.current.type === 'sect_boss' && totalDmg > 0) {
+    // Trừ huyết lượng Thần Thú Trấn Giới Tông Môn nếu đang thi đấu trong ngữ cảnh Vây Quét Thần Thú (chỉ người chơi chính thức)
+    if (currentUser && sectMatchContextRef.current && sectMatchContextRef.current.type === 'sect_boss' && totalDmg > 0) {
       const { sectId, sectName } = sectMatchContextRef.current;
       const res = attackSectWorldBoss(cultivationState, sectId, totalDmg);
       setCultivationState(res.updatedState);
@@ -2793,6 +2861,25 @@ export default function App() {
       .catch(() => {});
   }, [applyAuthenticatedUser]);
 
+  // Lắng nghe sự kiện Bàn Cổ Thần Điện ban thưởng tài nguyên thời gian thực từ Admin qua SSE
+  useEffect(() => {
+    const handleAdminReward = (e: any) => {
+      const detail = e.detail;
+      if (detail?.cultivation) {
+        setCultivationState(detail.cultivation);
+        saveStoredCultivationState(detail.cultivation);
+        soundFx.playLevelUp();
+        if (currentUser) {
+          setCurrentUser((prev) => (prev ? { ...prev, cultivation: detail.cultivation } : prev));
+        }
+      }
+    };
+    window.addEventListener('cultivation_reward_received', handleAdminReward);
+    return () => {
+      window.removeEventListener('cultivation_reward_received', handleAdminReward);
+    };
+  }, [currentUser, setCultivationState]);
+
   const handleAuthSuccess = (user: UserAccount) => {
     applyAuthenticatedUser(user);
   };
@@ -2833,8 +2920,8 @@ export default function App() {
     setIsAdmin(false);
     setAdminStatus(false);
 
-    // 3. Đưa thông tin người chơi về trạng thái Khách mặc định mới hoàn toàn
-    const defaultName = 'Khách_' + Math.floor(Math.random() * 9000 + 1000);
+    // 3. Đưa thông tin người chơi về trạng thái Tán Tu mặc định mới hoàn toàn
+    const defaultName = 'Tán Tu ' + Math.floor(Math.random() * 900 + 100);
     const defaultAvatar = '🤖';
     const defaultFrame = 'default';
     const newGuestId = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -2856,6 +2943,7 @@ export default function App() {
     setMatchHistory([]);
     setCultivationState(createInitialCultivationState());
     setNewlyUnlockedAchievements([]);
+    setCultivationMatchHarvest(null);
 
     sessionStorage.setItem('fasttyping_user_session', defaultName);
     sessionStorage.setItem('fasttyping_avatar_session', defaultAvatar);
@@ -3136,13 +3224,13 @@ export default function App() {
           }
           setIsCultivationOpen(true);
         }}
-        cultivationLevel={cultivationState.level}
-        cultivationRealmName={XIANXIA_REALMS[cultivationState.realmIndex]?.name}
-        cultivationTier={cultivationState.tier}
-        cultivationSubStage={getSubStage(cultivationState.tier)}
-        cultivationIcon={XIANXIA_REALMS[cultivationState.realmIndex]?.icon}
-        cultivationThoNguyen={cultivationState.thoNguyen}
-        cultivationMaxThoNguyen={cultivationState.maxThoNguyen}
+        cultivationLevel={currentUser ? cultivationState.level : undefined}
+        cultivationRealmName={currentUser ? XIANXIA_REALMS[cultivationState.realmIndex]?.name : 'Tán Tu'}
+        cultivationTier={currentUser ? cultivationState.tier : undefined}
+        cultivationSubStage={currentUser ? getSubStage(cultivationState.tier) : undefined}
+        cultivationIcon={currentUser ? XIANXIA_REALMS[cultivationState.realmIndex]?.icon : '🌱'}
+        cultivationThoNguyen={currentUser ? cultivationState.thoNguyen : undefined}
+        cultivationMaxThoNguyen={currentUser ? cultivationState.maxThoNguyen : undefined}
         onOpenOnlineUsers={() => setIsOnlineUsersOpen(true)}
         onOpenAuthModal={() => {
           setAuthModalInitialTab('login');
@@ -3885,6 +3973,8 @@ export default function App() {
         onChangeFrame={handleChangeFrame}
         showcaseAchievements={currentUser?.showcaseAchievements || getShowcaseAchievements()}
         onChangeShowcaseAchievements={handleChangeShowcaseAchievements}
+        friendsList={friendsList}
+        onlineSeconds={currentUser ? (getAccountOnlineSeconds(currentUser.id) || currentUser.totalOnlineSeconds || 0) : 0}
         onAuthSuccess={handleAuthSuccess}
         onModalCreateNewRoom={handleModalCreateNewRoom}
         onModalJoinExistingRoom={handleModalJoinExistingRoom}
@@ -3958,10 +4048,8 @@ export default function App() {
               <span className="hidden sm:inline text-slate-400">Đấu trường gõ phím Tiếng Việt thời gian thực</span>
             </div>
 
-            {/* Visual System Status Component (Database connection health, Latency & Server Availability) */}
             <div className="flex items-center gap-3">
-              <SystemStatus variant="bar" />
-              <span className="hidden lg:flex items-center gap-1.5 text-slate-500 text-[11px]">
+              <span className="flex items-center gap-1.5 text-slate-500 text-[11px]">
                 copyright Nguyễn Duy Tiến - niTe
               </span>
             </div>
