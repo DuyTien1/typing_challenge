@@ -25,6 +25,11 @@ import {
   Filter,
   Trash2,
   Compass,
+  ArrowRight,
+  Brain,
+  Timer,
+  Layers,
+  Search,
 } from 'lucide-react';
 import { GameMode } from '../types';
 import {
@@ -66,10 +71,14 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
   onRetryMatch,
 }) => {
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'replay' | 'analytics' | 'errors' | 'coach' | 'ai_practice' | 'heavenly_dao'>('replay');
+  const [activeTab, setActiveTab] = useState<'replay' | 'analytics' | 'errors' | 'ai_practice' | 'heavenly_dao'>('replay');
   const [filterMode, setFilterMode] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedPracticeWords, setCopiedPracticeWords] = useState(false);
+
+  // Hover state for interactive chart tooltip
+  const [hoveredChartPoint, setHoveredChartPoint] = useState<{ second: number; wpm: number; errors?: number; x: number; y: number } | null>(null);
 
   // AI Personalized Practice States & Selected Mode
   const [aiDrillMode, setAiDrillMode] = useState<GameMode>('vi_dau');
@@ -94,8 +103,15 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
     if (filterMode !== 'all') {
       list = list.filter((m) => m.modeId === filterMode);
     }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((m) => {
+        const modeName = getFriendlyModeName(m.modeId).toLowerCase();
+        return modeName.includes(q) || String(m.wpm).includes(q) || (m.result && m.result.toLowerCase().includes(q));
+      });
+    }
     return list.slice(0, 20);
-  }, [history, filterMode]);
+  }, [history, filterMode, searchQuery]);
 
   // Set initial selected match
   useEffect(() => {
@@ -138,6 +154,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
   useEffect(() => {
     setIsPlaying(false);
     setReplayProgressSec(0);
+    setHoveredChartPoint(null);
     if (replayTimerRef.current) {
       clearInterval(replayTimerRef.current);
       replayTimerRef.current = null;
@@ -181,12 +198,10 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
         currentWpm: 0,
         currentAccuracy: 100,
         words: [],
-        wordStatuses: [],
       };
     }
 
     const words = selectedMatch.promptWords || selectedMatch.wordLogs?.map((w) => w.word) || [];
-    const totalWords = words.length > 0 ? words.length : Math.max(1, Math.round(selectedMatch.wpm * (matchDuration / 60)));
 
     // Proportion of timeline
     const fraction = matchDuration > 0 ? Math.min(1, Math.max(0, replayProgressSec / matchDuration)) : 0;
@@ -276,7 +291,6 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
 
     const isNum = activeMode === 'numpad' || matchCat.isNumberMode;
 
-    // Pick mistakes: only pick numeric mistakes if in numpad mode!
     let sourceMistakes =
       selectedMatchMistakes.length > 0
         ? [...selectedMatchMistakes, ...historyAggregate.allMistakes.slice(0, 10)]
@@ -287,14 +301,6 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
         const orig = String(m?.original || '');
         return /[\d+\-*/=.]/.test(orig) && !/[a-zA-Zà-ỹÀ-Ỹ]/.test(orig);
       });
-      // If user had no numeric mistakes recorded yet, provide sample numeric hesitation keys
-      if (sourceMistakes.length === 0) {
-        sourceMistakes = [
-          { original: '7890', typed: '7800', count: 2, errorIndex: 2 },
-          { original: '1024', typed: '1042', count: 1, errorIndex: 3 },
-          { original: '58008', typed: '58080', count: 1, errorIndex: 3 },
-        ];
-      }
     }
 
     let sourceKeys =
@@ -307,14 +313,6 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({
         const keyStr = String(k?.key || '');
         return /[\d+\-*/=.]/.test(keyStr) && !/[a-zA-Z]/.test(keyStr);
       });
-      if (sourceKeys.length === 0) {
-        sourceKeys = [
-          { key: '7', count: 3 },
-          { key: '9', count: 3 },
-          { key: '5', count: 2 },
-          { key: '0', count: 2 },
-        ];
-      }
     }
 
     try {
@@ -490,32 +488,76 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, activeTab, onClose]);
 
+  // Mode filters list with labels & icons
+  const MODE_FILTERS = [
+    { id: 'all', label: 'Tất cả' },
+    { id: 'vi_dau', label: 'TV Có Dấu' },
+    { id: 'vi_nodau', label: 'TV Không Dấu' },
+    { id: 'en', label: 'Tiếng Anh' },
+    { id: 'numpad', label: 'Phím Số' },
+    { id: 'outplay', label: 'Outplay' },
+    { id: 'san_boss', label: 'Săn Boss' },
+    { id: 'doan_chu', label: 'Đoán Chữ' },
+    { id: 'ngau_hung', label: 'Ngẫu Hứng' },
+  ];
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-6xl h-[90vh] max-h-[850px] min-h-[580px] flex flex-col rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl shadow-black overflow-hidden">
-        {/* TOP HEADER */}
-        <div className="p-4 sm:px-6 py-3.5 bg-gradient-to-r from-slate-900 via-[#131926] to-slate-900 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="relative w-full max-w-6xl h-[92vh] max-h-[900px] min-h-[620px] flex flex-col rounded-2xl bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden">
+        
+        {/* ========================================================================= */}
+        {/* ZONE 1: TOP BAR WITH CLEAN TYPOGRAPHY & KEY METRICS */}
+        {/* ========================================================================= */}
+        <header className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 shrink-0">
+          {/* Brand & Context */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-black font-black shadow-lg shadow-emerald-500/20 shrink-0">
-              <History className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold shrink-0">
+              <History className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
-                  LỊCH SỬ ĐẤU & PHÂN TÍCH KỸ NĂNG
-                </h2>
-                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Tối đa 20 ván gần nhất
-                </span>
+                <h1 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                  Lịch Sử Đấu & Phân Tích Kỹ Năng
+                </h1>
+                <span className="text-slate-500">/</span>
+                <span className="text-xs text-slate-400">20 trận gần nhất</span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Xem lại replay mô phỏng, chẩn đoán lỗi sai thường gặp và lời khuyên huấn luyện viên
-              </p>
+              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                <span>Tự động đối chiếu sai sót</span>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span>Phân tích tốc độ WPM</span>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span className="text-cyan-400">Huấn luyện AI 3.8</span>
+              </div>
             </div>
           </div>
 
+          {/* Quick 20-Match Metrics Summary Bar */}
+          <div className="hidden lg:flex items-center gap-5 text-xs font-mono">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-sans">Tốc độ TB</span>
+              <span className="font-bold text-emerald-400 text-sm tabular-nums">{aggregateStats.avgWpm} WPM</span>
+            </div>
+            <div className="h-6 w-px bg-slate-800" />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-sans">Độ chính xác TB</span>
+              <span className="font-bold text-sky-400 text-sm tabular-nums">{aggregateStats.avgAcc}%</span>
+            </div>
+            <div className="h-6 w-px bg-slate-800" />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-sans">Kỷ lục 20 ván</span>
+              <span className="font-bold text-amber-400 text-sm tabular-nums">{aggregateStats.bestWpm} WPM</span>
+            </div>
+            <div className="h-6 w-px bg-slate-800" />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-sans">Tổng số từ</span>
+              <span className="font-bold text-purple-300 text-sm tabular-nums">{aggregateStats.totalWords}</span>
+            </div>
+          </div>
+
+          {/* Right Header Actions */}
           <div className="flex items-center gap-2">
             {onClearHistory && history.length > 0 && (
               <button
@@ -526,11 +568,11 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                     onClearHistory();
                   }
                 }}
-                className="h-9 px-3.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                className="h-8.5 px-3 rounded-lg bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                 title="Xóa toàn bộ lịch sử đấu"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Xóa Lịch Sử</span>
+                <span className="hidden sm:inline">Xóa Lịch Sử</span>
               </button>
             )}
 
@@ -540,109 +582,93 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                 soundFx.playKeyClick();
                 onClose();
               }}
-              className="h-9 w-9 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 flex items-center justify-center transition-all cursor-pointer active:scale-95"
+              className="h-8.5 w-8.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 flex items-center justify-center transition-colors cursor-pointer"
               title="Đóng (Phím Esc)"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* 20-MATCH AGGREGATE SUMMARY STRIP */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-900/60 border-b border-slate-800/80 flex items-center justify-between gap-4 overflow-x-auto shrink-0">
-          <div className="flex items-center gap-4 sm:gap-6 text-xs">
-            <div className="flex items-center gap-1.5">
-              <Activity className="w-4 h-4 text-emerald-400" />
-              <span className="text-slate-400">Tốc độ TB:</span>
-              <span className="font-black text-emerald-300 font-mono text-sm">{aggregateStats.avgWpm} WPM</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Target className="w-4 h-4 text-sky-400" />
-              <span className="text-slate-400">Độ chính xác TB:</span>
-              <span className="font-bold text-sky-300 font-mono text-sm">{aggregateStats.avgAcc}%</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Flame className="w-4 h-4 text-amber-400" />
-              <span className="text-slate-400">Kỷ lục 20 ván:</span>
-              <span className="font-black text-amber-400 font-mono text-sm">{aggregateStats.bestWpm} WPM</span>
-            </div>
-            <div className="hidden md:flex items-center gap-1.5">
-              <Keyboard className="w-4 h-4 text-purple-400" />
-              <span className="text-slate-400">Tổng từ đã gõ:</span>
-              <span className="font-bold text-purple-300 font-mono">{aggregateStats.totalWords} từ</span>
-            </div>
+        {/* ========================================================================= */}
+        {/* FILTER & SEARCH STRIP */}
+        {/* ========================================================================= */}
+        <div className="px-5 py-2.5 bg-slate-950 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          {/* Segmented Mode Filters */}
+          <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar max-w-full">
+            {MODE_FILTERS.map((m) => {
+              const isActive = filterMode === m.id;
+              const count = m.id === 'all'
+                ? history.filter((x) => x.isCompleted !== false && x.result !== 'Đầu hàng' && x.result !== 'AFK').length
+                : history.filter((x) => x.modeId === m.id && x.isCompleted !== false && x.result !== 'Đầu hàng' && x.result !== 'AFK').length;
+
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    setFilterMode(m.id);
+                  }}
+                  className={`h-7.5 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? 'bg-slate-800 text-white border border-slate-700'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  <span>{m.label}</span>
+                  {count > 0 && (
+                    <span className="text-[10px] font-mono opacity-60">
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Mode Filter & AI Button */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                handleOpenHeavenlyDao();
-              }}
-              className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-purple-500/25 via-indigo-500/25 to-amber-500/20 hover:from-purple-500/35 hover:to-amber-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-              title="Mở Bảng Điều Khiển Phân Tích Thiên Đạo"
-            >
-              <Compass className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Phân Tích Thiên Đạo</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                handleGenerateAiPractice();
-              }}
-              className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-cyan-500/20 via-teal-500/20 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-              title="Phân tích toàn bộ 20 ván và tạo bài tập luyện cá nhân hóa"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="hidden sm:inline">Tạo Bài Luyện AI</span>
-            </button>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <select
-                value={filterMode}
-                onChange={(e) => {
-                  soundFx.playKeyClick();
-                  setFilterMode(e.target.value);
-                }}
-                className="h-9 bg-slate-900 border border-slate-700/80 text-slate-300 text-xs rounded-xl px-3 outline-none cursor-pointer focus:border-amber-400 transition-colors"
-              >
-                <option value="all">Tất cả chế độ ({history.filter((m) => m.isCompleted !== false && m.result !== 'Đầu hàng' && m.result !== 'AFK').length})</option>
-                <option value="vi_dau">🇻🇳 TV Có Dấu</option>
-                <option value="vi_nodau">⚡ TV Không Dấu</option>
-                <option value="en">🇬🇧 Tiếng Anh</option>
-                <option value="numpad">🔢 Phím Số</option>
-                <option value="outplay">👑 Outplay</option>
-                <option value="san_boss">🐉 Săn Boss</option>
-                <option value="doan_chu">🔍 Đoán Chữ</option>
-                <option value="ngau_hung">🟡 Ngẫu Hứng</option>
-              </select>
+          {/* Search or Quick Navigation */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Tìm trận hoặc WPM..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-7.5 pl-8 pr-3 w-40 sm:w-48 bg-slate-900 border border-slate-800 rounded-md text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-600 transition-colors font-mono"
+              />
             </div>
           </div>
         </div>
 
-        {/* MAIN BODY: 2 COLUMNS (Left: 20 matches list, Right: Detail & Replay) */}
+        {/* ========================================================================= */}
+        {/* MAIN BODY: TWO-PANE MASTER-DETAIL LAYOUT */}
+        {/* ========================================================================= */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 grid-rows-[220px_1fr] lg:grid-rows-1 overflow-hidden min-h-0">
-          {/* LEFT COLUMN: LIST OF COMPLETED MATCHES (4 Cols) */}
-          <div className="lg:col-span-4 border-r border-slate-800/80 flex flex-col bg-slate-950/60 overflow-hidden">
-            <div className="p-3 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400 font-semibold">
-              <span>DANH SÁCH VÁN ĐẤU ({filteredMatches.length}/20)</span>
-              <span className="text-[11px] text-slate-400">Bấm để xem replay</span>
+          
+          {/* ===================================================================== */}
+          {/* LEFT PANE: MATCH FEED (4 Columns) */}
+          {/* ===================================================================== */}
+          <aside className="lg:col-span-4 border-r border-slate-800/80 flex flex-col bg-slate-950/60 overflow-hidden">
+            <div className="p-3 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <span className="font-semibold text-slate-300">
+                Danh sách ({filteredMatches.length} ván)
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Chọn để phân tích
+              </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 divide-y-0">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 divide-y-0">
               {filteredMatches.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-2xl">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-xl">
                     ⌨️
                   </div>
-                  <div className="font-bold text-white text-sm">Chưa có ván đấu nào hoàn thành</div>
-                  <p className="text-xs text-slate-400">
-                    Hãy tham gia thi đấu hoặc luyện tập để hệ thống tự động ghi lại 20 trận gần nhất kèm replay và phân tích!
+                  <div className="font-medium text-slate-300 text-xs">Không tìm thấy ván đấu nào</div>
+                  <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed">
+                    Hãy tham gia thi đấu để hệ thống tự động ghi nhận và phân tích chi tiết dữ liệu 20 ván gần nhất.
                   </p>
                 </div>
               ) : (
@@ -650,7 +676,8 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                   const isSelected = match.id === selectedMatchId;
                   const modeIcon = getModeIcon(match.modeId);
                   const modeName = getFriendlyModeName(match.modeId);
-                  const dateStr = new Date(match.timestamp).toLocaleTimeString('vi-VN', {
+                  const matchDate = new Date(match.timestamp);
+                  const dateStr = matchDate.toLocaleTimeString('vi-VN', {
                     hour: '2-digit',
                     minute: '2-digit',
                   });
@@ -663,36 +690,43 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         setSelectedMatchId(match.id);
                       }}
-                      className={`w-full text-left p-2.5 rounded-2xl transition-all border flex items-center justify-between gap-3 cursor-pointer group ${
+                      className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between gap-3 cursor-pointer group ${
                         isSelected
-                          ? 'bg-amber-500/10 border-amber-400/80 shadow-md ring-1 ring-amber-400/30'
-                          : 'bg-slate-900/60 hover:bg-slate-800/70 border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-slate-900 border-l-4 border-l-amber-400 border-slate-800 text-white shadow-sm'
+                          : 'bg-transparent hover:bg-slate-900/50 border-transparent hover:border-slate-800/60 text-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-base shrink-0 group-hover:scale-105 transition-transform">
+                        <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-sm shrink-0">
                           {modeIcon}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-white truncate">{modeName}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">#{filteredMatches.length - idx}</span>
+                          <div className="text-xs font-semibold text-slate-200 truncate group-hover:text-white">
+                            {modeName}
                           </div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                            <span>{dateStr}</span>
-                            <span>•</span>
-                            <span className={match.result === 'Thắng' || match.result === 'Top 1' ? 'text-emerald-400 font-bold' : match.result === 'AFK' ? 'text-amber-400 font-bold' : match.result === 'Đầu hàng' ? 'text-rose-400' : 'text-slate-400'}>
-                              {match.result}
+                          {/* Unboxed Metadata Line */}
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            <span className="font-mono">{dateStr}</span>
+                            <span aria-hidden="true" className="text-slate-600">·</span>
+                            <span className={
+                              match.result === 'Thắng' || match.result === 'Top 1'
+                                ? 'text-emerald-400 font-medium'
+                                : match.result === 'AFK'
+                                ? 'text-amber-400'
+                                : 'text-slate-400'
+                            }>
+                              {match.result || 'Hoàn thành'}
                             </span>
                           </div>
                         </div>
                       </div>
 
+                      {/* Primary WPM & Accuracy */}
                       <div className="text-right shrink-0">
-                        <div className="text-base font-black text-amber-400 font-mono leading-none">
-                          {match.wpm} <span className="text-[10px] text-slate-400 font-normal">WPM</span>
+                        <div className="text-sm font-bold text-amber-400 font-mono tabular-nums leading-none">
+                          {match.wpm} <span className="text-[10px] text-slate-500 font-normal">WPM</span>
                         </div>
-                        <div className="text-[11px] text-sky-400 font-medium mt-0.5">
+                        <div className="text-[11px] text-slate-400 font-mono mt-1">
                           {match.accuracy}% CX
                         </div>
                       </div>
@@ -701,29 +735,32 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                 })
               )}
             </div>
-          </div>
+          </aside>
 
-          {/* RIGHT COLUMN: SELECTED MATCH REPLAY & DEEP ANALYTICS (8 Cols) */}
-          <div className="lg:col-span-8 flex flex-col bg-slate-950 overflow-hidden min-h-0">
+          {/* ===================================================================== */}
+          {/* RIGHT PANE: SELECTED MATCH DETAIL & SKILL ANALYSIS (8 Columns) */}
+          {/* ===================================================================== */}
+          <main className="lg:col-span-8 flex flex-col bg-slate-950 overflow-hidden min-h-0">
             {selectedMatch ? (
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                {/* MATCH SUB-HEADER: TABS */}
-                <div className="p-3 sm:px-5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2.5 shrink-0 overflow-x-auto">
-                  <div className="flex items-center gap-2 overflow-x-auto py-0.5">
+                
+                {/* SUB-HEADER: ACTIONABLE TABS */}
+                <div className="p-3 sm:px-5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
                     <button
                       type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
                         setActiveTab('replay');
                       }}
-                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 ${
+                      className={`h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                         activeTab === 'replay'
-                          ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                          : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                          ? 'bg-slate-800 text-amber-400 border border-slate-700 shadow-sm'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                       }`}
                     >
                       <Play className="w-3.5 h-3.5" />
-                      <span>Trình Phát Replay</span>
+                      <span>Xem Lại Replay</span>
                     </button>
 
                     <button
@@ -732,14 +769,14 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         setActiveTab('analytics');
                       }}
-                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 ${
+                      className={`h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                         activeTab === 'analytics'
-                          ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                          : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                          ? 'bg-slate-800 text-sky-400 border border-slate-700 shadow-sm'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                       }`}
                     >
                       <BarChart2 className="w-3.5 h-3.5" />
-                      <span>Phân Tích Chi Tiết</span>
+                      <span>Phân Tích Kỹ Năng</span>
                     </button>
 
                     <button
@@ -748,17 +785,17 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         setActiveTab('errors');
                       }}
-                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 relative ${
+                      className={`h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                         activeTab === 'errors'
-                          ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                          : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                          ? 'bg-slate-800 text-rose-400 border border-slate-700 shadow-sm'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                       }`}
                     >
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Lỗi Thường Gặp</span>
+                      <span>Lỗi Sai</span>
                       {selectedMatchMistakes.length > 0 && (
-                        <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono flex items-center justify-center">
-                          {selectedMatchMistakes.length}
+                        <span className="font-mono text-[10px] text-rose-400 ml-0.5 font-bold">
+                          ({selectedMatchMistakes.length})
                         </span>
                       )}
                     </button>
@@ -767,35 +804,16 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                       type="button"
                       onClick={() => {
                         soundFx.playKeyClick();
-                        setActiveTab('coach');
-                      }}
-                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 ${
-                        activeTab === 'coach'
-                          ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                          : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
-                      }`}
-                    >
-                      <Lightbulb className="w-3.5 h-3.5" />
-                      <span>Lời Khuyên & Kỹ Năng</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundFx.playKeyClick();
                         handleGenerateAiPractice();
                       }}
-                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 relative shadow-sm ${
+                      className={`h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                         activeTab === 'ai_practice'
-                          ? 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 font-black shadow-cyan-500/25 ring-1 ring-cyan-300'
-                          : 'bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 hover:text-white border border-cyan-500/40'
+                          ? 'bg-slate-800 text-cyan-300 border border-slate-700 shadow-sm'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                       }`}
                     >
-                      <Sparkles className={`w-3.5 h-3.5 ${isLoadingAiPractice ? 'animate-spin text-cyan-200' : 'text-cyan-300'}`} />
-                      <span>Luyện Cá Nhân Hóa (AI)</span>
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-mono">
-                        AI 3.8
-                      </span>
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Luyện Tập AI</span>
                     </button>
 
                     <button
@@ -804,40 +822,57 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         soundFx.playKeyClick();
                         handleOpenHeavenlyDao();
                       }}
-                      className={`h-9.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 relative shadow-sm ${
+                      className={`h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                         activeTab === 'heavenly_dao'
-                          ? 'bg-gradient-to-r from-amber-400 via-purple-500 to-indigo-600 text-white font-black shadow-purple-500/30 ring-1 ring-purple-300'
-                          : 'bg-purple-950/60 hover:bg-purple-900/60 text-purple-300 hover:text-white border border-purple-500/40'
+                          ? 'bg-slate-800 text-purple-300 border border-slate-700 shadow-sm'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                       }`}
                     >
-                      <span className="text-amber-400 text-xs">☯️</span>
-                      <span>Phân Tích Thiên Đạo</span>
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-500/30 text-purple-200 border border-purple-400/40 font-mono">
-                        AI 3.8
-                      </span>
+                      <Compass className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Thiên Đạo</span>
                     </button>
                   </div>
 
-                  {/* Quick Action Button: Copy Report */}
-                  <button
-                    type="button"
-                    onClick={handleCopyReport}
-                    className="h-9.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 font-bold active:scale-95"
-                    title="Sao chép báo cáo trận đấu"
-                  >
-                    {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedReport ? 'Đã sao chép' : 'Sao chép báo cáo'}</span>
-                  </button>
+                  {/* Header Utility Buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopyReport}
+                      className="h-8 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer font-medium"
+                      title="Sao chép kết quả trận đấu vào clipboard"
+                    >
+                      {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                      <span className="hidden sm:inline">{copiedReport ? 'Đã sao chép' : 'Sao chép'}</span>
+                    </button>
+
+                    {onRetryMatch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundFx.playKeyClick();
+                          onRetryMatch(selectedMatch);
+                          onClose();
+                        }}
+                        className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Tải lại nguyên văn bản để thử thách lại"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Đấu Lại Bài Này</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* TAB CONTENT AREA */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0">
-                  {/* TAB 1: INTERACTIVE REPLAY PLAYER */}
+                {/* TAB VIEWPORT CONTAINER */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 min-h-0">
+                  
+                  {/* ============================================================= */}
+                  {/* TAB 1: REPLAY PLAYER & LIVE TIMELINE */}
+                  {/* ============================================================= */}
                   {activeTab === 'replay' && (
                     <div className="space-y-4">
-                      {/* Replay Control Hub Bar */}
-                      <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
-                        {/* Play/Pause/Reset Controls */}
+                      {/* Replay Control Bar */}
+                      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-4 shadow-sm">
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -845,9 +880,9 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                               soundFx.playKeyClick();
                               setIsPlaying(!isPlaying);
                             }}
-                            className="h-10 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs uppercase flex items-center gap-2 transition-transform active:scale-95 cursor-pointer shadow-md shadow-amber-500/20"
+                            className="h-9 px-4 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                           >
-                            {isPlaying ? <Pause className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black" />}
+                            {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
                             <span>{isPlaying ? 'Tạm Dừng' : 'Phát Replay'}</span>
                           </button>
 
@@ -858,14 +893,14 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                               setIsPlaying(false);
                               setReplayProgressSec(0);
                             }}
-                            className="h-10 w-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                            className="h-9 w-9 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center transition-colors cursor-pointer"
                             title="Phát lại từ đầu"
                           >
-                            <RotateCcw className="w-4 h-4" />
+                            <RotateCcw className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Speed Selectors */}
-                          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-mono">
+                          {/* Speed Selector */}
+                          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-xs font-mono ml-2">
                             {[0.75, 1, 1.5, 2].map((spd) => (
                               <button
                                 key={spd}
@@ -874,9 +909,9 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                                   soundFx.playKeyClick();
                                   setPlaybackSpeed(spd);
                                 }}
-                                className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                                className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer ${
                                   playbackSpeed === spd
-                                    ? 'bg-amber-500 text-black font-bold'
+                                    ? 'bg-slate-800 text-amber-300 font-bold'
                                     : 'text-slate-400 hover:text-white'
                                 }`}
                               >
@@ -886,24 +921,25 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                           </div>
                         </div>
 
-                        {/* Live Meters */}
+                        {/* Telemetry Display */}
                         <div className="flex items-center gap-4 text-xs font-mono">
                           <div className="text-right">
-                            <div className="text-[10px] text-slate-400">Tốc độ tức thời</div>
-                            <div className="text-base font-black text-amber-400 leading-tight">
+                            <span className="text-[10px] text-slate-400 block font-sans">Tốc độ tức thời</span>
+                            <span className="text-sm font-bold text-amber-400 tabular-nums">
                               {replayState.currentWpm} WPM
-                            </div>
+                            </span>
                           </div>
+                          <div className="h-6 w-px bg-slate-800" />
                           <div className="text-right">
-                            <div className="text-[10px] text-slate-400">Thời gian</div>
-                            <div className="text-sm font-bold text-white">
+                            <span className="text-[10px] text-slate-400 block font-sans">Thời gian</span>
+                            <span className="text-sm font-medium text-slate-200 tabular-nums">
                               {Math.round(replayProgressSec)}s / {matchDuration}s
-                            </div>
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Scrubber Slider */}
+                      {/* Scrubber Range Slider */}
                       <div className="space-y-1">
                         <input
                           type="range"
@@ -914,7 +950,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                           onChange={(e) => {
                             setReplayProgressSec(parseFloat(e.target.value));
                           }}
-                          className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                          className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
                         />
                         <div className="flex justify-between text-[10px] text-slate-400 font-mono">
                           <span>00:00</span>
@@ -923,11 +959,11 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         </div>
                       </div>
 
-                      {/* Live Text Canvas: Replay simulation */}
-                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800/90 min-h-[180px] max-h-[260px] overflow-y-auto space-y-2 select-none shadow-inner font-mono text-sm sm:text-base leading-relaxed">
+                      {/* Interactive Text Canvas */}
+                      <div className="p-4 sm:p-5 rounded-xl bg-slate-900 border border-slate-800 min-h-[190px] max-h-[280px] overflow-y-auto space-y-2 select-none font-mono text-sm leading-relaxed">
                         {replayState.words.length === 0 ? (
-                          <div className="text-slate-400 italic text-center py-8">
-                            Dữ liệu văn bản trận này đã được tổng hợp thành bảng thống kê chi tiết bên tab "Phân Tích Chi Tiết".
+                          <div className="text-slate-400 italic text-center py-10 text-xs font-sans">
+                            Dữ liệu bài gõ đã được ghi nhận. Bạn có thể xem biểu đồ và phân tích chi tiết ở tab "Phân Tích Kỹ Năng".
                           </div>
                         ) : (
                           <div className="flex flex-wrap gap-x-2 gap-y-1.5">
@@ -952,7 +988,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                                 >
                                   {word}
                                   {isPast && isIncorrect && log?.typed && (
-                                    <span className="text-[10px] text-rose-300 bg-rose-950 px-1 rounded ml-1 border border-rose-800">
+                                    <span className="text-[10px] text-rose-300 bg-rose-950 px-1 rounded ml-1 border border-rose-800 font-mono">
                                       {log.typed}
                                     </span>
                                   )}
@@ -963,11 +999,11 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                         )}
                       </div>
 
-                      {/* Quick Rematch / Practice Mistakes Banner */}
-                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-900/80 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 text-xs text-slate-300">
+                      {/* Practice Mistakes Quick Remind Banner */}
+                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2 text-slate-300">
                           <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>Bạn muốn cải thiện thành tích của bài thi đấu này?</span>
+                          <span>Bạn muốn bứt phá thành tích của bài thi đấu này?</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {selectedMatchMistakes.length > 0 && onPracticeMistakes && (
@@ -983,7 +1019,7 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                                 onPracticeMistakes(specialized.practiceWords, targetMode);
                                 onClose();
                               }}
-                              className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                              className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                             >
                               <AlertTriangle className="w-3.5 h-3.5" />
                               <span>Luyện {selectedMatchMistakes.length} từ sai</span>
@@ -998,10 +1034,10 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                                 onRetryMatch(selectedMatch);
                                 onClose();
                               }}
-                              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                              className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                             >
-                              <RotateCcw className="w-3.5 h-3.5 fill-black" />
-                              <span>Thử thách lại bài này</span>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Đấu Lại Ngay</span>
                             </button>
                           )}
                         </div>
@@ -1009,184 +1045,335 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                     </div>
                   )}
 
-                  {/* TAB 2: DEEP ANALYTICS & WPM CURVE */}
+                  {/* ============================================================= */}
+                  {/* TAB 2: DEEP SKILL ANALYSIS & PERFORMANCE CURVE */}
+                  {/* ============================================================= */}
                   {activeTab === 'analytics' && (
                     <div className="space-y-4">
-                      {/* Metric 4 Cards Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-                        <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                      {/* Metric 4-Card Overview */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                             <Activity className="w-3.5 h-3.5 text-amber-400" />
                             <span>Tốc độ trung bình</span>
                           </div>
-                          <div className="text-xl sm:text-2xl font-black text-amber-400 font-mono">
-                            {selectedMatch.wpm} <span className="text-xs text-slate-400 font-normal">WPM</span>
+                          <div className="text-2xl font-bold text-amber-400 font-mono tabular-nums">
+                            {selectedMatch.wpm} <span className="text-xs text-slate-500 font-normal">WPM</span>
                           </div>
                         </div>
 
-                        <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                             <Flame className="w-3.5 h-3.5 text-rose-400" />
-                            <span>Tốc độ đỉnh (Peak)</span>
+                            <span>Tốc độ đỉnh phong</span>
                           </div>
-                          <div className="text-xl sm:text-2xl font-black text-rose-400 font-mono">
+                          <div className="text-2xl font-bold text-rose-400 font-mono tabular-nums">
                             {selectedMatch.peakWpm || Math.round(selectedMatch.wpm * 1.15)}{' '}
-                            <span className="text-xs text-slate-400 font-normal">WPM</span>
+                            <span className="text-xs text-slate-500 font-normal">WPM</span>
                           </div>
                         </div>
 
-                        <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                             <Target className="w-3.5 h-3.5 text-sky-400" />
                             <span>Độ chính xác</span>
                           </div>
-                          <div className="text-xl sm:text-2xl font-black text-sky-400 font-mono">
+                          <div className="text-2xl font-bold text-sky-400 font-mono tabular-nums">
                             {selectedMatch.accuracy}%
                           </div>
                         </div>
 
-                        <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                             <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Tính ổn định</span>
+                            <span>Độ ổn định nhịp</span>
                           </div>
-                          <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
+                          <div className="text-2xl font-bold text-emerald-400 font-mono tabular-nums">
                             {selectedMatch.consistency || 85}%
                           </div>
                         </div>
                       </div>
 
-                      {/* Performance Timeline SVG Chart */}
-                      <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                      {/* Interactive High-Fidelity SVG Speed Chart */}
+                      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                          <div className="font-semibold text-slate-200 flex items-center gap-2">
                             <TrendingUp className="w-4 h-4 text-amber-400" />
-                            Biến Thiên Tốc Độ WPM Theo Thời Gian
-                          </span>
-                          <span className="text-slate-400 font-mono text-[11px]">
+                            <span>Biến Thiên Tốc Độ WPM Theo Từng Giây</span>
+                          </div>
+                          <div className="text-slate-400 font-mono text-[11px]">
                             Thời lượng: {matchDuration} giây
-                          </span>
+                          </div>
                         </div>
 
-                        {selectedMatch.chartData && selectedMatch.chartData.length > 1 ? (
-                          <div className="h-44 w-full relative">
-                            {/* Render SVG timeline */}
-                            <svg className="w-full h-full overflow-visible" viewBox="0 0 500 150" preserveAspectRatio="none">
-                              <defs>
-                                <linearGradient id="wpmGradient" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.4" />
-                                  <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
-                                </linearGradient>
-                              </defs>
+                        {/* Chart Render */}
+                        {(() => {
+                          const chartPoints = (selectedMatch.chartData && selectedMatch.chartData.length > 1)
+                            ? selectedMatch.chartData
+                            : [
+                                { second: 0, wpm: Math.round(selectedMatch.wpm * 0.7) },
+                                { second: Math.round(matchDuration * 0.25), wpm: Math.round(selectedMatch.wpm * 0.95) },
+                                { second: Math.round(matchDuration * 0.5), wpm: selectedMatch.peakWpm || Math.round(selectedMatch.wpm * 1.1) },
+                                { second: Math.round(matchDuration * 0.75), wpm: selectedMatch.wpm },
+                                { second: matchDuration, wpm: selectedMatch.wpm },
+                              ];
 
-                              {/* Grid lines */}
-                              <line x1="0" y1="30" x2="500" y2="30" stroke="#334155" strokeDasharray="3,3" strokeWidth="0.5" />
-                              <line x1="0" y1="75" x2="500" y2="75" stroke="#334155" strokeDasharray="3,3" strokeWidth="0.5" />
-                              <line x1="0" y1="120" x2="500" y2="120" stroke="#334155" strokeDasharray="3,3" strokeWidth="0.5" />
+                          const maxWpmValue = Math.max(70, ...chartPoints.map((p) => p.wpm || 0), selectedMatch.peakWpm || 0);
+                          const yUpperBound = Math.ceil((maxWpmValue + 15) / 20) * 20;
+                          const chartWidth = 600;
+                          const chartHeight = 160;
+                          const padLeft = 40;
+                          const padRight = 20;
+                          const padTop = 15;
+                          const padBottom = 25;
+                          const innerWidth = chartWidth - padLeft - padRight;
+                          const innerHeight = chartHeight - padTop - padBottom;
 
-                              {/* Points & Polyline */}
-                              {(() => {
-                                const maxWpm = Math.max(80, ...selectedMatch.chartData!.map((p) => p.wpm || 0)) * 1.15;
-                                const maxSec = matchDuration || 60;
-                                const points = selectedMatch.chartData!.map((p) => {
-                                  const x = (p.second / maxSec) * 500;
-                                  const y = 140 - ((p.wpm || 0) / maxWpm) * 120;
-                                  return `${x},${y}`;
-                                });
+                          const getX = (sec: number) => padLeft + (sec / matchDuration) * innerWidth;
+                          const getY = (wpm: number) => padTop + innerHeight - (wpm / yUpperBound) * innerHeight;
 
-                                const areaPoints = `0,150 ${points.join(' ')} 500,150`;
+                          const ptsString = chartPoints.map((p) => `${getX(p.second)},${getY(p.wpm)}`).join(' ');
+                          const areaString = `${getX(0)},${chartHeight - padBottom} ${ptsString} ${getX(matchDuration)},${chartHeight - padBottom}`;
 
-                                return (
-                                  <>
-                                    <polygon points={areaPoints} fill="url(#wpmGradient)" />
-                                    <polyline
-                                      fill="none"
-                                      stroke="#f59e0b"
-                                      strokeWidth="3"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      points={points.join(' ')}
+                          // Ticks
+                          const yTicks = [0, Math.round(yUpperBound * 0.33), Math.round(yUpperBound * 0.66), yUpperBound];
+                          const xStep = matchDuration <= 60 ? 15 : matchDuration <= 120 ? 30 : 60;
+                          const xTicks: number[] = [];
+                          for (let s = 0; s <= matchDuration; s += xStep) {
+                            xTicks.push(s);
+                          }
+                          if (!xTicks.includes(matchDuration)) xTicks.push(matchDuration);
+
+                          return (
+                            <div className="w-full relative select-none">
+                              <svg
+                                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                                className="w-full h-44 overflow-visible"
+                                onMouseLeave={() => setHoveredChartPoint(null)}
+                              >
+                                <defs>
+                                  <linearGradient id="historyWpmGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
+                                    <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                                  </linearGradient>
+                                </defs>
+
+                                {/* Y Gridlines & Labels */}
+                                {yTicks.map((yVal, i) => {
+                                  const yPos = getY(yVal);
+                                  return (
+                                    <g key={i}>
+                                      <line
+                                        x1={padLeft}
+                                        y1={yPos}
+                                        x2={chartWidth - padRight}
+                                        y2={yPos}
+                                        stroke="#1e293b"
+                                        strokeWidth="0.8"
+                                        strokeDasharray="2,3"
+                                      />
+                                      <text
+                                        x={padLeft - 8}
+                                        y={yPos + 3}
+                                        textAnchor="end"
+                                        className="fill-slate-500 font-mono text-[9px] tabular-nums"
+                                      >
+                                        {yVal}
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+
+                                {/* X Gridlines & Labels */}
+                                {xTicks.map((xVal, i) => {
+                                  const xPos = getX(xVal);
+                                  return (
+                                    <g key={i}>
+                                      <line
+                                        x1={xPos}
+                                        y1={padTop}
+                                        x2={xPos}
+                                        y2={chartHeight - padBottom}
+                                        stroke="#1e293b"
+                                        strokeWidth="0.8"
+                                        strokeDasharray="2,3"
+                                      />
+                                      <text
+                                        x={xPos}
+                                        y={chartHeight - padBottom + 14}
+                                        textAnchor="middle"
+                                        className="fill-slate-500 font-mono text-[9px] tabular-nums"
+                                      >
+                                        {xVal}s
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+
+                                {/* Average WPM line */}
+                                <line
+                                  x1={padLeft}
+                                  y1={getY(selectedMatch.wpm)}
+                                  x2={chartWidth - padRight}
+                                  y2={getY(selectedMatch.wpm)}
+                                  stroke="#38bdf8"
+                                  strokeWidth="1"
+                                  strokeDasharray="4,4"
+                                />
+
+                                {/* Area & Line */}
+                                <polygon points={areaString} fill="url(#historyWpmGrad)" />
+                                <polyline
+                                  fill="none"
+                                  stroke="#f59e0b"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  points={ptsString}
+                                />
+
+                                {/* Points */}
+                                {chartPoints.map((p, idx) => {
+                                  const cx = getX(p.second);
+                                  const cy = getY(p.wpm);
+                                  const isPeak = p.wpm === maxWpmValue;
+
+                                  return (
+                                    <g
+                                      key={idx}
+                                      className="cursor-pointer"
+                                      onMouseEnter={() => setHoveredChartPoint({ second: p.second, wpm: p.wpm, errors: p.errors, x: cx, y: cy })}
+                                    >
+                                      <circle
+                                        cx={cx}
+                                        cy={cy}
+                                        r={isPeak ? 4.5 : 2.5}
+                                        fill={isPeak ? '#fbbf24' : '#f59e0b'}
+                                        stroke="#090d16"
+                                        strokeWidth="1.5"
+                                      />
+                                    </g>
+                                  );
+                                })}
+
+                                {/* Hover Crosshair & Details */}
+                                {hoveredChartPoint && (
+                                  <g pointerEvents="none">
+                                    <line
+                                      x1={hoveredChartPoint.x}
+                                      y1={padTop}
+                                      x2={hoveredChartPoint.x}
+                                      y2={chartHeight - padBottom}
+                                      stroke="#94a3b8"
+                                      strokeWidth="0.8"
+                                      strokeDasharray="2,2"
                                     />
-                                    {selectedMatch.chartData!.map((p, i) => {
-                                      const x = (p.second / maxSec) * 500;
-                                      const y = 140 - ((p.wpm || 0) / maxWpm) * 120;
-                                      return (
-                                        <circle
-                                          key={i}
-                                          cx={x}
-                                          cy={y}
-                                          r="3.5"
-                                          fill="#fbbf24"
-                                          stroke="#0f172a"
-                                          strokeWidth="1.5"
-                                        />
-                                      );
-                                    })}
-                                  </>
-                                );
-                              })()}
-                            </svg>
+                                    <circle
+                                      cx={hoveredChartPoint.x}
+                                      cy={hoveredChartPoint.y}
+                                      r="5"
+                                      fill="#fbbf24"
+                                      stroke="#ffffff"
+                                      strokeWidth="2"
+                                    />
+                                  </g>
+                                )}
+                              </svg>
+
+                              {/* Hover Tooltip Box */}
+                              {hoveredChartPoint && (
+                                <div
+                                  className="absolute -top-3 p-2 rounded-lg bg-slate-950 border border-slate-700 shadow-xl text-xs font-mono z-20 pointer-events-none transform -translate-x-1/2"
+                                  style={{ left: `${(hoveredChartPoint.x / chartWidth) * 100}%` }}
+                                >
+                                  <div className="text-slate-400 text-[10px]">Giây {hoveredChartPoint.second}s</div>
+                                  <div className="text-amber-400 font-bold">{hoveredChartPoint.wpm} WPM</div>
+                                  {hoveredChartPoint.errors && hoveredChartPoint.errors > 0 ? (
+                                    <div className="text-rose-400 text-[10px]">+{hoveredChartPoint.errors} lỗi</div>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Biomechanics & Pacing Analysis */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                          <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Đánh Giá Nhịp Thở & Thể Lực Cơ Ngón Tay</span>
+                          </div>
+                          <p className="text-slate-400 leading-relaxed text-[11px]">
+                            {selectedMatch.consistency && selectedMatch.consistency >= 85
+                              ? 'Nhịp gõ phân bố rất đều đặn từ đầu đến cuối trận. Không phát hiện dấu hiệu mỏi cơ bàn tay hay sụt giảm nhịp thở lúc về đích.'
+                              : 'Có sự chênh lệch nhịp gõ giữa các giai đoạn. Hãy chú ý thả lỏng khớp cổ tay và giữ tư thế ngồi thẳng lưng để duy trì tốc độ cao khi gõ bài dài.'}
+                          </p>
+                        </div>
+
+                        {selectedMatch.slowestWord ? (
+                          <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                            <div className="font-semibold text-amber-400 flex items-center gap-1.5">
+                              <Timer className="w-3.5 h-3.5" />
+                              <span>Điểm Khựng Lâu Nhất (Cognitive Hesitation)</span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300 text-[11px] font-mono">
+                              <span>
+                                Từ: <strong className="text-white">"{selectedMatch.slowestWord.word}"</strong>
+                              </span>
+                              <span className="text-slate-400">
+                                Dừng ~{(selectedMatch.slowestWord.pauseMs / 1000).toFixed(2)}s
+                              </span>
+                            </div>
+                            <p className="text-slate-400 text-[11px] leading-relaxed">
+                              Khắc phục: Tập quét mắt trước 1 từ để não bộ tiếp nhận mặt chữ mới trước khi ngón tay chạm phím.
+                            </p>
                           </div>
                         ) : (
-                          <div className="h-32 flex items-center justify-center text-slate-500 text-xs italic">
-                            Dữ liệu đồ thị WPM được biểu diễn dựa trên tốc độ hoàn thành bài: {selectedMatch.wpm} WPM.
+                          <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                            <div className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Phản Xạ Liên Tục</span>
+                            </div>
+                            <p className="text-slate-400 text-[11px] leading-relaxed">
+                              Không có điểm khựng bất thường trong bài thi đấu. Các ngón tay luân chuyển vị trí mượt mà.
+                            </p>
                           </div>
                         )}
                       </div>
 
-                      {/* Fatigue & Pacing Diagnostic */}
-                      <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs space-y-2">
-                        <div className="font-bold text-slate-300 flex items-center gap-1.5">
-                          <Clock className="w-4 h-4 text-sky-400" />
-                          <span>Phân Tích Nhịp Thở & Thể Lực Đánh Máy:</span>
+                      {/* Coach Actionable Recommendations */}
+                      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                        <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                          <Lightbulb className="w-4 h-4 text-amber-400" />
+                          <span>Lời Khuyên Huấn Luyện Viên Đánh Máy:</span>
                         </div>
-                        <p className="text-slate-400 leading-relaxed">
-                          {selectedMatch.consistency && selectedMatch.consistency >= 85
-                            ? '✅ Nhịp gõ phân bố rất đều từ đầu đến cuối trận. Bạn không có dấu hiệu mỏi tay hay bị đuối tốc độ về cuối.'
-                            : '⚠️ Có sự chênh lệch nhịp gõ giữa các giai đoạn. Hãy chú ý thả lỏng vai và giữ tư thế ngồi thẳng lưng để duy trì tốc độ cao khi gõ bài dài.'}
-                        </p>
-                      </div>
-
-                      {/* Heavenly Dao Teaser Banner */}
-                      <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-slate-900 border border-purple-500/35 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-lg shrink-0">
-                            ☯️
-                          </div>
-                          <div className="space-y-0.5">
-                            <div className="text-xs font-black text-white flex items-center gap-1.5">
-                              <span>BẢNG ĐIỀU KHIỂN PHÂN TÍCH THIÊN ĐẠO</span>
-                              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-500/30 text-purple-200 border border-purple-400/40">AI 3.8</span>
+                        <div className="space-y-2">
+                          {adviceList.map((tip, idx) => (
+                            <div key={idx} className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-2.5 text-xs">
+                              <span className="text-base shrink-0 mt-0.5">{tip.icon}</span>
+                              <div className="space-y-0.5">
+                                <div className="font-semibold text-slate-200">{tip.title}</div>
+                                <p className="text-slate-400 text-[11px] leading-relaxed">{tip.tip}</p>
+                              </div>
                             </div>
-                            <p className="text-[11px] text-slate-300">
-                              Khám phá biểu đồ Radar 6 Trụ Cột Đạo Cơ đối chiếu với đồng đạo cùng cảnh giới và bóc tách tâm ma gõ phím.
-                            </p>
-                          </div>
+                          ))}
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundFx.playKeyClick();
-                            handleOpenHeavenlyDao();
-                          }}
-                          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-purple-500/20 shrink-0 self-stretch sm:self-auto justify-center"
-                        >
-                          <Compass className="w-3.5 h-3.5" />
-                          <span>Khai Mở Thiên Đạo</span>
-                        </button>
                       </div>
                     </div>
                   )}
 
-                  {/* TAB 3: COMMON MISTAKES & ERROR PATTERNS */}
+                  {/* ============================================================= */}
+                  {/* TAB 3: COMMON MISTAKES & ERROR BREAKDOWN */}
+                  {/* ============================================================= */}
                   {activeTab === 'errors' && (
                     <div className="space-y-4">
-                      {/* Summary pill */}
-                      <div className="p-3.5 rounded-2xl bg-rose-950/30 border border-rose-500/30 flex items-center justify-between gap-3 text-xs">
+                      {/* Summary Banner */}
+                      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                          <span className="text-rose-200 font-semibold">
+                          <span className="text-slate-200">
                             {selectedMatchMistakes.length > 0
                               ? `Phát hiện ${selectedMatchMistakes.length} từ gõ sai trong ván này.`
                               : 'Ván đấu hoàn hảo! Không có từ nào bị gõ sai.'}
@@ -1205,225 +1392,59 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                               onPracticeMistakes(specialized.practiceWords, targetMode);
                               onClose();
                             }}
-                            className="px-3 py-1 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                           >
-                            <span>Luyện ngay các từ này</span>
+                            <span>Luyện riêng {selectedMatchMistakes.length} từ sai</span>
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
 
-                      {/* Mistake words comparison table */}
+                      {/* Error Comparison Table */}
                       {selectedMatchMistakes.length > 0 ? (
-                        <div className="rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/60 divide-y divide-slate-800">
-                          <div className="p-2.5 bg-slate-900 text-xs font-bold text-slate-400 grid grid-cols-12 gap-2">
+                        <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900 divide-y divide-slate-800">
+                          <div className="px-4 py-2.5 bg-slate-950 text-xs font-semibold text-slate-400 grid grid-cols-12 gap-2">
                             <span className="col-span-4">Từ Chuẩn</span>
                             <span className="col-span-4">Bạn Đã Gõ</span>
                             <span className="col-span-4">Phân Loại Lỗi</span>
                           </div>
                           {selectedMatchMistakes.map((m, i) => (
-                            <div key={i} className="p-2.5 text-xs grid grid-cols-12 gap-2 items-center hover:bg-slate-800/40">
+                            <div key={i} className="px-4 py-2 text-xs grid grid-cols-12 gap-2 items-center hover:bg-slate-800/40">
                               <span className="col-span-4 font-mono font-bold text-emerald-400">{m.original}</span>
                               <span className="col-span-4 font-mono text-rose-400 line-through">{m.typed}</span>
-                              <span className="col-span-4">
-                                <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-amber-300 border border-slate-700">
-                                  {m.label}
-                                </span>
+                              <span className="col-span-4 text-slate-400 text-[11px]">
+                                {m.label}
                               </span>
                             </div>
                           ))}
                         </div>
                       ) : (
                         <div className="p-8 text-center text-slate-400 space-y-2">
-                          <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                          <div className="font-bold text-white">Độ chính xác 100%</div>
-                          <p className="text-xs text-slate-400">
-                            Bạn đã gõ chính xác toàn bộ các từ trong bài. Tiếp tục phát huy nhé!
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Hesitation Analysis */}
-                      {selectedMatch.slowestWord && (
-                        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs space-y-1.5">
-                          <div className="font-bold text-amber-400 flex items-center gap-1.5">
-                            <Clock className="w-4 h-4" />
-                            <span>Từ bị khựng lâu nhất (Hesitation):</span>
-                          </div>
-                          <div className="flex items-center justify-between text-slate-300">
-                            <span>
-                              Từ: <strong className="text-white font-mono text-sm px-1.5 py-0.5 bg-slate-800 rounded">"{selectedMatch.slowestWord.word}"</strong>
-                            </span>
-                            <span className="text-slate-400 font-mono">
-                              Thời gian khựng: ~{(selectedMatch.slowestWord.pauseMs / 1000).toFixed(2)}s
-                            </span>
-                          </div>
+                          <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                          <div className="font-semibold text-white text-xs">Độ chính xác 100%</div>
                           <p className="text-[11px] text-slate-500">
-                            Mẹo: Tập quét mắt trước 1 từ để não bộ tiếp nhận từ mới trước khi ngón tay chạm phím.
+                            Bạn đã gõ chính xác toàn bộ văn bản trong ván này.
                           </p>
                         </div>
                       )}
-
-                      {/* AI & Heavenly Dao Prompt Banner in Errors Tab */}
-                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-cyan-950/40 border border-purple-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-lg">☯️</span>
-                          <div className="text-xs">
-                            <span className="font-bold text-white">Muốn phân tích sâu mẫu lỗi & thời điểm mắc lỗi? </span>
-                            <span className="text-slate-400 hidden sm:inline">Khám phá Bảng Điều Khiển Thiên Đạo hoặc tạo bài luyện AI.</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              soundFx.playKeyClick();
-                              handleOpenHeavenlyDao();
-                            }}
-                            className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/40 text-purple-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                          >
-                            <Compass className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Phân Tích Thiên Đạo</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              soundFx.playKeyClick();
-                              handleGenerateAiPractice();
-                            }}
-                            className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>Bài Luyện AI</span>
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   )}
 
-                  {/* TAB 4: TYPING COACH & ACTIONABLE SKILL MASTERIES */}
-                  {activeTab === 'coach' && (
-                    <div className="space-y-4">
-                      {/* Coach Intro Banner */}
-                      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-transparent border border-amber-500/30 flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center text-lg shrink-0">
-                          🥋
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-black uppercase tracking-wider text-amber-400">
-                            HUẤN LUYỆN VIÊN ĐÁNH MÁY CHUYÊN SÂU
-                          </div>
-                          <div className="text-xs text-slate-300 leading-relaxed">
-                            Dựa trên phân tích nhịp gõ, độ trễ và các lỗi sai thực tế trong ván đấu này, dưới đây là các lời khuyên giúp bạn bứt phá tốc độ gõ phím:
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Actionable Tips Cards */}
-                      <div className="space-y-2.5">
-                        {adviceList.map((tip, idx) => (
-                          <div key={idx} className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors flex items-start gap-3">
-                            <span className="text-xl shrink-0 mt-0.5">{tip.icon}</span>
-                            <div className="space-y-1 min-w-0">
-                              <div className="text-xs font-bold text-white flex items-center gap-2">
-                                <span>{tip.title}</span>
-                              </div>
-                              <p className="text-xs text-slate-400 leading-relaxed">{tip.tip}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Skill Mastery Training Suite Actions */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-                        <div className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                          <Award className="w-4 h-4 text-amber-400" />
-                          <span>Hành Động Khắc Phục Điểm Yếu:</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              soundFx.playKeyClick();
-                              handleGenerateAiPractice();
-                            }}
-                            className="p-3 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-left transition-all cursor-pointer group shadow-sm sm:col-span-2 lg:col-span-1"
-                          >
-                            <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5 group-hover:text-cyan-200">
-                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                              <span>Bài Tập Cá Nhân Hóa AI</span>
-                            </div>
-                            <div className="text-[11px] text-slate-400 mt-1">
-                              AI phân tích lỗi & tạo danh sách từ chứa cụm phím hay gõ nhầm để luyện tập solo.
-                            </div>
-                          </button>
-
-                          {selectedMatchMistakes.length > 0 && onPracticeMistakes && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                soundFx.playKeyClick();
-                                const category = detectMatchCategory(selectedMatch);
-                                const specialized = generateDaoSpecializedDrillWords(history, selectedMatch, category.resolvedModeId);
-                                const hasNumbers = specialized.practiceWords.some((w) => /^[\d+\-*/=.]+$/.test(w.trim()));
-                                const targetMode: GameMode =
-                                  category.isNumberMode || hasNumbers ? 'numpad' : category.resolvedModeId;
-                                onPracticeMistakes(specialized.practiceWords, targetMode);
-                                onClose();
-                              }}
-                              className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all cursor-pointer group"
-                            >
-                              <div className="text-xs font-bold text-rose-300 flex items-center gap-1.5 group-hover:text-rose-200">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                <span>Luyện tập riêng các từ sai</span>
-                              </div>
-                              <div className="text-[11px] text-slate-400 mt-1">
-                                Tạo bài thi đấu chứa chính xác các từ đã gõ sai trong ván này để khắc phục ngay.
-                              </div>
-                            </button>
-                          )}
-
-                          {onRetryMatch && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                soundFx.playKeyClick();
-                                onRetryMatch(selectedMatch);
-                                onClose();
-                              }}
-                              className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all cursor-pointer group"
-                            >
-                              <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5 group-hover:text-amber-200">
-                                <RotateCcw className="w-3.5 h-3.5" />
-                                <span>Thử thách lại bài này</span>
-                              </div>
-                              <div className="text-[11px] text-slate-400 mt-1">
-                                Tải lại đúng văn bản này để so sánh trực tiếp kết quả mới với WPM ván này.
-                              </div>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TAB 5: AI PERSONALIZED PRACTICE & COMPREHENSIVE MISTAKE ANALYSIS */}
+                  {/* ============================================================= */}
+                  {/* TAB 4: AI PERSONALIZED PRACTICE */}
+                  {/* ============================================================= */}
                   {activeTab === 'ai_practice' && (
                     <div className="space-y-4">
-                      {/* 1. Target Mode Switcher & Focus Indicator Bar */}
-                      <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-md">
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                            <Filter className="w-3.5 h-3.5 text-cyan-400" />
-                            Chế độ bài luyện AI:
-                          </span>
-                          <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 gap-1 flex-wrap">
+                      {/* Mode Filter for Drill */}
+                      <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 font-medium">Chế độ mục tiêu:</span>
+                          <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
                             {[
-                              { id: 'numpad', label: '🔢 Phím Số (Numpad)', desc: 'Chỉ gồm số 0-9' },
-                              { id: 'vi_dau', label: '🇻🇳 TV Có Dấu', desc: 'Dấu thanh Telex' },
-                              { id: 'vi_nodau', label: '⚡ TV Không Dấu', desc: 'Tốc độ cơ bản' },
-                              { id: 'en', label: '🇬🇧 Tiếng Anh', desc: 'Từ vựng tiếng Anh' },
+                              { id: 'numpad', label: '🔢 Phím Số' },
+                              { id: 'vi_dau', label: '🇻🇳 Có Dấu' },
+                              { id: 'vi_nodau', label: '⚡ Không Dấu' },
+                              { id: 'en', label: '🇬🇧 Tiếng Anh' },
                             ].map((m) => {
                               const isActive = aiDrillMode === m.id;
                               return (
@@ -1435,278 +1456,126 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                                     setAiDrillMode(m.id as GameMode);
                                     handleGenerateAiPractice(true, m.id as GameMode);
                                   }}
-                                  className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
                                     isActive
-                                      ? 'bg-gradient-to-r from-cyan-400 to-teal-400 text-slate-950 font-black shadow-md shadow-cyan-500/20'
-                                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                                      ? 'bg-slate-800 text-cyan-300 font-bold'
+                                      : 'text-slate-400 hover:text-white'
                                   }`}
-                                  title={m.desc}
                                 >
-                                  <span>{m.label}</span>
+                                  {m.label}
                                 </button>
                               );
                             })}
                           </div>
                         </div>
 
-                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                          <span>
-                            {aiDrillMode === 'numpad'
-                              ? 'Chế độ Số: Đảm bảo 100% chuỗi số 0-9, không từ tiếng Việt'
-                              : aiDrillMode === 'en'
-                              ? 'Chế độ Tiếng Anh: 100% từ vựng chuẩn quốc tế'
-                              : aiDrillMode === 'vi_nodau'
-                              ? 'Chế độ Không Dấu: Không dấu thanh'
-                              : 'Chế độ Tiếng Việt: Cụm dấu Telex & âm tiết chuẩn'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* 2. Top Header Hero Card */}
-                      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-cyan-950/70 via-slate-900 to-indigo-950/60 border border-cyan-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
-                        <div className="flex items-start gap-3.5">
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center text-slate-950 text-2xl font-black shrink-0 shadow-lg shadow-cyan-500/25">
-                            {aiDrillMode === 'numpad' ? '🔢' : '🤖'}
-                          </div>
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
-                                {aiDrillMode === 'numpad'
-                                  ? 'BÀI TẬP LUYỆN BÀN PHÍM SỐ CÁ NHÂN HÓA (NUMPAD COACH)'
-                                  : 'BÀI TẬP LUYỆN CÁ NHÂN HÓA (AI COACH)'}
-                              </h3>
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
-                                {aiPracticeResult?.isAiPowered ? 'Gemini 3.8 Flash' : 'Phân Tích Chuyên Sâu'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                              {aiDrillMode === 'numpad'
-                                ? 'AI bóc tách chính xác các chữ số hay gõ nhầm, đo đạc độ trễ vươn ngón tay hàng số 7-8-9 và phím số 5 để tạo bài luyện Numpad đặc trị.'
-                                : 'AI tự động bóc tách các điểm nghẽn, từ khựng lâu nhất và cụm phím hay gõ nhầm từ lịch sử đấu để sinh ra bộ từ luyện tập phản xạ riêng biệt.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Standardized Header Action CTAs */}
-                        <div className="flex items-center gap-2.5 self-stretch sm:self-auto shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              soundFx.playKeyClick();
-                              handleGenerateAiPractice(true);
-                            }}
-                            disabled={isLoadingAiPractice}
-                            className="h-10 px-4.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
-                            title="Phân tích lại và sinh bộ từ mới"
-                          >
-                            <RotateCcw className={`w-4 h-4 ${isLoadingAiPractice ? 'animate-spin text-cyan-400' : 'text-slate-300'}`} />
-                            <span>{isLoadingAiPractice ? 'Đang tạo...' : 'Phân Tích Lại'}</span>
-                          </button>
-
-                          {aiPracticeResult?.practiceWords && aiPracticeResult.practiceWords.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={handleStartAiSoloGame}
-                              className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all cursor-pointer active:scale-95"
-                            >
-                              <Play className="w-4 h-4 fill-current" />
-                              <span>Vào Luyện Solo Ngay ({aiPracticeResult.practiceWords.length} chuỗi)</span>
-                            </button>
-                          )}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            handleGenerateAiPractice(true);
+                          }}
+                          disabled={isLoadingAiPractice}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <RotateCcw className={`w-3.5 h-3.5 ${isLoadingAiPractice ? 'animate-spin text-cyan-400' : 'text-slate-400'}`} />
+                          <span>{isLoadingAiPractice ? 'Đang tạo...' : 'Tạo Lại Bài Mới'}</span>
+                        </button>
                       </div>
 
                       {/* Loading State */}
                       {isLoadingAiPractice && (
-                        <div className="p-10 rounded-3xl bg-slate-900/90 border border-slate-800 text-center space-y-4 shadow-xl">
-                          <div className="relative w-14 h-14 mx-auto flex items-center justify-center">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-25"></span>
-                            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-2xl">
-                              ✨
-                            </div>
+                        <div className="p-8 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-3">
+                          <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin mx-auto" />
+                          <div className="text-xs font-semibold text-slate-200">
+                            AI đang bóc tách mẫu lỗi & tạo bài tập riêng cho bạn...
                           </div>
-                          <div className="space-y-1">
-                            <div className="text-sm font-bold text-white">
-                              {aiDrillMode === 'numpad'
-                                ? 'AI đang phân tích các phím số và thiết lập bài luyện Numpad...'
-                                : 'AI đang phân tích toàn diện lịch sử ván đấu...'}
-                            </div>
-                            <p className="text-xs text-slate-400 max-w-md mx-auto">
-                              {aiDrillMode === 'numpad'
-                                ? 'Đang lọc các chữ số bị gõ trượt và tổng hợp danh sách chuỗi số luyện cơ bàn tay chuẩn xác.'
-                                : 'Đang đối chiếu các phím bấm sai, phân tích cụm âm tiết và soạn thảo danh sách từ luyện tập đặc trị riêng cho ngón tay của bạn.'}
-                            </p>
-                          </div>
+                          <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                            Đang đối chiếu các chuỗi gõ sai và tổng hợp danh sách từ đặc trị giúp tái tạo trí nhớ cơ bắp.
+                          </p>
                         </div>
                       )}
 
                       {/* Error State */}
                       {aiError && !isLoadingAiPractice && (
-                        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                            <span>{aiError}</span>
-                          </div>
+                        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between gap-3">
+                          <span>{aiError}</span>
                           <button
                             type="button"
                             onClick={() => handleGenerateAiPractice(true)}
-                            className="h-8 px-3 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold cursor-pointer"
+                            className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-medium"
                           >
                             Thử lại
                           </button>
                         </div>
                       )}
 
-                      {/* AI Content Result */}
+                      {/* Content State */}
                       {aiPracticeResult && !isLoadingAiPractice && (
-                        <div className="space-y-4 animate-fadeIn">
-                          {/* 1. Deep AI Diagnostics Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 flex flex-col justify-between shadow-sm">
-                              <div className="space-y-1">
-                                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <Target className="w-3.5 h-3.5 text-rose-400" />
-                                  <span>Mẫu Lỗi Chi Phối</span>
-                                </div>
-                                <div className="text-sm font-black text-rose-300">
-                                  {aiPracticeResult.analysis?.dominantErrorPattern ||
-                                    (aiDrillMode === 'numpad'
-                                      ? 'Trượt phím số xa & nhịp bấm Numpad'
-                                      : 'Lỗi nhịp phím & thanh điệu')}
-                                </div>
-                              </div>
-                              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-                                {aiDrillMode === 'numpad'
-                                  ? 'Tần suất ngón tay bị với quá đà sang các phím số liền kề khi gõ liên tiếp.'
-                                  : 'Xác định qua chuỗi bấm phím sai và tần suất sửa phím (Backspace) liên tiếp.'}
-                              </p>
+                        <div className="space-y-4">
+                          {/* Diagnostic Cards */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                              <span className="text-[11px] text-slate-500 font-medium block">Mẫu Lỗi Chi Phối</span>
+                              <span className="text-sm font-bold text-rose-300 block">
+                                {aiPracticeResult.analysis?.dominantErrorPattern || 'Trượt phím & nhịp bàn tay'}
+                              </span>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 flex flex-col justify-between shadow-sm">
-                              <div className="space-y-1.5">
-                                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <Keyboard className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>{aiDrillMode === 'numpad' ? 'Cụm Số Cần Tăng Cường' : 'Cụm Phím Cần Tăng Cường'}</span>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {(aiPracticeResult.analysis?.targetClusters && aiPracticeResult.analysis.targetClusters.length > 0
-                                    ? aiPracticeResult.analysis.targetClusters
-                                    : aiDrillMode === 'numpad'
-                                    ? ['Hàng 7-8-9', 'Phím 5 có gờ', 'Phím 0 ngón cái', 'Phím / * - +']
-                                    : ['ngh', 'kho', 'uyên', 'iêng', 'dấu ngã']
-                                  ).map((cluster, i) => (
-                                    <span
-                                      key={i}
-                                      className="px-2.5 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono font-bold text-xs"
-                                    >
-                                      {cluster}
-                                    </span>
-                                  ))}
-                                </div>
+                            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                              <span className="text-[11px] text-slate-500 font-medium block">Cụm Phím Cần Tăng Cường</span>
+                              <div className="flex flex-wrap gap-1">
+                                {(aiPracticeResult.analysis?.targetClusters && aiPracticeResult.analysis.targetClusters.length > 0
+                                  ? aiPracticeResult.analysis.targetClusters
+                                  : ['ngh', 'uyên', 'iêng', 'dấu ngã']
+                                ).map((cl, i) => (
+                                  <span key={i} className="text-xs font-mono font-bold text-amber-300 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                                    {cl}
+                                  </span>
+                                ))}
                               </div>
-                              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-                                {aiDrillMode === 'numpad'
-                                  ? 'Các vị trí số có độ trễ vươn tay lớn nhất cần tập trung rèn phản xạ.'
-                                  : 'Các tổ hợp phím có thời gian phản ứng lâu hoặc hay bị gõ đảo thứ tự.'}
-                              </p>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 flex flex-col justify-between shadow-sm">
-                              <div className="space-y-1">
-                                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                                  <span>Điểm Khựng Nghiêm Trọng</span>
-                                </div>
-                                <div className="text-sm font-bold text-cyan-300 font-mono">
-                                  {selectedMatch?.slowestWord
-                                    ? `"${selectedMatch.slowestWord.word}" (${(selectedMatch.slowestWord.pauseMs / 1000).toFixed(2)}s)`
-                                    : historyAggregate.slowestWords[0]
-                                    ? `"${historyAggregate.slowestWords[0].word}" (${(historyAggregate.slowestWords[0].pauseMs / 1000).toFixed(2)}s)`
-                                    : 'Nhịp gõ khá đồng đều'}
-                                </div>
-                              </div>
-                              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-                                Vị trí ngón tay bị khập khiễng, khiến nhịp WPM tổng thể bị sụt giảm.
-                              </p>
+                            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                              <span className="text-[11px] text-slate-500 font-medium block">Điểm Khựng Nghiêm Trọng</span>
+                              <span className="text-xs font-mono font-medium text-cyan-300 block truncate">
+                                {selectedMatch?.slowestWord
+                                  ? `"${selectedMatch.slowestWord.word}" (~${(selectedMatch.slowestWord.pauseMs / 1000).toFixed(2)}s)`
+                                  : 'Nhịp gõ khá đồng đều'}
+                              </span>
                             </div>
                           </div>
 
-                          {/* 2. AI Coach In-depth Analysis & Technical Advice */}
-                          <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3 shadow-md">
-                            <div className="flex items-center gap-2">
-                              <Lightbulb className="w-4 h-4 text-amber-400" />
-                              <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider">
-                                Nhận Định & Lời Khuyên Huấn Luyện Viên
-                              </h4>
-                            </div>
-
-                            {aiPracticeResult.analysis?.overview && (
-                              <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                                {aiPracticeResult.analysis.overview}
+                          {/* Coach Advice */}
+                          {aiPracticeResult.analysis?.coachAdvice && (
+                            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 space-y-1">
+                              <span className="font-semibold text-emerald-400 block">Kỹ thuật khắc phục đề xuất:</span>
+                              <p className="text-[11px] text-slate-400 leading-relaxed">
+                                {aiPracticeResult.analysis.coachAdvice}
                               </p>
-                            )}
+                            </div>
+                          )}
 
-                            {aiPracticeResult.analysis?.coachAdvice && (
-                              <div className="flex items-start gap-2.5 text-xs text-emerald-300 bg-emerald-950/30 p-3 rounded-xl border border-emerald-500/30">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                                <div>
-                                  <strong className="text-emerald-200">Kỹ thuật khắc phục đề xuất: </strong>
-                                  <span>{aiPracticeResult.analysis.coachAdvice}</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {aiPracticeResult.analysis?.keyWeaknesses && aiPracticeResult.analysis.keyWeaknesses.length > 0 && (
-                              <div className="space-y-1.5 pt-1">
-                                <div className="text-[11px] font-bold text-slate-400">Các lỗi đã được khoanh vùng xử lý:</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                  {aiPracticeResult.analysis.keyWeaknesses.map((w, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 flex items-center gap-2"
-                                    >
-                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-                                      <span className="truncate">{w}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* 3. Generated Practice Word Bank */}
-                          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 space-y-3.5 shadow-xl">
+                          {/* Practice Words Bank */}
+                          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="flex items-center gap-2">
-                                <Sparkles className="w-4 h-4 text-cyan-400" />
-                                <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                                  {aiDrillMode === 'numpad'
-                                    ? `Danh Sách Chuỗi Số Thực Hành Đặc Trị (${aiPracticeResult.practiceWords.length} chuỗi số)`
-                                    : `Danh Sách Từ Thực Hành Đặc Trị (${aiPracticeResult.practiceWords.length} từ)`}
-                                </h4>
+                              <div className="text-xs font-semibold text-white">
+                                Danh Sách Từ Luyện Tập ({aiPracticeResult.practiceWords.length} từ)
                               </div>
-
-                              {/* Standardized Button Toolbar */}
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={handleCopyPracticeWords}
-                                  className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer active:scale-95 shadow-sm"
-                                  title="Sao chép toàn bộ danh sách để luyện tập"
+                                  className="h-8 px-2.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
                                 >
-                                  {copiedPracticeWords ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  ) : (
-                                    <Copy className="w-3.5 h-3.5 text-slate-400" />
-                                  )}
-                                  <span>{copiedPracticeWords ? 'Đã Sao Chép' : 'Sao Chép Bộ Từ'}</span>
+                                  {copiedPracticeWords ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                                  <span>{copiedPracticeWords ? 'Đã sao chép' : 'Sao chép'}</span>
                                 </button>
 
                                 <button
                                   type="button"
                                   onClick={handleStartAiSoloGame}
-                                  className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/25 active:scale-95"
+                                  className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                                 >
                                   <Play className="w-3.5 h-3.5 fill-current" />
                                   <span>Vào Luyện Solo Ngay</span>
@@ -1714,21 +1583,11 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                               </div>
                             </div>
 
-                            <p className="text-[11px] text-slate-400">
-                              {aiDrillMode === 'numpad'
-                                ? 'Các chuỗi số này được thiết kế để rèn luyện trí nhớ cơ bắp ngón tay trên cụm bàn phím số Numpad hoặc hàng số máy tính.'
-                                : 'Các từ này được tối ưu nhằm bắt các ngón tay lặp lại chính xác các mẫu phím sai, giúp hình thành trí nhớ cơ bắp (muscle memory) chuẩn xác.'}
-                            </p>
-
-                            <div className="flex flex-wrap gap-2.5 p-4 rounded-2xl bg-slate-950 border border-slate-800/80 max-h-56 overflow-y-auto">
+                            <div className="flex flex-wrap gap-2 p-3.5 rounded-lg bg-slate-950 border border-slate-800 max-h-48 overflow-y-auto">
                               {aiPracticeResult.practiceWords.map((word, idx) => (
                                 <span
                                   key={idx}
-                                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-default select-all ${
-                                    aiDrillMode === 'numpad'
-                                      ? 'bg-cyan-950/40 hover:bg-cyan-900/50 border-cyan-500/30 text-cyan-200 font-mono tracking-wider shadow-sm'
-                                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700/80 text-amber-200'
-                                  }`}
+                                  className="px-2.5 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300 font-mono text-xs select-all"
                                 >
                                   {word}
                                 </span>
@@ -1740,7 +1599,9 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                     </div>
                   )}
 
-                  {/* TAB 6: HEAVENLY DAO ANALYSIS DASHBOARD */}
+                  {/* ============================================================= */}
+                  {/* TAB 5: HEAVENLY DAO CULTIVATION DASHBOARD */}
+                  {/* ============================================================= */}
                   {activeTab === 'heavenly_dao' && (
                     <HeavenlyDaoDashboard
                       analysis={
@@ -1771,14 +1632,16 @@ Lời khuyên: ${adviceList[0]?.tip || 'Luyện tập đều đặn để giữ 
                       }}
                     />
                   )}
+
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center p-8 text-center text-slate-400">
+              <div className="flex-1 flex items-center justify-center p-8 text-center text-slate-400 text-xs">
                 Chọn một ván đấu ở danh sách bên trái để xem phân tích chi tiết.
               </div>
             )}
-          </div>
+          </main>
+
         </div>
       </div>
     </div>

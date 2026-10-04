@@ -11,32 +11,14 @@ import { XIANXIA_ACHIEVEMENTS } from '../utils/achievements';
 import { updateUserProfile, getStoredAuthToken } from '../utils/auth';
 import { soundFx } from '../utils/audio';
 import { Sparkles, CheckCircle2, Gift, X } from 'lucide-react';
-
-// Lazy-loaded modal components for performance and code splitting
-const LeaderboardModal = React.lazy(() =>
-  import('./LeaderboardModal').then((m) => ({ default: m.LeaderboardModal }))
-);
-const AdminModal = React.lazy(() =>
-  import('./AdminModal').then((m) => ({ default: m.AdminModal }))
-);
-const ProfileModal = React.lazy(() =>
-  import('./ProfileModal').then((m) => ({ default: m.ProfileModal }))
-);
-const AppearanceModal = React.lazy(() =>
-  import('./AppearanceModal').then((m) => ({ default: m.AppearanceModal }))
-);
-const CultivationModal = React.lazy(() =>
-  import('./CultivationModal').then((m) => ({ default: m.CultivationModal }))
-);
-const AuthModal = React.lazy(() =>
-  import('./AuthModal').then((m) => ({ default: m.AuthModal }))
-);
-const JoinRoomModal = React.lazy(() =>
-  import('./JoinRoomModal').then((m) => ({ default: m.JoinRoomModal }))
-);
-const OnlineUsersModal = React.lazy(() =>
-  import('./OnlineUsersModal').then((m) => ({ default: m.OnlineUsersModal }))
-);
+import { LeaderboardModal } from './LeaderboardModal';
+import { AdminModal } from './AdminModal';
+import { ProfileModal } from './ProfileModal';
+import { AppearanceModal } from './AppearanceModal';
+import { CultivationModal } from './CultivationModal';
+import { AuthModal } from './AuthModal';
+import { JoinRoomModal } from './JoinRoomModal';
+import { OnlineUsersModal } from './OnlineUsersModal';
 
 export interface ModalContainerProps {
   // Modal visibility states

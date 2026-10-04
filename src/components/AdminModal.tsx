@@ -11,6 +11,8 @@ import { AdminRoomsTab } from './admin/AdminRoomsTab';
 import { AdminBroadcastTab } from './admin/AdminBroadcastTab';
 import { AdminBackupTab } from './admin/AdminBackupTab';
 import { AdminEconomyTab } from './admin/AdminEconomyTab';
+import { AdminDatabaseTab } from './admin/AdminDatabaseTab';
+import { AdminTitlesTab } from './admin/AdminTitlesTab';
 import { CustomNumberInput } from './CustomNumberInput';
 import { CustomCheckbox } from './CustomCheckbox';
 import { 
@@ -114,6 +116,7 @@ type AdminTab =
   | 'titles' 
   | 'tu_tien'
   | 'economy'
+  | 'database'
   | 'backup';
 type BasicSubTab = 'all' | 'vi_dau' | 'vi_nodau' | 'en' | 'numpad';
 
@@ -815,6 +818,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               >
                 <Coins className="w-3.5 h-3.5" />
                 <span>Kinh Tế & Chợ</span>
+              </button>
+
+              {/* Tab: Cơ Sở Dữ Liệu & CRUD Database */}
+              <button
+                id="tab-admin-database"
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('database');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'database'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 ring-1 ring-cyan-300'
+                    : 'text-cyan-400/80 hover:text-cyan-300 hover:bg-slate-800/80'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>Cơ Sở Dữ Liệu</span>
               </button>
 
               {/* Tab 7: Sao Lưu & Phục Hồi */}
@@ -2106,151 +2127,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               {/* TAB 6: BẢNG VÀNG & DANH HIỆU */}
               {/* ========================================================================= */}
               {activeTab === 'titles' && (
-                <div className="space-y-6">
-                  {/* Current Admin Title Preview */}
-                  <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/40 via-slate-950 to-slate-900 border-2 border-amber-500/50 flex flex-col sm:flex-row items-center gap-4 shadow-xl shadow-amber-500/10">
-                    <div className="relative w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center text-3xl border-2 border-amber-400 ring-4 ring-amber-400/40 ring-offset-2 ring-offset-slate-950 shadow-[0_0_25px_rgba(251,191,36,0.7)] animate-pulse">
-                      👑
-                      <div className="absolute -top-2 -right-2 p-1 rounded-full bg-amber-400 text-black shadow-lg z-30 flex items-center justify-center">
-                        <Crown className="w-3.5 h-3.5 fill-black" />
-                      </div>
-                    </div>
-
-                    <div className="flex-1 text-center sm:text-left">
-                      <div className="inline-block text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 mb-1">
-                        {ADMIN_TITLE.tag}
-                      </div>
-                      <h4 className="text-base font-black text-amber-400">
-                        {ADMIN_TITLE.name}
-                      </h4>
-                      <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                        &ldquo;{ADMIN_TITLE.description}&rdquo;
-                      </p>
-                      <div className="text-xs text-amber-300/80 font-semibold mt-1">
-                        Trạng thái tài khoản ({currentUsername}): <span className="text-emerald-400 font-bold">ĐÃ KÍCH HOẠT KHUNG ADMIN TRONG PHÒNG CHỜ</span>
-                      </div>
-                    </div>
-
-                    {/* Master Reset All Leaderboard Button */}
-                    <button
-                      type="button"
-                      onClick={handleResetAllLeaderboard}
-                      className="px-3.5 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 hover:text-rose-100 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Đặt Lại Toàn Bộ Bảng Vàng</span>
-                    </button>
-                  </div>
-
-                  {/* Mode Champion Titles List & Reset Per Mode */}
-                  <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                        Danh Sách Quán Quân & Đặt Lại Từng Chế Độ:
-                      </h4>
-                      <span className="text-xs text-amber-400 font-medium">
-                        Có thể nhấn nút "Đặt Lại" riêng cho từng chế độ bên dưới
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      {Object.entries(CHAMPION_TITLES).map(([modeKey, titleData]) => {
-                        const score = editableHighScores[modeKey];
-                        const holderName = score?.displayName || score?.username || 'Chưa xác lập';
-
-                        return (
-                          <div
-                            key={modeKey}
-                            className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between gap-3 hover:border-slate-700 transition-all"
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className={`w-12 h-12 rounded-xl bg-slate-900 border flex items-center justify-center text-2xl shrink-0 ${titleData.borderClass}`}>
-                                {titleData.badge}
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className={`text-xs font-black truncate ${titleData.colorClass}`}>
-                                    {titleData.name}
-                                  </span>
-                                  <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700 shrink-0">
-                                    {titleData.modeName}
-                                  </span>
-                                </div>
-
-                                <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
-                                  <span>Quán quân:</span>
-                                  <input
-                                    type="text"
-                                    value={holderName}
-                                    onChange={(e) => {
-                                      const newName = e.target.value;
-                                      setEditableHighScores((prev) => ({
-                                        ...prev,
-                                        [modeKey]: {
-                                          username: prev[modeKey]?.username || newName,
-                                          displayName: newName,
-                                          wpm: prev[modeKey]?.wpm || 100,
-                                          score: prev[modeKey]?.score || 0,
-                                          errors: 0,
-                                          timestamp: Date.now(),
-                                        },
-                                      }));
-                                    }}
-                                    className="px-2 py-0.5 bg-slate-900 border border-slate-700 rounded text-amber-400 font-bold text-xs max-w-[130px]"
-                                  />
-                                  <button
-                                    type="button"
-                                    title="Gán quán quân cho tôi"
-                                    onClick={() => {
-                                      soundFx.playKeyClick();
-                                      const myPlayerName = (currentUser as any)?.displayName || currentUser?.username || currentUsername;
-                                      setEditableHighScores((prev) => ({
-                                        ...prev,
-                                        [modeKey]: {
-                                          username: currentUser?.username || currentUsername,
-                                          displayName: myPlayerName,
-                                          wpm: 125,
-                                          score: 999,
-                                          errors: 0,
-                                          timestamp: Date.now(),
-                                        },
-                                      }));
-                                    }}
-                                    className="text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/40 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer"
-                                  >
-                                    Gán tôi
-                                  </button>
-                                </div>
-
-                                <p className="text-[10px] text-slate-500 mt-1 italic line-clamp-1">
-                                  &ldquo;{titleData.description}&rdquo;
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Nút đặt lại bảng vàng riêng cho chế độ này */}
-                            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                              <span className="text-[10px] text-slate-500">
-                                {score ? `Kỷ lục: ${score.wpm} WPM` : 'Chưa có kỷ lục'}
-                              </span>
-
-                              <button
-                                id={`btn-reset-leaderboard-${modeKey}`}
-                                type="button"
-                                onClick={() => handleResetSingleLeaderboard(modeKey, titleData.modeName)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-700 text-rose-300 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                              >
-                                <RotateCcw className="w-3 h-3 text-rose-400" />
-                                <span>Đặt Lại Màn Này</span>
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
+                <AdminTitlesTab
+                  highScores={editableHighScores}
+                  onUpdateHighScores={setEditableHighScores}
+                  onResetLeaderboard={onResetLeaderboard}
+                  currentUsername={currentUsername}
+                  currentUser={currentUser}
+                  showToast={showToast}
+                />
               )}
 
               {/* ========================================================================= */}
@@ -2273,6 +2157,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               {/* ========================================================================= */}
               {activeTab === 'economy' && (
                 <AdminEconomyTab />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB: QUẢN TRỊ CƠ SỞ DỮ LIỆU & CRUD DATABASE */}
+              {/* ========================================================================= */}
+              {activeTab === 'database' && (
+                <AdminDatabaseTab showToast={showToast} />
               )}
 
               {/* ========================================================================= */}

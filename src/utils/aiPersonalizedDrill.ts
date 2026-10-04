@@ -237,24 +237,24 @@ export function detectWeakClusters(
     .filter(([_, score]) => score > 0)
     .slice(0, 4);
 
-  // Nếu không đủ dữ liệu lỗi (người chơi mới hoặc gõ quá ít lỗi), chọn mặc định các cụm kinh điển
+  // Nếu không có hoặc quá ít dữ liệu lỗi sai thực tế
   if (sortedClusters.length < 2) {
-    if (!sortedClusters.some(([k]) => k === 'ngh')) sortedClusters.push(['ngh', 3]);
-    if (!sortedClusters.some(([k]) => k === 'qu')) sortedClusters.push(['qu', 3]);
-    if (!sortedClusters.some(([k]) => k === 'uyên')) sortedClusters.push(['uyên', 2]);
+    if (!sortedClusters.some(([k]) => k === 'ngh')) sortedClusters.push(['ngh', clusterScores['ngh'] || 0]);
+    if (!sortedClusters.some(([k]) => k === 'qu')) sortedClusters.push(['qu', clusterScores['qu'] || 0]);
+    if (sortedClusters.length < 2 && !sortedClusters.some(([k]) => k === 'uyên')) sortedClusters.push(['uyên', clusterScores['uyên'] || 0]);
   }
 
   return sortedClusters.map(([clusterKey, score]) => {
     const info = CLUSTER_DICTIONARY[clusterKey] || {
       label: `Cụm phím ${clusterKey.toUpperCase()}`,
-      description: 'Cần luyện tập điều hòa nhịp ngón tay',
+      description: 'Luyện tập điều hòa nhịp ngón tay',
       words: ['nhịp', 'chậm', 'đều', 'tay'],
     };
     return {
       cluster: clusterKey,
       label: info.label,
       errorCount: score,
-      description: info.description,
+      description: score > 0 ? info.description : `Bài tập rèn luyện nhịp lướt cho ${info.label}`,
       sampleWords: info.words.slice(0, 5),
     };
   });
@@ -262,7 +262,7 @@ export function detectWeakClusters(
 
 /**
  * Trình sinh bài tập cá nhân hóa thông minh cục bộ (Algorithmic Local Generator)
- * Đảm bảo 100% luôn hoạt động mượt mà, tức thời, không phụ thuộc mạng
+ * Đảm bảo 100% luôn hoạt động mượt mà, tức thời, không đưa số liệu ảo
  */
 export function generateAlgorithmicDrill(
   mistakes: MistakeDetail[],
@@ -277,6 +277,8 @@ export function generateAlgorithmicDrill(
     mode.includes('numpad') ||
     mode.includes('số');
 
+  const totalMistakes = mistakes.reduce((sum, m) => sum + (m.count || 1), 0);
+
   if (isNumberMode) {
     const numberPool = [
       '1024', '58008', '2026', '9876', '1234', '5050', '31415', '92653',
@@ -285,36 +287,76 @@ export function generateAlgorithmicDrill(
       '128', '256', '512', '1000', '9999', '8888', '7777', '6543', '2109'
     ];
 
+    // Tính số lỗi thực tế trên các hàng phím số
+    const topReachCount = commonErrorKeys
+      .filter((k) => ['7', '8', '9'].includes(String(k.key)))
+      .reduce((sum, k) => sum + (k.count || 1), 0);
+    const homeAnchorCount = commonErrorKeys
+      .filter((k) => ['4', '5', '6'].includes(String(k.key)))
+      .reduce((sum, k) => sum + (k.count || 1), 0);
+    const bottomReachCount = commonErrorKeys
+      .filter((k) => ['0', '1', '2', '3', '.', '+', '-', '*', '/'].includes(String(k.key)))
+      .reduce((sum, k) => sum + (k.count || 1), 0);
+
     const numClusters: AiDrillCluster[] = [
       {
         cluster: 'num_top_reach',
         label: 'Hàng Phím Số 7-8-9 (Tầm Với Xa)',
-        errorCount: 6,
-        description: 'Vươn ngón tay trượt các phím góc trên của bàn phím số khi tăng tốc độ.',
+        errorCount: topReachCount,
+        description: topReachCount > 0
+          ? `Ghi nhận ${topReachCount} lần bấm lệch/trượt các phím 7, 8, 9 khi đẩy tốc độ.`
+          : 'Luyện tầm với dứt khoát lên hàng số trên cùng mà không nhấc cả cổ tay.',
         sampleWords: ['789', '987', '7410', '9630'],
       },
       {
         cluster: 'num_home_anchor',
         label: 'Phím 5 Numpad & Trục Định Vị',
-        errorCount: 5,
-        description: 'Cần duy trì cảm nhận điểm gờ xúc giác trên phím 5 để cố định bàn tay.',
+        errorCount: homeAnchorCount,
+        description: homeAnchorCount > 0
+          ? `Ghi nhận ${homeAnchorCount} lần lệch tâm ở hàng phím số trung tâm (4, 5, 6).`
+          : 'Duy trì cảm nhận điểm gờ xúc giác trên phím 5 để định vị toàn bộ bàn phím số.',
         sampleWords: ['5050', '58008', '512', '4567'],
       },
       {
         cluster: 'num_transposition',
-        label: 'Đảo Thứ Tự Chữ Số (Lướt Nhanh)',
-        errorCount: 4,
-        description: 'Tranh chấp nhịp bấm các ngón tay khi gõ liên hoàn chuỗi 4 chữ số.',
+        label: 'Tổ Hợp Phím Số Gia Tốc',
+        errorCount: bottomReachCount,
+        description: bottomReachCount > 0
+          ? `Ghi nhận ${bottomReachCount} lần khựng hoặc sai ở các phím số góc dưới & phím 0.`
+          : 'Luyện phản xạ gõ liên hoàn chuỗi đa chữ số với nhịp tay ổn định.',
         sampleWords: ['1024', '2026', '31415', '92653'],
       },
     ];
 
+    // Thu thập danh sách từ luyện: Ưu tiên các chuỗi số sai thực tế
+    const actualMistakeNums = mistakes
+      .map((m) => String(m.original || '').trim().replace(/[^\d+\-*/=.]/g, ''))
+      .filter((s) => s.length >= 1 && /\d/.test(s));
+
+    const drillWords: string[] = [];
+    actualMistakeNums.forEach((n) => {
+      if (!drillWords.includes(n)) drillWords.push(n);
+    });
+    numberPool.forEach((n) => {
+      if (drillWords.length < 30 && !drillWords.includes(n)) {
+        drillWords.push(n);
+      }
+    });
+
+    const isFlawless = totalMistakes === 0;
+
     return {
-      title: 'Bài Tập Luyện Bàn Phím Số Cá Nhân Hóa (Number Drill)',
-      subtitle: 'Đặc trị tốc độ Numpad & định vị hàng phím số 0-9',
-      diagnosis: 'Hệ thống nhận diện bạn cần củng cố cảm giác vươn ngón tay lên các phím số xa (7, 8, 9) và duy trì phím 5 làm trục xoay định vị.',
+      title: isFlawless
+        ? 'Bài Tập Luyện Bàn Phím Số Gia Tốc (Flawless Number Flow)'
+        : 'Bài Tập Luyện Bàn Phím Số Cá Nhân Hóa (Number Drill)',
+      subtitle: isFlawless
+        ? 'Phong độ chuẩn xác 100% (0 lỗi)! Bài tập nâng cao tốc độ & nhịp Numpad'
+        : `Khắc phục ${totalMistakes} lỗi bấm phím số dựa trên dữ liệu thi đấu thực tế`,
+      diagnosis: isFlawless
+        ? 'Thần thức chuẩn xác tuyệt đối! Không phát hiện lỗi bấm sai trong dữ liệu thi đấu số. Bài tập 30 chuỗi số dưới đây giúp bạn bứt phá ngưỡng WPM cao hơn.'
+        : `Hệ thống ghi nhận ${totalMistakes} lỗi phát sinh, tập trung vào tầm với hàng số và định vị trục phím 5. Danh sách bài tập được cá nhân hóa để khắc phục ngay các lỗi này.`,
       focalClusters: numClusters,
-      drillWords: numberPool.slice(0, 30),
+      drillWords: drillWords.slice(0, 30),
       coachingAdvice: [
         'Lấy phím số 5 (có gờ nổi) làm tâm định vị: Luôn để ngón giữa cảm nhận phím 5 để các ngón khác vươn chính xác mà không cần nhìn.',
         'Nhịp thở đều đặn khi bấm số: Tránh gõ quá nhanh ở 2 số đầu rồi giật mình khựng lại ở số thứ 3.',
@@ -322,13 +364,12 @@ export function generateAlgorithmicDrill(
       ],
       source: 'algorithmic',
       createdAt: Date.now(),
-      totalMistakesAnalyzed: mistakes.length,
-      targetedKeySummary: 'Phím 5 gờ, Hàng 7-8-9, Phím 0',
+      totalMistakesAnalyzed: totalMistakes,
+      targetedKeySummary: actualMistakeNums.length > 0 ? actualMistakeNums.slice(0, 4).join(', ') : 'Phím 5 gờ, Hàng 7-8-9, Phím 0',
     };
   }
 
   const focalClusters = detectWeakClusters(mistakes, commonErrorKeys, frequentErrorWords);
-  const totalMistakes = mistakes.reduce((sum, m) => sum + m.count, 0);
 
   // Tập hợp danh sách từ mục tiêu từ các cụm yếu
   const wordPool: string[] = [];
@@ -366,20 +407,33 @@ export function generateAlgorithmicDrill(
     }
   }
 
+  const isFlawless = totalMistakes === 0;
   const primaryCluster = focalClusters[0]?.label || 'Tổ Hợp Phím Trọng Điểm';
   const secondaryCluster = focalClusters[1]?.label || 'Phản Xạ Ngón Út';
 
   const targetedKeySummary = focalClusters.map((c) => c.cluster.replace('pinky_', '').replace('tone_', '')).join(', ');
 
-  const title = `Bài Tập Luyện Cá Nhân Hóa: ${primaryCluster}`;
-  const subtitle = `Tập trung khắc phục cụm phím [${targetedKeySummary}] dựa trên ${totalMistakes} lỗi sai trong lịch sử`;
-  const diagnosis = `AI phát hiện bạn thường xuyên gặp độ khựng hoặc gõ chệch nhịp ở ${focalClusters.map((c) => c.label).join(' và ')}. Bài tập 30 từ dưới đây được thiết kế riêng để tái lập phản xạ cơ ngón tay cho bạn.`;
+  const title = isFlawless
+    ? 'Bài Tập Luyện Bứt Phá Giới Hạn Tốc Độ (Speed Flow Drill)'
+    : `Bài Tập Luyện Cá Nhân Hóa: ${primaryCluster}`;
+  const subtitle = isFlawless
+    ? 'Phong độ xuất sắc đạt 100% chuẩn xác (0 lỗi ghi nhận)'
+    : `Tập trung khắc phục cụm phím [${targetedKeySummary}] dựa trên ${totalMistakes} lỗi sai trong lịch sử`;
+  const diagnosis = isFlawless
+    ? 'Thần thức quán thông! Bạn không mắc bất kỳ lỗi gõ sai nào trong dữ liệu đấu vừa qua. Bài tập 30 từ nâng cao dưới đây giúp bạn rèn luyện phản xạ gia tốc trên các cụm từ vựng cấu trúc mở rộng.'
+    : `AI ghi nhận ${totalMistakes} lỗi phát sinh, chủ yếu ở các cụm ${focalClusters.map((c) => c.label).join(' và ')}. Bài tập 30 từ dưới đây được thiết kế riêng để tái lập phản xạ cơ ngón tay cho bạn.`;
 
-  const coachingAdvice = [
-    'Giữ nhịp thở đều: Thay vì vội vã nhấn nhanh ở các từ dễ, hãy duy trì tốc độ ổn định xuyên suốt để tránh vấp khi gặp từ phức tạp.',
-    'Thả lỏng cổ tay: Khi gõ các phím ngón út (P, Q) hoặc cụm âm dài (uyên, uông), hãy dùng lực xoay nhẹ của cổ tay thay vì gồng cứng cơ ngón.',
-    'Quy tắc Telex chuẩn: Gõ trọn vẹn toàn bộ các chữ cái phụ âm và nguyên âm trước, sau đó mới bấm phím dấu thanh ở cuối từ.',
-  ];
+  const coachingAdvice = isFlawless
+    ? [
+        'Duy trì tâm thế bình thản: Giữ nhịp thở đều, thả lỏng ngón tay để nhịp gõ diễn ra như một dòng chảy tự nhiên.',
+        'Thử thách tốc độ mới: Chủ động đẩy nhanh 5 - 10 WPM trên các từ quen thuộc trong bài tập.',
+        'Độ chính xác là nền tảng: Luôn kiểm soát lực gõ ngón tay để bảo toàn tỷ lệ 100% khi bứt tốc.',
+      ]
+    : [
+        'Giữ nhịp thở đều: Thay vì vội vã nhấn nhanh ở các từ dễ, hãy duy trì tốc độ ổn định xuyên suốt để tránh vấp khi gặp từ phức tạp.',
+        'Thả lỏng cổ tay: Khi gõ các phím ngón út (P, Q) hoặc cụm âm dài (uyên, uông), hãy dùng lực xoay nhẹ của cổ tay thay vì gồng cứng cơ ngón.',
+        'Quy tắc Telex chuẩn: Gõ trọn vẹn toàn bộ các chữ cái phụ âm và nguyên âm trước, sau đó mới bấm phím dấu thanh ở cuối từ.',
+      ];
 
   return {
     title,

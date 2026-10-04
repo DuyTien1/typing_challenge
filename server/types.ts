@@ -44,6 +44,25 @@ export interface GameRoom {
   mysteryWords?: any[];
 }
 
+export interface ServerSectRecord {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  leaderId: string;
+  leaderName: string;
+  leaderAvatar?: string;
+  leaderFrame?: string;
+  leaderRealmName?: string;
+  leaderLevel?: number;
+  linhMachLevel?: number;
+  totalContribution?: number;
+  memberCount?: number;
+  totalTuVi?: number;
+  members?: any[];
+  [key: string]: any;
+}
+
 export interface ServerChatMessage {
   id: string;
   username: string;

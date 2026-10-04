@@ -19,11 +19,13 @@ import {
   Lock,
   Unlock,
   Coins,
-  Plus
+  Plus,
+  Crown
 } from 'lucide-react';
 import { soundFx } from '../../utils/audio';
 import { CultivationState, saveStoredCultivationState } from '../../utils/cultivation';
 import { getStoredAuthToken } from '../../utils/auth';
+import { AVATAR_FRAMES, AvatarWithFrame } from '../../utils/frames';
 
 export interface AdminUserData {
   id: string;
@@ -70,7 +72,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
   // Modal states for actions
   const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null);
-  const [actionType, setActionType] = useState<'ban' | 'reward' | 'reset_pwd' | 'delete' | null>(null);
+  const [actionType, setActionType] = useState<'ban' | 'reward' | 'reset_pwd' | 'delete' | 'set_frame' | null>(null);
+  const [selectedFrameId, setSelectedFrameId] = useState<string>('admin_gold');
 
   // Form states
   const [banDurationMinutes, setBanDurationMinutes] = useState(120); // 2 hours default
@@ -144,6 +147,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         }
         return u;
       }));
+    } else if (currentAction === 'set_frame') {
+      setUsers((prev) => prev.map((u) => {
+        if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
+          return { ...u, frame: selectedFrameId };
+        }
+        return u;
+      }));
     }
 
     try {
@@ -167,6 +177,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       } else if (currentAction === 'reset_pwd') {
         body.action = 'reset_password';
         body.newPassword = newPasswordInput;
+      } else if (currentAction === 'set_frame') {
+        body.action = 'set_frame';
+        body.frameId = selectedFrameId;
       } else if (currentAction === 'delete') {
         body.action = 'delete';
       }
@@ -521,6 +534,21 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     <span>Thưởng</span>
                   </button>
 
+                  {/* Gắn Khung Đại Diện */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUser(u);
+                      setSelectedFrameId(u.frame || 'admin_gold');
+                      setActionType('set_frame');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 hover:border-cyan-500/60 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                    title="Ban tặng khung viền đại diện (Avatar Frame)"
+                  >
+                    <Crown className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Khung</span>
+                  </button>
+
                   {/* Toggle Admin */}
                   {u.id !== 'usr_admin_default' && u.username !== 'admin' && (
                     <button
@@ -580,11 +608,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               <h5 className="font-bold text-sm text-white flex items-center gap-2">
                 {actionType === 'ban' && <ShieldAlert className="w-4 h-4 text-rose-500" />}
                 {actionType === 'reward' && <Gift className="w-4 h-4 text-amber-400" />}
+                {actionType === 'set_frame' && <Crown className="w-4 h-4 text-amber-400" />}
                 {actionType === 'reset_pwd' && <Key className="w-4 h-4 text-sky-400" />}
                 {actionType === 'delete' && <Trash2 className="w-4 h-4 text-rose-500" />}
                 <span>
                   {actionType === 'ban' && `Thi Hành Phạt: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'reward' && `Ban Thưởng: ${selectedUser.displayName || selectedUser.username}`}
+                  {actionType === 'set_frame' && `Gắn Khung Đại Diện: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'reset_pwd' && `Đặt Lại Mật Khẩu: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'delete' && `Xác Nhận Xóa Vĩnh Viễn: ${selectedUser.displayName || selectedUser.username}`}
                 </span>
@@ -842,6 +872,84 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   <p className="text-[10px] text-slate-500 mt-1">
                     Người chơi có thể đăng nhập bằng mật khẩu này và đổi lại trong mục Hồ Sơ.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* SET FRAME FORM */}
+            {actionType === 'set_frame' && (
+              <div className="space-y-4">
+                {/* Live Preview */}
+                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <AvatarWithFrame
+                      icon={selectedUser.avatar || '🧘'}
+                      frameId={selectedFrameId}
+                      size="lg"
+                      showBadge={true}
+                    />
+                    <div>
+                      <div className="text-xs font-black text-white">
+                        {selectedUser.displayName || selectedUser.username}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        @{selectedUser.username}
+                      </div>
+                      <div className="text-[10px] text-cyan-400 font-bold mt-0.5">
+                        Khung mới chọn: {selectedFrameId}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-500 block">Khung hiện tại:</span>
+                    <span className="text-xs font-mono text-slate-300 font-bold">{selectedUser.frame || 'default'}</span>
+                  </div>
+                </div>
+
+                {/* Dropdown */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-300">
+                    Chọn khung viền muốn ban tặng ({AVATAR_FRAMES.length} khung):
+                  </label>
+                  <select
+                    value={selectedFrameId}
+                    onChange={(e) => setSelectedFrameId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400"
+                  >
+                    {AVATAR_FRAMES.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        [{f.tag}] {f.name} - ID: {f.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Quick Frame Pills */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Khung nổi bật & Quán quân:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-900/60 rounded-xl border border-slate-800">
+                    {AVATAR_FRAMES.map((f) => {
+                      const isSelected = selectedFrameId === f.id;
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setSelectedFrameId(f.id)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                            isSelected
+                              ? 'bg-amber-400 text-slate-950 shadow-md font-black'
+                              : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                          }`}
+                        >
+                          <span>{f.badge || '🖼️'}</span>
+                          <span>{f.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}

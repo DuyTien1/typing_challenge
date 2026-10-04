@@ -20,6 +20,7 @@ import {
 } from './server/types';
 import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
 import { registerEconomyRoutes } from './server/economy';
+import { registerAdminDatabaseRoutes } from './server/adminDatabase';
 import {
   isDatabaseConfigured,
   initDatabase,
@@ -135,7 +136,7 @@ export function getVietnamWeekStr(): string {
   return `${d.getUTCFullYear()}-W${weekNo < 10 ? '0' : ''}${weekNo}`;
 }
 
-const VALID_LEADERBOARD_MODES = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'ngau_hung', 'doan_chu', 'san_boss'];
+const VALID_LEADERBOARD_MODES = ['vi_dau', 'vi_nodau', 'en', 'numpad', 'ngau_hung', 'doan_chu', 'san_boss', 'outplay'];
 
 function createEmptyLeaderboardData(): ServerMultiLeaderboard {
   const highScores: Record<string, ServerHighScoreRecord | null> = {};
@@ -5788,6 +5789,63 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       return;
     }
 
+    if (action === 'set_frame') {
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người chơi để gắn khung đại diện' });
+        return;
+      }
+      const frameId = String(req.body?.frameId || req.body?.frame || 'default').trim();
+      user.frame = frameId;
+      saveUsersToFile();
+
+      // Update in PostgreSQL Supabase
+      if (isDatabaseConfigured()) {
+        const p = getDbPool();
+        if (p) {
+          p.query('UPDATE app_users SET frame = $1 WHERE id = $2', [frameId, user.id]).catch((err) => {
+            console.error('[Database] Lỗi cập nhật khung cho user:', err?.message || err);
+          });
+        }
+      }
+
+      // Update active presence sessions
+      for (const session of activePresenceSessions.values()) {
+        if (session.userId === user.id || session.username.toLowerCase() === user.username.toLowerCase()) {
+          session.frame = frameId;
+        }
+      }
+
+      // Broadcast real-time updates to clients
+      try {
+        broadcastOnlinePresence();
+        broadcastLeaderboard();
+        broadcastToUser(user.username, { type: 'frame_updated', frame: frameId, userId: user.id });
+      } catch (bcErr) {
+        console.warn('[Admin] Lỗi broadcast frame update:', bcErr);
+      }
+
+      const targetDisplayName = user.displayName || user.username;
+
+      // Broadcast Heavenly Dao Event for high-tier frames
+      if (frameId.startsWith('top_') || frameId.startsWith('admin_') || frameId.startsWith('frame_kim_bang') || frameId.startsWith('frame_xianxia_')) {
+        broadcastHeavenlyDaoEvent({
+          title: 'THIÊN ĐẠO BAN KHUNG',
+          eventType: 'announcement',
+          targetUser: targetDisplayName,
+          content: `Quản Trị Viên đã ban thưởng khung viền [${frameId}] cho tu sĩ @${targetDisplayName}!`,
+          highlightText: `@${targetDisplayName} nhận khung [${frameId}]`,
+          personaId: 'chuong_mon',
+        });
+      }
+
+      res.json({
+        success: true,
+        frame: frameId,
+        message: `Đã gắn khung viền [${frameId}] cho tài khoản @${targetDisplayName} thành công!`,
+      });
+      return;
+    }
+
     if (action === 'reward') {
       if (!user) {
         res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người chơi để ban thưởng' });
@@ -8010,6 +8068,46 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     res.json({ success: true, highScores: serverLeaderboardData.highScores, rankings: serverLeaderboardData.rankings });
   });
 
+  // POST /api/leaderboard/admin-remove-ranking: Admin removes a specific ranking entry
+  app.post('/api/leaderboard/admin-remove-ranking', (req, res) => {
+    const { mode, period = 'all_time', username, userId } = req.body || {};
+    if (!mode || !VALID_LEADERBOARD_MODES.includes(mode)) {
+      res.status(400).json({ success: false, error: 'Chế độ không hợp lệ' });
+      return;
+    }
+
+    const periods = period === 'all' ? ['daily', 'weekly', 'all_time'] : [period];
+    let removedCount = 0;
+
+    for (const p of periods) {
+      const list = serverLeaderboardData.rankings[mode]?.[p as 'daily' | 'weekly' | 'all_time'] || [];
+      const cleanTarget = String(username || '').toLowerCase().trim();
+      const filtered = list.filter((item: any) => {
+        if (userId && item.userId === userId) return false;
+        if (cleanTarget && (item.username?.toLowerCase() === cleanTarget || item.displayName?.toLowerCase() === cleanTarget)) return false;
+        return true;
+      });
+      if (filtered.length !== list.length) {
+        removedCount += list.length - filtered.length;
+        if (serverLeaderboardData.rankings[mode]) {
+          serverLeaderboardData.rankings[mode][p as 'daily' | 'weekly' | 'all_time'] = filtered;
+        }
+      }
+    }
+
+    if (removedCount > 0) {
+      saveLeaderboardToFile();
+      broadcastLeaderboard();
+    }
+
+    res.json({
+      success: true,
+      removedCount,
+      message: `Đã xóa ${removedCount} bản ghi khỏi bảng xếp hạng ${mode}!`,
+      rankings: serverLeaderboardData.rankings[mode],
+    });
+  });
+
   // Helper fallback practice word builder
   function generateFallbackPracticeWords(mistakes: any[] = [], errorKeys: any[] = [], mode = 'vi_dau'): string[] {
     const pool = new Set<string>();
@@ -8126,7 +8224,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     return Array.from(pool).slice(0, 30);
   }
 
-  // Helper builder for Heavenly Dao Analysis Heuristics
+  // Helper builder for Heavenly Dao Analysis Heuristics grounded strictly in actual data
   function buildHeuristicDaoResponse(params: {
     realmName: string;
     tier: number;
@@ -8143,6 +8241,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     endgameErrors: number;
     allMistakes: any[];
     errorKeysMap: Record<string, number>;
+    avgRecoveryLatencyMs?: number;
+    cascadeErrorRate?: number;
     mode?: string;
   }) {
     const {
@@ -8161,6 +8261,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       endgameErrors,
       allMistakes,
       errorKeysMap,
+      avgRecoveryLatencyMs = 0,
+      cascadeErrorRate = 0,
       mode = 'vi_dau',
     } = params;
 
@@ -8177,14 +8279,53 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       modeStr.includes('số') ||
       Boolean(hasNumericMistakes);
 
-    const defaultErrorPatterns = isNumberMode
+    const hasRealErrors = safeTotal > 1 || (introErrors + accelErrors + sustainErrors + endgameErrors) > 0 || allMistakes.length > 0;
+
+    // Calculate real percentiles based on actual bracket
+    let bracketMin = 20, bracketMax = 45;
+    if (avgWpm >= 135) { bracketMin = 135; bracketMax = 200; }
+    else if (avgWpm >= 110) { bracketMin = 110; bracketMax = 135; }
+    else if (avgWpm >= 85) { bracketMin = 85; bracketMax = 110; }
+    else if (avgWpm >= 65) { bracketMin = 65; bracketMax = 85; }
+    else if (avgWpm >= 45) { bracketMin = 45; bracketMax = 65; }
+
+    const speedPercentile = Math.min(99, Math.max(10, Math.round(((avgWpm - bracketMin) / Math.max(1, bracketMax - bracketMin)) * 100)));
+    const accPercentile = Math.min(99, Math.max(10, Math.round(((avgAcc - 85) / 14) * 100)));
+    const consistencyPercentile = Math.min(99, Math.max(10, Math.round(((avgConsistency - 70) / 25) * 100)));
+    const recoveryPercentile = !hasRealErrors ? 99 : Math.min(99, Math.max(10, Math.round(((600 - Math.min(600, avgRecoveryLatencyMs)) / 450) * 100)));
+    const staminaScore = !hasRealErrors ? 100 : Math.max(40, Math.min(100, Math.round(100 - (endgameErrors / Math.max(1, safeTotal)) * 150)));
+    const breakthroughScore = Math.round((accPercentile * 0.4) + (speedPercentile * 0.3) + (consistencyPercentile * 0.3));
+    const overallPercentile = Math.round((speedPercentile + accPercentile + consistencyPercentile + recoveryPercentile) / 4);
+
+    const worstPhase = [
+      { name: 'Khởi Thức (0s - 15s)', count: introErrors },
+      { name: 'Tăng Tốc (15s - 35s)', count: accelErrors },
+      { name: 'Bình Ổn (35s - 50s)', count: sustainErrors },
+      { name: 'Về Đích (50s - 60s+)', count: endgameErrors },
+    ].sort((a, b) => b.count - a.count)[0];
+
+    const defaultErrorPatterns = !hasRealErrors
+      ? [
+          {
+            id: 'flawless_flow',
+            name: 'Thần Thức Thuần Khiết (Không Có Lỗi Sai)',
+            xianxiaTitle: 'Vô Tỳ Vết Kiếm Quyết',
+            frequency: 0,
+            percentage: 0,
+            description: 'Đạo hữu hoàn thành ván đấu với độ chuẩn xác tuyệt đối 100%, không ghi nhận phím sai hay động tác Backspace thừa.',
+            biomechanics: 'Đồng bộ hoàn hảo giữa tín hiệu vỏ não vận động và phản xạ mười đầu ngón tay.',
+            examples: ['100% chuẩn xác'],
+            severity: 'low' as const,
+          },
+        ]
+      : isNumberMode
       ? [
           {
             id: 'numpad_reach_slip',
             name: 'Trượt Phím Hàng Số / Numpad Xa',
             xianxiaTitle: 'Cửu Cung Thần Số Chướng',
-            frequency: Math.max(2, Math.round(safeTotal * 0.45)),
-            percentage: 45,
+            frequency: Math.max(1, accelErrors || Math.round(safeTotal * 0.45)),
+            percentage: Math.round(((accelErrors || 1) / Math.max(1, safeTotal)) * 100),
             description: 'Vươn ngón tay lên hàng phím số trên cùng hoặc gõ nhầm các phím góc xa (7, 8, 9, 0) trên Numpad.',
             biomechanics: 'Tầm với của ngón tay kéo căng cơ duỗi cổ tay, thiếu điểm tựa xúc giác định vị như phím 5.',
             examples: ['7 -> 8', '9 -> 6', '0 -> .'],
@@ -8194,23 +8335,12 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             id: 'digit_transposition',
             name: 'Đảo Thứ Tự Chữ Số (Tay Nhanh Hơn Não)',
             xianxiaTitle: 'Nghịch Chuyển Lục Hào Ma',
-            frequency: Math.max(2, Math.round(safeTotal * 0.3)),
+            frequency: Math.max(1, Math.round(safeTotal * 0.3)),
             percentage: 30,
             description: 'Gõ đảo vị trí 2 chữ số liền kề khi nhịp độ tăng tốc (ví dụ gõ 12 thành 21, 58 thành 85).',
             biomechanics: 'Mất cân bằng độ trễ vận động thần kinh khi gõ chuỗi số tốc độ cao.',
             examples: ['58 -> 85', '12 -> 21', '08 -> 80'],
             severity: 'medium' as const,
-          },
-          {
-            id: 'thumb_pinky_rhythm',
-            name: 'Khựng Nhịp Phím 0 / Enter / Phép Tính',
-            xianxiaTitle: 'Định Thần Khuyết Lực Ma',
-            frequency: Math.max(1, Math.round(safeTotal * 0.25)),
-            percentage: 25,
-            description: 'Ngón cái hoặc ngón út ấn phím 0 hoặc Space bị trễ nhịp so với các ngón trỏ và giữa.',
-            biomechanics: 'Phản xạ ngón cái và ngón út có độ linh hoạt thấp hơn ngón trỏ trên layout numpad.',
-            examples: ['0 hụt lực', 'chậm nhịp chuyển số'],
-            severity: 'low' as const,
           },
         ]
       : [
@@ -8218,8 +8348,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             id: 'telex_tone_clash',
             name: 'Xung đột Phím Dấu Telex',
             xianxiaTitle: 'Dấu Thanh Hỗn Loạn Chướng',
-            frequency: Math.max(2, Math.round(safeTotal * 0.4)),
-            percentage: 40,
+            frequency: Math.max(1, Math.round(safeTotal * 0.4)),
+            percentage: Math.round(((accelErrors || 1) / Math.max(1, safeTotal)) * 100),
             description: 'Gõ phím dấu thanh tiếng Việt (s, f, r, x, j, w) quá sớm khi nguyên âm trước chưa kịp ghi nhận.',
             biomechanics: 'Ngón tay lướt phím dấu trước khi ngón trỏ hoặc ngón giữa buông phím nguyên âm kế trước.',
             examples: ['thườg -> thường', 'nhiùe -> nhiều', 'nghĩn -> nghìn'],
@@ -8229,23 +8359,12 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             id: 'transposition_rush',
             name: 'Đảo Ký Tự Tay Nhanh Hơn Não',
             xianxiaTitle: 'Tâm Gấp Khí Loạn Ma',
-            frequency: Math.max(2, Math.round(safeTotal * 0.3)),
+            frequency: Math.max(1, Math.round(safeTotal * 0.3)),
             percentage: 30,
             description: 'Hoán vị thứ tự 2 ký tự liền nhau do tay phải xuất chiêu trước tay trái.',
             biomechanics: 'Mất cân bằng độ trễ vận động thần kinh giữa hai bán cầu não khi gõ từ quen thuộc.',
             examples: ['ch -> hc', 'ng -> gn', 'th -> ht'],
             severity: 'medium' as const,
-          },
-          {
-            id: 'pinky_slip',
-            name: 'Trượt Phím Rìa Ngoài Ngón Út',
-            xianxiaTitle: 'Ngón Út Khuyết Lực Ma',
-            frequency: Math.max(1, Math.round(safeTotal * 0.2)),
-            percentage: 20,
-            description: 'Các phím nằm ở góc xa (P, Q, Z, [, ], Shift) bị hụt lực hoặc chạm nhầm phím liền kề.',
-            biomechanics: 'Cơ duỗi ngón út có tầm với xa nhất và lực ấn yếu nhất trên bàn phím.',
-            examples: ['p -> o', 'q -> w', 'z -> a'],
-            severity: 'low' as const,
           },
         ];
 
@@ -8285,21 +8404,29 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         tier,
         subStage,
         currentWpm: avgWpm,
-        wpmBracket: `${realmName} (${Math.max(20, avgWpm - 10)} - ${avgWpm + 15} WPM)`,
+        wpmBracket: `${realmName} (${bracketMin} - ${bracketMax} WPM)`,
       },
       overallVerdict: {
         title: isNumberMode
           ? `Thiên Đạo Phán Quyết: Toán Pháp Đạo Cơ ${realmName} ${subStage}`
           : `Thiên Đạo Phán Quyết: Đạo Cơ ${realmName} ${subStage}`,
-        summary: isNumberMode
+        summary: !hasRealErrors
+          ? `Quan trắc qua ${count} ván đấu, thần thức ghi nhận tốc độ trung bình ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác tuyệt đối 100%! Đạo cơ hoàn mỹ, xuất chiêu không tỳ vết.`
+          : isNumberMode
           ? `Quan trắc qua ${count} ván đấu bàn phím số, tốc độ trung bình đạt ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Bạn kiểm soát các phím số rất tốt song đang gặp bình cảnh do nhịp vươn ngón tay ở các phím số xa.`
-          : `Quan trắc qua ${count} ván đấu, tốc độ trung bình đạt ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Bạn đang ở nửa trên của phân khúc trình độ hiện tại, song đang gặp bình cảnh do nhịp phím tại giai đoạn tăng tốc.`,
-        tamMaName: isNumberMode ? 'Tâm Ma Thần Số (Nôn Nóng Bấm Số)' : 'Tâm Gấp Khí Loạn (Vội Vàng Xuất Chiêu)',
-        tamMaDescription: isNumberMode
+          : `Quan trắc qua ${count} ván đấu, tốc độ trung bình đạt ${avgWpm} WPM (Đỉnh: ${peakWpm} WPM) với độ chuẩn xác ${avgAcc}%. Người chơi thuộc tốp trên của cảnh giới này, song đang gặp bình cảnh do phân tán nhịp gõ tại giai đoạn ${worstPhase.name}.`,
+        tamMaName: !hasRealErrors
+          ? 'Vô Ma Khuyết (Tâm Pháp Thuần Khiết)'
+          : isNumberMode
+          ? 'Tâm Ma Thần Số (Nôn Nóng Bấm Số)'
+          : 'Tâm Gấp Khí Loạn (Vội Vàng Xuất Chiêu)',
+        tamMaDescription: !hasRealErrors
+          ? 'Đạo tâm kiên định, các ngón tay lướt trên bàn phím chuẩn xác 100%. Không phát hiện lỗi sai hay tâm ma cản trở.'
+          : isNumberMode
           ? 'Lỗi phát sinh chủ yếu khi cố bứt tốc gõ chuỗi số liên tiếp làm ngón tay trượt sang phím số liền kề trên bàn phím số.'
           : 'Lỗi phát sinh chủ yếu khi cố gắng bứt tốc gõ nhanh hơn ngưỡng phản xạ an toàn của ngón tay, gây ra chuỗi Backspace làm gián đoạn nhịp thở.',
-        overallPercentile: Math.min(95, Math.max(25, Math.round((avgWpm / 110) * 80))),
-        breakthroughReadiness: Math.min(95, Math.max(30, Math.round((avgAcc / 100) * 85))),
+        overallPercentile,
+        breakthroughReadiness: breakthroughScore,
       },
       errorPatterns: defaultErrorPatterns,
       timingAnalysis: {
@@ -8310,9 +8437,9 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             xianxiaPhase: 'Sơ Khai Định Thần',
             timeRange: '0s - 15s (25% đầu ván)',
             errorCount: introErrors,
-            errorPercentage: Math.round((introErrors / safeTotal) * 100),
-            description: 'Bàn tay chưa đủ độ ấm, vội vàng gõ từ đầu tiên dẫn đến lệch nhịp.',
-            riskLevel: introErrors / safeTotal > 0.3 ? 'cao' : 'thap',
+            errorPercentage: Math.round((introErrors / Math.max(1, safeTotal)) * 100),
+            description: introErrors === 0 ? 'Khai màn ổn định, không có lỗi.' : 'Bàn tay chưa đủ độ ấm, vội vàng gõ từ đầu tiên dẫn đến lệch nhịp.',
+            riskLevel: introErrors / Math.max(1, safeTotal) > 0.3 ? 'cao' : 'thap',
           },
           {
             phaseId: 'acceleration',
@@ -8320,9 +8447,9 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             xianxiaPhase: 'Cực Hạn Bứt Phá',
             timeRange: '15s - 35s (Giai đoạn đẩy WPM)',
             errorCount: accelErrors,
-            errorPercentage: Math.round((accelErrors / safeTotal) * 100),
-            description: 'Cố gắng đẩy WPM vượt quá ngưỡng phản xạ an toàn của ngón tay.',
-            riskLevel: accelErrors / safeTotal > 0.3 ? 'cao' : 'trung_binh',
+            errorPercentage: Math.round((accelErrors / Math.max(1, safeTotal)) * 100),
+            description: accelErrors === 0 ? 'Bứt tốc chuẩn xác.' : 'Cố gắng đẩy WPM vượt quá ngưỡng phản xạ an toàn của ngón tay.',
+            riskLevel: accelErrors / Math.max(1, safeTotal) > 0.3 ? 'cao' : 'trung_binh',
           },
           {
             phaseId: 'sustain',
@@ -8330,8 +8457,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             xianxiaPhase: 'Đạo Tâm Trì Trệ',
             timeRange: '35s - 50s (Duy trì nhịp)',
             errorCount: sustainErrors,
-            errorPercentage: Math.round((sustainErrors / safeTotal) * 100),
-            description: 'Lỗi xuất hiện sau các từ dài hoặc khi đổi dòng văn bản.',
+            errorPercentage: Math.round((sustainErrors / Math.max(1, safeTotal)) * 100),
+            description: sustainErrors === 0 ? 'Nhịp điệu đều đặn.' : 'Lỗi xuất hiện sau các từ dài hoặc khi đổi dòng văn bản.',
             riskLevel: 'thap',
           },
           {
@@ -8340,18 +8467,20 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             xianxiaPhase: 'Linh Khí Khô Kiệt',
             timeRange: '50s - 60s+ (Rút đích)',
             errorCount: endgameErrors,
-            errorPercentage: Math.round((endgameErrors / safeTotal) * 100),
-            description: 'Mỏi cơ cổ tay hoặc nôn nóng nhìn đồng hồ đếm ngược.',
-            riskLevel: endgameErrors / safeTotal > 0.28 ? 'cao' : 'trung_binh',
+            errorPercentage: Math.round((endgameErrors / Math.max(1, safeTotal)) * 100),
+            description: endgameErrors === 0 ? 'Duy trì thể lực tuyệt đối đến cuối.' : 'Mỏi cơ cổ tay hoặc nôn nóng nhìn đồng hồ đếm ngược.',
+            riskLevel: endgameErrors / Math.max(1, safeTotal) > 0.28 ? 'cao' : 'trung_binh',
           },
         ],
-        criticalMomentVerdict: `Thời điểm phát sinh lỗi nhiều nhất tập trung ở giai đoạn ${accelErrors >= introErrors && accelErrors >= endgameErrors ? 'Tăng Tốc (15s - 35s)' : 'Về Đích (50s - 60s+)'}.`,
-        avgRecoveryLatencyMs: 340,
+        criticalMomentVerdict: !hasRealErrors
+          ? 'Thần thức quán thông tuyệt đối! Đạo hữu không mắc bất kỳ sai sót nào trong toàn bộ các mốc thời gian thi đấu.'
+          : `Thời điểm phát sinh lỗi nhiều nhất tập trung ở giai đoạn ${worstPhase.name}.`,
+        avgRecoveryLatencyMs,
         peerAvgRecoveryMs: 380,
-        cascadeErrorRate: 22,
+        cascadeErrorRate,
       },
       peerComparison: {
-        bracketName: `${realmName} (${Math.max(20, avgWpm - 10)} - ${avgWpm + 15} WPM)`,
+        bracketName: `${realmName} (${bracketMin} - ${bracketMax} WPM)`,
         description: `So sánh 6 Trụ Cột Đạo Cơ giữa bạn với bình quân tu sĩ cùng phân khúc WPM.`,
         metrics: [
           {
@@ -8360,10 +8489,10 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             xianxiaLabel: 'Ngự Khí Thần Tốc',
             unit: 'WPM',
             playerValue: avgWpm,
-            peerAverage: Math.max(15, avgWpm - 4),
-            peerTop10: Math.round(avgWpm * 1.25),
-            percentile: Math.min(95, Math.max(30, Math.round((avgWpm / 120) * 85))),
-            assessment: 'Tốc độ xuất chiêu thuộc diện nhanh nhẹn trong cảnh giới.',
+            peerAverage: Math.round((bracketMin + bracketMax) / 2),
+            peerTop10: Math.round(bracketMax * 0.96),
+            percentile: speedPercentile,
+            assessment: avgWpm >= Math.round((bracketMin + bracketMax) / 2) ? 'Vượt trên mức bình quân cùng cảnh giới' : 'Cần tôi luyện thêm tốc độ lướt phím',
           },
           {
             key: 'accuracy',
@@ -8373,8 +8502,8 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             playerValue: avgAcc,
             peerAverage: 94,
             peerTop10: 98,
-            percentile: Math.min(99, Math.max(20, Math.round(((avgAcc - 85) / 14) * 100))),
-            assessment: avgAcc >= 95 ? 'Độ chuẩn xác rất tốt' : 'Cần giảm 5% tốc độ để nâng độ chuẩn xác lên trên 96%',
+            percentile: accPercentile,
+            assessment: avgAcc >= 96 ? 'Độ chuẩn xác rất tốt' : 'Cần giảm 5% tốc độ để nâng độ chuẩn xác lên trên 96%',
           },
           {
             key: 'consistency',
@@ -8384,7 +8513,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             playerValue: avgConsistency,
             peerAverage: 82,
             peerTop10: 92,
-            percentile: Math.min(95, Math.max(25, avgConsistency)),
+            percentile: consistencyPercentile,
             assessment: avgConsistency >= 85 ? 'Nhịp gõ cực kỳ đều đặn' : 'Nhịp gõ chưa đều, hay bị khựng giữa các từ',
           },
           {
@@ -8392,35 +8521,35 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             label: 'Hồi Phục Thần Thức (ms)',
             xianxiaLabel: 'Hoàn Hồn Định Phách',
             unit: 'ms',
-            playerValue: 340,
+            playerValue: avgRecoveryLatencyMs,
             peerAverage: 380,
             peerTop10: 180,
-            percentile: 65,
-            assessment: 'Thời gian sửa lỗi ở mức khá, cần phản xạ Backspace nhanh và dứt khoát hơn.',
+            percentile: recoveryPercentile,
+            assessment: !hasRealErrors ? 'Tuyệt đỉnh vô ngã, không mắc bất kỳ sai sót nào.' : avgRecoveryLatencyMs <= 250 ? 'Phản xạ sửa lỗi chớp nhoáng' : 'Thời gian khựng lại sau lỗi cần được rút ngắn.',
           },
           {
             key: 'stamina',
             label: 'Độ Bền Khí Tức (Cuối Trận)',
             xianxiaLabel: 'Trường Sinh Bất Diệt',
             unit: '/100',
-            playerValue: 78,
+            playerValue: staminaScore,
             peerAverage: 72,
             peerTop10: 90,
-            percentile: 78,
-            assessment: 'Giữ được phong độ tương đối ổn định vào cuối ván đấu.',
+            percentile: staminaScore,
+            assessment: staminaScore >= 75 ? 'Giữ được phong độ tương đối ổn định vào cuối ván đấu.' : 'Bị đuối hơi và trượt phím ở cuối ván.',
           },
           {
             key: 'breakthrough',
             label: 'Tiềm Năng Đột Phá (%)',
             xianxiaLabel: 'Thiên Cơ Khai Mở',
             unit: '%',
-            playerValue: 82,
+            playerValue: breakthroughScore,
             peerAverage: 65,
             peerTop10: 92,
-            percentile: 82,
-            assessment: isNumberMode
-              ? 'Hội tụ đủ khí vận để đột phá cảnh giới kế tiếp nếu khắc phục được lỗi trượt phím số xa.'
-              : 'Hội tụ đủ khí vận để đột phá cảnh giới kế tiếp nếu khắc phục được lỗi dấu Telex.',
+            percentile: breakthroughScore,
+            assessment: breakthroughScore >= 70
+              ? 'Hội tụ đủ khí vận để đột phá cảnh giới kế tiếp.'
+              : 'Cần củng cố đạo cơ để nâng cao tỷ lệ đột phá an toàn.',
           },
         ],
       },
@@ -8470,6 +8599,34 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
             return /[\d+\-*/=.]/.test(s) && !/[a-zA-Z]/.test(s);
           })
         : commonErrorKeys;
+
+      const isFlawless = effectiveMistakes.length === 0 && effectiveErrorKeys.length === 0;
+
+      // If the match was 100% accurate with 0 errors, return authentic flawless diagnosis immediately
+      if (isFlawless) {
+        return res.json({
+          success: true,
+          analysis: {
+            title: isNumberMode
+              ? 'Bài Tập Luyện Bàn Phím Số Gia Tốc (Flawless Flow Drill)'
+              : 'Bài Tập Luyện Bứt Phá Giới Hạn Tốc Độ (Speed Flow Drill)',
+            overview: isNumberMode
+              ? 'Thần thức chuẩn xác tuyệt đối! Dữ liệu thi đấu Bàn Phím Số không ghi nhận bất kỳ lỗi bấm sai nào. Bài tập này được tạo riêng để bạn rèn luyện phản xạ gia tốc trên các chuỗi số phức tạp.'
+              : 'Thần thức quán thông tuyệt đối! Bạn đã hoàn thành ván đấu với độ chính xác 100% không một lỗi sai. Bài tập này giúp bạn rèn luyện gia tốc nhịp lướt và bứt phá các mốc WPM cao hơn.',
+            dominantErrorPattern: 'Không có lỗi (Phong độ xuất sắc)',
+            keyWeaknesses: [
+              'Không phát hiện điểm yếu chính tả hay phím bấm sai',
+              'Cần duy trì độ thả lỏng cổ tay khi đẩy WPM ở ngưỡng đỉnh',
+            ],
+            targetClusters: isNumberMode ? ['Phím 5 Numpad', 'Hàng số 7-8-9', 'Phím 0'] : ['Gia tốc WPM', 'Nhịp thở đều đặn'],
+            coachAdvice: isNumberMode
+              ? 'Giữ vững vị trí ngón giữa trên phím 5 gờ định vị, đẩy nhanh nhịp gõ 5 - 10 WPM trên các chuỗi số quen thuộc.'
+              : 'Bảo toàn cảm giác gõ 100% chuẩn xác làm bệ phóng, chủ động tăng tốc độ nhịp tay ở các từ dài.',
+          },
+          practiceWords: generateFallbackPracticeWords([], [], mode),
+          isAiPowered: false,
+        });
+      }
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey || isGeminiProjectAccessDenied) {
@@ -8672,6 +8829,8 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
       let sustainErrors = 0;
       let endgameErrors = 0;
       let totalErrors = 0;
+      const recoveryLatencies: number[] = [];
+      let cascadeErrors = 0;
 
       completed.forEach((m: any) => {
         if (Array.isArray(m.mistakes)) {
@@ -8730,7 +8889,18 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
                 else if (sec <= p3) sustainErrors++;
                 else endgameErrors++;
               }
+              if (lastErrTime > 0 && relMs - lastErrTime < 800) {
+                cascadeErrors++;
+              }
               lastErrTime = relMs;
+            } else {
+              if (lastErrTime > 0) {
+                const delta = relMs - lastErrTime;
+                if (delta >= 60 && delta <= 3000) {
+                  recoveryLatencies.push(delta);
+                }
+                lastErrTime = -1;
+              }
             }
           });
         }
@@ -8749,9 +8919,33 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
             endgameErrors += e4;
           }
         }
+
+        if (m.averageHesitationMs && m.averageHesitationMs >= 80 && m.averageHesitationMs <= 2500) {
+          recoveryLatencies.push(m.averageHesitationMs);
+        }
       });
 
       const safeTotal = totalErrors > 0 ? totalErrors : 1;
+      const avgRecoveryLatencyMs = recoveryLatencies.length > 0
+        ? Math.round(recoveryLatencies.reduce((a, b) => a + b, 0) / recoveryLatencies.length)
+        : totalErrors === 0 ? 0 : 320;
+      const cascadeErrorRate = totalErrors > 0 ? Math.min(100, Math.round((cascadeErrors / totalErrors) * 100)) : 0;
+
+      // Real bracket and percentile calculations grounded in actual performance
+      let bracketMin = 20, bracketMax = 45;
+      if (avgWpm >= 135) { bracketMin = 135; bracketMax = 200; }
+      else if (avgWpm >= 110) { bracketMin = 110; bracketMax = 135; }
+      else if (avgWpm >= 85) { bracketMin = 85; bracketMax = 110; }
+      else if (avgWpm >= 65) { bracketMin = 65; bracketMax = 85; }
+      else if (avgWpm >= 45) { bracketMin = 45; bracketMax = 65; }
+
+      const speedPercentile = Math.min(99, Math.max(10, Math.round(((avgWpm - bracketMin) / Math.max(1, bracketMax - bracketMin)) * 100)));
+      const accPercentile = Math.min(99, Math.max(10, Math.round(((avgAcc - 85) / 14) * 100)));
+      const consistencyPercentile = Math.min(99, Math.max(10, Math.round(((avgConsistency - 70) / 25) * 100)));
+      const recoveryPercentile = totalErrors === 0 ? 99 : Math.min(99, Math.max(10, Math.round(((600 - Math.min(600, avgRecoveryLatencyMs)) / 450) * 100)));
+      const staminaScore = totalErrors === 0 ? 100 : Math.max(40, Math.min(100, Math.round(100 - (endgameErrors / Math.max(1, safeTotal)) * 150)));
+      const breakthroughScore = Math.round((accPercentile * 0.4) + (speedPercentile * 0.3) + (consistencyPercentile * 0.3));
+      const overallPercentile = Math.round((speedPercentile + accPercentile + consistencyPercentile + recoveryPercentile) / 4);
 
       const reqMode = String(req.body?.mode || '').toLowerCase();
       const matchSubMode = String(selectedMatch?.subMode || completed[0]?.subMode || '').toLowerCase();
@@ -8821,6 +9015,8 @@ Yêu cầu đầu ra: Trả về ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc tro
             endgameErrors,
             allMistakes: effectiveDaoMistakes,
             errorKeysMap: effectiveDaoErrorKeys,
+            avgRecoveryLatencyMs,
+            cascadeErrorRate,
             mode: targetMode,
           }),
         });
@@ -8935,12 +9131,12 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
       }
     ],
     "criticalMomentVerdict": "Nhận định sắc bén về pha thời gian gây tụt WPM nhiều nhất và cách khắc phục.",
-    "avgRecoveryLatencyMs": 320,
+    "avgRecoveryLatencyMs": ${avgRecoveryLatencyMs},
     "peerAvgRecoveryMs": 380,
-    "cascadeErrorRate": 20
+    "cascadeErrorRate": ${cascadeErrorRate}
   },
   "peerComparison": {
-    "bracketName": "Tên nhóm so sánh",
+    "bracketName": "${realmName} (${bracketMin} - ${bracketMax} WPM)",
     "description": "Mô tả nhóm so sánh đồng đạo cùng cảnh giới.",
     "metrics": [
       {
@@ -8949,10 +9145,10 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
         "xianxiaLabel": "Ngự Khí Thần Tốc",
         "unit": "WPM",
         "playerValue": ${avgWpm},
-        "peerAverage": ${Math.round(avgWpm * 0.95)},
-        "peerTop10": ${Math.round(avgWpm * 1.25)},
-        "percentile": 75,
-        "assessment": "Đánh giá chi tiết"
+        "peerAverage": ${Math.round((bracketMin + bracketMax) / 2)},
+        "peerTop10": ${Math.round(bracketMax * 0.96)},
+        "percentile": ${speedPercentile},
+        "assessment": "${avgWpm >= Math.round((bracketMin + bracketMax) / 2) ? 'Vượt trên mức bình quân cùng cảnh giới' : 'Cần tôi luyện thêm tốc độ lướt phím'}"
       }
     ]
   },
@@ -9023,6 +9219,105 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
       }
 
       if (parsedData && parsedData.overallVerdict && Array.isArray(parsedData.errorPatterns)) {
+        // Enforce grounded factual metrics into parsedData to avoid fake hallucinated numbers
+        parsedData.playerRealm = {
+          realmName,
+          tier,
+          subStage,
+          currentWpm: avgWpm,
+          wpmBracket: `${realmName} (${bracketMin} - ${bracketMax} WPM)`,
+        };
+        parsedData.overallVerdict.overallPercentile = overallPercentile;
+        parsedData.overallVerdict.breakthroughReadiness = breakthroughScore;
+
+        if (!parsedData.timingAnalysis) parsedData.timingAnalysis = {};
+        parsedData.timingAnalysis.avgRecoveryLatencyMs = avgRecoveryLatencyMs;
+        parsedData.timingAnalysis.peerAvgRecoveryMs = 380;
+        parsedData.timingAnalysis.cascadeErrorRate = cascadeErrorRate;
+
+        if (Array.isArray(parsedData.timingAnalysis.phases)) {
+          parsedData.timingAnalysis.phases.forEach((p: any) => {
+            if (p.phaseId === 'intro') { p.errorCount = introErrors; p.errorPercentage = Math.round((introErrors / safeTotal) * 100); }
+            else if (p.phaseId === 'acceleration') { p.errorCount = accelErrors; p.errorPercentage = Math.round((accelErrors / safeTotal) * 100); }
+            else if (p.phaseId === 'sustain') { p.errorCount = sustainErrors; p.errorPercentage = Math.round((sustainErrors / safeTotal) * 100); }
+            else if (p.phaseId === 'endgame') { p.errorCount = endgameErrors; p.errorPercentage = Math.round((endgameErrors / safeTotal) * 100); }
+          });
+        }
+
+        // Ground 6 pillars in peerComparison with exact real player metrics
+        parsedData.peerComparison = {
+          bracketName: `${realmName} (${bracketMin} - ${bracketMax} WPM)`,
+          description: `So sánh 6 Trụ Cột Đạo Cơ giữa bạn với bình quân tu sĩ cùng phân khúc WPM.`,
+          metrics: [
+            {
+              key: 'speed',
+              label: 'Tốc Độ Xuất Chiêu (WPM)',
+              xianxiaLabel: 'Ngự Khí Thần Tốc',
+              unit: 'WPM',
+              playerValue: avgWpm,
+              peerAverage: Math.round((bracketMin + bracketMax) / 2),
+              peerTop10: Math.round(bracketMax * 0.96),
+              percentile: speedPercentile,
+              assessment: avgWpm >= Math.round((bracketMin + bracketMax) / 2) ? 'Vượt trên mức bình quân cùng cảnh giới' : 'Cần tôi luyện thêm tốc độ lướt phím',
+            },
+            {
+              key: 'accuracy',
+              label: 'Tâm Pháp Tinh Chuẩn (%)',
+              xianxiaLabel: 'Bách Bộ Xuyên Dương',
+              unit: '%',
+              playerValue: avgAcc,
+              peerAverage: 94,
+              peerTop10: 98,
+              percentile: accPercentile,
+              assessment: avgAcc >= 96 ? 'Độ chuẩn xác rất tốt' : 'Cần giảm 5% tốc độ để nâng độ chuẩn xác lên trên 96%',
+            },
+            {
+              key: 'consistency',
+              label: 'Đạo Tâm Kiên Định (%)',
+              xianxiaLabel: 'Bất Động Như Sơn',
+              unit: '%',
+              playerValue: avgConsistency,
+              peerAverage: 82,
+              peerTop10: 92,
+              percentile: consistencyPercentile,
+              assessment: avgConsistency >= 85 ? 'Nhịp gõ cực kỳ đều đặn' : 'Nhịp gõ chưa đều, hay bị khựng giữa các từ',
+            },
+            {
+              key: 'recovery',
+              label: 'Hồi Phục Thần Thức (ms)',
+              xianxiaLabel: 'Hoàn Hồn Định Phách',
+              unit: 'ms',
+              playerValue: avgRecoveryLatencyMs,
+              peerAverage: 380,
+              peerTop10: 180,
+              percentile: recoveryPercentile,
+              assessment: totalErrors === 0 ? 'Tuyệt đỉnh vô ngã, không mắc bất kỳ sai sót nào.' : avgRecoveryLatencyMs <= 250 ? 'Phản xạ sửa lỗi chớp nhoáng' : 'Thời gian khựng lại sau lỗi cần được rút ngắn.',
+            },
+            {
+              key: 'stamina',
+              label: 'Độ Bền Khí Tức (Cuối Trận)',
+              xianxiaLabel: 'Trường Sinh Bất Diệt',
+              unit: '/100',
+              playerValue: staminaScore,
+              peerAverage: 72,
+              peerTop10: 90,
+              percentile: staminaScore,
+              assessment: staminaScore >= 75 ? 'Giữ được phong độ tương đối ổn định vào cuối ván đấu.' : 'Bị đuối hơi và trượt phím ở cuối ván.',
+            },
+            {
+              key: 'breakthrough',
+              label: 'Tiềm Năng Đột Phá (%)',
+              xianxiaLabel: 'Thiên Cơ Khai Mở',
+              unit: '%',
+              playerValue: breakthroughScore,
+              peerAverage: 65,
+              peerTop10: 92,
+              percentile: breakthroughScore,
+              assessment: breakthroughScore >= 70 ? 'Hội tụ đủ khí vận để đột phá cảnh giới kế tiếp.' : 'Cần củng cố đạo cơ để nâng cao tỷ lệ đột phá an toàn.',
+            },
+          ],
+        };
+
         return res.json({
           success: true,
           isAiPowered: true,
@@ -9049,8 +9344,10 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
           accelErrors,
           sustainErrors,
           endgameErrors,
-          allMistakes,
-          errorKeysMap,
+          allMistakes: effectiveDaoMistakes,
+          errorKeysMap: effectiveDaoErrorKeys,
+          avgRecoveryLatencyMs,
+          cascadeErrorRate,
           mode: targetMode,
         }),
       });
@@ -9113,6 +9410,18 @@ Yêu cầu xuất ra ĐÚNG 1 ĐỐI TƯỢNG JSON (không bọc trong markdown 
 
   // HỆ THỐNG VẠN BẢO CÁC, PHƯỜNG THỊ P2P & QUẢN TRỊ KINH TẾ
   registerEconomyRoutes(app, serverUsers, getUserByToken, saveUsersToFile);
+
+  // QUẢN TRỊ CƠ SỞ DỮ LIỆU & CRUD DATABASE
+  registerAdminDatabaseRoutes(
+    app,
+    serverUsers,
+    serverSects,
+    serverBans,
+    getUserByToken,
+    saveUsersToFile,
+    saveSectsToFile,
+    saveBansToFile
+  );
 
   // Fallback 404 JSON response for any undefined /api routes
   app.all('/api/*', (_req, res) => {

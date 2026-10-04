@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { soundFx } from '../utils/audio';
 import { 
   User, 
@@ -8,14 +8,30 @@ import {
   Zap, 
   Sparkles, 
   ChevronDown,
-  Edit3,
-  Award,
-  Lock,
-  History,
-  Trophy,
-  Flag,
-  Target,
-  LogOut
+  ChevronRight,
+  Edit3, 
+  Award, 
+  Lock, 
+  History, 
+  Trophy, 
+  Flag, 
+  Target, 
+  LogOut,
+  Copy,
+  Shield,
+  Gem,
+  Clock,
+  Compass,
+  Swords,
+  Users,
+  CheckCircle2,
+  ExternalLink,
+  TrendingUp,
+  Activity,
+  Layers,
+  Scroll,
+  Heart,
+  Sparkle
 } from 'lucide-react';
 import { 
   EXPANDED_AVATARS, 
@@ -33,8 +49,9 @@ import { MatchRecord, getStoredMatchHistory } from '../utils/matchHistory';
 import { HighScoreRecord, UserAccount, BestWpmRecord } from '../types';
 import { updateUserProfile } from '../utils/auth';
 import { AchievementsSection } from './AchievementsSection';
-import { getShowcaseAchievements, getAchievementById, setShowcaseAchievements } from '../utils/achievements';
-import { WpmRecordBadge } from './WpmRecordBadge';
+import { getShowcaseAchievements, getAchievementById, setShowcaseAchievements, formatOnlineDuration, XIANXIA_ACHIEVEMENTS } from '../utils/achievements';
+import { WpmRecordBadge, getFriendlyModeTitle, formatRecordTime, isOutplayMode } from './WpmRecordBadge';
+import { XIANXIA_REALMS, getSubStage, SECT_ROLES_CONFIG } from '../utils/cultivation';
 
 interface ProfileModalProps {
   username: string;
@@ -65,8 +82,8 @@ interface ProfileModalProps {
   initialTab?: 'profile' | 'achievements';
 }
 
-function formatRelativeTime(ts: number): string {
-  if (!ts) return '';
+function formatRelativeTime(ts?: number): string {
+  if (!ts) return 'Chưa rõ';
   const diffSec = Math.floor((Date.now() - ts) / 1000);
   if (diffSec < 60) return 'Vừa xong';
   const diffMin = Math.floor(diffSec / 60);
@@ -115,6 +132,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
   const sanitizeShowcase = (list?: string[] | null): string[] => {
     if (!Array.isArray(list)) return [];
     return Array.from(new Set(list.filter((id) => Boolean(getAchievementById(id))))).slice(0, 4);
@@ -148,6 +166,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [selectedFrame, setSelectedFrame] = useState<string>(() => frame || getStoredFrame());
   const [history, setHistory] = useState<MatchRecord[]>(() => matchHistory || getStoredMatchHistory());
   const [guestNotice, setGuestNotice] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   React.useEffect(() => {
     setNameInput(username);
@@ -164,6 +183,161 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   React.useEffect(() => {
     setHistory(matchHistory || []);
   }, [matchHistory]);
+
+  const handleCopy = (text: string, field: string) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      soundFx.playKeyClick();
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Tính toán chỉ số thi đấu toàn diện từ lịch sử
+  const matchStats = useMemo(() => {
+    if (!history || history.length === 0) {
+      return {
+        total: totalGames || 0,
+        wins: 0,
+        losses: 0,
+        winRate: 0,
+        avgWpm: 0,
+        avgAccuracy: '100',
+      };
+    }
+    const validMatches = history.filter((m) => m && (m.wpm > 0 || m.result));
+    const wins = validMatches.filter((m) => m.result === 'Thắng' || m.result === 'Top 1').length;
+    const losses = validMatches.filter((m) => m.result === 'Thua' || m.result === 'Đầu hàng').length;
+    const totalDecided = wins + losses;
+    const winRate = totalDecided > 0 
+      ? Math.round((wins / totalDecided) * 100) 
+      : (validMatches.length > 0 ? Math.round((wins / validMatches.length) * 100) : 0);
+    const totalWpm = validMatches.reduce((acc, m) => acc + (m.wpm || 0), 0);
+    const avgWpm = validMatches.length > 0 ? Math.round(totalWpm / validMatches.length) : 0;
+    const totalAcc = validMatches.reduce((acc, m) => acc + (typeof m.accuracy === 'number' ? m.accuracy : 100), 0);
+    const avgAccuracy = validMatches.length > 0 ? (totalAcc / validMatches.length).toFixed(1) : '100';
+    return {
+      total: Math.max(totalGames || 0, validMatches.length),
+      wins,
+      losses,
+      winRate,
+      avgWpm,
+      avgAccuracy,
+    };
+  }, [history, totalGames]);
+
+  // Cảnh giới & Tu Đạo
+  const effectiveCultivation = currentUser?.cultivation || cultivationState;
+  const currentRealmIndex = effectiveCultivation?.realmIndex ?? cultivationRealmIndex ?? 0;
+  const currentRealm = XIANXIA_REALMS[currentRealmIndex] || XIANXIA_REALMS[0];
+  const effectiveTier = effectiveCultivation?.tier || 1;
+  const subStageName = getSubStage(effectiveTier);
+  const currentTuVi = effectiveCultivation?.tuVi || 0;
+  const maxTuVi = effectiveCultivation?.maxTuVi || 1000;
+  const tuViPercent = Math.min(100, Math.round((currentTuVi / Math.max(1, maxTuVi)) * 100));
+  const thoNguyen = effectiveCultivation?.thoNguyen ?? currentRealm.maxThoNguyen;
+  const maxThoNguyen = effectiveCultivation?.maxThoNguyen ?? currentRealm.maxThoNguyen;
+  const linhThach = effectiveCultivation?.linhThach || 0;
+  const chienLuc = effectiveCultivation?.chienLuc || 0;
+  const sectInfo = effectiveCultivation?.sect;
+  const sectRoleConfig = sectInfo?.role && SECT_ROLES_CONFIG[sectInfo.role as keyof typeof SECT_ROLES_CONFIG]
+    ? SECT_ROLES_CONFIG[sectInfo.role as keyof typeof SECT_ROLES_CONFIG]
+    : null;
+
+  // Thành tựu
+  const unlockedCount = currentUser?.unlockedAchievements?.length || (isLoggedIn ? 1 : 0);
+  const totalAchievements = XIANXIA_ACHIEVEMENTS.length;
+  const achievementPercent = Math.round((unlockedCount / Math.max(1, totalAchievements)) * 100);
+
+  // Cột mốc thành tựu Bách Chiến Đăng Tiên (nhánh số trận thi đấu)
+  const MATCH_MILESTONES = [
+    { target: 1, id: 'matches_1', name: 'Nhập Đạo Sơ Thí', title: 'Sơ Khởi Hành Giả', icon: '📜', rarity: 'Phàm Phẩm' },
+    { target: 10, id: 'matches_10', name: 'Luyện Khí Trúc Cơ', title: 'Tu Tiên Tân Tú', icon: '🌱', rarity: 'Phàm Phẩm' },
+    { target: 30, id: 'matches_30', name: 'Kim Đan Tụ Đỉnh', title: 'Kim Đan Đạo Trưởng', icon: '🔮', rarity: 'Hoàng Giai' },
+    { target: 50, id: 'matches_50', name: 'Bách Luyện Đúc Cốt', title: 'Cương Cốt Kiếm Giả', icon: '🔨', rarity: 'Hoàng Giai' },
+    { target: 75, id: 'matches_75', name: 'Nguyên Anh Hóa Hình', title: 'Nguyên Anh Lão Tổ', icon: '🧘‍♂️', rarity: 'Huyền Giai' },
+    { target: 100, id: 'matches_100', name: 'Bách Chiến Tinh Anh', title: 'Bách Trận Tướng Quân', icon: '🚩', rarity: 'Huyền Giai' },
+    { target: 150, id: 'matches_150', name: 'Hóa Thần Chi Cảnh', title: 'Hóa Thần Chân Nhân', icon: '⚡', rarity: 'Địa Giai' },
+    { target: 200, id: 'matches_200', name: 'Cửu Chuyển Chiến Thần', title: 'Chiến Ý Cuồng Đồ', icon: '🔥', rarity: 'Địa Giai' },
+    { target: 300, id: 'matches_300', name: 'Độ Kiếp Phi Thăng', title: 'Cửu Trọng Tiên Tôn', icon: '🌌', rarity: 'Thiên Giai' },
+    { target: 500, id: 'matches_500', name: 'Vạn Cổ Trường Tồn', title: 'Vạn Kiếp Thần Đế', icon: '👑', rarity: 'Chí Tôn' },
+    { target: 750, id: 'matches_750', name: 'Thiên Cổ Hùng Sư', title: 'Thiên Cổ Chiến Tổ', icon: '🦁', rarity: 'Chí Tôn' },
+    { target: 1000, id: 'matches_1000', name: 'Thiên Thu Vạn Kiếp Đế', title: 'Thiên Thu Chiến Đế', icon: '⚜️', rarity: 'Thần Thoại' },
+  ];
+
+  const matchMilestoneInfo = useMemo(() => {
+    const current = matchStats.total;
+    const nextIdx = MATCH_MILESTONES.findIndex((m) => m.target > current);
+
+    if (nextIdx === -1) {
+      const last = MATCH_MILESTONES[MATCH_MILESTONES.length - 1];
+      return {
+        isMaxed: true,
+        current,
+        target: last.target,
+        prevTarget: MATCH_MILESTONES[MATCH_MILESTONES.length - 2].target,
+        remaining: 0,
+        percent: 100,
+        currentMilestone: last,
+        nextMilestone: null,
+      };
+    }
+
+    const nextMilestone = MATCH_MILESTONES[nextIdx];
+    const prevMilestone = nextIdx > 0 ? MATCH_MILESTONES[nextIdx - 1] : null;
+    const prevTarget = prevMilestone ? prevMilestone.target : 0;
+    const remaining = Math.max(0, nextMilestone.target - current);
+
+    const range = nextMilestone.target - prevTarget;
+    const progressInRange = current - prevTarget;
+    const segmentPercent = range > 0 ? Math.min(100, Math.max(0, Math.round((progressInRange / range) * 100))) : 0;
+
+    return {
+      isMaxed: false,
+      current,
+      target: nextMilestone.target,
+      prevTarget,
+      remaining,
+      percent: segmentPercent,
+      currentMilestone: prevMilestone,
+      nextMilestone,
+    };
+  }, [matchStats.total]);
+
+  // Kỷ lục theo chế độ
+  const MODE_RECORDS_LIST = [
+    { id: 'vi_dau', name: 'Chính Đạo Vấn Tâm', icon: '📜', shortName: 'Tiếng Việt Có Dấu' },
+    { id: 'vi_nodau', name: 'Tật Phong Ngự Kiếm', icon: '🍃', shortName: 'Tiếng Việt Không Dấu' },
+    { id: 'en', name: 'Dị Vực Luận Đạo', icon: '🌐', shortName: 'Tiếng Anh' },
+    { id: 'numpad', name: 'Cửu Cung Trận Pháp', icon: '🔢', shortName: 'Bàn Phím Số' },
+    { id: 'doan_chu', name: 'Huyền Cơ Mật Cảnh', icon: '🧩', shortName: 'Đoán Chữ' },
+    { id: 'ngau_hung', name: 'Lôi Đình Nhất Kích', icon: '⚡', shortName: 'Ngẫu Hứng' },
+    { id: 'san_boss', name: 'Hàng Phục Ma Tôn', icon: '🐉', shortName: 'Săn Boss Hắc Long' },
+    { id: 'outplay', name: 'Tâm Ma Thí Luyện', icon: '🔥', shortName: 'Outplay Yourself' },
+  ];
+
+  const getModeRecord = (modeId: string) => {
+    const hs = highScores?.[modeId];
+    if (hs && hs.wpm > 0) {
+      return {
+        wpm: hs.wpm,
+        accuracy: typeof hs.accuracy === 'number' ? hs.accuracy : 100,
+        timestamp: hs.timestamp,
+      };
+    }
+    const match = history.find((m) => (m.modeId === modeId || m.mode === modeId) && m.wpm > 0);
+    if (match) {
+      return {
+        wpm: match.wpm,
+        accuracy: match.accuracy,
+        timestamp: match.timestamp,
+      };
+    }
+    return null;
+  };
 
   const recentMatches = history.slice(0, 5);
 
@@ -282,17 +456,24 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   }, [isAvatarFrameModalOpen, isEditNameOpen, onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-      <div className="w-full max-w-xl h-[88vh] max-h-[780px] min-h-[580px] flex flex-col bg-slate-900 border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+      <div className="w-full max-w-3xl h-[92vh] max-h-[860px] min-h-[600px] flex flex-col bg-slate-900 border border-slate-700/80 rounded-3xl p-4 sm:p-6 shadow-2xl relative overflow-hidden">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-white">HỒ SƠ CÁ NHÂN & THÀNH TỰU</h3>
-              <p className="text-xs text-slate-400">Tùy biến avatar, khung hào quang, thành tựu vinh danh và lịch sử thi đấu</p>
+              <h3 className="text-base sm:text-lg font-black text-white tracking-wide flex items-center gap-2">
+                <span>HỒ SƠ CÁ NHÂN & THÀNH TỰU</span>
+                {currentUser?.isAdmin && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono uppercase">
+                    Admin
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">Diện mạo đạo hữu, cảnh giới tu vi, chỉ số tốc ký và lịch sử luận đạo</p>
             </div>
           </div>
           <button
@@ -302,7 +483,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               soundFx.playKeyClick();
               onClose();
             }}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer transition-colors"
             title="Đóng (Esc)"
           >
             <kbd className="hidden sm:inline text-[10px] font-mono px-1 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400">
@@ -313,7 +494,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         </div>
 
         {/* TOP NAVIGATION TABS */}
-        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner shrink-0">
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner shrink-0 mt-3">
           <button
             id="tab-profile-identity"
             type="button"
@@ -321,14 +502,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               soundFx.playKeyClick();
               setActiveTab('profile');
             }}
-            className={`flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
+            className={`flex-1 h-10 sm:h-11 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-colors duration-150 flex items-center justify-center gap-2 cursor-pointer select-none ${
               activeTab === 'profile'
                 ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20 ring-1 ring-amber-300'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
             }`}
           >
-            <User className="w-4 h-4" />
-            <span className="whitespace-nowrap">Hồ Sơ Cá Nhân</span>
+            <User className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Hồ Sơ Đạo Hữu</span>
           </button>
 
           <button
@@ -338,23 +519,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               soundFx.playKeyClick();
               setActiveTab('achievements');
             }}
-            className={`flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
+            className={`flex-1 h-10 sm:h-11 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-colors duration-150 flex items-center justify-center gap-2 cursor-pointer select-none ${
               activeTab === 'achievements'
                 ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-purple-600/30 ring-1 ring-purple-400'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
             }`}
           >
-            <Sparkles className="w-4 h-4 text-amber-300" />
-            <span className="hidden xs:inline whitespace-nowrap">Thành Tựu</span>
-            <span className="xs:hidden whitespace-nowrap">Thành Tựu</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-950/80 text-purple-200 border border-purple-400/40 font-mono">
+            <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+            <span className="whitespace-nowrap">Thành Tựu Tiên Giới</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-950/80 text-purple-200 border border-purple-400/40 font-mono leading-none shrink-0">
               {currentShowcase.length}/4
             </span>
           </button>
         </div>
 
         {/* Tab Body - Fixed height with smooth internal scrolling */}
-        <div className="flex-1 overflow-y-auto min-h-0 pr-1 mt-2 space-y-4">
+        <div className="flex-1 overflow-y-auto min-h-0 pr-1 mt-3 space-y-4">
         {activeTab === 'achievements' ? (
           <AchievementsSection
             bestWpm={bestWpm}
@@ -377,197 +557,249 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           />
         ) : (
           <div className="space-y-4">
-        {/* GUEST BANNER / NOTICE IF NOT LOGGED IN */}
-        {!isLoggedIn ? (
-          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left animate-fadeIn">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Lock className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>Chế độ Tán Tu (Chưa đăng nhập)</span>
+            {/* GUEST BANNER / ACCOUNT BAR */}
+            {!isLoggedIn ? (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left animate-fadeIn">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <span>Chế độ Tán Tu (Chưa Đăng Nhập)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Đăng nhập để lưu giữ Tu Vi, Cảnh Giới, Linh Thạch, mở khóa đổi Avatar & Khung Hào Quang và vinh danh trên Bảng Vàng!
+                    </p>
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-300">
-                  Tán tu chỉ có thể chơi tập luyện, không thể nhận Tu Vi, Linh Thạch, Thành Tựu hay vật phẩm. Đăng nhập để kích hoạt con đường tu tiên!
-                </p>
-              </div>
-            </div>
-            <button
-              id="btn-profile-login-cta"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                if (onOpenAuthModal) onOpenAuthModal();
-              }}
-              className="w-full sm:w-auto h-9 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-black text-xs shrink-0 shadow-md shadow-amber-400/20 transition-transform active:scale-95 cursor-pointer whitespace-nowrap flex items-center justify-center"
-            >
-              Tạo Tài Khoản / Đăng Nhập
-            </button>
-          </div>
-        ) : (
-          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-left">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
-              <span className="text-xs text-emerald-300 font-semibold truncate flex items-center gap-1.5">
-                <span>Tài khoản: <strong className="text-white">{currentUser?.email || currentUser?.username}</strong></span>
-                {currentUser?.isAdmin && (
-                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
-                    Quản Trị Viên
-                  </span>
-                )}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                id="btn-profile-manage-account"
-                type="button"
-                onClick={() => {
-                  soundFx.playKeyClick();
-                  if (onOpenAuthModal) onOpenAuthModal('login');
-                }}
-                className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline cursor-pointer"
-              >
-                Đổi mật khẩu
-              </button>
-              {onLogout && (
                 <button
-                  id="btn-profile-logout"
+                  id="btn-profile-login-cta"
                   type="button"
                   onClick={() => {
                     soundFx.playKeyClick();
-                    onLogout();
+                    if (onOpenAuthModal) onOpenAuthModal();
                   }}
-                  className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors"
-                  title="Đăng xuất tài khoản"
+                  className="w-full sm:w-auto h-9 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-black text-xs shrink-0 shadow-md shadow-amber-400/20 transition-transform active:scale-95 cursor-pointer whitespace-nowrap flex items-center justify-center"
                 >
-                  <LogOut className="w-3 h-3" />
-                  Đăng xuất
+                  Tạo Tài Khoản / Đăng Nhập
                 </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {guestNotice && (
-          <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2 animate-fadeIn">
-            <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{guestNotice}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                if (onOpenAuthModal) onOpenAuthModal('login');
-              }}
-              className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-bold text-[11px] shrink-0 cursor-pointer"
-            >
-              Đăng nhập
-            </button>
-          </div>
-        )}
-
-        {/* 1. TOP IDENTITY CARD: AVATAR + KHUNG NGANG HÀNG VỚI TÊN NGƯỜI CHƠI */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-800 flex items-center justify-between gap-4 shadow-inner">
-          <div className="flex items-center gap-4 min-w-0">
-            {/* Clickable Avatar with Frame */}
-            <button
-              id="btn-profile-avatar-trigger"
-              type="button"
-              onClick={() => {
-                soundFx.playKeyClick();
-                if (!isLoggedIn) {
-                  setGuestNotice('Chế độ Khách không thể đổi avatar và khung. Vui lòng đăng nhập để mở khóa!');
-                  return;
-                }
-                setTempAvatar(selectedAvatar);
-                setTempFrame(selectedFrame);
-                setAvatarFrameTab('avatar');
-                setLockedFrameTip(null);
-                setIsAvatarFrameModalOpen(true);
-              }}
-              className="relative group p-1 rounded-2xl cursor-pointer transition-transform hover:scale-105 active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
-              title={isLoggedIn ? "Nhấn vào avatar để tùy chỉnh Avatar và Khung đại diện" : "Đăng nhập để đổi avatar"}
-            >
-              <AvatarWithFrame
-                icon={selectedAvatar}
-                frameId={selectedFrame}
-                size="xl"
-              />
-              {!isLoggedIn && (
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-800 border border-amber-400/60 text-amber-400 flex items-center justify-center shadow-md z-30">
-                  <Lock className="w-2.5 h-2.5" />
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2.5 text-left">
+                <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse"></span>
+                  <div className="text-xs text-slate-300 font-medium flex items-center gap-1.5 flex-wrap">
+                    <span>Tài khoản: <strong className="text-white font-mono">{currentUser?.email || currentUser?.username}</strong></span>
+                    {currentUser?.isAdmin && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                        Quản Trị Viên
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-slate-600 hidden sm:inline">·</span>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-sky-400" />
+                    <span>Tu đạo: <strong className="text-sky-300 font-mono">{formatOnlineDuration(onlineSeconds || 0)}</strong></span>
+                  </div>
+                  <span className="text-slate-600 hidden sm:inline">·</span>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                    <Users className="w-3 h-3 text-emerald-400" />
+                    <span>Bằng hữu: <strong className="text-emerald-300 font-mono">{friendsList?.length || 0}</strong></span>
+                  </div>
                 </div>
-              )}
-            </button>
 
-            {/* Username with Edit Icon & Frame Info */}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate max-w-[200px] sm:max-w-[260px]">
-                  {nameInput}
-                </span>
-                {isLoggedIn ? (
+                <div className="flex items-center gap-2 shrink-0">
                   <button
-                    id="btn-open-edit-name"
+                    id="btn-profile-manage-account"
                     type="button"
                     onClick={() => {
                       soundFx.playKeyClick();
-                      setTempName(nameInput);
-                      setNameError('');
-                      setIsEditNameOpen(true);
+                      if (onOpenAuthModal) onOpenAuthModal('login');
                     }}
-                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 hover:border-amber-400/60 transition-all cursor-pointer shadow-sm shrink-0"
-                    title="Nhấn để đổi tên người chơi"
+                    className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline cursor-pointer px-2 py-1"
                   >
-                    <Edit3 className="w-4 h-4" />
+                    Đổi mật khẩu
                   </button>
-                ) : (
+                  {onLogout && (
+                    <button
+                      id="btn-profile-logout"
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        onLogout();
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors"
+                      title="Đăng xuất tài khoản"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      <span>Đăng xuất</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {guestNotice && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{guestNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playKeyClick();
+                    if (onOpenAuthModal) onOpenAuthModal('login');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                >
+                  Đăng nhập
+                </button>
+              </div>
+            )}
+
+            {/* 1. THẺ DIỆN MẠO & ĐỊNH DANH ĐẠO HỮU */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-slate-800 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  {/* Clickable Avatar with Frame */}
                   <button
-                    id="btn-open-edit-name-locked"
+                    id="btn-profile-avatar-trigger"
                     type="button"
                     onClick={() => {
                       soundFx.playKeyClick();
-                      setGuestNotice('Chế độ Khách không thể đổi tên người chơi. Vui lòng đăng nhập để mở khóa!');
+                      if (!isLoggedIn) {
+                        setGuestNotice('Chế độ Khách không thể đổi avatar và khung. Vui lòng đăng nhập để mở khóa!');
+                        return;
+                      }
+                      setTempAvatar(selectedAvatar);
+                      setTempFrame(selectedFrame);
+                      setAvatarFrameTab('avatar');
+                      setLockedFrameTip(null);
+                      setIsAvatarFrameModalOpen(true);
                     }}
-                    className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-500 hover:text-amber-400 border border-slate-700/80 transition-all cursor-pointer shadow-sm shrink-0"
-                    title="Đăng nhập để đổi tên"
+                    className="relative group p-1 rounded-2xl cursor-pointer transition-transform hover:scale-105 active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                    title={isLoggedIn ? "Nhấn vào avatar để tùy chỉnh Avatar và Khung đại diện" : "Đăng nhập để đổi avatar"}
                   >
-                    <Lock className="w-3.5 h-3.5" />
+                    <AvatarWithFrame
+                      icon={selectedAvatar}
+                      frameId={selectedFrame}
+                      size="xl"
+                    />
+                    {isLoggedIn ? (
+                      <div className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md bg-amber-400 text-black text-[9px] font-black uppercase tracking-wider shadow-md opacity-90 group-hover:opacity-100 flex items-center gap-0.5">
+                        <Edit3 className="w-2.5 h-2.5" />
+                        <span>Đổi</span>
+                      </div>
+                    ) : (
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-800 border border-amber-400/60 text-amber-400 flex items-center justify-center shadow-md z-30">
+                        <Lock className="w-2.5 h-2.5" />
+                      </div>
+                    )}
                   </button>
-                )}
-              </div>
 
-              {/* Current Frame Details & Quick Hint */}
-              <div className="mt-1.5 flex items-center gap-2 text-xs flex-wrap">
-                <span className="text-slate-400 font-medium flex items-center gap-1">
-                  Khung: <b className="text-slate-200">{currentFrameConfig.name}</b>
-                </span>
-                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-amber-300 font-mono">
-                  {currentFrameConfig.tag}
-                </span>
-                <span className="text-[11px] text-slate-500 italic">
-                  {isLoggedIn ? '(Nhấn avatar để đổi)' : '(Khóa ở chế độ Khách)'}
-                </span>
-              </div>
+                  {/* Username, Edit, UID & Badges */}
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate max-w-[200px] sm:max-w-[280px]">
+                        {nameInput}
+                      </span>
+                      {isLoggedIn ? (
+                        <button
+                          id="btn-open-edit-name"
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            setTempName(nameInput);
+                            setNameError('');
+                            setIsEditNameOpen(true);
+                          }}
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 hover:border-amber-400/60 transition-all cursor-pointer shadow-sm shrink-0"
+                          title="Đổi tên hiển thị / Biệt danh"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          id="btn-open-edit-name-locked"
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            setGuestNotice('Chế độ Khách không thể đổi tên người chơi. Vui lòng đăng nhập để mở khóa!');
+                          }}
+                          className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-500 hover:text-amber-400 border border-slate-700/80 transition-all cursor-pointer shadow-sm shrink-0"
+                          title="Đăng nhập để đổi tên"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
-              {/* Login username (fixed) */}
-              {currentUser?.username && (
-                <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-                  <span className="text-slate-400">Tên đăng nhập:</span>
-                  <span className="font-mono text-amber-300 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
-                    {currentUser.username}
-                  </span>
-                  <span className="text-[10px] text-slate-500 italic">(Cố định)</span>
+                    {/* Metadata line: System username + UID + Frame */}
+                    <div className="flex items-center gap-2 text-xs flex-wrap text-slate-400">
+                      {currentUser?.username && (
+                        <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/70 text-amber-300">
+                          @{currentUser.username}
+                        </span>
+                      )}
+
+                      {currentUser?.id && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(currentUser.id, 'id')}
+                          className="flex items-center gap-1 text-[11px] font-mono text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 px-2 py-0.5 rounded border border-slate-700/50 transition-colors cursor-pointer"
+                          title="Sao chép UID"
+                        >
+                          <span>UID: {currentUser.id.slice(0, 8)}...</span>
+                          {copiedField === 'id' ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-slate-500" />
+                          )}
+                        </button>
+                      )}
+
+                      <span className="flex items-center gap-1 text-[11px]">
+                        Khung: <strong className="text-slate-200">{currentFrameConfig.name}</strong>
+                      </span>
+                    </div>
+
+                    {/* Realm Tag */}
+                    <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                        <span>{currentRealm.icon}</span>
+                        <span>{currentRealm.name}</span>
+                        <span className="text-emerald-400/60">·</span>
+                        <span className="text-[11px] font-normal text-emerald-200">
+                          Tầng {effectiveTier} ({subStageName})
+                        </span>
+                      </div>
+
+                      {sectInfo?.sectName && (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-950/60 border border-purple-500/40 text-purple-300 text-xs font-bold">
+                          <span>🏰</span>
+                          <span>{sectInfo.sectName}</span>
+                          {sectRoleConfig && (
+                            <>
+                              <span className="text-purple-400/60">·</span>
+                              <span className="text-[11px] font-normal text-purple-200">
+                                {sectRoleConfig.title}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
+              </div>
 
-              {/* Showcase Achievements Badges in Profile Header */}
-              <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 font-mono flex items-center gap-1">
-                    <span>✨</span> Danh Hiệu:
+              {/* Showcase Danh Hiệu */}
+              <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 font-mono flex items-center gap-1 shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Danh Hiệu Tiên Giới:
                   </span>
                   {!isLoggedIn ? (
                     <span className="text-[11px] text-amber-400/80 italic flex items-center gap-1">
@@ -580,16 +812,16 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       return (
                         <span
                           key={achId}
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1 shadow-sm ${ach.badgeBg} ${ach.borderClass}`}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 shadow-sm ${ach.badgeBg} ${ach.borderClass}`}
                           title={`${ach.name}: ${ach.req} (${ach.realm})`}
                         >
                           <span>{ach.icon}</span>
-                          <span className="text-white truncate max-w-[110px]">{ach.title}</span>
+                          <span className="text-white truncate max-w-[120px]">{ach.title}</span>
                         </span>
                       );
                     })
                   ) : (
-                    <span className="text-[11px] text-slate-500 italic">Chưa chọn thành tựu</span>
+                    <span className="text-[11px] text-slate-500 italic">Chưa chọn danh hiệu vinh dự</span>
                   )}
                 </div>
                 <button
@@ -598,164 +830,470 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     soundFx.playKeyClick();
                     setActiveTab('achievements');
                   }}
-                  className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1"
+                  className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1 shrink-0 self-end sm:self-auto"
                 >
-                  <span>{isLoggedIn ? `Lĩnh Ngộ (${currentShowcase.length}/4)` : 'Xem Thành Tựu'}</span>
+                  <span>{isLoggedIn ? `Đổi Danh Hiệu (${currentShowcase.length}/4)` : 'Xem Thành Tựu'}</span>
                   <Sparkles className="w-3 h-3" />
                 </button>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Career Stats Overview */}
-        <div className="grid grid-cols-2 gap-3">
-          <WpmRecordBadge
-            bestWpm={bestWpm}
-            bestWpmRecord={bestWpmRecord}
-            highScores={highScores}
-            matchHistory={history}
-            username={username}
-            isMe={true}
-            size="large"
-            label="Kỷ lục Outplay"
-            tooltipPosition="top"
-          />
-          <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-center">
-            <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-center gap-1">
-              <Zap className="w-3.5 h-3.5 text-sky-400" /> Trận Đã Đấu
-            </div>
-            <div className="text-2xl font-black text-sky-400 font-mono mt-0.5">
-              {totalGames} <span className="text-xs text-slate-400 font-normal">trận</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Lịch Sử Đấu Của Tôi (5 trận gần nhất) */}
-        <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                <History className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
-                  Lịch Sử Đấu Của Tôi
-                </h4>
-                <p className="text-[10px] text-slate-400">Hiển thị 5 trận đấu gần nhất</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-amber-300">
-                {recentMatches.length}/5 trận
-              </span>
-              {onOpenMatchHistory && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundFx.playKeyClick();
-                    onClose();
-                    onOpenMatchHistory();
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Mở 20 ván gần nhất, replay và phân tích chuyên sâu"
-                >
-                  <History className="w-3 h-3 text-emerald-400" />
-                  <span>Xem 20 Trận & Replay</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {recentMatches.length === 0 ? (
-            <div className="py-6 text-center rounded-xl bg-slate-900/40 border border-dashed border-slate-800/80 text-slate-500 text-xs space-y-1">
-              <History className="w-6 h-6 mx-auto text-slate-600 mb-1" />
-              <p className="font-medium text-slate-400">Chưa có lịch sử thi đấu</p>
-              <p className="text-[11px] text-slate-500">Hoàn thành ván đấu để ghi nhận kết quả và chỉ số tại đây.</p>
-            </div>
-          ) : (
-            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
-              {recentMatches.map((m, idx) => {
-                const isWin = m.result === 'Thắng' || m.result === 'Top 1';
-                const isAFK = m.result === 'AFK';
-                const isSurrender = m.result === 'Đầu hàng';
-                const isLoss = m.result === 'Thua';
-
-                return (
-                  <div
-                    key={m.id || idx}
-                    className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/90 hover:border-slate-700/80 flex items-center justify-between gap-2.5 text-xs transition-colors"
-                  >
-                    {/* Chế độ & Thời gian */}
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono font-bold text-slate-500 text-[10px] w-4 shrink-0 text-center">
-                        #{idx + 1}
+            {/* 2. TIẾN TRÌNH TU TIÊN & TÔNG MÔN */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3.5 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Scroll className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                      <span>CẢNH GIỚI TU TIÊN & ĐẠO QUẢ</span>
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                        Cấp {effectiveCultivation?.level || 1}
                       </span>
-                      <div className="min-w-0">
-                        <div className="font-bold text-white truncate max-w-[110px] sm:max-w-[150px] flex items-center gap-1.5">
-                          <span className="truncate">{m.mode}</span>
-                          {m.playType === 'multiplayer' && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0 font-normal">
-                              Phòng
+                    </h4>
+                    <p className="text-[10px] text-slate-400">Đạo hạnh tích lũy, thọ nguyên và tài nguyên tu luyện</p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-bold text-emerald-300 bg-emerald-950/80 px-2.5 py-1 rounded-xl border border-emerald-500/30">
+                  {currentRealm.name}
+                </span>
+              </div>
+
+              {/* Progress Bar Tu Vi */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400 flex items-center gap-1 text-[11px]">
+                    <Sparkle className="w-3 h-3 text-amber-400" />
+                    <span>Tu Vi Hiện Tại</span>
+                  </span>
+                  <span className="font-mono font-bold text-amber-300 text-[11px]">
+                    {currentTuVi.toLocaleString()} / {maxTuVi.toLocaleString()}{' '}
+                    <span className="text-slate-400 font-normal">({tuViPercent}%)</span>
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-slate-900 border border-slate-800 overflow-hidden p-0.5">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-amber-400 transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                    style={{ width: `${tuViPercent}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* 4 Cultivation Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-left">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                    <Heart className="w-3 h-3 text-rose-400" /> Thọ Nguyên
+                  </div>
+                  <div className="text-sm font-black text-rose-300 font-mono mt-0.5">
+                    {thoNguyen} <span className="text-[10px] text-slate-500 font-normal">/ {maxThoNguyen} năm</span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-left">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                    <Gem className="w-3 h-3 text-sky-400" /> Linh Thạch
+                  </div>
+                  <div className="text-sm font-black text-sky-300 font-mono mt-0.5">
+                    {linhThach.toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">viên</span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-left">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                    <Swords className="w-3 h-3 text-amber-400" /> Chiến Lực
+                  </div>
+                  <div className="text-sm font-black text-amber-300 font-mono mt-0.5">
+                    {chienLuc.toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">điểm</span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-left">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                    <Shield className="w-3 h-3 text-purple-400" /> Tông Môn
+                  </div>
+                  <div className="text-xs font-bold text-purple-300 truncate mt-0.5">
+                    {sectInfo?.sectName || 'Tán Tu'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. MA TRẬN CHỈ SỐ TỐC KÝ TOÀN DIỆN */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3.5 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                      CHỈ SỐ THI ĐẤU TOÀN DIỆN
+                    </h4>
+                    <p className="text-[10px] text-slate-400">Thống kê phong độ và hiệu suất tốc ký đỉnh cao</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {matchStats.total} trận đã đấu
+                </span>
+              </div>
+
+              {/* 4 Cards Thống Kê Chính */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {/* 1. Best WPM */}
+                <div className="p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30 text-left relative overflow-hidden">
+                  <div className="text-[10px] uppercase font-bold text-amber-400 flex items-center gap-1 font-mono">
+                    <Flame className="w-3 h-3" /> Kỷ Lục Đỉnh Cao
+                  </div>
+                  <div className="text-2xl font-black text-amber-300 font-mono mt-1">
+                    {bestWpm || 0}{' '}
+                    <span className="text-xs text-slate-400 font-normal">WPM</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                    {bestWpmRecord?.modeName || 'Outplay Yourself'}
+                  </div>
+                </div>
+
+                {/* 2. Win Rate */}
+                <div className="p-3 rounded-2xl bg-slate-900/90 border border-emerald-500/30 text-left">
+                  <div className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1 font-mono">
+                    <Trophy className="w-3 h-3" /> Tỷ Lệ Thắng
+                  </div>
+                  <div className="text-2xl font-black text-emerald-300 font-mono mt-1">
+                    {matchStats.winRate}%
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                    {matchStats.wins} Thắng · {matchStats.losses} Thua
+                  </div>
+                </div>
+
+                {/* 3. Average WPM */}
+                <div className="p-3 rounded-2xl bg-slate-900/90 border border-sky-500/30 text-left">
+                  <div className="text-[10px] uppercase font-bold text-sky-400 flex items-center gap-1 font-mono">
+                    <TrendingUp className="w-3 h-3" /> Tốc Độ TB
+                  </div>
+                  <div className="text-2xl font-black text-sky-300 font-mono mt-1">
+                    {matchStats.avgWpm}{' '}
+                    <span className="text-xs text-slate-400 font-normal">WPM</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                    Các ván gần nhất
+                  </div>
+                </div>
+
+                {/* 4. Average Accuracy */}
+                <div className="p-3 rounded-2xl bg-slate-900/90 border border-purple-500/30 text-left">
+                  <div className="text-[10px] uppercase font-bold text-purple-400 flex items-center gap-1 font-mono">
+                    <Target className="w-3 h-3" /> Độ Chính Xác
+                  </div>
+                  <div className="text-2xl font-black text-purple-300 font-mono mt-1">
+                    {matchStats.avgAccuracy}%
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                    Tỷ lệ gõ chuẩn xác
+                  </div>
+                </div>
+              </div>
+
+              {/* THANH TIẾN ĐỘ CỘT MỐC BÁCH CHIẾN TIẾP THEO */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900/95 via-slate-900/80 to-slate-950 border border-amber-500/30 space-y-2.5 shadow-inner">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center justify-center shrink-0 text-base shadow-sm">
+                      {matchMilestoneInfo.isMaxed ? '👑' : matchMilestoneInfo.nextMilestone?.icon || '🚩'}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase font-bold text-amber-400 font-mono tracking-wider flex items-center gap-1.5">
+                        <span>🎯 CỘT MỐC THÀNH TỰU BÁCH CHIẾN</span>
+                        {!matchMilestoneInfo.isMaxed && matchMilestoneInfo.nextMilestone?.rarity && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-normal">
+                            {matchMilestoneInfo.nextMilestone.rarity}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs font-black text-white truncate flex items-center gap-1.5 mt-0.5">
+                        {matchMilestoneInfo.isMaxed ? (
+                          <span className="text-amber-300">Đại Viên Mãn Bách Chiến Đăng Tiên (Đỉnh Phong)</span>
+                        ) : (
+                          <>
+                            <span>{matchMilestoneInfo.nextMilestone?.name}</span>
+                            <span className="text-slate-500 font-normal">·</span>
+                            <span className="text-amber-300 font-medium font-mono text-[11px]">
+                              {matchMilestoneInfo.nextMilestone?.title}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ratio & Percentage */}
+                  <div className="text-right shrink-0">
+                    <div className="font-mono font-black text-xs sm:text-sm text-amber-300">
+                      {matchMilestoneInfo.current} <span className="text-slate-400 text-xs font-normal">/ {matchMilestoneInfo.target} trận</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-emerald-400 font-semibold">
+                      {matchMilestoneInfo.percent}% chặng mốc
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Bar Container */}
+                <div className="space-y-1.5">
+                  <div className="w-full h-3 rounded-full bg-slate-950 border border-slate-800 p-0.5 overflow-hidden relative shadow-inner">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-400 to-emerald-400 transition-all duration-700 ease-out shadow-[0_0_12px_rgba(251,191,36,0.6)] relative"
+                      style={{ width: `${Math.max(4, matchMilestoneInfo.percent)}%` }}
+                    >
+                      {/* Glossy shimmer effect */}
+                      <div className="absolute inset-0 bg-white/20 rounded-full animate-pulse opacity-40"></div>
+                    </div>
+                  </div>
+
+                  {/* Helper Subtext / Motivation */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5 flex-wrap gap-1">
+                    <div className="truncate flex items-center gap-1 text-[11px]">
+                      {matchMilestoneInfo.isMaxed ? (
+                        <span className="text-amber-300 font-semibold flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          Đã chinh phục đỉnh phong 1.000 trận thi đấu thiên cổ!
+                        </span>
+                      ) : (
+                        <span>
+                          Còn thiếu <strong className="text-amber-300 font-mono font-bold">{matchMilestoneInfo.remaining}</strong> trận nữa để đạt mốc này
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setActiveTab('achievements');
+                      }}
+                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-0.5 transition-colors cursor-pointer shrink-0 ml-auto"
+                      title="Xem toàn bộ cây thành tựu Bách Chiến Đăng Tiên"
+                    >
+                      <span>Xem tất cả mốc</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Thông số phụ */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-900 text-slate-400 text-xs">
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/50">
+                  <Zap className="w-3.5 h-3.5 text-sky-400" />
+                  <span className="text-[11px]">Tổng ván: <strong className="text-white font-mono">{matchStats.total}</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/50">
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-[11px]">Thành tựu: <strong className="text-white font-mono">{unlockedCount}/{totalAchievements}</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/50">
+                  <Users className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[11px]">Bằng hữu: <strong className="text-white font-mono">{friendsList?.length || 0}</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/50">
+                  <Clock className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-[11px] truncate">Online: <strong className="text-white font-mono">{formatOnlineDuration(onlineSeconds || 0)}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. BẢNG KỶ LỤC TỪNG CHẾ ĐỘ THI ĐẤU */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <Trophy className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                      KỶ LỤC TỪNG CHẾ ĐỘ THI ĐẤU
+                    </h4>
+                    <p className="text-[10px] text-slate-400">Thành tích cao nhất trong các bí cảnh tốc ký</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-950/80 px-2 py-0.5 rounded-lg border border-amber-500/30">
+                  8 Chế Độ
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {MODE_RECORDS_LIST.map((mode) => {
+                  const rec = getModeRecord(mode.id);
+                  const hasRecord = rec && rec.wpm > 0;
+
+                  return (
+                    <div
+                      key={mode.id}
+                      className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition-colors flex flex-col justify-between text-left"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm shrink-0">{mode.icon}</span>
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-bold text-white truncate" title={mode.name}>
+                            {mode.shortName}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex items-baseline justify-between">
+                        {hasRecord ? (
+                          <>
+                            <div className="font-mono font-black text-amber-400 text-sm">
+                              {rec.wpm} <span className="text-[9px] text-slate-400 font-normal">WPM</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-emerald-400">
+                              {rec.accuracy}%
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-[11px] font-mono text-slate-500">
+                            -- WPM
+                          </div>
+                        )}
+                      </div>
+
+                      {hasRecord && rec.timestamp && (
+                        <div className="mt-1 text-[9px] text-slate-500 font-mono truncate">
+                          {formatRelativeTime(rec.timestamp)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 5. LỊCH SỬ ĐẤU CỦA TÔI (5 TRẬN GẦN NHẤT) */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <History className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                      LỊCH SỬ ĐẤU GẦN NHẤT
+                    </h4>
+                    <p className="text-[10px] text-slate-400">5 ván so tài tốc ký gần đây</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-amber-300">
+                    {recentMatches.length}/5 trận
+                  </span>
+                  {onOpenMatchHistory && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        onClose();
+                        onOpenMatchHistory();
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Mở 20 ván gần nhất, replay và phân tích chuyên sâu"
+                    >
+                      <History className="w-3 h-3 text-emerald-400" />
+                      <span>Xem 20 Trận & Replay</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {recentMatches.length === 0 ? (
+                <div className="py-6 text-center rounded-xl bg-slate-900/40 border border-dashed border-slate-800/80 text-slate-500 text-xs space-y-1">
+                  <History className="w-6 h-6 mx-auto text-slate-600 mb-1" />
+                  <p className="font-medium text-slate-400">Chưa có lịch sử thi đấu</p>
+                  <p className="text-[11px] text-slate-500">Hoàn thành ván đấu để ghi nhận kết quả và chỉ số tại đây.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                  {recentMatches.map((m, idx) => {
+                    const isWin = m.result === 'Thắng' || m.result === 'Top 1';
+                    const isAFK = m.result === 'AFK';
+                    const isSurrender = m.result === 'Đầu hàng';
+                    const isLoss = m.result === 'Thua';
+
+                    return (
+                      <div
+                        key={m.id || idx}
+                        className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/90 hover:border-slate-700/80 flex items-center justify-between gap-2.5 text-xs transition-colors"
+                      >
+                        {/* Chế độ & Thời gian */}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono font-bold text-slate-500 text-[10px] w-4 shrink-0 text-center">
+                            #{idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-bold text-white truncate max-w-[110px] sm:max-w-[170px] flex items-center gap-1.5">
+                              <span className="truncate">{m.mode}</span>
+                              {m.playType === 'multiplayer' && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0 font-normal">
+                                  Phòng
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {formatRelativeTime(m.timestamp)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* WPM & Độ chính xác */}
+                        <div className="flex items-center gap-3 shrink-0 font-mono text-right">
+                          <div>
+                            <div className="text-[9px] uppercase font-bold text-slate-500">Tốc độ</div>
+                            <div className="font-bold text-amber-400 text-xs sm:text-sm">
+                              {m.wpm} <span className="text-[10px] text-slate-400 font-normal">WPM</span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase font-bold text-slate-500">Độ chính xác</div>
+                            <div className="font-bold text-emerald-400 text-xs sm:text-sm">
+                              {m.accuracy}%
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Kết quả (Thắng / Thua / Đầu hàng) */}
+                        <div className="shrink-0 w-22 text-right">
+                          {isWin && (
+                            <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
+                              <Trophy className="w-3 h-3 shrink-0" />
+                              <span>Thắng</span>
+                            </span>
+                          )}
+                          {isLoss && (
+                            <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
+                              <X className="w-3 h-3 shrink-0" />
+                              <span>Thua</span>
+                            </span>
+                          )}
+                          {isAFK && (
+                            <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold">
+                              <span>💤</span>
+                              <span>AFK</span>
+                            </span>
+                          )}
+                          {isSurrender && (
+                            <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
+                              <Flag className="w-3 h-3 shrink-0" />
+                              <span>Đầu hàng</span>
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          {formatRelativeTime(m.timestamp)}
-                        </div>
                       </div>
-                    </div>
-
-                    {/* WPM & Độ chính xác */}
-                    <div className="flex items-center gap-3 shrink-0 font-mono text-right">
-                      <div>
-                        <div className="text-[9px] uppercase font-bold text-slate-500">Tốc độ</div>
-                        <div className="font-bold text-amber-400 text-xs sm:text-sm">
-                          {m.wpm} <span className="text-[10px] text-slate-400 font-normal">WPM</span>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[9px] uppercase font-bold text-slate-500">Độ chính xác</div>
-                        <div className="font-bold text-emerald-400 text-xs sm:text-sm">
-                          {m.accuracy}%
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Kết quả (Thắng / Thua / Đầu hàng) */}
-                    <div className="shrink-0 w-22 text-right">
-                      {isWin && (
-                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
-                          <Trophy className="w-3 h-3 shrink-0" />
-                          <span>Thắng</span>
-                        </span>
-                      )}
-                      {isLoss && (
-                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
-                          <X className="w-3 h-3 shrink-0" />
-                          <span>Thua</span>
-                        </span>
-                      )}
-                      {isAFK && (
-                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold">
-                          <span>💤</span>
-                          <span>AFK</span>
-                        </span>
-                      )}
-                      {isSurrender && (
-                        <span className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold">
-                          <Flag className="w-3 h-3 shrink-0" />
-                          <span>Đầu hàng</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        </div>
+          </div>
         )}
         </div>
       </div>
@@ -1220,3 +1758,5 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     </div>
   );
 };
+
+export default ProfileModal;
