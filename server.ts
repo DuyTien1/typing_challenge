@@ -48,6 +48,7 @@ import {
 // In-memory rooms store
 const rooms = new Map<string, GameRoom>();
 const sseClientsByRoom = new Map<string, Set<express.Response>>();
+const sseRoomClientMeta = new Map<express.Response, { userId: string; username: string; tabId: string; roomId: string }>();
 
 const roomChatMessages = new Map<string, ServerChatMessage[]>();
 
@@ -1260,7 +1261,7 @@ export interface PresenceSession {
 const activePresenceSessions = new Map<string, PresenceSession>(); // tabId -> session
 const sseGlobalClients = new Map<express.Response, string>(); // res -> tabId
 const sseGlobalChatClients = new Set<express.Response>();
-const sseClientMeta = new Map<express.Response, { userId?: string; username?: string; tabId?: string; sectId?: string }>();
+const sseClientMeta = new Map<express.Response, { userId?: string; username?: string; tabId?: string; sectId?: string; currentRoomId?: string }>();
 
 // Multi-Channel Chat Storage
 const sectChatMessages = new Map<string, ServerChatMessage[]>(); // sectId -> messages
@@ -1493,6 +1494,20 @@ function registerPresence(
     lastSeen: now,
   });
 
+  // Đồng bộ sseClientMeta & sseRoomClientMeta cho kết nối SSE thời gian thực từ tab này
+  for (const [, cMeta] of sseClientMeta.entries()) {
+    if (cMeta.tabId === tabId) {
+      if (userId) cMeta.userId = userId;
+      if (meta?.username) cMeta.username = meta.username;
+    }
+  }
+  for (const [, rMeta] of sseRoomClientMeta.entries()) {
+    if (rMeta.tabId === tabId) {
+      if (userId) rMeta.userId = userId;
+      if (meta?.username) rMeta.username = meta.username;
+    }
+  }
+
   const newCount = getRealOnlineCount();
   if (newCount !== prevCount) {
     broadcastOnlinePresence();
@@ -1620,23 +1635,56 @@ function broadcastGlobalChat(msg: ServerChatMessage) {
   for (const client of Array.from(sseGlobalChatClients)) {
     try {
       client.write(payload);
+      if (typeof (client as any).flush === 'function') {
+        (client as any).flush();
+      }
     } catch {
       sseGlobalChatClients.delete(client);
       sseGlobalClients.delete(client);
       sseClientMeta.delete(client);
     }
   }
+
+  // Đồng thời truyền âm đến tất cả người chơi đang ở phòng đấu/chờ nếu họ chưa kết nối sseGlobalChatClients
+  for (const clientSet of sseClientsByRoom.values()) {
+    for (const client of Array.from(clientSet)) {
+      if (!sseGlobalChatClients.has(client)) {
+        try {
+          client.write(payload);
+          if (typeof (client as any).flush === 'function') {
+            (client as any).flush();
+          }
+        } catch {
+          clientSet.delete(client);
+          sseRoomClientMeta.delete(client);
+        }
+      }
+    }
+  }
 }
 
 function broadcastSectChat(sectId: string, msg: ServerChatMessage) {
   const payload = `data: ${JSON.stringify({ type: 'new_chat_message', message: msg })}\n\n`;
-  for (const client of Array.from(sseGlobalChatClients)) {
+  const cleanSectId = String(sectId || '').trim();
+  if (!cleanSectId) return;
+
+  const allClients = new Set<express.Response>([
+    ...Array.from(sseGlobalChatClients),
+    ...Array.from(sseClientsByRoom.values()).flatMap((s) => Array.from(s)),
+  ]);
+
+  for (const client of Array.from(allClients)) {
     try {
-      const meta = sseClientMeta.get(client);
+      const meta = sseClientMeta.get(client) || sseRoomClientMeta.get(client);
       const user = meta?.userId ? serverUsers.get(meta.userId) : (meta?.username ? getUserByUsername(meta.username) : null);
-      const userSectId = user?.cultivation?.sectId || meta?.sectId;
-      if (userSectId === sectId || meta?.username === 'Admin' || user?.isAdmin) {
+      const userSectId = (meta as any)?.sectId || user?.cultivation?.sectId;
+      const isAdminUser = meta?.username === 'Admin' || user?.isAdmin || (meta as any)?.isAdmin;
+
+      if (userSectId === cleanSectId || isAdminUser) {
         client.write(payload);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
       }
     } catch {
       sseGlobalChatClients.delete(client);
@@ -1652,20 +1700,30 @@ function broadcastWhisperChat(user1Id: string, user2Id: string, msg: ServerChatM
   const clean2 = (user2Id || '').toLowerCase();
   const targetName = (msg.whisperTarget || '').toLowerCase();
   const senderName = (msg.username || '').toLowerCase();
+  const targetUserId = (msg.whisperTargetUserId || '').toLowerCase();
+  const senderUserId = (msg.senderUserId || '').toLowerCase();
 
-  for (const client of Array.from(sseGlobalChatClients)) {
+  const allClients = new Set<express.Response>([
+    ...Array.from(sseGlobalChatClients),
+    ...Array.from(sseClientsByRoom.values()).flatMap((s) => Array.from(s)),
+  ]);
+
+  for (const client of Array.from(allClients)) {
     try {
-      const meta = sseClientMeta.get(client);
+      const meta = sseClientMeta.get(client) || sseRoomClientMeta.get(client);
       const cUserId = (meta?.userId || '').toLowerCase();
       const cUsername = (meta?.username || '').toLowerCase();
 
       const isParticipant =
-        (cUserId && (cUserId === clean1 || cUserId === clean2)) ||
-        (cUsername && (cUsername === senderName || cUsername === targetName)) ||
+        (cUserId && (cUserId === clean1 || cUserId === clean2 || cUserId === targetUserId || cUserId === senderUserId)) ||
+        (cUsername && (cUsername === senderName || cUsername === targetName || cUsername === clean1 || cUsername === clean2)) ||
         cUsername === 'admin';
 
       if (isParticipant) {
         client.write(payload);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
       }
     } catch {
       sseGlobalChatClients.delete(client);
@@ -1675,24 +1733,200 @@ function broadcastWhisperChat(user1Id: string, user2Id: string, msg: ServerChatM
   }
 }
 
-function broadcastToUser(targetUserIdOrName: string, event: any) {
-  if (!targetUserIdOrName) return;
-  const payload = `data: ${JSON.stringify(event)}\n\n`;
-  const clean = String(targetUserIdOrName || '').toLowerCase();
+function broadcastRoomChat(roomId: string, msg: ServerChatMessage) {
+  const normId = normalizeRoomCode(roomId);
+  const payloadRoom = `data: ${JSON.stringify({ type: 'chat_message', message: msg })}\n\n`;
+  const payloadGlobal = `data: ${JSON.stringify({ type: 'new_chat_message', message: msg })}\n\n`;
 
+  // 1. Gửi trực tiếp đến tất cả client trong stream của phòng
+  const clients = sseClientsByRoom.get(normId);
+  if (clients) {
+    for (const client of Array.from(clients)) {
+      try {
+        client.write(payloadRoom);
+        client.write(payloadGlobal);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
+      } catch {
+        clients.delete(client);
+        sseRoomClientMeta.delete(client);
+      }
+    }
+  }
+
+  // 2. Gửi đến tất cả client ở global SSE stream có currentRoomId khớp
   for (const client of Array.from(sseGlobalChatClients)) {
     try {
       const meta = sseClientMeta.get(client);
+      if (meta?.currentRoomId && normalizeRoomCode(meta.currentRoomId) === normId) {
+        client.write(payloadGlobal);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function normalizeSearchText(str: string): string {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .toLowerCase()
+    .trim();
+}
+
+const pendingUserFriendEvents = new Map<string, any[]>();
+
+function queueFriendEvent(targetKey: string, event: any) {
+  if (!targetKey) return;
+  const k = String(targetKey).trim().toLowerCase();
+  let list = pendingUserFriendEvents.get(k);
+  if (!list) {
+    list = [];
+    pendingUserFriendEvents.set(k, list);
+  }
+  // Avoid duplicate identical event in queue
+  const isDup = list.some(
+    (e) =>
+      e.type === event.type &&
+      e.fromUser?.id === event.fromUser?.id &&
+      e.requestId === event.requestId &&
+      e.message === event.message &&
+      (event.count === undefined || e.count === event.count)
+  );
+  if (!isDup) {
+    list.push(event);
+    if (list.length > 25) list.shift();
+  }
+}
+
+function broadcastToUser(targetUserIdOrName: string, event: any) {
+  if (!targetUserIdOrName) return;
+  const payload = `data: ${JSON.stringify(event)}\n\n`;
+  const clean = String(targetUserIdOrName || '').toLowerCase().trim();
+  const normClean = normalizeSearchText(clean);
+
+  // Find all possible identities of this user (id, username, displayName)
+  let targetUser = serverUsers.get(targetUserIdOrName) || getUserByUsername(targetUserIdOrName);
+  if (!targetUser) {
+    for (const u of serverUsers.values()) {
+      const uId = (u.id || '').toLowerCase();
+      const uName = (u.username || '').toLowerCase();
+      const dName = (u.displayName || '').toLowerCase();
       if (
-        (meta?.userId && meta.userId.toLowerCase() === clean) ||
-        (meta?.username && meta.username.toLowerCase() === clean)
+        uId === clean ||
+        uName === clean ||
+        dName === clean ||
+        (normClean && normalizeSearchText(uName) === normClean) ||
+        (normClean && normalizeSearchText(dName) === normClean)
       ) {
+        targetUser = u;
+        break;
+      }
+    }
+  }
+
+  const targetId = targetUser ? targetUser.id.toLowerCase() : clean;
+  const targetUsername = targetUser ? targetUser.username.toLowerCase() : clean;
+  const targetDisplayName = targetUser?.displayName ? targetUser.displayName.toLowerCase() : '';
+  const targetNormDisplay = targetDisplayName ? normalizeSearchText(targetDisplayName) : '';
+  const targetNormUser = targetUsername ? normalizeSearchText(targetUsername) : '';
+
+  // Queue event for poll/heartbeat delivery fallback
+  if (clean) queueFriendEvent(clean, event);
+  if (targetId && targetId !== clean) queueFriendEvent(targetId, event);
+  if (targetUsername && targetUsername !== clean) queueFriendEvent(targetUsername, event);
+
+  // Collect all active session tabIds for this user from activePresenceSessions
+  const matchingTabIds = new Set<string>();
+  for (const sess of activePresenceSessions.values()) {
+    const sUid = String(sess.userId || '').toLowerCase();
+    const sUname = String(sess.username || '').toLowerCase();
+    const sNorm = normalizeSearchText(sUname);
+    if (
+      sUid === targetId ||
+      sUid === targetUsername ||
+      sUid === clean ||
+      sUname === targetUsername ||
+      sUname === clean ||
+      (targetDisplayName && sUname === targetDisplayName) ||
+      (targetNormDisplay && sNorm === targetNormDisplay) ||
+      (targetNormUser && sNorm === targetNormUser) ||
+      (normClean && sNorm === normClean)
+    ) {
+      matchingTabIds.add(sess.tabId);
+      if (sess.tabId) queueFriendEvent(sess.tabId, event);
+    }
+  }
+
+  // 1. Broadcast to matching Global Chat SSE Clients
+  for (const client of Array.from(sseGlobalChatClients)) {
+    try {
+      const meta = sseClientMeta.get(client);
+      const mUid = String(meta?.userId || '').toLowerCase();
+      const mUname = String(meta?.username || '').toLowerCase();
+      const mTab = String(meta?.tabId || '');
+      const mNorm = normalizeSearchText(mUname);
+
+      const isMatch =
+        mUid === targetId ||
+        mUid === targetUsername ||
+        mUid === clean ||
+        mUname === targetUsername ||
+        mUname === clean ||
+        (targetDisplayName && mUname === targetDisplayName) ||
+        (targetNormDisplay && mNorm === targetNormDisplay) ||
+        (targetNormUser && mNorm === targetNormUser) ||
+        (normClean && mNorm === normClean) ||
+        (mTab && matchingTabIds.has(mTab));
+
+      if (isMatch) {
         client.write(payload);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
       }
     } catch {
       sseGlobalChatClients.delete(client);
       sseGlobalClients.delete(client);
       sseClientMeta.delete(client);
+    }
+  }
+
+  // 2. Broadcast to matching Room SSE Clients (ensures zero-miss during active rooms/matches)
+  for (const [client, rMeta] of Array.from(sseRoomClientMeta.entries())) {
+    try {
+      const rUid = String(rMeta?.userId || '').toLowerCase();
+      const rUname = String(rMeta?.username || '').toLowerCase();
+      const rTab = String(rMeta?.tabId || '');
+      const rNorm = normalizeSearchText(rUname);
+
+      const isMatch =
+        rUid === targetId ||
+        rUid === targetUsername ||
+        rUid === clean ||
+        rUname === targetUsername ||
+        rUname === clean ||
+        (targetDisplayName && rUname === targetDisplayName) ||
+        (targetNormDisplay && rNorm === targetNormDisplay) ||
+        (targetNormUser && rNorm === targetNormUser) ||
+        (normClean && rNorm === normClean) ||
+        (rTab && matchingTabIds.has(rTab));
+
+      if (isMatch) {
+        client.write(payload);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
+      }
+    } catch {
+      sseRoomClientMeta.delete(client);
     }
   }
 }
@@ -1782,6 +2016,25 @@ function broadcastToRoom(roomId: string, event: any) {
       clients.delete(res);
     }
   }
+}
+
+function setRoomNoCacheHeaders(res: any) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}
+
+function saveAndBroadcastRoom(roomId: string, room: GameRoom, event?: any) {
+  const norm = normalizeRoomCode(roomId);
+  room.lastActive = Date.now();
+  room.version = (room.version || 0) + 1;
+  room.updatedAt = Date.now();
+  rooms.set(norm, room);
+  if (isDatabaseConfigured()) {
+    dbSaveRoom(room).catch(() => {});
+  }
+  broadcastToRoom(norm, event || { type: 'room_updated', room });
 }
 
 // Room Bot Simulation Engine for standard typing race modes (vi_dau, vi_nodau, en, numpad)
@@ -2912,6 +3165,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Get all active rooms
   app.get('/api/rooms', async (_req, res) => {
+    setRoomNoCacheHeaders(res);
     cleanupInactiveRooms();
     if (isDatabaseConfigured()) {
       try {
@@ -2933,6 +3187,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Get specific room by code
   app.get('/api/rooms/:id', async (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     let room = rooms.get(norm);
     if (!room && isDatabaseConfigured()) {
@@ -2953,6 +3208,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Create new room
   app.post('/api/rooms', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const { mode, host, isQuickRoom = false, difficulty } = req.body;
     if (!mode || !host) {
       res.status(400).json({ success: false, error: 'Thiếu thông tin người chơi hoặc chế độ chơi.' });
@@ -2992,22 +3248,21 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       status: 'waiting',
       createdAt: Date.now(),
       lastActive: Date.now(),
+      version: 1,
+      updatedAt: Date.now(),
       players: [hostPlayer],
       difficulty: difficulty || (mode === 'numpad' ? 'number' : 'normal'),
       maxSlots: 8,
     };
 
-    rooms.set(code, newRoom);
-    if (isDatabaseConfigured()) {
-      dbSaveRoom(newRoom).catch(() => {});
-    }
-    broadcastToRoom(code, { type: 'room_updated', room: newRoom });
+    saveAndBroadcastRoom(code, newRoom);
 
     res.json({ success: true, room: newRoom, isHost: true });
   });
 
   // Join room by code
   app.post('/api/rooms/join', async (req, res) => {
+    setRoomNoCacheHeaders(res);
     const { rawCode, player, currentMode } = req.body;
     if (!rawCode || !player) {
       res.status(400).json({ success: false, error: 'Vui lòng nhập mã phòng hợp lệ.' });
@@ -3119,10 +3374,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       room.players.push(guestPlayer);
     }
 
-    room.lastActive = Date.now();
-    rooms.set(normCode, room);
-
-    broadcastToRoom(normCode, { type: 'room_updated', room });
+    saveAndBroadcastRoom(normCode, room);
 
     res.json({
       success: true,
@@ -3133,6 +3385,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Quick Join or Create Room
   app.post('/api/rooms/quick-join', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const { mode, player, difficulty } = req.body;
     if (!mode || !player) {
       res.status(400).json({ success: false, error: 'Thiếu thông tin người chơi hoặc chế độ.' });
@@ -3192,10 +3445,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         matchedRoom.players.push(freshPlayer);
       }
 
-      matchedRoom.lastActive = now;
-      rooms.set(matchedRoom.id, matchedRoom);
-
-      broadcastToRoom(matchedRoom.id, { type: 'room_updated', room: matchedRoom });
+      saveAndBroadcastRoom(matchedRoom.id, matchedRoom);
 
       res.json({
         success: true,
@@ -3230,13 +3480,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       status: 'waiting',
       createdAt: now,
       lastActive: now,
+      version: 1,
+      updatedAt: now,
       players: [hostPlayer],
       difficulty: difficulty || (mode === 'numpad' ? 'number' : 'normal'),
       maxSlots: 8,
     };
 
-    rooms.set(code, newQuickRoom);
-    broadcastToRoom(code, { type: 'room_updated', room: newQuickRoom });
+    saveAndBroadcastRoom(code, newQuickRoom);
 
     res.json({
       success: true,
@@ -3248,6 +3499,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Update players list (add/remove bot)
   app.post('/api/rooms/:id/players', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3264,13 +3516,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         sseClientsByRoom.delete(norm);
         roomChatMessages.delete(norm);
         broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+        if (isDatabaseConfigured()) {
+          dbDeleteRoom(norm).catch(() => {});
+        }
         res.json({ success: true, message: 'Phòng đã tự động giải tán do không còn người chơi thực' });
         return;
       }
       room.players = players;
-      room.lastActive = Date.now();
-      rooms.set(norm, room);
-      broadcastToRoom(norm, { type: 'room_updated', room });
+      saveAndBroadcastRoom(norm, room);
     }
 
     res.json({ success: true, room });
@@ -3278,6 +3531,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Transfer host: Chủ phòng nhường quyền cho người chơi khác, người được chọn lên Slot 1 (index 0), chủ cũ vào slot người kia để lại
   app.post('/api/rooms/:id/transfer-host', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3324,23 +3578,21 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     room.players = newPlayers;
     room.hostId = targetPlayer.id;
     room.hostName = targetPlayer.username;
-    room.lastActive = Date.now();
-    rooms.set(norm, room);
 
-    broadcastToRoom(norm, {
+    saveAndBroadcastRoom(norm, room, {
       type: 'host_transferred',
       oldHostId: requesterId,
       newHostId: targetPlayer.id,
       newHostName: targetPlayer.username,
       room,
     });
-    broadcastToRoom(norm, { type: 'room_updated', room });
 
     res.json({ success: true, room });
   });
 
   // Kick player or bot: Chủ phòng đá người chơi hoặc bot khỏi phòng
   app.post('/api/rooms/:id/kick', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3373,12 +3625,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       sseClientsByRoom.delete(norm);
       roomChatMessages.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      if (isDatabaseConfigured()) {
+        dbDeleteRoom(norm).catch(() => {});
+      }
       res.json({ success: true, roomClosed: true });
       return;
     }
 
-    room.lastActive = Date.now();
-    rooms.set(norm, room);
+    saveAndBroadcastRoom(norm, room);
 
     // Nếu người bị đá là người chơi thực, broadcast event player_kicked
     if (!targetPlayer.isBot) {
@@ -3390,13 +3644,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       });
     }
 
-    broadcastToRoom(norm, { type: 'room_updated', room });
-
     res.json({ success: true, room });
   });
 
   // Update room difficulty (Host configuration)
   app.post('/api/rooms/:id/difficulty', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3407,9 +3660,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const { difficulty } = req.body;
     if (difficulty) {
       room.difficulty = difficulty;
-      room.lastActive = Date.now();
-      rooms.set(norm, room);
-      broadcastToRoom(norm, { type: 'room_updated', room });
+      saveAndBroadcastRoom(norm, room);
     }
 
     res.json({ success: true, room });
@@ -3417,6 +3668,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Update room mode (Host configuration)
   app.post('/api/rooms/:id/mode', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3432,9 +3684,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       } else {
         room.difficulty = mode === 'numpad' ? 'number' : 'normal';
       }
-      room.lastActive = Date.now();
-      rooms.set(norm, room);
-      broadcastToRoom(norm, { type: 'room_updated', room });
+      saveAndBroadcastRoom(norm, room);
     }
 
     res.json({ success: true, room });
@@ -3442,6 +3692,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Update room status (waiting / playing / finished + synchronize words)
   app.post('/api/rooms/:id/status', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3456,13 +3707,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       sseClientsByRoom.delete(norm);
       roomChatMessages.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      if (isDatabaseConfigured()) {
+        dbDeleteRoom(norm).catch(() => {});
+      }
       res.status(404).json({ success: false, error: 'Phòng không còn người chơi thực' });
       return;
     }
 
     const { status, mode, words, mysteryWords, matchId, difficulty } = req.body;
     room.status = status;
-    room.lastActive = Date.now();
     if (words) room.words = words;
     if (mysteryWords) room.mysteryWords = mysteryWords;
     if (mode) room.mode = mode;
@@ -3482,6 +3735,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         p.errors = 0;
       });
       startRoomBots(norm);
+      saveAndBroadcastRoom(norm, room, {
+        type: 'room_started',
+        roomId: norm,
+        matchId: room.matchId,
+        mode: room.mode,
+        words: room.words,
+        mysteryWords: room.mysteryWords,
+        room,
+      });
     } else if (status === 'waiting') {
       stopRoomBots(norm, true);
       // Khi trở về phòng chờ: tắt inMatch (avatar sáng lên) cho tất cả người chơi và bot
@@ -3494,6 +3756,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         p.correctChars = 0;
         p.errors = 0;
       });
+      saveAndBroadcastRoom(norm, room);
     } else if (status === 'finished') {
       stopRoomBots(norm, true);
       // Khi trận đấu kết thúc hoặc người chơi duy nhất đầu hàng kết thúc sớm:
@@ -3509,22 +3772,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
           p.errors = 0;
         }
       });
-    }
-
-    rooms.set(norm, room);
-
-    if (status === 'playing') {
-      broadcastToRoom(norm, {
-        type: 'room_started',
-        roomId: norm,
-        matchId: room.matchId,
-        mode: room.mode,
-        words: room.words,
-        mysteryWords: room.mysteryWords,
-        room,
-      });
+      saveAndBroadcastRoom(norm, room);
     } else {
-      broadcastToRoom(norm, { type: 'room_updated', room });
+      saveAndBroadcastRoom(norm, room);
     }
 
     res.json({ success: true, room });
@@ -3532,6 +3782,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Update specific player status in room (e.g. surrender and return to waiting room -> inMatch: false)
   app.post('/api/rooms/:id/player-status', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3546,6 +3797,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       sseClientsByRoom.delete(norm);
       roomChatMessages.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      if (isDatabaseConfigured()) {
+        dbDeleteRoom(norm).catch(() => {});
+      }
       res.status(404).json({ success: false, error: 'Phòng không còn người chơi thực' });
       return;
     }
@@ -3576,9 +3830,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         stopRoomBots(norm, true);
       }
 
-      room.lastActive = Date.now();
-      rooms.set(norm, room);
-      broadcastToRoom(norm, { type: 'room_updated', room });
+      saveAndBroadcastRoom(norm, room);
     }
 
     res.json({ success: true, room });
@@ -3586,6 +3838,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Live in-game player progress sync
   app.post('/api/rooms/:id/player-progress', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3634,6 +3887,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Leave room: Xóa người chơi khỏi phòng chờ, nếu chủ phòng rời/bị xóa thì slot kế tiếp được đôn lên làm chủ phòng
   app.post('/api/rooms/:id/leave', (req, res) => {
+    setRoomNoCacheHeaders(res);
     const norm = normalizeRoomCode(req.params.id);
     const room = rooms.get(norm);
     if (!room) {
@@ -3658,6 +3912,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       sseClientsByRoom.delete(norm);
       roomChatMessages.delete(norm);
       broadcastToRoom(norm, { type: 'room_closed', roomId: norm });
+      if (isDatabaseConfigured()) {
+        dbDeleteRoom(norm).catch(() => {});
+      }
     } else {
       if (wasHost) {
         // Slot kế tiếp trong danh sách người chơi thực được đôn lên làm chủ phòng
@@ -3680,9 +3937,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         room.status = 'waiting';
         stopRoomBots(norm, true);
       }
-      room.lastActive = Date.now();
-      rooms.set(norm, room);
-      broadcastToRoom(norm, { type: 'room_updated', room });
+      saveAndBroadcastRoom(norm, room);
     }
 
     res.json({ success: true, room });
@@ -3691,11 +3946,20 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   // SSE Stream for realtime room synchronization
   app.get('/api/rooms/:id/stream', (req, res) => {
     const norm = normalizeRoomCode(req.params.id);
+    const tabId = String(req.query.tabId || '').trim();
+    const userId = String(req.query.userId || '').trim();
+    const username = String(req.query.username || '').trim();
+
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Cache-Control', 'no-cache, no-transform, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
+
+    // Flush 2KB comment padding immediately to bypass Citrix Workspace / NetScaler buffering
+    res.write(`: ${' '.repeat(2048)}\n\n`);
 
     let clientSet = sseClientsByRoom.get(norm);
     if (!clientSet) {
@@ -3703,6 +3967,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       sseClientsByRoom.set(norm, clientSet);
     }
     clientSet.add(res);
+    sseRoomClientMeta.set(res, { userId, username, tabId, roomId: norm });
 
     // Send current room state immediately
     const room = rooms.get(norm);
@@ -3714,18 +3979,32 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       }
     }
 
-    // Keep-alive heartbeat every 15s
+    // Sync pending friend requests count into room stream if user is identified
+    if (userId || username) {
+      const cleanId = (userId || '').toLowerCase();
+      const cleanName = (username || '').toLowerCase();
+      const pendingCount = Array.from(serverFriendRequests.values()).filter(
+        (r) =>
+          (cleanId && r.toUserId && r.toUserId.toLowerCase() === cleanId) ||
+          (cleanName && r.toUsername && r.toUsername.toLowerCase() === cleanName) ||
+          (cleanName && r.toUserId && r.toUserId.toLowerCase() === cleanName)
+      ).length;
+      res.write(`data: ${JSON.stringify({ type: 'friend_requests_count', count: pendingCount })}\n\n`);
+    }
+
+    // Keep-alive heartbeat every 10s to prevent Citrix Gateway idle disconnects
     const heartbeat = setInterval(() => {
       try {
         res.write(': heartbeat\n\n');
       } catch {
         clearInterval(heartbeat);
       }
-    }, 15000);
+    }, 10000);
 
     req.on('close', () => {
       clearInterval(heartbeat);
       clientSet?.delete(res);
+      sseRoomClientMeta.delete(res);
       if (clientSet && clientSet.size === 0) {
         sseClientsByRoom.delete(norm);
       }
@@ -3743,9 +4022,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const tabId = String(req.query.tabId || '').trim();
     const userId = String(req.query.userId || '').trim();
     const username = String(req.query.username || '').trim();
+    const sectId = String(req.query.sectId || '').trim();
+    const currentRoomId = req.query.currentRoomId ? normalizeRoomCode(String(req.query.currentRoomId)) : '';
 
     sseGlobalChatClients.add(res);
-    sseClientMeta.set(res, { userId, username, tabId });
+    sseClientMeta.set(res, { userId, username, tabId, sectId, currentRoomId });
 
     if (tabId) {
       sseGlobalClients.set(res, tabId);
@@ -3798,22 +4079,56 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const sectId = String(req.query.sectId || '').trim();
     const currentUserId = String(req.query.currentUserId || '').trim();
     const targetUserId = String(req.query.targetUserId || '').trim();
+    const currentUsername = String(req.query.currentUsername || '').trim();
+    const targetUsername = String(req.query.targetUsername || '').trim();
 
-    if (channel === 'room' && roomId) {
-      const msgs = roomChatMessages.get(roomId) || [];
+    if (channel === 'room') {
+      const msgs = roomId ? (roomChatMessages.get(roomId) || []) : [];
       res.json({ success: true, messages: msgs });
       return;
     }
 
-    if (channel === 'sect' && sectId) {
-      const msgs = sectChatMessages.get(sectId) || [];
+    if (channel === 'sect') {
+      const msgs = sectId ? (sectChatMessages.get(sectId) || []) : [];
       res.json({ success: true, messages: msgs });
       return;
     }
 
-    if (channel === 'whisper' && currentUserId && targetUserId) {
-      const key = getWhisperKey(currentUserId, targetUserId);
-      const msgs = whisperChatMessages.get(key) || [];
+    if (channel === 'whisper') {
+      const u1 = currentUserId || currentUsername;
+      const u2 = targetUserId || targetUsername;
+      const clean1 = (u1 || '').toLowerCase();
+      const clean2 = (u2 || '').toLowerCase();
+
+      let msgs: ServerChatMessage[] = [];
+      const candidateKeys = [
+        getWhisperKey(currentUserId, targetUserId),
+        getWhisperKey(currentUsername, targetUsername),
+        getWhisperKey(currentUserId, targetUsername),
+        getWhisperKey(currentUsername, targetUserId),
+      ].filter(Boolean);
+
+      for (const k of candidateKeys) {
+        if (whisperChatMessages.has(k)) {
+          msgs = whisperChatMessages.get(k) || [];
+          break;
+        }
+      }
+
+      if (msgs.length === 0 && (clean1 || clean2)) {
+        // Fallback scan across whisper conversations
+        for (const [k, list] of whisperChatMessages.entries()) {
+          const kParts = k.split('_');
+          if (
+            (clean1 && clean2 && kParts.includes(clean1) && kParts.includes(clean2)) ||
+            (currentUserId && targetUserId && kParts.includes(currentUserId.toLowerCase()) && kParts.includes(targetUserId.toLowerCase()))
+          ) {
+            msgs = list;
+            break;
+          }
+        }
+      }
+
       res.json({ success: true, messages: msgs });
       return;
     }
@@ -3996,21 +4311,36 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     } else if (targetChannel === 'whisper') {
       const u1 = senderUserId || finalUsername;
       const u2 = whisperTargetUserId || whisperTarget || 'unknown';
-      const key = getWhisperKey(u1, u2);
-      let list = whisperChatMessages.get(key);
+      const keyPrimary = getWhisperKey(u1, u2);
+      let list = whisperChatMessages.get(keyPrimary);
       if (!list) {
         list = [];
-        whisperChatMessages.set(key, list);
+        whisperChatMessages.set(keyPrimary, list);
+      }
+      // Also map secondary key by username/ID
+      if (senderUserId && whisperTargetUserId) {
+        const keyByIds = getWhisperKey(senderUserId, whisperTargetUserId);
+        if (keyByIds !== keyPrimary) {
+          whisperChatMessages.set(keyByIds, list);
+        }
+      }
+      if (finalUsername && (whisperTarget || whisperTargetUserId)) {
+        const keyByNames = getWhisperKey(finalUsername, whisperTarget || whisperTargetUserId);
+        if (keyByNames !== keyPrimary) {
+          whisperChatMessages.set(keyByNames, list);
+        }
       }
       list.push(newMsg);
-      if (list.length > 100) list.shift();
+      if (list.length > 150) list.shift();
       broadcastWhisperChat(u1, u2, newMsg);
 
       // Nhẹ nhàng tăng hảo cảm khi đạo hữu đàm đạo với nhau (+1 hảo cảm, tối đa 20/ngày)
       const fsRecord = Array.from(serverFriendships.values()).find(
         (f) =>
           (f.user1Id === u1 && f.user2Id === u2) ||
-          (f.user1Id === u2 && f.user2Id === u1)
+          (f.user1Id === u2 && f.user2Id === u1) ||
+          (f.user1Id === senderUserId && f.user2Id === whisperTargetUserId) ||
+          (f.user1Id === whisperTargetUserId && f.user2Id === senderUserId)
       );
       if (fsRecord) {
         fsRecord.intimacy = Math.min(10000, (fsRecord.intimacy || 0) + 1);
@@ -4025,7 +4355,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       }
       list.push(newMsg);
       if (list.length > 150) list.shift();
-      broadcastToRoom(normRoomId, { type: 'chat_message', message: newMsg });
+      broadcastRoomChat(normRoomId, newMsg);
     }
 
     res.json({ success: true, message: newMsg });
@@ -4035,6 +4365,102 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   // HỆ THỐNG ĐẠO HỮU & KẾT BÁI ĐẠO LỮ (FRIENDS & DAO LU APIS)
   // =========================================================================
 
+  // =========================================================================
+  // HỆ THỐNG ĐẠO HỮU & KẾT BÁI ĐẠO LỮ (FRIENDS & DAO LU APIS)
+  // =========================================================================
+
+  // Tìm kiếm thông tin người chơi dựa trên bất kỳ định danh nào (User ID, Username, DisplayName, Presence Tab, Game Room Slot)
+  function findUserByIdentifier(idOrName?: string): ServerUserRecord | null {
+    if (!idOrName) return null;
+    const clean = String(idOrName).trim();
+    if (!clean) return null;
+    const lower = clean.toLowerCase();
+    const norm = normalizeSearchText(clean);
+
+    // 1. Tìm chính xác theo id trong serverUsers
+    let u = serverUsers.get(clean) || serverUsers.get(lower);
+    if (u) return u;
+
+    // 2. Tìm chính xác theo username trong serverUsers
+    u = getUserByUsername(clean);
+    if (u) return u;
+
+    // 3. Quét serverUsers theo displayName, username hoặc id không phân biệt hoa thường
+    for (const record of serverUsers.values()) {
+      const rId = String(record.id || '').toLowerCase();
+      const rName = String(record.username || '').toLowerCase();
+      const rDisp = String(record.displayName || '').toLowerCase();
+      if (
+        rId === lower ||
+        rName === lower ||
+        rDisp === lower ||
+        (norm && normalizeSearchText(rName) === norm) ||
+        (norm && normalizeSearchText(rDisp) === norm)
+      ) {
+        return record;
+      }
+    }
+
+    // 4. Tìm kiếm trong activePresenceSessions (người chơi đang trực tuyến trên các tab)
+    for (const sess of activePresenceSessions.values()) {
+      const sUid = String(sess.userId || '').toLowerCase();
+      const sTab = String(sess.tabId || '').toLowerCase();
+      const sName = String(sess.username || '').toLowerCase();
+      const normS = normalizeSearchText(sName);
+      if (
+        sUid === lower ||
+        sTab === lower ||
+        sName === lower ||
+        (norm && normS === norm)
+      ) {
+        // Chỉ nạp tài khoản nếu đã đăng ký trong serverUsers
+        const existing = (sess.userId ? serverUsers.get(sess.userId) : null) || getUserByUsername(sess.username);
+        if (existing) return existing;
+        // Người chơi Tán Tu không có UID và không lưu vào serverUsers
+      }
+    }
+
+    // 5. Tìm kiếm trong danh sách phòng thi đấu (phòng đua đang mở)
+    for (const r of rooms.values()) {
+      for (const p of r.players) {
+        if (!p.isBot) {
+          const pId = String(p.id || '').toLowerCase();
+          const pName = String(p.username || '').toLowerCase();
+          if (pId === lower || pName === lower || (norm && normalizeSearchText(pName) === norm)) {
+            const existing = serverUsers.get(p.id) || getUserByUsername(p.username);
+            if (existing) return existing;
+            // Người chơi Tán Tu không có UID và không lưu vào serverUsers
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // So sánh xem 2 định danh có trỏ tới cùng 1 người chơi hay không (ưu tiên so sánh ID chính xác)
+  function isSameUser(idOrNameA?: string, idOrNameB?: string): boolean {
+    if (!idOrNameA || !idOrNameB) return false;
+    const cleanA = String(idOrNameA).trim().toLowerCase();
+    const cleanB = String(idOrNameB).trim().toLowerCase();
+    if (cleanA === cleanB) return true;
+
+    const userA = findUserByIdentifier(idOrNameA);
+    const userB = findUserByIdentifier(idOrNameB);
+
+    if (userA && userB) {
+      return userA.id.toLowerCase() === userB.id.toLowerCase();
+    }
+    if (userA) {
+      return userA.id.toLowerCase() === cleanB || userA.username.toLowerCase() === cleanB;
+    }
+    if (userB) {
+      return userB.id.toLowerCase() === cleanA || userB.username.toLowerCase() === cleanA;
+    }
+
+    return false;
+  }
+
   // Helper tính Intimacy Level: 1: Sơ Thức (0-499), 2: Kim Lan (500-1999), 3: Tri Kỷ (2000-4999), 4: Đạo Lữ (5000+)
   function calculateIntimacyLevel(intimacy: number, isDaoLu?: boolean): 1 | 2 | 3 | 4 {
     if (isDaoLu || intimacy >= 5000) return 4;
@@ -4042,6 +4468,279 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (intimacy >= 500) return 2;
     return 1;
   }
+
+  // GET /api/friends/search: Tìm kiếm đạo hữu theo Tên / Username / UID, hoặc trả về Gợi Ý Nhanh
+  app.get('/api/friends/search', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const authHeader = req.headers.authorization;
+    let authUser = getUserByToken(authHeader);
+    const queryUserId = String(req.query.userId || req.query.currentUserId || '').trim();
+    const queryUsername = String(req.query.username || req.query.currentUsername || '').trim();
+
+    if (!authUser && (queryUserId || queryUsername)) {
+      authUser = findUserByIdentifier(queryUserId) || (queryUsername ? findUserByIdentifier(queryUsername) : null);
+    }
+
+    const myId = authUser ? authUser.id : queryUserId;
+    const myName = authUser ? authUser.username.toLowerCase() : queryUsername.toLowerCase();
+    const q = String(req.query.q || '').trim();
+
+    // Map existing friendships
+    const existingFriendIds = new Set<string>();
+    for (const fsRecord of serverFriendships.values()) {
+      if (myId && (isSameUser(fsRecord.user1Id, myId) || isSameUser(fsRecord.user2Id, myId))) {
+        const otherId = isSameUser(fsRecord.user1Id, myId) ? fsRecord.user2Id : fsRecord.user1Id;
+        existingFriendIds.add(otherId);
+      }
+    }
+
+    // Map pending requests
+    const sentReqTargets = new Set<string>();
+    const receivedReqFrom = new Set<string>();
+    for (const reqRecord of serverFriendRequests.values()) {
+      if (myId && (isSameUser(reqRecord.fromUserId, myId) || (myName && isSameUser(reqRecord.fromUserId, myName)))) {
+        sentReqTargets.add(reqRecord.toUserId);
+        const toU = findUserByIdentifier(reqRecord.toUserId);
+        if (toU) sentReqTargets.add(toU.username.toLowerCase());
+      }
+      if (myId && (isSameUser(reqRecord.toUserId, myId) || (myName && isSameUser(reqRecord.toUserId, myName)))) {
+        receivedReqFrom.add(reqRecord.fromUserId);
+        const fromU = findUserByIdentifier(reqRecord.fromUserId);
+        if (fromU) receivedReqFrom.add(fromU.username.toLowerCase());
+      }
+    }
+
+    // Map online presence
+    const onlineUserMap = new Map<string, PresenceSession>();
+    for (const sess of activePresenceSessions.values()) {
+      if (sess.userId) onlineUserMap.set(sess.userId.toLowerCase(), sess);
+      if (sess.username) onlineUserMap.set(sess.username.toLowerCase(), sess);
+    }
+
+    const candidateUsers = new Map<string, any>();
+
+    // Helper to format user result
+    const formatCandidate = (u: any, isExactUid = false) => {
+      const uId = u.id || u.userId;
+      if (!uId) return null;
+      if (isSameUser(uId, myId) || (myName && isSameUser(u.username, myName))) return null;
+
+      const onlineSess = onlineUserMap.get(uId.toLowerCase()) || (u.username ? onlineUserMap.get(u.username.toLowerCase()) : undefined);
+      let status: 'online' | 'in_match' | 'offline' = 'offline';
+      if (onlineSess) {
+        status = (onlineSess.status === 'playing' || onlineSess.status === 'outplay') ? 'in_match' : 'online';
+      }
+
+      const isFriend = Array.from(existingFriendIds).some(
+        (fId) => isSameUser(fId, uId) || (u.username && isSameUser(fId, u.username))
+      );
+      const isPendingSent = Array.from(sentReqTargets).some(
+        (tId) => isSameUser(tId, uId) || (u.username && isSameUser(tId, u.username))
+      );
+
+      let pendingRequestId: string | undefined;
+      let isPendingReceived = false;
+      for (const r of serverFriendRequests.values()) {
+        if (
+          (isSameUser(r.toUserId, myId) || (myName && isSameUser(r.toUserId, myName))) &&
+          (isSameUser(r.fromUserId, uId) || (u.username && isSameUser(r.fromUserId, u.username)))
+        ) {
+          isPendingReceived = true;
+          pendingRequestId = r.id;
+          break;
+        }
+      }
+
+      const realmIdx = u.cultivation?.realmIndex || 0;
+      const realm = XIANXIA_REALM_METAS[realmIdx] || XIANXIA_REALM_METAS[0];
+
+      // Chỉ người chơi đã đăng nhập mới có UID chính thức (usr_...)
+      const isRegisteredUser = Boolean(
+        (u.authProvider && u.authProvider !== 'guest') ||
+        (u.email && u.email.includes('@')) ||
+        (uId.startsWith('usr_'))
+      );
+      const hasUid = isRegisteredUser;
+
+      return {
+        id: uId,
+        hasUid,
+        uid: hasUid ? uId : null,
+        isGuest: !hasUid,
+        username: u.username || 'Đạo Hữu',
+        displayName: u.displayName || u.username || 'Đạo Hữu',
+        avatar: u.avatar || onlineSess?.avatar || '⚡',
+        frame: u.frame || onlineSess?.frame || 'default',
+        bestWpm: u.bestWpm || onlineSess?.bestWpm || 0,
+        level: u.cultivation?.level || (onlineSess?.totalGames ? onlineSess.totalGames * 2 : 1),
+        realmName: realm.name,
+        realmIcon: realm.icon,
+        sectName: u.cultivation?.sectName,
+        sectTag: u.cultivation?.sectTag,
+        status,
+        isFriend,
+        isPendingSent,
+        isPendingReceived,
+        pendingRequestId,
+        isExactUidMatch: hasUid && isExactUid,
+      };
+    };
+
+    if (q) {
+      const lowerQ = q.toLowerCase();
+      const normQ = normalizeSearchText(lowerQ);
+
+      // 1. Kiểm tra khớp chính xác UID (chỉ áp dụng cho tài khoản đã đăng ký/đăng nhập)
+      const exactUser = serverUsers.get(q) || serverUsers.get(lowerQ);
+      if (exactUser && (exactUser.authProvider !== 'guest' || exactUser.id.startsWith('usr_'))) {
+        const item = formatCandidate(exactUser, true);
+        if (item) candidateUsers.set(item.id, item);
+      }
+
+      // 2. Kiểm tra theo tên / username / displayName trong serverUsers
+      for (const u of serverUsers.values()) {
+        const uId = (u.id || '').toLowerCase();
+        const uName = (u.username || '').toLowerCase();
+        const dName = (u.displayName || '').toLowerCase();
+        const normUName = normalizeSearchText(uName);
+        const normDName = normalizeSearchText(dName);
+
+        if (
+          uId === lowerQ ||
+          uName === lowerQ ||
+          dName === lowerQ ||
+          uId.includes(lowerQ) ||
+          uName.includes(lowerQ) ||
+          dName.includes(lowerQ) ||
+          (normQ && normUName.includes(normQ)) ||
+          (normQ && normDName.includes(normQ))
+        ) {
+          const item = formatCandidate(u, uId === lowerQ);
+          if (item && !candidateUsers.has(item.id)) candidateUsers.set(item.id, item);
+        }
+      }
+
+      // 3. Kiểm tra activePresenceSessions (người chơi online)
+      for (const sess of activePresenceSessions.values()) {
+        const sName = (sess.username || '').toLowerCase();
+        const sUid = (sess.userId || '').toLowerCase();
+        const normSName = normalizeSearchText(sName);
+        if (
+          sName.includes(lowerQ) ||
+          sUid.includes(lowerQ) ||
+          (normQ && normSName.includes(normQ))
+        ) {
+          const uRecord = findUserByIdentifier(sess.userId) || findUserByIdentifier(sess.username) || {
+            id: sess.userId,
+            username: sess.username,
+            displayName: sess.username,
+            avatar: sess.avatar,
+            frame: sess.frame,
+            bestWpm: sess.bestWpm,
+          };
+          const item = formatCandidate(uRecord, sUid === lowerQ);
+          if (item && !candidateUsers.has(item.id)) candidateUsers.set(item.id, item);
+        }
+      }
+
+      // 4. Kiểm tra người chơi trong các phòng đua
+      for (const r of rooms.values()) {
+        for (const p of r.players) {
+          if (!p.isBot) {
+            const pName = (p.username || '').toLowerCase();
+            const pId = (p.id || '').toLowerCase();
+            const normPName = normalizeSearchText(pName);
+            if (
+              pName.includes(lowerQ) ||
+              pId.includes(lowerQ) ||
+              (normQ && normPName.includes(normQ))
+            ) {
+              const uRecord = findUserByIdentifier(p.id) || {
+                id: p.id,
+                username: p.username,
+                displayName: p.username,
+                avatar: p.icon || '⚡',
+                frame: p.frame,
+                bestWpm: p.bestWpm || 0,
+              };
+              const item = formatCandidate(uRecord, pId === lowerQ);
+              if (item && !candidateUsers.has(item.id)) candidateUsers.set(item.id, item);
+            }
+          }
+        }
+      }
+    } else {
+      // GỢI Ý NHANH: Trả về người chơi đang online / đang trong phòng thi đấu trước, sau đó là các cao thủ tu vi cao
+      for (const sess of activePresenceSessions.values()) {
+        if (candidateUsers.size >= 15) break;
+        const uRecord = findUserByIdentifier(sess.userId) || findUserByIdentifier(sess.username) || {
+          id: sess.userId,
+          username: sess.username,
+          displayName: sess.username,
+          avatar: sess.avatar,
+          frame: sess.frame,
+          bestWpm: sess.bestWpm,
+        };
+        const item = formatCandidate(uRecord, false);
+        if (item && !item.isFriend && !candidateUsers.has(item.id)) {
+          candidateUsers.set(item.id, item);
+        }
+      }
+
+      // Người chơi trong các phòng thi đấu
+      for (const r of rooms.values()) {
+        if (candidateUsers.size >= 20) break;
+        for (const p of r.players) {
+          if (!p.isBot && !candidateUsers.has(p.id)) {
+            const uRecord = findUserByIdentifier(p.id) || {
+              id: p.id,
+              username: p.username,
+              displayName: p.username,
+              avatar: p.icon || '⚡',
+              frame: p.frame,
+              bestWpm: p.bestWpm || 0,
+            };
+            const item = formatCandidate(uRecord, false);
+            if (item && !item.isFriend && !candidateUsers.has(item.id)) {
+              candidateUsers.set(item.id, item);
+            }
+          }
+        }
+      }
+
+      // Các cao thủ đăng ký trên hệ thống
+      const sortedUsers = Array.from(serverUsers.values()).sort((a, b) => {
+        const lvlA = a.cultivation?.level || 0;
+        const lvlB = b.cultivation?.level || 0;
+        return lvlB - lvlA;
+      });
+
+      for (const u of sortedUsers) {
+        if (candidateUsers.size >= 25) break;
+        const item = formatCandidate(u, false);
+        if (item && !item.isFriend && !candidateUsers.has(item.id)) {
+          candidateUsers.set(item.id, item);
+        }
+      }
+    }
+
+    const results = Array.from(candidateUsers.values());
+    results.sort((a, b) => {
+      if (a.isExactUidMatch && !b.isExactUidMatch) return -1;
+      if (!a.isExactUidMatch && b.isExactUidMatch) return 1;
+      if (a.status !== 'offline' && b.status === 'offline') return -1;
+      if (a.status === 'offline' && b.status !== 'offline') return 1;
+      if (!a.isFriend && b.isFriend) return -1;
+      if (a.isFriend && !b.isFriend) return 1;
+      return (b.bestWpm || 0) - (a.bestWpm || 0);
+    });
+
+    res.json({
+      success: true,
+      query: q,
+      results: results.slice(0, 20),
+    });
+  });
 
   // GET /api/friends/list: Danh sách đạo hữu, trạng thái online, độ hảo cảm & lời mời chờ duyệt
   app.get('/api/friends/list', (req, res) => {
@@ -4051,14 +4750,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const queryUserId = String(req.query.userId || '').trim();
     const queryUsername = String(req.query.username || '').trim();
 
-    if (!authUser && queryUserId) {
-      authUser = serverUsers.get(queryUserId) || null;
-    }
-    if (!authUser && queryUsername) {
-      authUser = getUserByUsername(queryUsername);
+    if (!authUser && (queryUserId || queryUsername)) {
+      authUser = findUserByIdentifier(queryUserId) || (queryUsername ? findUserByIdentifier(queryUsername) : null);
     }
 
-    if (!authUser) {
+    if (!authUser || authUser.authProvider === 'guest') {
       res.json({
         success: true,
         friends: [],
@@ -4076,16 +4772,16 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Lọc danh sách bạn bè
     const friends: any[] = [];
     for (const fsRecord of serverFriendships.values()) {
-      if (fsRecord.user1Id === myId || fsRecord.user2Id === myId) {
-        const otherId = fsRecord.user1Id === myId ? fsRecord.user2Id : fsRecord.user1Id;
-        const otherUser = serverUsers.get(otherId);
+      if (isSameUser(fsRecord.user1Id, myId) || isSameUser(fsRecord.user2Id, myId)) {
+        const otherId = isSameUser(fsRecord.user1Id, myId) ? fsRecord.user2Id : fsRecord.user1Id;
+        const otherUser = findUserByIdentifier(otherId);
 
         // Kiểm tra trạng thái hiện diện online thời gian thực
         let onlineSession: PresenceSession | undefined;
         for (const sess of activePresenceSessions.values()) {
           if (
-            (sess.userId && sess.userId === otherId) ||
-            (otherUser && otherUser.username && sess.username && sess.username.toLowerCase() === otherUser.username.toLowerCase())
+            (sess.userId && isSameUser(sess.userId, otherId)) ||
+            (otherUser && sess.username && isSameUser(sess.username, otherUser.username))
           ) {
             onlineSession = sess;
             break;
@@ -4114,9 +4810,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
         friends.push({
           friendshipId: fsRecord.id,
-          userId: otherId,
-          username: otherUser?.username || onlineSession?.username || 'Đạo Hữu',
-          displayName: otherUser?.displayName || otherUser?.username || onlineSession?.username || 'Đạo Hữu',
+          userId: otherUser?.id || otherId,
+          username: otherUser?.username || onlineSession?.username || otherId,
+          displayName: otherUser?.displayName || otherUser?.username || onlineSession?.username || otherId,
           avatar: otherUser?.avatar || onlineSession?.avatar || '⚡',
           frame: otherUser?.frame || onlineSession?.frame || 'default',
           bestWpm: otherUser?.bestWpm || onlineSession?.bestWpm || 0,
@@ -4150,13 +4846,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Lời mời kết bạn đang chờ duyệt (Pending Requests)
     const pendingRequests: any[] = [];
     for (const reqRecord of serverFriendRequests.values()) {
-      const toId = String(reqRecord.toUserId || '').toLowerCase();
-      if (reqRecord.toUserId === myId || (myName && toId === myName)) {
-        const fromU = serverUsers.get(reqRecord.fromUserId) || getUserByUsername(reqRecord.fromUserId);
+      if (isSameUser(reqRecord.toUserId, myId) || (myName && isSameUser(reqRecord.toUserId, myName))) {
+        const fromU = findUserByIdentifier(reqRecord.fromUserId);
         const fromRealm = XIANXIA_REALM_METAS[fromU?.cultivation?.realmIndex || 0] || XIANXIA_REALM_METAS[0];
         pendingRequests.push({
           id: reqRecord.id,
-          fromUserId: reqRecord.fromUserId,
+          fromUserId: fromU?.id || reqRecord.fromUserId,
           fromUsername: fromU?.username || reqRecord.fromUserId,
           fromDisplayName: fromU?.displayName || fromU?.username || reqRecord.fromUserId,
           fromAvatar: fromU?.avatar || '⚡',
@@ -4173,7 +4868,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // Lời mời đã gửi đi (Sent Requests)
     const sentRequests = Array.from(serverFriendRequests.values())
-      .filter((r) => r.fromUserId === myId || (myName && String(r.fromUserId || '').toLowerCase() === myName))
+      .filter((r) => isSameUser(r.fromUserId, myId) || (myName && isSameUser(r.fromUserId, myName)))
       .map((r) => ({
         id: r.id,
         toUserId: r.toUserId,
@@ -4188,44 +4883,64 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     });
   });
 
-  // POST /api/friends/request: Gửi lời mời kết bạn (bằng username hoặc userId)
+  // POST /api/friends/request: Gửi lời mời kết bạn (bằng username, displayName hoặc UID)
   app.post('/api/friends/request', (req, res) => {
     const authHeader = req.headers.authorization;
     let authUser = getUserByToken(authHeader);
     const { targetUsername, targetUserId, message } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
-    if (!authUser) {
-      res.status(401).json({ success: false, error: 'Vui lòng đăng nhập tài khoản để kết bạn!' });
+    if (!authUser || authUser.authProvider === 'guest') {
+      res.status(401).json({
+        success: false,
+        error: 'Đạo hữu hiện đang là Tán Tu. Vui lòng đăng nhập tài khoản chính thức để nhận Mã UID và kết bạn!',
+      });
       return;
     }
 
     const cleanTargetName = String(targetUsername || '').trim();
     const cleanTargetId = String(targetUserId || '').trim();
 
-    let targetUser = cleanTargetId ? serverUsers.get(cleanTargetId) : null;
+    let targetUser: ServerUserRecord | null = null;
+    if (cleanTargetId) {
+      targetUser = findUserByIdentifier(cleanTargetId);
+    }
     if (!targetUser && cleanTargetName) {
-      targetUser = getUserByUsername(cleanTargetName);
+      targetUser = findUserByIdentifier(cleanTargetName);
     }
 
     if (!targetUser) {
-      res.status(404).json({ success: false, error: `Không tìm thấy đạo hữu "${cleanTargetName || cleanTargetId}" trên máy chủ!` });
+      res.status(404).json({
+        success: false,
+        error: `Không tìm thấy đạo hữu "${cleanTargetName || cleanTargetId}" trên máy chủ! Hãy kiểm tra lại tên hoặc UID.`,
+      });
       return;
     }
 
-    if (targetUser.id === authUser.id) {
+    if (targetUser.authProvider === 'guest') {
+      res.status(400).json({
+        success: false,
+        error: `Đạo hữu "${targetUser.displayName || targetUser.username}" hiện đang là Tán Tu. Tán Tu không có Mã UID và không thể lưu trữ quan hệ Đạo Hữu!`,
+      });
+      return;
+    }
+
+    if (targetUser.id.toLowerCase() === authUser.id.toLowerCase()) {
       res.status(400).json({ success: false, error: 'Không thể tự gửi lời mời kết bạn cho chính mình!' });
       return;
     }
 
-    // Kiểm tra đã là bạn bè chưa
+    // Kiểm tra đã là bạn bè chưa (so sánh trực tiếp ID)
     const alreadyFriends = Array.from(serverFriendships.values()).some(
       (f) =>
-        (f.user1Id === authUser.id && f.user2Id === targetUser!.id) ||
-        (f.user1Id === targetUser!.id && f.user2Id === authUser.id)
+        (f.user1Id.toLowerCase() === authUser.id.toLowerCase() && f.user2Id.toLowerCase() === targetUser!.id.toLowerCase()) ||
+        (f.user1Id.toLowerCase() === targetUser!.id.toLowerCase() && f.user2Id.toLowerCase() === authUser.id.toLowerCase())
     );
 
     if (alreadyFriends) {
@@ -4236,8 +4951,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Kiểm tra nếu đối phương đã từng gửi lời mời kết bạn cho mình trước đó -> Tự động chấp thuận kết bái luôn!
     const reciprocalReq = Array.from(serverFriendRequests.values()).find(
       (r) =>
-        (r.fromUserId === targetUser!.id && r.toUserId === authUser.id) ||
-        (r.fromUserId === targetUser!.username && r.toUserId === authUser.username)
+        (r.fromUserId.toLowerCase() === targetUser!.id.toLowerCase() || (targetUser!.username && r.fromUsername?.toLowerCase() === targetUser!.username.toLowerCase())) &&
+        (r.toUserId.toLowerCase() === authUser.id.toLowerCase() || (authUser.username && r.toUsername?.toLowerCase() === authUser.username.toLowerCase()))
     );
 
     if (reciprocalReq) {
@@ -4254,10 +4969,20 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       serverFriendships.set(fsId, newFriendship);
       saveFriendsToFile();
 
-      broadcastToUser(targetUser.id, {
+      const acceptEvent = {
         type: 'friend_request_accepted',
         friendName: authUser.displayName || authUser.username,
-      });
+        fromUserId: authUser.id,
+        targetUserId: targetUser.id,
+      };
+
+      broadcastToUser(targetUser.id, acceptEvent);
+      broadcastToUser(targetUser.username, acceptEvent);
+      queueFriendEvent(targetUser.id, acceptEvent);
+      queueFriendEvent(targetUser.username, acceptEvent);
+
+      broadcastToUser(targetUser.id, { type: 'friends_data_updated' });
+      broadcastToUser(authUser.id, { type: 'friends_data_updated' });
 
       res.json({
         success: true,
@@ -4270,8 +4995,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Kiểm tra xem đã gửi lời mời đang chờ hay chưa
     const alreadyPending = Array.from(serverFriendRequests.values()).some(
       (r) =>
-        (r.fromUserId === authUser.id && r.toUserId === targetUser!.id) ||
-        (r.fromUserId === authUser.id && targetUser?.username && String(r.toUserId || '').toLowerCase() === targetUser.username.toLowerCase())
+        r.fromUserId.toLowerCase() === authUser.id.toLowerCase() &&
+        r.toUserId.toLowerCase() === targetUser!.id.toLowerCase()
     );
 
     if (alreadyPending) {
@@ -4283,7 +5008,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const newReq: ServerFriendRequestRecord = {
       id: reqId,
       fromUserId: authUser.id,
+      fromUsername: authUser.displayName || authUser.username,
       toUserId: targetUser.id,
+      toUsername: targetUser.displayName || targetUser.username,
       message: message ? String(message).slice(0, 150) : 'Kết bái đạo hữu, cùng đàm đạo gõ phím!',
       createdAt: Date.now(),
     };
@@ -4291,8 +5018,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     serverFriendRequests.set(reqId, newReq);
     saveFriendsToFile();
 
-    // Thông báo SSE tới đạo hữu được mời
-    broadcastToUser(targetUser.id, {
+    // Thông báo tức thời tới đạo hữu được mời qua SSE và hàng đợi Ping
+    const eventPayload = {
       type: 'friend_request_received',
       fromUser: {
         id: authUser.id,
@@ -4300,9 +5027,36 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         displayName: authUser.displayName || authUser.username,
         avatar: authUser.avatar,
         frame: authUser.frame,
+        requestId: reqId,
       },
       message: newReq.message,
-    });
+    };
+
+    broadcastToUser(targetUser.id, eventPayload);
+    broadcastToUser(targetUser.username, eventPayload);
+    if (targetUser.displayName) broadcastToUser(targetUser.displayName, eventPayload);
+
+    queueFriendEvent(targetUser.id, eventPayload);
+    queueFriendEvent(targetUser.username, eventPayload);
+
+    const targetPendingCount = Array.from(serverFriendRequests.values()).filter((r) =>
+      r.toUserId.toLowerCase() === targetUser!.id.toLowerCase() ||
+      (targetUser!.username && r.toUsername?.toLowerCase() === targetUser!.username.toLowerCase()) ||
+      isSameUser(r.toUserId, targetUser!.id)
+    ).length;
+
+    const countEvent = {
+      type: 'friend_requests_count',
+      count: targetPendingCount,
+    };
+    broadcastToUser(targetUser.id, countEvent);
+    broadcastToUser(targetUser.username, countEvent);
+    queueFriendEvent(targetUser.id, countEvent);
+    queueFriendEvent(targetUser.username, countEvent);
+
+    broadcastToUser(targetUser.id, { type: 'friends_data_updated' });
+    broadcastToUser(targetUser.username, { type: 'friends_data_updated' });
+    broadcastToUser(authUser.id, { type: 'friends_data_updated' });
 
     res.json({
       success: true,
@@ -4316,77 +5070,171 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { requestId, action } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || req.query.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || req.query.username || '').trim();
+
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
-    if (!authUser) {
-      res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
+    if (!authUser || authUser.authProvider === 'guest') {
+      res.status(401).json({
+        success: false,
+        error: 'Đạo hữu hiện đang là Tán Tu. Vui lòng đăng nhập tài khoản chính thức để kết bái Đạo Hữu!',
+      });
       return;
     }
 
-    const friendReq = serverFriendRequests.get(requestId);
+    const cleanRequestId = String(requestId || '').trim();
+    let friendReq = serverFriendRequests.get(cleanRequestId);
+    if (!friendReq) {
+      for (const r of serverFriendRequests.values()) {
+        if (r.id === cleanRequestId) {
+          friendReq = r;
+          break;
+        }
+      }
+    }
+
+    // Nếu không tìm thấy bằng requestId, kiểm tra nếu cleanRequestId là id/username của người gửi
+    if (!friendReq) {
+      for (const r of serverFriendRequests.values()) {
+        const toMe =
+          isSameUser(r.toUserId, authUser.id) ||
+          r.toUserId.toLowerCase() === authUser.id.toLowerCase() ||
+          (authUser.username && r.toUsername?.toLowerCase() === authUser.username.toLowerCase()) ||
+          (candidateMyId && r.toUserId.toLowerCase() === candidateMyId.toLowerCase());
+
+        const fromTarget =
+          isSameUser(r.fromUserId, cleanRequestId) ||
+          r.fromUserId.toLowerCase() === cleanRequestId.toLowerCase() ||
+          (r.fromUsername && r.fromUsername.toLowerCase() === cleanRequestId.toLowerCase()) ||
+          r.id === cleanRequestId;
+
+        if (toMe && fromTarget) {
+          friendReq = r;
+          break;
+        }
+      }
+    }
+
+    // Nếu vẫn chưa tìm thấy và người chơi chỉ có duy nhất 1 lời mời chờ, chấp nhận lời mời đó
+    if (!friendReq && authUser) {
+      const myPending = Array.from(serverFriendRequests.values()).filter(
+        (r) =>
+          r.toUserId.toLowerCase() === authUser.id.toLowerCase() ||
+          (authUser.username && r.toUsername?.toLowerCase() === authUser.username.toLowerCase()) ||
+          isSameUser(r.toUserId, authUser.id)
+      );
+      if (myPending.length === 1) {
+        friendReq = myPending[0];
+      }
+    }
+
     if (!friendReq) {
       res.status(404).json({ success: false, error: 'Lời mời kết bạn không tồn tại hoặc đã được xử lý!' });
       return;
     }
 
     if (action === 'accept') {
-      serverFriendRequests.delete(requestId);
-      const fsId = `fs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const newFriendship: ServerFriendshipRecord = {
-        id: fsId,
-        user1Id: friendReq.fromUserId,
-        user2Id: authUser.id,
-        intimacy: 60, // Điểm hảo cảm khởi tạo
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      serverFriendships.set(fsId, newFriendship);
-      saveFriendsToFile();
+      serverFriendRequests.delete(friendReq.id);
 
-      // Thông báo cho người gửi lời mời
-      broadcastToUser(friendReq.fromUserId, {
+      const fromU = serverUsers.get(friendReq.fromUserId) || findUserByIdentifier(friendReq.fromUserId);
+      const toU = serverUsers.get(friendReq.toUserId) || findUserByIdentifier(friendReq.toUserId) || authUser;
+
+      if (!fromU || !toU) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy hồ sơ của một trong hai đạo hữu!' });
+        return;
+      }
+
+      const user1Id = fromU.id;
+      const user2Id = toU.id;
+
+      // Kiểm tra nếu đã có quan hệ kết bạn từ trước (so sánh trực tiếp ID)
+      const alreadyFriends = Array.from(serverFriendships.values()).some(
+        (f) =>
+          (f.user1Id.toLowerCase() === user1Id.toLowerCase() && f.user2Id.toLowerCase() === user2Id.toLowerCase()) ||
+          (f.user1Id.toLowerCase() === user2Id.toLowerCase() && f.user2Id.toLowerCase() === user1Id.toLowerCase())
+      );
+
+      let fsId = `fs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      if (!alreadyFriends) {
+        const newFriendship: ServerFriendshipRecord = {
+          id: fsId,
+          user1Id,
+          user2Id,
+          intimacy: 60, // Điểm hảo cảm khởi tạo
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        serverFriendships.set(fsId, newFriendship);
+      }
+
+      saveFriendsToFile();
+      saveUsersToFile();
+
+      // Thông báo cho cả 2 người qua SSE và hàng đợi Ping
+      const acceptEvent = {
         type: 'friend_request_accepted',
         friendName: authUser.displayName || authUser.username,
-      });
+        fromUserId: user2Id,
+        targetUserId: user1Id,
+      };
+
+      broadcastToUser(user1Id, acceptEvent);
+      if (fromU?.username) broadcastToUser(fromU.username, acceptEvent);
+      broadcastToUser(user2Id, acceptEvent);
+
+      queueFriendEvent(user1Id, acceptEvent);
+      if (fromU?.username) queueFriendEvent(fromU.username, acceptEvent);
+      queueFriendEvent(user2Id, acceptEvent);
+
+      broadcastToUser(user1Id, { type: 'friends_data_updated' });
+      broadcastToUser(user2Id, { type: 'friends_data_updated' });
+      if (friendReq.fromUserId !== user1Id) broadcastToUser(friendReq.fromUserId, { type: 'friends_data_updated' });
+      if (friendReq.toUserId !== user2Id) broadcastToUser(friendReq.toUserId, { type: 'friends_data_updated' });
 
       // Tính số lượng lời mời còn lại cho người vừa duyệt
-      const myId = authUser.id;
+      const myId = authUser.id.toLowerCase();
       const myName = String(authUser.username || '').toLowerCase();
-      const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) => {
-        const toId = String(r.toUserId || '').toLowerCase();
-        const toUname = String(r.toUsername || '').toLowerCase();
-        return r.toUserId === myId || (myName && toId === myName) || (myName && toUname === myName);
-      }).length;
+      const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) =>
+        r.toUserId.toLowerCase() === myId || (myName && r.toUsername?.toLowerCase() === myName) || isSameUser(r.toUserId, authUser.id)
+      ).length;
 
-      broadcastToUser(authUser.id, {
+      const remainingEvent = {
         type: 'friend_requests_count',
         count: remainingPendingCount,
-      });
+      };
+      broadcastToUser(authUser.id, remainingEvent);
+      queueFriendEvent(authUser.id, remainingEvent);
 
       res.json({
         success: true,
-        message: 'Đã chấp thuận kết bái đạo hữu thành công!',
+        message: `Đã kết bái đạo hữu thành công với ${fromU?.displayName || fromU?.username || 'đạo hữu'}!`,
         remainingCount: remainingPendingCount,
       });
     } else {
-      serverFriendRequests.delete(requestId);
+      serverFriendRequests.delete(friendReq.id);
       saveFriendsToFile();
 
-      // Tính số lượng lời mời còn lại cho người vừa từ chối
-      const myId = authUser.id;
-      const myName = String(authUser.username || '').toLowerCase();
-      const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) => {
-        const toId = String(r.toUserId || '').toLowerCase();
-        const toUname = String(r.toUsername || '').toLowerCase();
-        return r.toUserId === myId || (myName && toId === myName) || (myName && toUname === myName);
-      }).length;
+      const fromU = findUserByIdentifier(friendReq.fromUserId);
+      const user1Id = fromU ? fromU.id : friendReq.fromUserId;
 
-      broadcastToUser(authUser.id, {
+      broadcastToUser(user1Id, { type: 'friends_data_updated' });
+      broadcastToUser(authUser.id, { type: 'friends_data_updated' });
+
+      const myId = authUser.id.toLowerCase();
+      const myName = String(authUser.username || '').toLowerCase();
+      const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) =>
+        r.toUserId.toLowerCase() === myId || (myName && r.toUsername?.toLowerCase() === myName) || isSameUser(r.toUserId, authUser.id)
+      ).length;
+
+      const remainingEvent = {
         type: 'friend_requests_count',
         count: remainingPendingCount,
-      });
+      };
+      broadcastToUser(authUser.id, remainingEvent);
+      queueFriendEvent(authUser.id, remainingEvent);
 
       res.json({
         success: true,
@@ -4402,8 +5250,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { friendshipId, targetUserId } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    if (!authUser && candidateMyId) {
+      authUser = serverUsers.get(candidateMyId) || null;
     }
 
     if (!authUser) {
@@ -4420,12 +5269,22 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       ) || null;
     }
 
-    if (targetFs) {
-      serverFriendships.delete(targetFs.id);
-      saveFriendsToFile();
+    if (!targetFs) {
+      res.status(404).json({ success: false, error: 'Không tìm thấy quan hệ đạo hữu này!' });
+      return;
     }
 
-    res.json({ success: true, message: 'Đã hủy kết bái đạo hữu.' });
+    const otherId = targetFs.user1Id === authUser.id ? targetFs.user2Id : targetFs.user1Id;
+    serverFriendships.delete(targetFs.id);
+    saveFriendsToFile();
+
+    broadcastToUser(otherId, { type: 'friends_data_updated' });
+    broadcastToUser(authUser.id, { type: 'friends_data_updated' });
+
+    res.json({
+      success: true,
+      message: 'Đã hủy kết bái đạo hữu.',
+    });
   });
 
   // POST /api/friends/tea: Tặng Ngộ Đạo Trà (+50 Tu Vi cho bạn, +10 Hảo Cảm)
@@ -5340,15 +6199,87 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     res.json({ success: true, count: getRealOnlineCount() });
   });
 
-  // POST or GET /api/presence/ping: Heartbeat ping from any active tab
+  // POST or GET /api/presence/ping: Heartbeat ping from any active tab (với đồng bộ tức thời Lời Mời Kết Bạn)
   app.all('/api/presence/ping', (req, res) => {
     const tabId = String(req.query.tabId || req.body?.tabId || '').trim();
     const userId = String(req.query.userId || req.body?.userId || '').trim();
+    let meta: any = undefined;
     if (tabId) {
-      const meta = extractSessionMetaFromReq(req);
+      meta = extractSessionMetaFromReq(req);
       registerPresence(tabId, userId, meta);
     }
-    res.json({ success: true, count: getRealOnlineCount() });
+
+    let pendingFriendRequestsCount = 0;
+    const friendEvents: any[] = [];
+    const checkId = userId || meta?.userId || tabId;
+    const checkName = meta?.username || '';
+
+    if (checkId || checkName) {
+      const myId = checkId.toLowerCase();
+      const myName = checkName.toLowerCase();
+
+      let resolvedUser = serverUsers.get(checkId) || getUserByUsername(checkName || checkId);
+      if (!resolvedUser && checkName) {
+        resolvedUser = serverUsers.get(checkName) || getUserByUsername(checkName);
+      }
+      const actualId = resolvedUser ? resolvedUser.id.toLowerCase() : myId;
+      const actualUsername = resolvedUser ? resolvedUser.username.toLowerCase() : myName;
+      const actualDisplayName = resolvedUser?.displayName ? resolvedUser.displayName.toLowerCase() : '';
+
+      pendingFriendRequestsCount = Array.from(serverFriendRequests.values()).filter((r) => {
+        const toId = String(r.toUserId || '').toLowerCase();
+        const toName = String(r.toUsername || '').toLowerCase();
+        return (
+          (actualId && toId === actualId) ||
+          (actualUsername && toId === actualUsername) ||
+          (actualUsername && toName === actualUsername) ||
+          (actualId && toName === actualId) ||
+          (actualDisplayName && toName === actualDisplayName) ||
+          (myId && toId === myId) ||
+          (myName && toId === myName) ||
+          (myName && toName === myName) ||
+          isSameUser(r.toUserId, checkId) ||
+          (checkName && isSameUser(r.toUserId, checkName)) ||
+          (r.toUsername && checkName && isSameUser(r.toUsername, checkName))
+        );
+      }).length;
+
+      // Lấy danh sách các sự kiện kết bạn chưa đọc cho người dùng này từ mọi định danh khả dĩ
+      const keySet = new Set<string>();
+      if (myId) keySet.add(myId);
+      if (myName) keySet.add(myName);
+      if (actualId) keySet.add(actualId);
+      if (actualUsername) keySet.add(actualUsername);
+      if (actualDisplayName) keySet.add(actualDisplayName);
+      if (tabId) keySet.add(tabId.toLowerCase());
+
+      const allEvs: any[] = [];
+      for (const k of keySet) {
+        const list = pendingUserFriendEvents.get(k);
+        if (list && list.length > 0) {
+          allEvs.push(...list);
+          pendingUserFriendEvents.delete(k);
+        }
+      }
+
+      if (allEvs.length > 0) {
+        const seen = new Set<string>();
+        for (const ev of allEvs) {
+          const key = `${ev.type}_${ev.fromUser?.id || ev.fromUser?.username || ev.friendName || ev.fromUserId || ''}_${ev.count ?? ''}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            friendEvents.push(ev);
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      count: getRealOnlineCount(),
+      pendingFriendRequestsCount,
+      friendEvents,
+    });
   });
 
   // POST or GET /api/presence/leave: Beacon sent when a tab unloads/closes

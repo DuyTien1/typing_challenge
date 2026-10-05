@@ -17,7 +17,14 @@ import {
   Send,
   ExternalLink,
   Crown,
-  User
+  User,
+  Copy,
+  CheckCircle2,
+  Clock,
+  UserCheck,
+  RefreshCw,
+  Loader2,
+  Radio
 } from 'lucide-react';
 import { FriendRecord, FriendRequest, UserAccount } from '../types';
 import { AvatarWithFrame } from '../utils/frames';
@@ -25,37 +32,45 @@ import { soundFx } from '../utils/audio';
 import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 import { 
   fetchFriendsList, 
+  searchFriends,
   sendFriendRequest, 
   respondFriendRequest, 
   removeFriend, 
   giftNgocDaoTea, 
   mentorGuidance, 
   proposeDaoLu, 
-  inviteFriendToRoom 
+  inviteFriendToRoom,
+  broadcastLocalFriendsUpdate 
 } from '../utils/roomManager';
 
 interface FriendsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserAccount | null;
+  currentUserId?: string;
+  currentUsername?: string;
   currentRoomId?: string | null;
   currentMode?: string;
   initialTab?: 'friends' | 'requests' | 'search' | 'daolu';
   onPendingRequestsCountChange?: (count: number) => void;
   onOpenWhisperChat?: (targetUsername: string, targetUserId: string) => void;
   onChallengeFriend?: (friend: FriendRecord) => void;
+  onOpenAuth?: () => void;
 }
 
 export const FriendsModal: React.FC<FriendsModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  currentUserId,
+  currentUsername,
   currentRoomId,
   currentMode,
   initialTab,
   onPendingRequestsCountChange,
   onOpenWhisperChat,
   onChallengeFriend,
+  onOpenAuth,
 }) => {
   const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'search' | 'daolu'>('friends');
   const [friends, setFriends] = useState<FriendRecord[]>([]);
@@ -65,6 +80,20 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const [searchTarget, setSearchTarget] = useState('');
   const [searchMessage, setSearchMessage] = useState('Bái kiến Đạo Hữu, mong được kết bái giao lưu đạo pháp gõ phím!');
   const [actionNotice, setActionNotice] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Search & Suggestions states
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [copiedUid, setCopiedUid] = useState(false);
+  const [sendingTargetId, setSendingTargetId] = useState<string | null>(null);
+
+  const effectiveUserId = currentUser?.id || currentUserId || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_player_id') || sessionStorage.getItem('fasttyping_player_id') || '' : '');
+  const effectiveUsername = currentUser?.username || currentUsername || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_user') || localStorage.getItem('fasttyping_username') || 'Đạo Hữu' : 'Đạo Hữu');
+
+  // Chỉ người chơi đã đăng nhập tài khoản thực thụ mới có Mã UID
+  const isLoggedInUser = Boolean(currentUser && currentUser.authProvider !== 'guest' && currentUser.id);
+  const myUid = isLoggedInUser ? currentUser!.id : null;
 
   // Esc key listener to quickly close modal
   useEffect(() => {
@@ -81,10 +110,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   }, [isOpen, onClose]);
 
   const loadData = async () => {
-    if (!currentUser) return;
+    if (!effectiveUserId) return;
     setIsLoading(true);
     try {
-      const data = await fetchFriendsList(currentUser.id);
+      const data = await fetchFriendsList(effectiveUserId, effectiveUsername);
       if (data && data.success) {
         setFriends(data.friends || []);
         const nextPending = data.pendingRequests || [];
@@ -98,16 +127,88 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     }
   };
 
+  const loadSuggestions = async () => {
+    try {
+      const res = await searchFriends('', effectiveUserId, effectiveUsername);
+      if (res && res.success) {
+        setSuggestions(res.results || []);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Initial tab and data loading
   useEffect(() => {
     if (isOpen) {
       if (initialTab) {
         setActiveTab(initialTab);
       }
-      if (currentUser) {
-        loadData();
-      }
+      loadData();
+      loadSuggestions();
     }
-  }, [isOpen, currentUser, initialTab]);
+  }, [isOpen, initialTab, effectiveUserId, effectiveUsername]);
+
+  // Real-time synchronization listeners across SSE, WebSocket and cross-tab BroadcastChannel
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleFriendsUpdated = () => {
+      loadData();
+      if (activeTab === 'search') {
+        loadSuggestions();
+      }
+    };
+
+    window.addEventListener('friends_data_updated', handleFriendsUpdated);
+    window.addEventListener('friend_request_received', handleFriendsUpdated);
+    window.addEventListener('friend_request_accepted', handleFriendsUpdated);
+    window.addEventListener('friend_request_sent', handleFriendsUpdated);
+    window.addEventListener('friend_request_responded', handleFriendsUpdated);
+
+    // Heartbeat fallback polling every 2.5s while modal is actively open for zero-delay synchronization
+    const pollTimer = setInterval(() => {
+      loadData();
+    }, 2500);
+
+    return () => {
+      window.removeEventListener('friends_data_updated', handleFriendsUpdated);
+      window.removeEventListener('friend_request_received', handleFriendsUpdated);
+      window.removeEventListener('friend_request_accepted', handleFriendsUpdated);
+      window.removeEventListener('friend_request_sent', handleFriendsUpdated);
+      window.removeEventListener('friend_request_responded', handleFriendsUpdated);
+      clearInterval(pollTimer);
+    };
+  }, [isOpen, activeTab, effectiveUserId, effectiveUsername]);
+
+  // Realtime search with debounce
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'search') return;
+    const q = searchTarget.trim();
+    if (!q) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchFriends(q, effectiveUserId, effectiveUsername);
+        if (res && res.success) {
+          setSearchResults(res.results || []);
+        } else {
+          setSearchResults([]);
+        }
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchTarget, isOpen, activeTab, effectiveUserId, effectiveUsername]);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setActionNotice({ text, type });
@@ -116,17 +217,70 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     }, 4000);
   };
 
+  const handleCopyUid = () => {
+    if (!myUid) {
+      showToast('Đạo hữu đang là Tán Tu. Vui lòng đăng nhập để nhận Mã UID!', 'error');
+      return;
+    }
+    try {
+      navigator.clipboard.writeText(myUid);
+      setCopiedUid(true);
+      soundFx.playKeyClick();
+      showToast(`Đã sao chép mã UID: ${myUid}`, 'success');
+      setTimeout(() => setCopiedUid(false), 3000);
+    } catch {
+      showToast(`Mã UID của bạn: ${myUid}`, 'success');
+    }
+  };
+
   const handleSendRequest = async () => {
-    if (!searchTarget.trim()) {
-      showToast('Vui lòng nhập tên người chơi hoặc ID cần kết bạn!', 'error');
+    const trimmed = searchTarget.trim();
+    if (!trimmed) {
+      showToast('Vui lòng nhập tên người chơi hoặc UID cần kết bạn!', 'error');
       return;
     }
     soundFx.playKeyClick();
-    const res = await sendFriendRequest(searchTarget.trim(), undefined, searchMessage.trim());
+    const isLikelyUid = trimmed.startsWith('p_') || trimmed.startsWith('usr_') || (trimmed.length > 15 && !trimmed.includes(' '));
+    const res = await sendFriendRequest(
+      trimmed, 
+      isLikelyUid ? trimmed : undefined, 
+      searchMessage.trim(), 
+      effectiveUserId, 
+      effectiveUsername
+    );
     if (res.success) {
       soundFx.playVictory();
       showToast(res.message || 'Đã gửi lời mời kết bạn!', 'success');
       setSearchTarget('');
+      loadData();
+      loadSuggestions();
+    } else {
+      soundFx.playError();
+      showToast(res.error || 'Không thể gửi lời mời', 'error');
+    }
+  };
+
+  const handleSendToCandidate = async (candidate: { id: string; username: string; displayName?: string }) => {
+    soundFx.playKeyClick();
+    setSendingTargetId(candidate.id);
+    const res = await sendFriendRequest(
+      candidate.username,
+      candidate.id,
+      searchMessage.trim(),
+      effectiveUserId,
+      effectiveUsername
+    );
+    setSendingTargetId(null);
+    if (res.success) {
+      soundFx.playVictory();
+      showToast(res.message || `Đã gửi lời mời kết bạn tới ${candidate.displayName || candidate.username}!`, 'success');
+      // Optimistically update candidate in suggestions and search results
+      setSuggestions((prev) =>
+        prev.map((c) => (c.id === candidate.id ? { ...c, isPendingSent: true } : c))
+      );
+      setSearchResults((prev) =>
+        prev.map((c) => (c.id === candidate.id ? { ...c, isPendingSent: true } : c))
+      );
       loadData();
     } else {
       soundFx.playError();
@@ -136,22 +290,67 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const handleRespondRequest = async (requestId: string, action: 'accept' | 'reject') => {
     soundFx.playKeyClick();
+    const pendingTarget = pendingRequests.find((r) => r.id === requestId || r.fromUserId === requestId);
+
     // Optimistic removal so badge and list update immediately
     setPendingRequests((prev) => {
-      const next = prev.filter((r) => r.id !== requestId);
+      const next = prev.filter((r) => r.id !== requestId && r.fromUserId !== requestId);
       onPendingRequestsCountChange?.(next.length);
       return next;
     });
 
-    const res = await respondFriendRequest(requestId, action);
+    if (action === 'accept') {
+      if (pendingTarget) {
+        setFriends((prev) => {
+          if (prev.some((f) => f.userId === pendingTarget.fromUserId || f.username === pendingTarget.fromUsername)) {
+            return prev;
+          }
+          const optimisticFriend: FriendRecord = {
+            friendshipId: `fs_opt_${Date.now()}`,
+            userId: pendingTarget.fromUserId,
+            username: pendingTarget.fromUsername,
+            displayName: pendingTarget.fromDisplayName,
+            avatar: pendingTarget.fromAvatar || '⚡',
+            frame: pendingTarget.fromFrame || 'default',
+            realmName: pendingTarget.fromRealmName || 'Luyện Khí',
+            realmIcon: '🌿',
+            intimacy: 60,
+            intimacyLevel: 1,
+            status: 'online',
+            isDaoLu: false,
+            connectedAt: Date.now(),
+          };
+          return [optimisticFriend, ...prev];
+        });
+      }
+
+      setSuggestions((prev) =>
+        prev.map((c) =>
+          c.id === requestId || (pendingTarget && c.id === pendingTarget.fromUserId)
+            ? { ...c, isFriend: true, isPendingReceived: false }
+            : c
+        )
+      );
+      setSearchResults((prev) =>
+        prev.map((c) =>
+          c.id === requestId || (pendingTarget && c.id === pendingTarget.fromUserId)
+            ? { ...c, isFriend: true, isPendingReceived: false }
+            : c
+        )
+      );
+    }
+
+    const res = await respondFriendRequest(requestId, action, effectiveUserId, effectiveUsername);
     if (res.success) {
       if (action === 'accept') {
         soundFx.playVictory();
         showToast(res.message || 'Đã kết bái đạo hữu thành công!', 'success');
+        setActiveTab('friends');
       } else {
         showToast(res.message || 'Đã từ chối lời mời', 'success');
       }
       loadData();
+      loadSuggestions();
     } else {
       soundFx.playError();
       showToast(res.error || 'Có lỗi xảy ra', 'error');
@@ -680,50 +879,216 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
           {/* TAB 3: TÌM & KẾT GIAO */}
           {activeTab === 'search' && (
-            <div className="space-y-6 w-full max-w-2xl mx-auto py-2">
-              <div className="p-5 rounded-3xl bg-slate-950/70 border border-slate-800 space-y-4 shadow-xl">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                    <Search className="w-4 h-4" />
+            <div className="space-y-5 w-full max-w-3xl mx-auto py-2">
+              
+              {/* Box 1: Mã UID (Chỉ hiển thị cho đạo hữu đã đăng nhập tài khoản) */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                    <User className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-extrabold text-sm text-white">GỬI LỜI MỜI KẾT BÁI</h4>
-                    <p className="text-[11px] text-slate-400">Nhập chính xác tên người chơi hoặc ID đạo hữu</p>
+                    {isLoggedInUser && myUid ? (
+                      <>
+                        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>Mã Đạo Hữu (UID) Của Bạn</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">Đã Đăng Nhập</span>
+                        </div>
+                        <div className="font-mono font-bold text-xs sm:text-sm text-amber-300 select-all">
+                          {myUid}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>Thân Phận: Tán Tu</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-750">Chưa có Mã UID</span>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          Chỉ người chơi đã đăng nhập mới có Mã UID để kết bạn chính xác.
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300">Tên người chơi / ID:</label>
+                {isLoggedInUser && myUid ? (
+                  <button
+                    type="button"
+                    onClick={handleCopyUid}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shrink-0"
+                  >
+                    {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedUid ? 'Đã Sao Chép!' : 'Sao Chép UID'}</span>
+                  </button>
+                ) : (
+                  onOpenAuth && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        onOpenAuth();
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shrink-0 shadow-md shadow-amber-500/20"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Đăng Nhập Nhận UID</span>
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Box 2: Khung tìm kiếm thời gian thực */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4 shadow-xl">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-white">TÌM KIẾM ĐẠO HỮU</h4>
+                      <p className="text-[11px] text-slate-400">Tìm kiếm bằng Tên nhân vật hoặc dán chính xác Mã UID</p>
+                    </div>
+                  </div>
+                  {isSearching && (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span className="text-[11px]">Đang tìm...</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input tìm kiếm */}
+                <div className="relative">
                   <input
                     type="text"
                     value={searchTarget}
                     onChange={(e) => setSearchTarget(e.target.value)}
-                    placeholder="Ví dụ: Độc Cô Cầu Bại, TienNhan99..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                    placeholder="Nhập tên nhân vật (ví dụ: TienNhan99) hoặc dán mã UID (usr_...)..."
+                    className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                   />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  {searchTarget && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTarget('')}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300">Lời nhắn kết giao:</label>
+                {/* Lời nhắn gửi đi */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                    <span>Lời nhắn kết giao:</span>
+                    <span className="text-[10px] text-slate-500">{searchMessage.length}/150</span>
+                  </label>
                   <textarea
                     value={searchMessage}
                     onChange={(e) => setSearchMessage(e.target.value)}
                     rows={2}
                     maxLength={150}
                     placeholder="Nhập đôi câu tâm sự kết giao đạo hữu..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 resize-none"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 resize-none"
                   />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleSendRequest}
-                  disabled={!searchTarget.trim()}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs disabled:opacity-40 transition-all cursor-pointer shadow-lg shadow-amber-500/20 active:scale-98 flex items-center justify-center gap-2"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Gửi Lời Mời Kết Bái</span>
-                </button>
+                {searchTarget.trim() && (
+                  <button
+                    type="button"
+                    onClick={handleSendRequest}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-lg shadow-amber-500/20 active:scale-98 flex items-center justify-center gap-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Gửi Lời Mời Trực Tiếp Cho "{searchTarget.trim()}"</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Box 3: Danh sách kết quả tìm kiếm HOẶC Gợi ý đạo hữu trực tuyến */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      {searchTarget.trim() ? (
+                        <>
+                          <Search className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Kết Quả Tìm Kiếm ({searchResults.length})</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Gợi Ý Đạo Hữu Trực Tuyến & Cao Thủ Tu Chân</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {!searchTarget.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        loadSuggestions();
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Làm mới gợi ý</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Candidate Cards Grid */}
+                {searchTarget.trim() ? (
+                  searchResults.length === 0 ? (
+                    <div className="p-8 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-2">
+                      <div className="text-3xl">🔍</div>
+                      <p className="text-xs font-bold text-slate-300">Không tìm thấy người chơi nào phù hợp</p>
+                      <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                        Đạo hữu hãy kiểm tra lại chính xác tên đăng nhập hoặc Mã UID của đối phương, hoặc nhấn nút gửi trực tiếp ở trên.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {searchResults.map((candidate) => (
+                        <CandidateCard
+                          key={candidate.id}
+                          candidate={candidate}
+                          sendingTargetId={sendingTargetId}
+                          pendingRequests={pendingRequests}
+                          onSend={handleSendToCandidate}
+                          onAccept={handleRespondRequest}
+                          onInspect={setInspectedFriend}
+                        />
+                      ))}
+                    </div>
+                  )
+                ) : suggestions.length === 0 ? (
+                  <div className="p-8 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-2">
+                    <div className="text-3xl">🧘‍♂️</div>
+                    <p className="text-xs font-bold text-slate-300">Chưa có gợi ý người chơi nào</p>
+                    <p className="text-[11px] text-slate-500">
+                      Hãy nhập tên hoặc UID ở thanh tìm kiếm phía trên để kết giao đạo hữu.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {suggestions.map((candidate) => (
+                      <CandidateCard
+                        key={candidate.id}
+                        candidate={candidate}
+                        sendingTargetId={sendingTargetId}
+                        pendingRequests={pendingRequests}
+                        onSend={handleSendToCandidate}
+                        onAccept={handleRespondRequest}
+                        onInspect={setInspectedFriend}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Lợi ích kết bái đạo hữu */}
@@ -839,6 +1204,148 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           }}
         />
       )}
+    </div>
+  );
+};
+
+interface CandidateCardProps {
+  candidate: any;
+  sendingTargetId: string | null;
+  pendingRequests: FriendRequest[];
+  onSend: (candidate: any) => void;
+  onAccept: (requestId: string, action: 'accept' | 'reject') => void;
+  onInspect: (friend: any) => void;
+}
+
+const CandidateCard: React.FC<CandidateCardProps> = ({
+  candidate,
+  sendingTargetId,
+  pendingRequests,
+  onSend,
+  onAccept,
+  onInspect,
+}) => {
+  const isSending = sendingTargetId === candidate.id;
+  const matchingPending = pendingRequests.find(
+    (r) =>
+      r.fromUserId === candidate.id ||
+      (r.fromUsername && candidate.username && r.fromUsername.toLowerCase() === candidate.username.toLowerCase()) ||
+      r.id === candidate.id
+  );
+
+  return (
+    <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700/80 transition-all flex flex-col justify-between gap-3 shadow-md">
+      <div className="flex items-start gap-3">
+        <div 
+          onClick={() => onInspect(candidate)}
+          className="cursor-pointer hover:scale-105 transition-transform shrink-0"
+        >
+          <AvatarWithFrame
+            icon={candidate.avatar || '⚡'}
+            frameId={candidate.frame || 'default'}
+            size="md"
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span 
+              onClick={() => onInspect(candidate)}
+              className="font-bold text-xs sm:text-sm text-white truncate cursor-pointer hover:text-amber-300 transition-colors"
+            >
+              {candidate.displayName || candidate.username}
+            </span>
+            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              {candidate.realmName || 'Luyện Khí'}
+            </span>
+            {candidate.hasUid && candidate.isExactUidMatch && (
+              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                Khớp chính xác UID
+              </span>
+            )}
+          </div>
+
+          <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono truncate">
+            <span>@{candidate.username}</span>
+            <span>•</span>
+            {candidate.hasUid ? (
+              <span className="text-amber-400/90 font-semibold truncate" title={candidate.id}>
+                UID: {candidate.id.length > 14 ? `${candidate.id.slice(0, 10)}...` : candidate.id}
+              </span>
+            ) : (
+              <span className="text-slate-500 font-sans italic">
+                Tán Tu
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            {candidate.status === 'online' && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                Trực Tuyến
+              </span>
+            )}
+            {candidate.status === 'in_match' && (
+              <span className="flex items-center gap-1 text-[10px] text-amber-400 font-bold">
+                <Swords className="w-3 h-3 text-amber-400" />
+                Đang Thi Đấu
+              </span>
+            )}
+            {candidate.status === 'offline' && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium">
+                Ngoại Tuyến
+              </span>
+            )}
+
+            {typeof candidate.bestWpm === 'number' && candidate.bestWpm > 0 && (
+              <span className="text-[10px] text-slate-400 font-mono">
+                {candidate.bestWpm} WPM
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Action button */}
+      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-end gap-2">
+        {candidate.isFriend ? (
+          <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Tri Kỷ</span>
+          </span>
+        ) : matchingPending || candidate.isPendingReceived ? (
+          <button
+            type="button"
+            onClick={() => {
+              onAccept(matchingPending?.id || candidate.pendingRequestId || candidate.id, 'accept');
+            }}
+            className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md shadow-emerald-500/20"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Chấp Nhận Kết Bạn</span>
+          </button>
+        ) : candidate.isPendingSent ? (
+          <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5" />
+            <span>Đã Gửi Lời Mời</span>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onSend(candidate)}
+            disabled={isSending}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/15 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isSending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <UserPlus className="w-3.5 h-3.5" />
+            )}
+            <span>Kết Bạn</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

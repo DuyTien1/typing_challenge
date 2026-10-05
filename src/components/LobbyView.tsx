@@ -12,7 +12,6 @@ import {
   Ghost,
   Users, 
   Play, 
-  Sparkles,
   Gamepad2
 } from 'lucide-react';
 import { SectWarLobbyBanner } from './SectWarLobbyBanner';
@@ -47,7 +46,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Chính Đạo Vấn Tâm',
       subtext: 'Tu luyện tâm cảnh qua thanh điệu thuần chính, tôi luyện khí chất người tu tiên',
       icon: <Scroll className="w-5 h-5 text-rose-400" />,
-      tag: 'Tiếng Việt Có Dấu • 8 Người',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-rose-500/20 via-rose-500/10 to-transparent border-rose-500/40 text-rose-300',
       badgeColor: 'bg-rose-950/80 text-rose-300 border-rose-500/40',
@@ -59,7 +58,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Tật Phong Ngự Kiếm',
       subtext: 'Ngự kiếm phá không, lướt phím thần tốc, bứt phá cực hạn tốc độ WPM',
       icon: <Swords className="w-5 h-5 text-amber-400" />,
-      tag: 'Tiếng Việt Không Dấu • 8 Người',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-amber-500/20 via-amber-500/10 to-transparent border-amber-500/40 text-amber-300',
       badgeColor: 'bg-amber-950/80 text-amber-300 border-amber-500/40',
@@ -71,7 +70,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Dị Vực Luận Đạo',
       subtext: 'Viễn chinh dị giới, lĩnh ngộ vạn quyển kinh văn từ điển Oxford học thuật',
       icon: <Globe className="w-5 h-5 text-sky-400" />,
-      tag: 'Tiếng Anh (English) • 8 Người',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-sky-500/20 via-sky-500/10 to-transparent border-sky-500/40 text-sky-300',
       badgeColor: 'bg-sky-950/80 text-sky-300 border-sky-500/40',
@@ -83,7 +82,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Cửu Cung Trận Pháp',
       subtext: 'Diễn toán thiên cơ cửu cung bát quái, kết ấn chuỗi số linh lực không vết lỗi',
       icon: <Layers className="w-5 h-5 text-emerald-400" />,
-      tag: 'Bàn Phím Số (Numpad) • 8 Người',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-emerald-500/20 via-emerald-500/10 to-transparent border-emerald-500/40 text-emerald-300',
       badgeColor: 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40',
@@ -95,7 +94,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Lôi Đình Nhất Kích',
       subtext: 'Đua 1 từ chớp nhoáng theo vòng luân hồi, tốc chiến tốc thắng áp đảo đối thủ',
       icon: <Zap className="w-5 h-5 text-yellow-400 animate-pulse" />,
-      tag: 'Ngẫu Hứng (Rush) • 8 Người',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-yellow-500/20 via-yellow-500/10 to-transparent border-yellow-500/40 text-yellow-300',
       badgeColor: 'bg-yellow-950/80 text-yellow-300 border-yellow-500/40',
@@ -107,7 +106,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Huyền Cơ Mật Cảnh',
       subtext: 'Giải mã mật tự linh văn, suy đoán thiên cơ, mở cổ trận đoạt điểm kỳ ngộ',
       icon: <Eye className="w-5 h-5 text-purple-400" />,
-      tag: 'Đoán Chữ (Mystery) • 8 Người',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-purple-500/20 via-purple-500/10 to-transparent border-purple-500/40 text-purple-300',
       badgeColor: 'bg-purple-950/80 text-purple-300 border-purple-500/40',
@@ -119,7 +118,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Hàng Phục Ma Tôn',
       subtext: 'Đồng lòng vây hãm Hắc Long Ma Vương, dồn chiêu phá giáp trấn áp Thần Thú',
       icon: <Flame className="w-5 h-5 text-red-500 animate-pulse" />,
-      tag: 'Săn Boss (Co-op 8 Người)',
+      tag: '8 Người',
       isSolo: false,
       color: 'from-red-600/25 via-red-900/15 to-transparent border-red-500/50 text-red-300',
       badgeColor: 'bg-red-950/80 text-red-300 border-red-500/40',
@@ -131,7 +130,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       name: 'Tâm Ma Thí Luyện',
       subtext: 'Đối diện tàn ảnh tâm ma, khiêu chiến giới hạn bản ngã để đắc đạo phi thăng',
       icon: <Ghost className="w-5 h-5 text-cyan-400" />,
-      tag: 'Đột Phá Bản Ngã (Solo)',
+      tag: '1 Người',
       isSolo: true,
       color: 'from-cyan-500/20 via-blue-600/10 to-transparent border-cyan-500/40 text-cyan-300',
       badgeColor: 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40',
@@ -262,9 +261,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             <Gamepad2 className="w-5 h-5 text-amber-400" />
             <span>Chọn Chế Độ Thi Đấu</span>
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Outplay Yourself: Chơi đơn (Solo) | 7 Chế độ còn lại: Thi đấu phòng chờ (Multiplayer 8 người)
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -274,9 +270,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300 font-bold">Enter</kbd> Vào chơi
             <span className="text-slate-600">&bull;</span>
             <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-sky-300 font-bold">Ctrl + Enter</kbd> Chat
-          </span>
-          <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 font-semibold">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 8 Chế độ hỗ trợ Telex / VNI
           </span>
         </div>
       </div>

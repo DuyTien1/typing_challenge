@@ -22,7 +22,7 @@ export const MeditationDais: React.FC<MeditationDaisProps> = ({
 }) => {
   const currentRealm = XIANXIA_REALMS[state.realmIndex] || XIANXIA_REALMS[0];
   const subStage = getSubStage(state.tier);
-  const isReadyBreakthrough = state.tier === 10 && state.exp >= state.maxExp && state.realmIndex < 11;
+  const isReadyBreakthrough = state.tier === 10 && (state.exp >= state.maxExp || state.exp >= state.maxExp * 0.98 || Math.round((state.exp / Math.max(1, state.maxExp)) * 100) >= 98) && state.realmIndex < 11;
   const equippedArtifact = state.artifacts?.equipped ? ARTIFACT_CONFIGS[state.artifacts.equipped] : null;
   const equippedTamPhap = state.tamPhap?.equipped ? TAM_PHAP_CONFIGS[state.tamPhap.equipped] : null;
 

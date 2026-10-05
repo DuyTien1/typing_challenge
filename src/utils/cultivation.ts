@@ -825,6 +825,11 @@ export function loadStoredCultivationState(): CultivationState {
     const level = Math.max(1, Math.min(1000, parsed.level ?? 1));
     const tier = Math.max(1, Math.min(10, parsed.tier ?? 1));
     const maxExp = getRequiredExpForTier(level, realmIndex);
+    const rawExp = Math.max(0, parsed.exp ?? 0);
+    // Nếu ở Tầng 10 và tu vi đã đạt hoặc xấp xỉ mức tối đa (từ 98% trở lên hoặc đã đầy từ phiên trước), giữ vững 100% để sẵn sàng độ kiếp
+    const exp = (tier === 10 && (rawExp >= maxExp * 0.98 || (parsed.maxExp && rawExp >= parsed.maxExp)))
+      ? maxExp
+      : rawExp;
 
     const state: CultivationState = {
       level,
@@ -833,7 +838,7 @@ export function loadStoredCultivationState(): CultivationState {
       realmName: currentRealm.name,
       subStage: getSubStage(tier),
       titleName: currentRealm.titleName,
-      exp: Math.max(0, parsed.exp ?? 0),
+      exp,
       maxExp,
       thoNguyen: typeof parsed.thoNguyen === 'number' ? parsed.thoNguyen : currentRealm.maxThoNguyen,
       maxThoNguyen: currentRealm.maxThoNguyen,
@@ -1511,11 +1516,14 @@ export function addTuViFromMatch(
       updated.historyLog = [newRealmOrTierNotice, ...updated.historyLog.slice(0, 19)];
 
       if (updated.tier === 10) {
-        readyForBreakthrough = true;
         break;
       }
     }
     updated.exp = Math.min(updated.maxExp, newExp);
+    if (updated.tier === 10 && updated.exp >= updated.maxExp) {
+      readyForBreakthrough = true;
+      newRealmOrTierNotice = `✨ Cảnh giới đã đạt Tầng 10 Đại Viên Mãn (100% Tu Vi)! Hãy chuẩn bị linh dược để tiến hành Độ Kiếp Đột Phá!`;
+    }
   }
 
   saveStoredCultivationState(updated);
@@ -1575,7 +1583,10 @@ export function attemptRealmBreakthrough(
     };
   }
 
-  if (state.tier < 10 || state.exp < state.maxExp) {
+  // Khi độ kiếp nghênh lôi thành công (forcedSuccess = true), đạo hữu đã vượt qua khảo nghiệm sấm sét nên chắc chắn thành công
+  // Đối với Độ Kiếp Nhanh thông thường, kiểm tra đạt Tầng 10 Đại Viên Mãn (ngưỡng 98% chống sai số làm tròn số thực)
+  const isExpReady = state.tier >= 10 && (state.exp >= state.maxExp || state.exp >= state.maxExp * 0.98 || Math.round((state.exp / Math.max(1, state.maxExp)) * 100) >= 98);
+  if (!forcedSuccess && !isExpReady) {
     return {
       success: false,
       updatedState: state,

@@ -80,7 +80,7 @@ interface HeaderProps {
   onOpenBanModal?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+const HeaderComponent: React.FC<HeaderProps> = ({
   username,
   avatar,
   onlineCount,
@@ -800,5 +800,9 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo<HeaderProps>(HeaderComponent);
+Header.displayName = 'Header';
+
 
 

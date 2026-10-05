@@ -109,7 +109,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   const nextRealm = state.realmIndex < 11 ? XIANXIA_REALMS[state.realmIndex + 1] : null;
   const subStage = getSubStage(state.tier);
   const expPercent = Math.min(100, Math.round((state.exp / Math.max(1, state.maxExp)) * 100));
-  const isReadyBreakthrough = state.tier === 10 && state.exp >= state.maxExp && state.realmIndex < 11;
+  const isReadyBreakthrough = state.tier === 10 && (state.exp >= state.maxExp || state.exp >= state.maxExp * 0.98 || expPercent >= 98) && state.realmIndex < 11;
   const thoNguyenPercent = Math.min(100, Math.round((state.thoNguyen / Math.max(1, state.maxThoNguyen)) * 100));
   const todayStr = getTodayDateString();
   const hasCheckedInToday = state.checkIn?.lastCheckInDate === todayStr;
@@ -1496,9 +1496,13 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         onBreakthroughComplete={(result) => {
           onUpdateState(result.updatedState);
           setBreakthroughNotice({ success: result.success, message: result.message });
-          if (result.success && result.unlockedFrameId) {
-            onSelectFrame?.(result.unlockedFrameId);
-            setStoredFrame(result.unlockedFrameId);
+          if (result.success) {
+            setUsePhaCanh(false);
+            setUseHoTam(false);
+            if (result.unlockedFrameId) {
+              onSelectFrame?.(result.unlockedFrameId);
+              setStoredFrame(result.unlockedFrameId);
+            }
           }
         }}
         userAvatar={userAvatar}

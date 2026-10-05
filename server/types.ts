@@ -42,6 +42,8 @@ export interface GameRoom {
   maxSlots: number;
   words?: string[];
   mysteryWords?: any[];
+  version?: number;
+  updatedAt?: number;
 }
 
 export interface ServerSectRecord {
@@ -178,7 +180,7 @@ export interface ServerUserRecord {
   isAdmin?: boolean;
   showcaseAchievements?: string[];
   unlockedAchievements?: string[];
-  authProvider: 'google' | 'email';
+  authProvider: 'google' | 'email' | 'guest';
   passwordHash?: string;
   salt?: string;
   verifyCode?: string;

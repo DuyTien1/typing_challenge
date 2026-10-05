@@ -132,13 +132,28 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   const loadFriendsToInvite = async () => {
     setIsLoadingFriends(true);
     try {
-      const data = await fetchFriendsList();
+      const data = await fetchFriendsList(currentUser?.id || currentPlayerId, currentUser?.username);
       if (data && data.success && data.friends) {
         setFriendsData(data.friends);
       }
     } catch {}
     setIsLoadingFriends(false);
   };
+
+  // Real-time synchronization of friends list inside waiting room across SSE & cross-tab events
+  useEffect(() => {
+    const handleFriendsRefresh = () => {
+      loadFriendsToInvite();
+    };
+    window.addEventListener('friends_data_updated', handleFriendsRefresh);
+    window.addEventListener('friend_request_received', handleFriendsRefresh);
+    window.addEventListener('friend_request_accepted', handleFriendsRefresh);
+    return () => {
+      window.removeEventListener('friends_data_updated', handleFriendsRefresh);
+      window.removeEventListener('friend_request_received', handleFriendsRefresh);
+      window.removeEventListener('friend_request_accepted', handleFriendsRefresh);
+    };
+  }, [currentUser, currentPlayerId]);
 
   const handle1ClickInvite = async (friend: FriendRecord) => {
     soundFx.playWhisperPing();

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "sys-welcome",
+    "username": "Hệ Thống",
+    "avatar": "🤖",
+    "frame": "admin_gold",
+    "message": "Chào mừng bạn đến với FastTyping Challenge v4.0! Hãy rèn luyện và xác lập kỷ lục mới trên Bảng Vàng.",
+    "timestamp": 1791215482815,
+    "isSystem": true,
+    "channel": "global"
+  },
+  {
+    "id": "msg-1791215646525-7elhy",
+    "username": "TestA",
+    "avatar": "⚡",
+    "frame": "default",
+    "message": "Hello world test",
+    "timestamp": 1791215646525,
+    "channel": "global",
+    "isAdmin": false,
+    "isDaoBot": false
+  },
+  {
+    "id": "msg-1791215675804-7oeii",
+    "username": "UserA",
+    "avatar": "⚡",
+    "frame": "default",
+    "message": "Hello from UserA to UserB",
+    "timestamp": 1791215675804,
+    "channel": "global",
+    "isAdmin": false,
+    "isDaoBot": false
+  },
+  {
+    "id": "ll-banter-1791215782846",
+    "username": "Linh Lung Tiên Đồng",
+    "avatar": "🪷",
+    "frame": "arcane_purple",
+    "message": "🪷 [Linh Lung Bình Phẩm]: Phong Thần Bảng hôm nay náo nhiệt quá chừng! Chư vị đạo hữu ai đang ủ mưu soán ngôi Quán Quân thì mau mau xuất chiêu cho Tiên Đồng chiêm ngưỡng với nha!",
+    "timestamp": 1791215782846,
+    "channel": "global",
+    "isAdmin": true,
+    "isDaoBot": true,
+    "daoEventType": "guidance",
+    "daoTitle": "LINH LUNG BÌNH PHẨM"
+  },
+  {
+    "id": "msg-1791216034440-w5hui",
+    "username": "PlayerOne",
+    "avatar": "⚡",
+    "frame": "default",
+    "message": "Hello global test",
+    "timestamp": 1791216034440,
+    "channel": "global",
+    "isAdmin": false,
+    "isDaoBot": false
+  },
+  {
+    "id": "msg-1791216040493-pha2c",
+    "username": "PlayerOne",
+    "avatar": "⚡",
+    "frame": "default",
+    "message": "SSE Global Check",
+    "timestamp": 1791216040493,
+    "channel": "global",
+    "isAdmin": false,
+    "isDaoBot": false
+  },
+  {
+    "id": "msg-1791216050630-q9o95",
+    "username": "PlayerOne",
+    "avatar": "⚡",
+    "frame": "default",
+    "message": "SSE Global Check",
+    "timestamp": 1791216050630,
+    "channel": "global",
+    "isAdmin": false,
+    "isDaoBot": false
+  }
+]

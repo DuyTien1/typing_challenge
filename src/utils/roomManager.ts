@@ -23,11 +23,12 @@ import {
   PlayerProfileDetail,
 } from '../types';
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
-import { getStoredAuthToken } from './auth';
+import { getStoredAuthToken, getStoredCachedUser } from './auth';
 import { saveDaoDecree } from './heavenlyDaoBot';
 import { getStoredSects } from './cultivation';
 
 export interface PresenceUserMeta {
+  userId?: string;
   username?: string;
   avatar?: string;
   frame?: string;
@@ -36,6 +37,7 @@ export interface PresenceUserMeta {
   bestWpmRecord?: BestWpmRecord;
   totalGames?: number;
   currentRoomId?: string | null;
+  sectId?: string | null;
   currentMode?: string | null;
   status?: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
   isAdmin?: boolean;
@@ -311,17 +313,31 @@ export async function quickJoinOrCreateRoom(
 }
 
 // Cập nhật danh sách người chơi trong phòng (khi thêm / bớt bot)
-export async function updateRoomPlayers(roomId: string, players: Player[]): Promise<void> {
+export async function updateRoomPlayers(
+  roomId: string,
+  players: Player[]
+): Promise<{ success: boolean; room?: GameRoom }> {
   const normId = normalizeRoomCode(roomId);
   try {
-    await fetch(`/api/rooms/${encodeURIComponent(normId)}/players`, {
+    const res = await fetch(`/api/rooms/${encodeURIComponent(normId)}/players`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+      cache: 'no-store',
       body: JSON.stringify({ players }),
     });
+    const data = await res.json();
+    if (data.success && data.room) {
+      broadcastLocalEvent({ type: 'room_updated', room: data.room });
+      return { success: true, room: data.room };
+    }
   } catch (err) {
     console.error('updateRoomPlayers error:', err);
   }
+  return { success: false };
 }
 
 // Cập nhật cấu hình độ khó phòng thi đấu (Chủ phòng)
@@ -494,12 +510,16 @@ export async function kickRoomPlayer(
   }
 }
 
-// Lắng nghe thay đổi của 1 phòng cụ thể (kết hợp Server SSE, Polling 1s, BroadcastChannel và Room Chat)
+// Lắng nghe thay đổi của 1 phòng cụ thể (kết hợp Server SSE, Polling 1s, BroadcastChannel, Room Chat và Real-time Friend Events)
 export function subscribeToRoom(
   roomId: string,
   callback: (room: GameRoom | null) => void,
   onRoomChat?: (msg: ChatMessage) => void,
-  onPlayerKicked?: (playerId: string, username: string) => void
+  onPlayerKicked?: (playerId: string, username: string) => void,
+  userId?: string,
+  username?: string,
+  tabId?: string,
+  onFriendEvent?: (event: any) => void
 ): () => void {
   const normId = normalizeRoomCode(roomId);
   let isSubscribed = true;
@@ -511,8 +531,11 @@ export function subscribeToRoom(
     callback(room);
   };
 
-  // 1. Initial Fetch
-  fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+  // 1. Initial Fetch với anti-cache và cache-buster timestamp chống proxy Citrix đệm kết quả cũ
+  fetch(`/api/rooms/${encodeURIComponent(normId)}?_t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+  })
     .then((r) => r.json())
     .then((data) => {
       if (isSubscribed && data.success && data.room) {
@@ -525,7 +548,12 @@ export function subscribeToRoom(
   let eventSource: EventSource | null = null;
   try {
     if (typeof window !== 'undefined' && 'EventSource' in window) {
-      eventSource = new EventSource(`/api/rooms/${encodeURIComponent(normId)}/stream`);
+      const qParams = new URLSearchParams();
+      if (userId) qParams.append('userId', userId);
+      if (username) qParams.append('username', username);
+      if (tabId) qParams.append('tabId', tabId);
+      const streamUrl = `/api/rooms/${encodeURIComponent(normId)}/stream${qParams.toString() ? `?${qParams.toString()}` : ''}`;
+      eventSource = new EventSource(streamUrl);
       eventSource.onmessage = (e) => {
         if (!isSubscribed || !e.data) return;
         try {
@@ -542,12 +570,15 @@ export function subscribeToRoom(
               words: event.words,
               mysteryWords: event.mysteryWords,
             } as GameRoom);
-          } else if (event.type === 'chat_message' && event.message) {
+          } else if ((event.type === 'chat_message' || event.type === 'new_chat_message') && event.message) {
             if (onRoomChat && event.message.id) {
               if (!processedRoomChatIds.has(event.message.id)) {
                 processedRoomChatIds.add(event.message.id);
                 onRoomChat(event.message);
               }
+            }
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('room_chat_received', { detail: event.message }));
             }
           } else if (event.type === 'init_room_chat' && Array.isArray(event.messages)) {
             if (onRoomChat) {
@@ -556,6 +587,11 @@ export function subscribeToRoom(
                   processedRoomChatIds.add(m.id);
                   onRoomChat(m);
                 }
+              });
+            }
+            if (typeof window !== 'undefined' && event.messages.length > 0) {
+              event.messages.forEach((m: ChatMessage) => {
+                window.dispatchEvent(new CustomEvent('room_chat_received', { detail: m }));
               });
             }
           } else if (event.type === 'player_kicked' && event.playerId) {
@@ -581,6 +617,26 @@ export function subscribeToRoom(
                 })
                 .catch(() => {});
             }
+          } else if (
+            event.type === 'friend_request_received' ||
+            event.type === 'friend_request_accepted' ||
+            event.type === 'friends_data_updated' ||
+            event.type === 'friend_requests_count' ||
+            event.type === 'room_invite'
+          ) {
+            if (onFriendEvent) onFriendEvent(event);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: event }));
+              if (event.type === 'friend_request_received') {
+                window.dispatchEvent(new CustomEvent('friend_request_received', { detail: event }));
+              }
+              if (event.type === 'friend_request_accepted') {
+                window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: event }));
+              }
+              if (event.type === 'room_invite') {
+                window.dispatchEvent(new CustomEvent('room_invite', { detail: event }));
+              }
+            }
           }
         } catch {
           // Ignore
@@ -594,10 +650,13 @@ export function subscribeToRoom(
     console.error('SSE initialization error:', err);
   }
 
-  // 3. Fallback Polling mỗi 1000ms đảm bảo đồng bộ 100% qua mọi tường lửa và trình duyệt ẩn danh
+  // 3. Fallback Polling mỗi 1000ms đảm bảo đồng bộ 100% qua mọi tường lửa, proxy Citrix và trình duyệt ẩn danh
   const pollTimer = setInterval(() => {
     if (!isSubscribed) return;
-    fetch(`/api/rooms/${encodeURIComponent(normId)}`)
+    fetch(`/api/rooms/${encodeURIComponent(normId)}?_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+    })
       .then((r) => r.json())
       .then((data) => {
         if (!isSubscribed) return;
@@ -673,13 +732,16 @@ export function leaveRoom(roomId: string, playerId: string): void {
 // ==========================================
 
 const PRESENCE_CHANNEL_NAME = 'fasttyping_presence_sync_v4';
+const FRIENDS_CHANNEL_NAME = 'fasttyping_friends_sync_v1';
 
 let chatBroadcastChannel: BroadcastChannel | null = null;
 let presenceBroadcastChannel: BroadcastChannel | null = null;
+let friendsBroadcastChannel: BroadcastChannel | null = null;
 try {
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     chatBroadcastChannel = new BroadcastChannel(CHAT_CHANNEL_NAME);
     presenceBroadcastChannel = new BroadcastChannel(PRESENCE_CHANNEL_NAME);
+    friendsBroadcastChannel = new BroadcastChannel(FRIENDS_CHANNEL_NAME);
   }
 } catch {
   // BroadcastChannel unavailable
@@ -695,10 +757,41 @@ export function broadcastLocalPresenceCount(count: number) {
   }
 }
 
+export function broadcastLocalFriendsUpdate(data?: any) {
+  try {
+    if (friendsBroadcastChannel) {
+      friendsBroadcastChannel.postMessage({ type: 'friends_data_updated', ...data });
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: data }));
+      if (data?.type === 'friend_request_sent') {
+        window.dispatchEvent(new CustomEvent('friend_request_sent', { detail: data }));
+      }
+      if (data?.type === 'friend_request_responded') {
+        window.dispatchEvent(new CustomEvent('friend_request_responded', { detail: data }));
+      }
+      if (data?.type === 'friend_request_received') {
+        window.dispatchEvent(new CustomEvent('friend_request_received', { detail: data }));
+      }
+      if (data?.type === 'friend_request_accepted') {
+        window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: data }));
+      }
+      if (data?.type === 'room_invite') {
+        window.dispatchEvent(new CustomEvent('room_invite', { detail: data }));
+      }
+    }
+  } catch {
+    // Ignore
+  }
+}
+
 export function broadcastLocalChat(msg: ChatMessage) {
   try {
     if (chatBroadcastChannel) {
       chatBroadcastChannel.postMessage({ type: 'new_chat_message', message: msg });
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('new_chat_message', { detail: msg }));
     }
   } catch {
     // Ignore
@@ -709,6 +802,9 @@ export function broadcastLocalChatClear() {
   try {
     if (chatBroadcastChannel) {
       chatBroadcastChannel.postMessage({ type: 'chat_cleared' });
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('chat_cleared'));
     }
   } catch {
     // Ignore
@@ -725,6 +821,8 @@ export async function fetchChatMessages(
     sectId?: string;
     currentUserId?: string;
     targetUserId?: string;
+    currentUsername?: string;
+    targetUsername?: string;
   },
   roomId?: string
 ): Promise<ChatMessage[]> {
@@ -744,6 +842,8 @@ export async function fetchChatMessages(
       if (channelOrParams.sectId) p.append('sectId', channelOrParams.sectId);
       if (channelOrParams.currentUserId) p.append('currentUserId', channelOrParams.currentUserId);
       if (channelOrParams.targetUserId) p.append('targetUserId', channelOrParams.targetUserId);
+      if (channelOrParams.currentUsername) p.append('currentUsername', channelOrParams.currentUsername);
+      if (channelOrParams.targetUsername) p.append('targetUsername', channelOrParams.targetUsername);
       url = `/api/chat/messages?${p.toString()}`;
     }
 
@@ -793,6 +893,7 @@ export async function sendChatMessage(msg: {
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.success && data.message) {
+      broadcastLocalChat(data.message);
       return data.message;
     }
   } catch {
@@ -805,7 +906,20 @@ export async function sendChatMessage(msg: {
 // HỆ THỐNG ĐẠO HỮU & KẾT BÁI ĐẠO LỮ (CLIENT UTILS)
 // ==========================================
 
-export async function fetchFriendsList(userId?: string): Promise<{
+export function getEffectiveClientUser(explicitId?: string, explicitUsername?: string): { id?: string; username?: string } {
+  let id = explicitId;
+  let username = explicitUsername;
+  const cached = getStoredCachedUser();
+  if (!id) {
+    id = cached?.id || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_player_id') || sessionStorage.getItem('fasttyping_player_id') || undefined : undefined);
+  }
+  if (!username) {
+    username = cached?.displayName || cached?.username || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_user') || localStorage.getItem('fasttyping_username') || undefined : undefined);
+  }
+  return { id, username };
+}
+
+export async function fetchFriendsList(userId?: string, username?: string): Promise<{
   success: boolean;
   friends: FriendRecord[];
   pendingRequests: FriendRequest[];
@@ -817,7 +931,12 @@ export async function fetchFriendsList(userId?: string): Promise<{
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const url = userId ? `/api/friends/list?userId=${encodeURIComponent(userId)}` : '/api/friends/list';
+    const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(userId, username);
+    const params = new URLSearchParams();
+    if (effectiveId) params.append('userId', effectiveId);
+    if (effectiveUsername) params.append('username', effectiveUsername);
+
+    const url = `/api/friends/list?${params.toString()}`;
     const res = await fetch(url, { headers, cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
@@ -831,7 +950,57 @@ export async function fetchFriendsList(userId?: string): Promise<{
   return { success: false, friends: [], pendingRequests: [], sentRequests: [] };
 }
 
-export async function sendFriendRequest(targetUsername: string, targetUserId?: string, message?: string): Promise<{
+export async function searchFriends(query?: string, userId?: string, username?: string): Promise<{
+  success: boolean;
+  query: string;
+  results: Array<{
+    id: string;
+    username: string;
+    displayName: string;
+    avatar: string;
+    frame: string;
+    bestWpm: number;
+    level: number;
+    realmName: string;
+    realmIcon: string;
+    sectName?: string;
+    sectTag?: string;
+    status: 'online' | 'in_match' | 'offline';
+    isFriend: boolean;
+    isPendingSent: boolean;
+    isPendingReceived: boolean;
+    isExactUidMatch?: boolean;
+  }>;
+}> {
+  try {
+    const token = getStoredAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(userId, username);
+    const params = new URLSearchParams();
+    if (query !== undefined && query !== null) params.append('q', query);
+    if (effectiveId) params.append('userId', effectiveId);
+    if (effectiveUsername) params.append('username', effectiveUsername);
+
+    const res = await fetch(`/api/friends/search?${params.toString()}`, { headers, cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) return data;
+    }
+  } catch (err) {
+    console.warn('Failed to search friends:', err);
+  }
+  return { success: false, query: query || '', results: [] };
+}
+
+export async function sendFriendRequest(
+  targetUsername: string,
+  targetUserId?: string,
+  message?: string,
+  currentUserId?: string,
+  currentUsername?: string
+): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -842,39 +1011,72 @@ export async function sendFriendRequest(targetUsername: string, targetUserId?: s
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(currentUserId, currentUsername);
+
     const res = await fetch('/api/friends/request', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ targetUsername, targetUserId, message }),
+      body: JSON.stringify({ 
+        targetUsername, 
+        targetUserId, 
+        message, 
+        currentUserId: effectiveId,
+        currentUsername: effectiveUsername 
+      }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success) {
+      broadcastLocalFriendsUpdate({ targetUsername, targetUserId, type: 'friend_request_sent' });
+    }
+    return data;
   } catch (err: any) {
     return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
   }
 }
 
-export async function respondFriendRequest(requestId: string, action: 'accept' | 'reject'): Promise<{
+export async function respondFriendRequest(
+  requestId: string,
+  action: 'accept' | 'reject',
+  currentUserId?: string,
+  currentUsername?: string
+): Promise<{
   success: boolean;
   message?: string;
   error?: string;
+  remainingCount?: number;
 }> {
   try {
     const token = getStoredAuthToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(currentUserId, currentUsername);
 
     const res = await fetch('/api/friends/respond', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ requestId, action }),
+      body: JSON.stringify({ 
+        requestId, 
+        action, 
+        currentUserId: effectiveId,
+        currentUsername: effectiveUsername 
+      }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success) {
+      broadcastLocalFriendsUpdate({ requestId, action, type: 'friend_request_responded' });
+    }
+    return data;
   } catch (err: any) {
     return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
   }
 }
 
-export async function removeFriend(friendshipId?: string, targetUserId?: string): Promise<{
+export async function removeFriend(
+  friendshipId?: string,
+  targetUserId?: string,
+  currentUserId?: string
+): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -883,19 +1085,25 @@ export async function removeFriend(friendshipId?: string, targetUserId?: string)
     const token = getStoredAuthToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const { id: effectiveId } = getEffectiveClientUser(currentUserId);
 
     const res = await fetch('/api/friends/remove', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ friendshipId, targetUserId }),
+      body: JSON.stringify({ friendshipId, targetUserId, currentUserId: effectiveId }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success) {
+      broadcastLocalFriendsUpdate({ friendshipId, targetUserId });
+    }
+    return data;
   } catch (err: any) {
     return { success: false, error: err?.message || 'Lỗi kết nối máy chủ' };
   }
 }
 
-export async function giftNgocDaoTea(targetUserId: string): Promise<{
+export async function giftNgocDaoTea(targetUserId: string, currentUserId?: string): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -905,11 +1113,13 @@ export async function giftNgocDaoTea(targetUserId: string): Promise<{
     const token = getStoredAuthToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const { id: effectiveId } = getEffectiveClientUser(currentUserId);
 
     const res = await fetch('/api/friends/tea', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ targetUserId }),
+      body: JSON.stringify({ targetUserId, currentUserId: effectiveId }),
     });
     return await res.json();
   } catch (err: any) {
@@ -917,7 +1127,7 @@ export async function giftNgocDaoTea(targetUserId: string): Promise<{
   }
 }
 
-export async function mentorGuidance(targetUserId: string): Promise<{
+export async function mentorGuidance(targetUserId: string, currentUserId?: string): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -928,10 +1138,12 @@ export async function mentorGuidance(targetUserId: string): Promise<{
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    const { id: effectiveId } = getEffectiveClientUser(currentUserId);
+
     const res = await fetch('/api/friends/guide', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ targetUserId }),
+      body: JSON.stringify({ targetUserId, currentUserId: effectiveId }),
     });
     return await res.json();
   } catch (err: any) {
@@ -939,7 +1151,7 @@ export async function mentorGuidance(targetUserId: string): Promise<{
   }
 }
 
-export async function proposeDaoLu(targetUserId: string): Promise<{
+export async function proposeDaoLu(targetUserId: string, currentUserId?: string): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -948,11 +1160,13 @@ export async function proposeDaoLu(targetUserId: string): Promise<{
     const token = getStoredAuthToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const { id: effectiveId } = getEffectiveClientUser(currentUserId);
 
     const res = await fetch('/api/friends/daolu/propose', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ targetUserId }),
+      body: JSON.stringify({ targetUserId, currentUserId: effectiveId }),
     });
     return await res.json();
   } catch (err: any) {
@@ -960,7 +1174,7 @@ export async function proposeDaoLu(targetUserId: string): Promise<{
   }
 }
 
-export async function respondDaoLu(friendshipId: string, accept: boolean): Promise<{
+export async function respondDaoLu(friendshipId: string, accept: boolean, currentUserId?: string): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -969,11 +1183,13 @@ export async function respondDaoLu(friendshipId: string, accept: boolean): Promi
     const token = getStoredAuthToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const { id: effectiveId } = getEffectiveClientUser(currentUserId);
 
     const res = await fetch('/api/friends/daolu/respond', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ friendshipId, accept }),
+      body: JSON.stringify({ friendshipId, accept, currentUserId: effectiveId }),
     });
     return await res.json();
   } catch (err: any) {
@@ -981,7 +1197,7 @@ export async function respondDaoLu(friendshipId: string, accept: boolean): Promi
   }
 }
 
-export async function inviteFriendToRoom(targetUserId: string, roomId: string, mode?: string): Promise<{
+export async function inviteFriendToRoom(targetUserId: string, roomId: string, mode?: string, currentUserId?: string): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -991,10 +1207,12 @@ export async function inviteFriendToRoom(targetUserId: string, roomId: string, m
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    const { id: effectiveId } = getEffectiveClientUser(currentUserId);
+
     const res = await fetch('/api/friends/invite-room', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ targetUserId, roomId, mode }),
+      body: JSON.stringify({ targetUserId, roomId, mode, currentUserId: effectiveId }),
     });
     return await res.json();
   } catch (err: any) {
@@ -1049,7 +1267,11 @@ export async function fetchOnlineCount(tabId?: string, userId?: string, meta?: P
 /**
  * Send heartbeat presence ping to server with rich metadata
  */
-export async function sendPresencePing(tabId: string, userId?: string, meta?: PresenceUserMeta): Promise<number> {
+export async function sendPresencePing(
+  tabId: string,
+  userId?: string,
+  meta?: PresenceUserMeta
+): Promise<{ count: number; pendingFriendRequestsCount?: number; friendEvents?: any[] }> {
   try {
     const payload = {
       tabId,
@@ -1064,12 +1286,16 @@ export async function sendPresencePing(tabId: string, userId?: string, meta?: Pr
     });
     const data = await res.json();
     if (data && typeof data.count === 'number') {
-      return data.count;
+      return {
+        count: data.count,
+        pendingFriendRequestsCount: data.pendingFriendRequestsCount,
+        friendEvents: data.friendEvents,
+      };
     }
   } catch {
     // ignore
   }
-  return 1;
+  return { count: 1 };
 }
 
 /**
@@ -1849,6 +2075,7 @@ export function subscribeToGlobalChat(
       if (typeof meta?.bestWpm === 'number') params.append('bestWpm', meta.bestWpm.toString());
       if (typeof meta?.totalGames === 'number') params.append('totalGames', meta.totalGames.toString());
       if (meta?.currentRoomId) params.append('currentRoomId', meta.currentRoomId);
+      if (meta?.sectId) params.append('sectId', meta.sectId);
       if (meta?.currentMode) params.append('currentMode', meta.currentMode);
       if (meta?.status) params.append('status', meta.status);
       if (meta?.isAdmin) params.append('isAdmin', 'true');
@@ -1865,7 +2092,7 @@ export function subscribeToGlobalChat(
         if (!isSubscribed || !e.data) return;
         try {
           const ev = JSON.parse(e.data);
-          if (ev.type === 'new_chat_message' && ev.message) {
+          if ((ev.type === 'new_chat_message' || ev.type === 'chat_message') && ev.message) {
             dispatchMsg(ev.message);
           } else if (ev.type === 'init_chat' && Array.isArray(ev.messages)) {
             ev.messages.forEach((m: ChatMessage) => dispatchMsg(m));
@@ -1888,9 +2115,19 @@ export function subscribeToGlobalChat(
             ev.type === 'mentor_guidance_received' ||
             ev.type === 'daolu_proposal_received' ||
             ev.type === 'daolu_ceremony_complete' ||
-            ev.type === 'friend_requests_count'
+            ev.type === 'friend_requests_count' ||
+            ev.type === 'friends_data_updated'
           ) {
             if (onFriendEvent) onFriendEvent(ev);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: ev }));
+              if (ev.type === 'friend_request_received') {
+                window.dispatchEvent(new CustomEvent('friend_request_received', { detail: ev }));
+              }
+              if (ev.type === 'friend_request_accepted') {
+                window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: ev }));
+              }
+            }
           } else if (ev.type === 'cultivation_reward_received' && ev.cultivation) {
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('cultivation_reward_received', { detail: ev }));
@@ -1905,21 +2142,39 @@ export function subscribeToGlobalChat(
     // SSE fallback
   }
 
-  // 3. Periodic Presence Ping & Heartbeat (every 3000ms)
-  // Keeps session alive on server and fetches up-to-date presence count
+  // 3. Periodic Presence Ping & Heartbeat (every 2500ms)
+  // Keeps session alive on server, delivers friend events and fetches up-to-date presence count
   const pingTimer = setInterval(() => {
     if (!isSubscribed) return;
     const currentMeta = getUserMeta ? getUserMeta() : undefined;
-    sendPresencePing(actualTabId, actualUserId, currentMeta).then((count) => {
-      if (isSubscribed) updatePresence(count);
+    sendPresencePing(actualTabId, actualUserId, currentMeta).then((res) => {
+      if (!isSubscribed || !res) return;
+      if (typeof res.count === 'number') updatePresence(res.count);
+      if (typeof res.pendingFriendRequestsCount === 'number') {
+        if (onFriendEvent) onFriendEvent({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
+      }
+      if (Array.isArray(res.friendEvents) && res.friendEvents.length > 0) {
+        for (const ev of res.friendEvents) {
+          if (onFriendEvent) onFriendEvent(ev);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: ev }));
+            if (ev.type === 'friend_request_received') {
+              window.dispatchEvent(new CustomEvent('friend_request_received', { detail: ev }));
+            }
+            if (ev.type === 'friend_request_accepted') {
+              window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: ev }));
+            }
+          }
+        }
+      }
     });
-    if (!isSseConnected) {
-      fetchChatMessages('global').then((msgs) => {
-        if (!isSubscribed) return;
-        msgs.forEach((m) => dispatchMsg(m));
-      });
-    }
-  }, 3000);
+
+    // Luôn chủ động kéo tin nhắn mới để đảm bảo tính thời gian thực 100% không bao giờ bị trễ/lọt tin
+    fetchChatMessages('global').then((msgs) => {
+      if (!isSubscribed) return;
+      msgs.forEach((m) => dispatchMsg(m));
+    });
+  }, 2500);
 
   // 4. Instant refresh on Tab focus & visibility change (e.g. switching between tabs in Brave)
   const handleVisibilityOrFocus = () => {
@@ -1927,6 +2182,10 @@ export function subscribeToGlobalChat(
     const currentMeta = getUserMeta ? getUserMeta() : undefined;
     fetchOnlineCount(actualTabId, actualUserId, currentMeta).then((count) => {
       if (isSubscribed) updatePresence(count);
+    });
+    fetchChatMessages('global').then((msgs) => {
+      if (!isSubscribed) return;
+      msgs.forEach((m) => dispatchMsg(m));
     });
   };
 
@@ -1944,16 +2203,26 @@ export function subscribeToGlobalChat(
     window.addEventListener('beforeunload', handleUnload);
   }
 
-  // 6. BroadcastChannel subscriptions for instantaneous cross-tab synchronization
+  // 6. BroadcastChannel & Window event subscriptions for instantaneous cross-tab synchronization
   const handleBcMessage = (event: MessageEvent) => {
     if (!isSubscribed || !event.data) return;
-    if (event.data.type === 'new_chat_message' && event.data.message) {
+    if ((event.data.type === 'new_chat_message' || event.data.type === 'chat_message') && event.data.message) {
       dispatchMsg(event.data.message);
     } else if (event.data.type === 'chat_cleared') {
       processedGlobalIds.clear();
       if (onClear) onClear();
     }
   };
+
+  const handleWindowChatMessage = (e: any) => {
+    if (!isSubscribed || !e.detail) return;
+    dispatchMsg(e.detail);
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('new_chat_message', handleWindowChatMessage);
+    window.addEventListener('room_chat_received', handleWindowChatMessage);
+  }
 
   const handlePresenceBcMessage = (event: MessageEvent) => {
     if (!isSubscribed || !event.data) return;
@@ -1962,11 +2231,39 @@ export function subscribeToGlobalChat(
     }
   };
 
+  const handleFriendsBcMessage = (event: MessageEvent) => {
+    if (!isSubscribed || !event.data) return;
+    if (
+      event.data.type === 'friends_data_updated' ||
+      event.data.type === 'friend_request_received' ||
+      event.data.type === 'friend_request_accepted' ||
+      event.data.type === 'friend_requests_count' ||
+      event.data.type === 'room_invite'
+    ) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: event.data }));
+        if (event.data.type === 'friend_request_received') {
+          window.dispatchEvent(new CustomEvent('friend_request_received', { detail: event.data }));
+        }
+        if (event.data.type === 'friend_request_accepted') {
+          window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: event.data }));
+        }
+        if (event.data.type === 'room_invite') {
+          window.dispatchEvent(new CustomEvent('room_invite', { detail: event.data }));
+        }
+      }
+      if (onFriendEvent) onFriendEvent(event.data);
+    }
+  };
+
   if (chatBroadcastChannel) {
     chatBroadcastChannel.addEventListener('message', handleBcMessage);
   }
   if (presenceBroadcastChannel) {
     presenceBroadcastChannel.addEventListener('message', handlePresenceBcMessage);
+  }
+  if (friendsBroadcastChannel) {
+    friendsBroadcastChannel.addEventListener('message', handleFriendsBcMessage);
   }
 
   return () => {
@@ -1981,12 +2278,17 @@ export function subscribeToGlobalChat(
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('pagehide', handleUnload);
       window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('new_chat_message', handleWindowChatMessage);
+      window.removeEventListener('room_chat_received', handleWindowChatMessage);
     }
     if (chatBroadcastChannel) {
       chatBroadcastChannel.removeEventListener('message', handleBcMessage);
     }
     if (presenceBroadcastChannel) {
       presenceBroadcastChannel.removeEventListener('message', handlePresenceBcMessage);
+    }
+    if (friendsBroadcastChannel) {
+      friendsBroadcastChannel.removeEventListener('message', handleFriendsBcMessage);
     }
   };
 }

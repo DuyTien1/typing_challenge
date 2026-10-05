@@ -744,7 +744,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         </span>
                       )}
 
-                      {currentUser?.id && (
+                      {currentUser?.id && currentUser.authProvider !== 'guest' ? (
                         <button
                           type="button"
                           onClick={() => handleCopy(currentUser.id, 'id')}
@@ -758,6 +758,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                             <Copy className="w-3 h-3 text-slate-500" />
                           )}
                         </button>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[11px] font-mono text-slate-500 bg-slate-800/40 px-2 py-0.5 rounded border border-slate-700/40">
+                          Tán Tu (Chưa có UID)
+                        </span>
                       )}
 
                       <span className="flex items-center gap-1 text-[11px]">

@@ -284,7 +284,7 @@ export interface HeavenlyDaoDecree {
 
 export type ChatChannel = 'global' | 'sect' | 'room' | 'whisper';
 
-export type ChatCardType = 'battle_challenge' | 'record_share' | 'item_share' | 'roll_result' | 'tea_gift';
+export type ChatCardType = 'battle_challenge' | 'record_share' | 'item_share' | 'roll_result' | 'tea_gift' | 'friend_request' | 'friend_accepted';
 
 export interface ChatCardData {
   // battle_challenge
@@ -316,6 +316,22 @@ export interface ChatCardData {
   teaDonor?: string;
   teaReceiver?: string;
   teaTuViBonus?: number;
+
+  // friend_request & friend_accepted
+  friendRequestId?: string;
+  friendUser?: {
+    id: string;
+    username: string;
+    displayName?: string;
+    avatar?: string;
+    frame?: string;
+    realmName?: string;
+    requestId?: string;
+  };
+  friendName?: string;
+  friendUserId?: string;
+  friendMessage?: string;
+  friendStatus?: 'pending' | 'accepted' | 'rejected';
 }
 
 export interface ChatMessage {
@@ -505,6 +521,8 @@ export interface GameRoom {
   maxSlots: number;
   words?: string[];
   mysteryWords?: MysteryWordItem[];
+  version?: number;
+  updatedAt?: number;
 }
 
 export interface OnlineUserDetail {
@@ -613,7 +631,7 @@ export interface UserAccount {
   showcaseAchievements?: string[];
   unlockedAchievements?: string[];
   isVerified: boolean;
-  authProvider: 'google' | 'email';
+  authProvider: 'google' | 'email' | 'guest';
   createdAt: number;
   cultivationLevel?: number;
   cultivationRealmIndex?: number;

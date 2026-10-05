@@ -413,11 +413,76 @@ const CompetitorLane = React.memo<CompetitorLaneProps>(
         </div>
       </div>
     );
+  },
+  (prev, next) => {
+    return (
+      prev.isMe === next.isMe &&
+      prev.isDaoLuCouple === next.isDaoLuCouple &&
+      prev.player.id === next.player.id &&
+      Math.round(prev.player.progress) === Math.round(next.player.progress) &&
+      prev.player.wpm === next.player.wpm &&
+      prev.player.isFinished === next.player.isFinished &&
+      prev.player.isSurrendered === next.player.isSurrendered &&
+      prev.player.isAFK === next.player.isAFK &&
+      prev.player.username === next.player.username &&
+      prev.player.icon === next.player.icon
+    );
   }
 );
 CompetitorLane.displayName = 'CompetitorLane';
 
-export const TypingArena: React.FC<TypingArenaProps> = ({
+interface CompetitorTracksContainerProps {
+  players: Player[];
+  currentPlayerId: string;
+  daoLuPartnerName?: string;
+  daoLuPartnerId?: string;
+}
+
+const CompetitorTracksContainer = React.memo<CompetitorTracksContainerProps>(
+  ({ players, currentPlayerId, daoLuPartnerName, daoLuPartnerId }) => {
+    const isDaoLuInRoom = !!daoLuPartnerName && players.some(
+      (p) => (daoLuPartnerId && p.id === daoLuPartnerId) || p.username.toLowerCase() === daoLuPartnerName.toLowerCase()
+    );
+
+    return (
+      <>
+        {/* Song Tu Đạo Lữ (Couple Gameplay Buff) Active in Race */}
+        {isDaoLuInRoom && (
+          <div className="flex items-center justify-between px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-pink-950/60 via-purple-950/50 to-pink-950/60 border border-pink-500/40 text-[11px] text-pink-300 font-semibold shadow-sm animate-pulse">
+            <div className="flex items-center gap-2">
+              <span className="animate-bounce">💖</span>
+              <span>Song Tu Đạo Lữ cùng <strong className="text-pink-200">@{daoLuPartnerName}</strong> • Hiệu ứng [Tâm Đầu Ý Hợp] kích hoạt (+15% Tu Vi sau trận)</span>
+            </div>
+            <span className="text-[10px] font-mono text-pink-400 font-bold hidden sm:inline">✨ TÂM ĐẦU Ý HỢP ✨</span>
+          </div>
+        )}
+
+        {/* Lanes */}
+        <div className="space-y-2 pt-1">
+          {players.map((p) => {
+            const isMe = p.id === currentPlayerId;
+            const isPartner = !!daoLuPartnerName && ((daoLuPartnerId && p.id === daoLuPartnerId) || p.username.toLowerCase() === daoLuPartnerName.toLowerCase());
+            const isDaoLuCouple = isMe || isPartner;
+            const hasDaoLuInRoom = !!daoLuPartnerName && players.some(
+              (pl) => (daoLuPartnerId && pl.id === daoLuPartnerId) || pl.username.toLowerCase() === daoLuPartnerName.toLowerCase()
+            );
+            return (
+              <CompetitorLane 
+                key={p.id} 
+                player={p} 
+                isMe={isMe} 
+                isDaoLuCouple={hasDaoLuInRoom && isDaoLuCouple} 
+              />
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+);
+CompetitorTracksContainer.displayName = 'CompetitorTracksContainer';
+
+const TypingArenaComponent: React.FC<TypingArenaProps> = ({
   words,
   duration,
   players,
@@ -2488,42 +2553,12 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
             </div>
           </div>
 
-          {/* Song Tu Đạo Lữ (Couple Gameplay Buff) Active in Race */}
-          {(() => {
-            const isDaoLuInRoom = !!daoLuPartnerName && players.some(
-              (p) => (daoLuPartnerId && p.id === daoLuPartnerId) || p.username.toLowerCase() === daoLuPartnerName.toLowerCase()
-            );
-            if (!isDaoLuInRoom) return null;
-            return (
-              <div className="flex items-center justify-between px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-pink-950/60 via-purple-950/50 to-pink-950/60 border border-pink-500/40 text-[11px] text-pink-300 font-semibold shadow-sm animate-pulse">
-                <div className="flex items-center gap-2">
-                  <span className="animate-bounce">💖</span>
-                  <span>Song Tu Đạo Lữ cùng <strong className="text-pink-200">@{daoLuPartnerName}</strong> • Hiệu ứng [Tâm Đầu Ý Hợp] kích hoạt (+15% Tu Vi sau trận)</span>
-                </div>
-                <span className="text-[10px] font-mono text-pink-400 font-bold hidden sm:inline">✨ TÂM ĐẦU Ý HỢP ✨</span>
-              </div>
-            );
-          })()}
-
-          {/* Lanes */}
-          <div className="space-y-2 pt-1">
-            {players.map((p) => {
-              const isMe = p.id === currentPlayerId;
-              const isPartner = !!daoLuPartnerName && ((daoLuPartnerId && p.id === daoLuPartnerId) || p.username.toLowerCase() === daoLuPartnerName.toLowerCase());
-              const isDaoLuCouple = isMe || isPartner;
-              const hasDaoLuInRoom = !!daoLuPartnerName && players.some(
-                (pl) => (daoLuPartnerId && pl.id === daoLuPartnerId) || pl.username.toLowerCase() === daoLuPartnerName.toLowerCase()
-              );
-              return (
-                <CompetitorLane 
-                  key={p.id} 
-                  player={p} 
-                  isMe={isMe} 
-                  isDaoLuCouple={hasDaoLuInRoom && isDaoLuCouple} 
-                />
-              );
-            })}
-          </div>
+          <CompetitorTracksContainer
+            players={players}
+            currentPlayerId={currentPlayerId}
+            daoLuPartnerName={daoLuPartnerName}
+            daoLuPartnerId={daoLuPartnerId}
+          />
         </div>
       )}
 
@@ -3148,3 +3183,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     </div>
   );
 };
+
+export const TypingArena = React.memo<TypingArenaProps>(TypingArenaComponent);
+TypingArena.displayName = 'TypingArena';
+

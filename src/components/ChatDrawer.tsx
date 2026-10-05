@@ -26,8 +26,11 @@ import {
   ChevronRight,
   ExternalLink,
   Flame,
-  Award
+  Award,
+  Check,
+  UserPlus
 } from 'lucide-react';
+import { respondFriendRequest, normalizeRoomCode } from '../utils/roomManager';
 
 interface ChatDrawerProps {
   messages: ChatMessage[];
@@ -60,6 +63,8 @@ interface ChatDrawerProps {
   initialChannel?: ChatChannel;
   initialWhisperTarget?: { username: string; userId: string };
   onOpenFriends?: () => void;
+  onChannelChange?: (channel: ChatChannel) => void;
+  onRefreshChannelMessages?: (channel: ChatChannel, targetUser?: { username: string; userId: string } | null) => void;
 }
 
 const SLASH_COMMANDS = [
@@ -94,6 +99,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   initialChannel = 'global',
   initialWhisperTarget,
   onOpenFriends,
+  onChannelChange,
+  onRefreshChannelMessages,
 }) => {
   const [activeChannel, setActiveChannel] = useState<ChatChannel>(initialChannel);
   const [inputText, setInputText] = useState('');
@@ -107,13 +114,22 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
-  // Sync initial target if provided
+  // Sync initial target and channel if provided
   useEffect(() => {
     if (initialWhisperTarget) {
       setWhisperTargetUser(initialWhisperTarget);
       setActiveChannel('whisper');
+      if (onChannelChange) onChannelChange('whisper');
+      if (onRefreshChannelMessages) onRefreshChannelMessages('whisper', initialWhisperTarget);
     }
-  }, [initialWhisperTarget]);
+  }, [initialWhisperTarget, onChannelChange, onRefreshChannelMessages]);
+
+  useEffect(() => {
+    if (initialChannel && initialChannel !== activeChannel) {
+      setActiveChannel(initialChannel);
+      if (onRefreshChannelMessages) onRefreshChannelMessages(initialChannel, whisperTargetUser);
+    }
+  }, [initialChannel]);
 
   const xianxiaEmojis = [
     { icon: '🍵', title: 'Uống trà ngộ đạo', text: '🍵 [Uống trà ngộ đạo]' },
@@ -327,23 +343,44 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   // Filter messages based on active channel
   const filteredMessages = messages.filter((m) => {
     if (activeChannel === 'room') {
-      return m.channel === 'room' && (!currentRoomId || !m.roomId || m.roomId === currentRoomId);
+      const myNorm = currentRoomId ? normalizeRoomCode(currentRoomId) : '';
+      const msgNorm = m.roomId ? normalizeRoomCode(m.roomId) : '';
+      return m.channel === 'room' && (!myNorm || !msgNorm || myNorm === msgNorm);
     }
     if (activeChannel === 'sect') {
-      return m.channel === 'sect' && (!currentSectId || m.sectId === currentSectId);
+      const mySect = String(currentSectId || '').trim();
+      const msgSect = String(m.sectId || '').trim();
+      return m.channel === 'sect' && (!mySect || !msgSect || mySect === msgSect);
     }
     if (activeChannel === 'whisper') {
       if (!whisperTargetUser) return false;
-      const cleanMe = String(currentUsername || '').toLowerCase();
-      const cleanTarget = String(whisperTargetUser.username || '').toLowerCase();
-      const sender = (m.username || '').toLowerCase();
-      const target = (m.whisperTarget || '').toLowerCase();
-      return (
-        m.channel === 'whisper' &&
-        ((sender === cleanMe && target === cleanTarget) || (sender === cleanTarget && target === cleanMe))
-      );
+      const cleanMe = String(currentUsername || '').trim().toLowerCase();
+      const cleanTarget = String(whisperTargetUser.username || '').trim().toLowerCase();
+      const cleanMeId = String(currentUserId || '').trim().toLowerCase();
+      const cleanTargetId = String(whisperTargetUser.userId || '').trim().toLowerCase();
+
+      const sender = String(m.username || '').trim().toLowerCase();
+      const target = String(m.whisperTarget || '').trim().toLowerCase();
+      const senderId = String(m.senderUserId || '').trim().toLowerCase();
+      const targetId = String(m.whisperTargetUserId || '').trim().toLowerCase();
+
+      const meMatches = 
+        (sender && sender === cleanMe) || 
+        (senderId && cleanMeId && senderId === cleanMeId);
+      const targetMatches = 
+        (target && target === cleanTarget) || 
+        (targetId && cleanTargetId && targetId === cleanTargetId);
+
+      const targetSent = 
+        (sender && sender === cleanTarget) || 
+        (senderId && cleanTargetId && senderId === cleanTargetId);
+      const meReceived = 
+        (target && target === cleanMe) || 
+        (targetId && cleanMeId && targetId === cleanMeId);
+
+      return m.channel === 'whisper' && ((meMatches && targetMatches) || (targetSent && meReceived));
     }
-    return m.channel === 'global';
+    return m.channel === 'global' || !m.channel;
   });
 
   return (
@@ -404,6 +441,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           onClick={() => {
             soundFx.playKeyClick();
             setActiveChannel('global');
+            if (onChannelChange) onChannelChange('global');
+            if (onRefreshChannelMessages) onRefreshChannelMessages('global');
           }}
           className={`py-1.5 px-1 rounded-xl font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
             activeChannel === 'global'
@@ -423,6 +462,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           onClick={() => {
             soundFx.playKeyClick();
             setActiveChannel('sect');
+            if (onChannelChange) onChannelChange('sect');
+            if (onRefreshChannelMessages) onRefreshChannelMessages('sect');
           }}
           className={`py-1.5 px-1 rounded-xl font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
             activeChannel === 'sect'
@@ -444,6 +485,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           onClick={() => {
             soundFx.playKeyClick();
             setActiveChannel('room');
+            if (onChannelChange) onChannelChange('room');
+            if (onRefreshChannelMessages) onRefreshChannelMessages('room');
           }}
           className={`py-1.5 px-1 rounded-xl font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
             activeChannel === 'room'
@@ -465,6 +508,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           onClick={() => {
             soundFx.playKeyClick();
             setActiveChannel('whisper');
+            if (onChannelChange) onChannelChange('whisper');
+            if (onRefreshChannelMessages) onRefreshChannelMessages('whisper', whisperTargetUser);
           }}
           className={`py-1.5 px-1 rounded-xl font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer relative ${
             activeChannel === 'whisper'
@@ -813,6 +858,81 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                           <div className="text-xl font-black text-amber-300 font-mono pr-2">
                             {msg.cardData.rollNumber}
                           </div>
+                        </div>
+                      ) : msg.cardType === 'friend_request' && msg.cardData ? (
+                        <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-950/80 via-slate-900 to-teal-950/70 border border-emerald-500/60 text-white shadow-lg space-y-2.5 my-1">
+                          <div className="flex items-center justify-between border-b border-emerald-500/30 pb-1.5">
+                            <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5">
+                              <span>💌</span>
+                              <span>LỜI MỜI KẾT BÁI ĐẠO HỮU</span>
+                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              Mới
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-200 italic">
+                            "{msg.cardData.friendMessage || msg.message || 'Kết bái đạo hữu, cùng đàm đạo gõ phím!'}"
+                          </p>
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                soundFx.playVictory();
+                                const reqId = msg.cardData?.friendUser?.requestId || msg.cardData?.friendUser?.id || msg.cardData?.friendRequestId;
+                                if (reqId) {
+                                  await respondFriendRequest(reqId, 'accept', currentUserId, currentUsername);
+                                }
+                                if (onOpenFriends) onOpenFriends();
+                              }}
+                              className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Chấp Nhận Nhanh</span>
+                            </button>
+                            {onOpenFriends && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  soundFx.playKeyClick();
+                                  onOpenFriends();
+                                }}
+                                className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs cursor-pointer"
+                              >
+                                Sổ Tay
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : msg.cardType === 'friend_accepted' && msg.cardData ? (
+                        <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-950/70 via-slate-900 to-emerald-950/60 border border-amber-500/50 text-white shadow-lg space-y-2 my-1">
+                          <div className="flex items-center justify-between border-b border-amber-500/30 pb-1">
+                            <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                              <span>✨</span>
+                              <span>KẾT BÁI THÀNH CÔNG</span>
+                            </span>
+                            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              Tri Kỷ
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-200">
+                            {msg.message}
+                          </p>
+                          {msg.cardData.friendName && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundFx.playKeyClick();
+                                setWhisperTargetUser({
+                                  username: msg.cardData!.friendName!,
+                                  userId: msg.cardData!.friendUserId || '',
+                                });
+                                setActiveChannel('whisper');
+                              }}
+                              className="w-full py-1.5 px-3 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 border border-pink-500/40 text-pink-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                            >
+                              <span>✉️ Mật Đàm Ngay Với {msg.cardData.friendName}</span>
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div

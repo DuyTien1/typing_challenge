@@ -25,10 +25,7 @@ import {
 import { Header } from './components/Header';
 import { LobbyView } from './components/LobbyView';
 import { WaitingRoomView } from './components/WaitingRoomView';
-import { TypingArena } from './components/TypingArena';
-import { BossArena } from './components/BossArena';
-import { MysteryWordArena } from './components/MysteryWordArena';
-import { NgauHungArena } from './components/NgauHungArena';
+import { MemoizedArenaSection } from './components/MemoizedArenaSection';
 import { GameOverModal } from './components/GameOverModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
 import { ChatDrawer } from './components/ChatDrawer';
@@ -89,6 +86,7 @@ import {
   adminResetLeaderboard,
   fetchFriendsList,
   sendFriendRequest,
+  respondFriendRequest,
   serverContributeSectWarScore,
   serverPenalizeSectSurrender,
 } from './utils/roomManager';
@@ -899,7 +897,7 @@ export default function App() {
   const [friendsList, setFriendsList] = useState<FriendRecord[]>([]);
   const [friendInviteToast, setFriendInviteToast] = useState<{
     id: string;
-    type: 'room_invite' | 'friend_request' | 'tea_gift' | 'guidance' | 'daolu';
+    type: 'room_invite' | 'friend_request' | 'friend_request_accepted' | 'tea_gift' | 'guidance' | 'daolu';
     fromUser?: any;
     fromName?: string;
     roomId?: string;
@@ -980,6 +978,104 @@ export default function App() {
   // Ref for launching game callback to avoid circular reference
   const handleLaunchGameRef = useRef<any>(null);
 
+  // Live Friend Events Listener callback shared by Room Engine, Global Chat & WebSocket/SSE
+  const handleLiveFriendEvent = useCallback((ev: any) => {
+    if (!ev) return;
+    if (ev.type === 'friend_requests_count') {
+      setFriendRequestsCount(ev.count || 0);
+    } else if (ev.type === 'friend_request_received') {
+      setFriendRequestsCount((prev) => prev + 1);
+      setFriendInviteToast({
+        id: `fr_${Date.now()}`,
+        type: 'friend_request',
+        fromUser: ev.fromUser,
+        message: ev.message,
+      });
+      soundFx.playKeyClick();
+      const activeUid = currentUserRef.current?.id || currentUserId;
+      const activeName = currentUserRef.current?.username || username;
+      if (activeUid) {
+        fetchFriendsList(activeUid, activeName).then((res) => {
+          if (res && res.success) {
+            setFriendsList(res.friends || []);
+            setFriendRequestsCount(res.pendingRequests?.length || 0);
+          }
+        }).catch(() => {});
+      }
+    } else if (ev.type === 'friend_request_accepted') {
+      soundFx.playVictory();
+      setFriendInviteToast({
+        id: `fa_${Date.now()}`,
+        type: 'friend_request_accepted',
+        fromName: ev.friendName || 'Đạo Hữu',
+      });
+      const activeUid = currentUserRef.current?.id || currentUserId;
+      const activeName = currentUserRef.current?.username || username;
+      if (activeUid) {
+        fetchFriendsList(activeUid, activeName).then((res) => {
+          if (res && res.success) {
+            setFriendsList(res.friends || []);
+            setFriendRequestsCount(res.pendingRequests?.length || 0);
+          }
+        }).catch(() => {});
+      }
+    } else if (ev.type === 'friends_data_updated') {
+      const activeUid = currentUserRef.current?.id || currentUserId;
+      const activeName = currentUserRef.current?.username || username;
+      if (activeUid) {
+        fetchFriendsList(activeUid, activeName).then((res) => {
+          if (res && res.success) {
+            setFriendsList(res.friends || []);
+            setFriendRequestsCount(res.pendingRequests?.length || 0);
+          }
+        }).catch(() => {});
+      }
+    } else if (ev.type === 'room_invite') {
+      setFriendInviteToast({
+        id: `ri_${Date.now()}`,
+        type: 'room_invite',
+        fromUser: ev.fromUser,
+        roomId: ev.roomId,
+        mode: ev.mode,
+      });
+      soundFx.playWhisperPing();
+    } else if (ev.type === 'tea_gift_received') {
+      if (currentUserRef.current) {
+        const bonus = ev.tuViBonus || 50;
+        setFriendInviteToast({
+          id: `tg_${Date.now()}`,
+          type: 'tea_gift',
+          fromName: ev.fromName || 'Đạo Hữu',
+          tuViBonus: bonus,
+        });
+        addDirectTuVi(bonus);
+        soundFx.playVictory();
+      }
+    } else if (ev.type === 'mentor_guidance_received') {
+      if (currentUserRef.current) {
+        const bonus = ev.tuViBonus || 30;
+        setFriendInviteToast({
+          id: `mg_${Date.now()}`,
+          type: 'guidance',
+          fromName: ev.fromName || 'Tiền Bối',
+          tuViBonus: bonus,
+        });
+        addDirectTuVi(bonus);
+        soundFx.playVictory();
+      }
+    } else if (ev.type === 'daolu_proposal_received') {
+      setFriendInviteToast({
+        id: `dl_${Date.now()}`,
+        type: 'daolu',
+        fromName: ev.fromName || 'Đạo Hữu',
+        friendshipId: ev.friendshipId,
+      });
+      soundFx.playVictory();
+    } else if (ev.type === 'daolu_ceremony_complete') {
+      soundFx.playVictory();
+    }
+  }, [currentUserId, username, addDirectTuVi]);
+
   // 2. ROOM ENGINE (Hệ thống Phòng thi đấu & WebSocket/SSE)
   const {
     currentRoomId,
@@ -1035,6 +1131,7 @@ export default function App() {
       handleLaunchGameRef.current?.(isSolo, mode, words, mystery, matchId);
     },
     onBossVictoryChange: setIsBossVictory,
+    onFriendEvent: handleLiveFriendEvent,
   });
 
   // 3. CHAT ENGINE (Hệ thống Chat đa kênh & Tin nhắn mật đàm)
@@ -1055,6 +1152,7 @@ export default function App() {
     openChat,
     closeChat,
     toggleChat,
+    fetchChannelMessages,
   } = useChatEngine({
     currentUsername: currentUser?.displayName || currentUser?.username || username,
     currentUserAvatar: avatar,
@@ -1068,20 +1166,19 @@ export default function App() {
     isAdmin,
   });
 
-  // Đồng bộ danh sách Đạo Hữu và thông tin Đạo Lữ
+  // Đồng bộ danh sách Đạo Hữu và thông tin Đạo Lữ (hỗ trợ cả tài khoản và Tán Tu thông qua currentUserId)
   useEffect(() => {
-    if (currentUser) {
-      fetchFriendsList().then((res) => {
+    const activeUid = currentUser?.id || currentUserId;
+    const activeName = currentUser?.username || username;
+    if (activeUid) {
+      fetchFriendsList(activeUid, activeName).then((res) => {
         if (res && res.success) {
           if (res.friends) setFriendsList(res.friends);
           setFriendRequestsCount(res.pendingRequests ? res.pendingRequests.length : 0);
         }
       }).catch(() => {});
-    } else {
-      setFriendsList([]);
-      setFriendRequestsCount(0);
     }
-  }, [currentUser, isFriendsOpen]);
+  }, [currentUser, currentUserId, username, isFriendsOpen]);
 
   // Theo dõi thời gian online / tọa thiền của tài khoản trên website (Động Phủ Tọa Thiền)
   useEffect(() => {
@@ -1219,64 +1316,7 @@ export default function App() {
       currentUser?.id || currentUserId,
       currentTabId,
       () => metaRef.current,
-      (ev: any) => {
-        if (!ev) return;
-        if (ev.type === 'friend_requests_count') {
-          setFriendRequestsCount(ev.count || 0);
-        } else if (ev.type === 'friend_request_received') {
-          setFriendRequestsCount((prev) => prev + 1);
-          setFriendInviteToast({
-            id: `fr_${Date.now()}`,
-            type: 'friend_request',
-            fromUser: ev.fromUser,
-            message: ev.message,
-          });
-          soundFx.playKeyClick();
-        } else if (ev.type === 'room_invite') {
-          setFriendInviteToast({
-            id: `ri_${Date.now()}`,
-            type: 'room_invite',
-            fromUser: ev.fromUser,
-            roomId: ev.roomId,
-            mode: ev.mode,
-          });
-          soundFx.playWhisperPing();
-        } else if (ev.type === 'tea_gift_received') {
-          if (currentUserRef.current) {
-            const bonus = ev.tuViBonus || 50;
-            setFriendInviteToast({
-              id: `tg_${Date.now()}`,
-              type: 'tea_gift',
-              fromName: ev.fromName || 'Đạo Hữu',
-              tuViBonus: bonus,
-            });
-            addDirectTuVi(bonus);
-            soundFx.playVictory();
-          }
-        } else if (ev.type === 'mentor_guidance_received') {
-          if (currentUserRef.current) {
-            const bonus = ev.tuViBonus || 30;
-            setFriendInviteToast({
-              id: `mg_${Date.now()}`,
-              type: 'guidance',
-              fromName: ev.fromName || 'Tiền Bối',
-              tuViBonus: bonus,
-            });
-            addDirectTuVi(bonus);
-            soundFx.playVictory();
-          }
-        } else if (ev.type === 'daolu_proposal_received') {
-          setFriendInviteToast({
-            id: `dl_${Date.now()}`,
-            type: 'daolu',
-            fromName: ev.fromName || 'Đạo Hữu',
-            friendshipId: ev.friendshipId,
-          });
-          soundFx.playVictory();
-        } else if (ev.type === 'daolu_ceremony_complete') {
-          soundFx.playVictory();
-        }
-      },
+      handleLiveFriendEvent,
       (record: any) => {
         if (!record) return;
         soundFx.playVictory();
@@ -1289,7 +1329,7 @@ export default function App() {
     return () => {
       unsubscribeGlobalChat();
     };
-  }, [appendChatMessage, currentUserId, currentUser, currentTabId, addDirectTuVi, metaRef, setChatMessages]);
+  }, [appendChatMessage, currentUserId, currentUser, currentTabId, metaRef, setChatMessages, handleLiveFriendEvent]);
 
   useEffect(() => {
     currentUserRef.current = currentUser;
@@ -1931,74 +1971,6 @@ export default function App() {
     clearMatchHistory();
     setMatchHistory([]);
   };
-
-  // Bot Simulation in Playing state (for standard typing modes)
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-    // Special modes (san_boss, doan_chu, ngau_hung) have dedicated, realistic bot mechanics inside their arenas
-    if (gameMode === 'san_boss' || gameMode === 'doan_chu' || gameMode === 'ngau_hung') return;
-
-    // In multiplayer with active room, the server coordinates bot synchronization for all room members
-    if (playType === 'multiplayer' && currentRoomId) return;
-
-    const botInterval = setInterval(() => {
-      setPlayers((prev) =>
-        prev.map((p) => {
-          if (!p.isBot || p.isFinished || p.isSurrendered) return p;
-
-          const targetWpm = p.botTargetWpm || 60;
-          const deltaProgress = (targetWpm / 150) * 0.8; // progress per tick
-          const newProgress = Math.min(100, p.progress + deltaProgress);
-          const newCorrectChars = Math.round(newProgress * 8);
-
-          return {
-            ...p,
-            progress: newProgress,
-            correctChars: newCorrectChars,
-            wpm: targetWpm + Math.floor(Math.random() * 6 - 3),
-            score: p.score,
-            isFinished: newProgress >= 100,
-          };
-        })
-      );
-    }, 600);
-
-    return () => clearInterval(botInterval);
-  }, [gameState, gameMode, playType, currentRoomId]);
-
-  // Player Progress Update Handler (Throttled & Memoized to avoid root App re-renders in Citrix VDI)
-  const handleUpdatePlayerProgress = useCallback((
-    progress: number,
-    correctChars: number,
-    errors: number,
-    wpm: number
-  ) => {
-    if (playType === 'multiplayer') {
-      setPlayers((prev) =>
-        prev.map((p) =>
-          p.id === currentUserId
-            ? { ...p, progress, correctChars, errors, wpm }
-            : p
-        )
-      );
-
-      if (currentRoomId) {
-        sendPlayerProgress(currentRoomId, currentUserId, progress, correctChars, errors, wpm, progress >= 100);
-      }
-    } else {
-      setPlayers((prev) => {
-        const me = prev.find((p) => p.id === currentUserId);
-        if (me && me.progress === progress && me.errors === errors && (progress < 100 && !me.isFinished)) {
-          return prev;
-        }
-        return prev.map((p) =>
-          p.id === currentUserId
-            ? { ...p, progress, correctChars, errors, wpm, isFinished: progress >= 100 }
-            : p
-        );
-      });
-    }
-  }, [playType, currentRoomId, currentUserId]);
 
   // Finish Match Handler
   const handleFinishMatch = useCallback((
@@ -2827,6 +2799,7 @@ export default function App() {
     } catch {}
 
     localStorage.setItem('fasttyping_user', activeName);
+    localStorage.setItem('fasttyping_username', activeName);
     sessionStorage.setItem('fasttyping_user_session', activeName);
     localStorage.setItem('fasttyping_avatar', userAvatarChoice);
     sessionStorage.setItem('fasttyping_avatar_session', userAvatarChoice);
@@ -2975,6 +2948,7 @@ export default function App() {
     setCurrentUser((prev) => (prev ? { ...prev, displayName: newName } : null));
     updateUserProfile({ displayName: newName, username: newName });
     localStorage.setItem('fasttyping_user', newName);
+    localStorage.setItem('fasttyping_username', newName);
     sessionStorage.setItem('fasttyping_user_session', newName);
     if (currentRoomId) {
       setPlayers((prev) => {
@@ -3145,9 +3119,26 @@ export default function App() {
   const handleAddFriend = async (targetUserId: string, targetUsername?: string) => {
     soundFx.playKeyClick();
     try {
-      const res = await sendFriendRequest(targetUsername || targetUserId, targetUserId);
+      const activeUid = currentUser?.id || currentUserId;
+      const activeName = currentUser?.username || username;
+      const res = await sendFriendRequest(targetUsername || targetUserId, targetUserId, undefined, activeUid, activeName);
       if (res && res.success) {
         soundFx.playVictory();
+        if (res.autoAccepted) {
+          setFriendInviteToast({
+            id: `fa_${Date.now()}`,
+            type: 'friend_request_accepted',
+            fromName: targetUsername || 'Đạo Hữu',
+          });
+        }
+        if (activeUid) {
+          fetchFriendsList(activeUid, activeName).then((data) => {
+            if (data && data.success) {
+              setFriendsList(data.friends || []);
+              setFriendRequestsCount(data.pendingRequests?.length || 0);
+            }
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       console.warn('Failed to send friend request:', err);
@@ -3381,325 +3372,62 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. PLAYING ARENAS */}
+        {/* 3. PLAYING ARENAS (Optimized with MemoizedArenaSection to isolate high-frequency progress updates & prevent root App re-renders in Citrix VDI) */}
         {gameState === 'playing' && (
-          <>
-            {/* Standard Typing / Numpad / Outplay */}
-            {(gameMode === 'vi_dau' ||
-              gameMode === 'vi_nodau' ||
-              gameMode === 'en' ||
-              gameMode === 'numpad' ||
-              gameMode === 'outplay') && (
-              <TypingArena
-                words={words}
-                duration={
-                  sectMatchContext?.type === 'sect_tournament'
-                    ? 180
-                    : gameMode === 'numpad'
-                    ? (config.modeDurations?.numpad || config.numpad.duration)
-                    : gameMode === 'outplay'
-                    ? (config.modeDurations?.outplay || 60)
-                    : (config.modeDurations?.[gameMode as keyof typeof config.modeDurations] || config.normalRace.duration)
-                }
-                players={players}
-                currentPlayerId={currentUserId}
-                onUpdateProgress={handleUpdatePlayerProgress}
-                onFinish={handleFinishMatch}
-                onSurrender={handleSurrender}
-                onAFK={handleAFK}
-                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
-                onHome={handleReturnToLobby}
-                modeName={getModeTitle()}
-                isOutplay={gameMode === 'outplay'}
-                isMultiplayer={playType === 'multiplayer'}
-                isSectTrial={sectMatchContext?.type === 'sect_tournament'}
-                conditionStats={conditionStats}
-                onUpdateConditionStats={handleUpdateConditionStats}
-                lastGameWpm={lastGameWpm}
-                sessionBestWpm={sessionBestWpm}
-                onUpdateSessionStats={(newLast, newBest) => {
-                  setLastGameWpm(newLast);
-                  setSessionBestWpm(newBest);
-                }}
-                savedPaceMode={outplayPaceMode}
-                onPaceModeChange={(newPace) => {
-                  setOutplayPaceMode(newPace);
-                  try {
-                    localStorage.setItem('fasttyping_outplay_pacemode', newPace);
-                  } catch {}
-                }}
-                savedCustomWpm={outplayCustomWpm}
-                onCustomWpmChange={(newWpm) => {
-                  setOutplayCustomWpm(newWpm);
-                  try {
-                    localStorage.setItem('fasttyping_outplay_custom_wpm', newWpm.toString());
-                  } catch {}
-                }}
-                daoLuPartnerName={friendsList.find((f) => f.isDaoLu)?.username}
-                daoLuPartnerId={friendsList.find((f) => f.isDaoLu)?.userId}
-              />
-            )}
-
-            {/* Săn Boss Battle Arena */}
-            {gameMode === 'san_boss' && bossState && (
-              <BossArena
-                words={words}
-                boss={bossState}
-                players={players}
-                currentPlayerId={currentUserId}
-                onDealDamage={handleBossDamage}
-                onSelfDestruct={handleBossSelfDestruct}
-                onFinish={handleBossFinish}
-                onSurrender={handleSurrender}
-                onAFK={handleAFK}
-                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
-                onHome={handleReturnToLobby}
-                isMultiplayer={playType === 'multiplayer'}
-              />
-            )}
-
-            {/* Đoán Chữ (Mystery Word) Arena */}
-            {gameMode === 'doan_chu' && (
-              <MysteryWordArena
-                roundItems={mysteryWords}
-                totalRounds={
-                  config.doanChu?.difficulties[difficulty]?.totalRounds || (difficulty === 'legendary' ? 15 : difficulty === 'hard' ? 12 : 10)
-                }
-                revealIntervalSec={
-                  config.doanChu?.difficulties[difficulty]?.revealInterval || (difficulty === 'legendary' ? 0.7 : difficulty === 'hard' ? 1.0 : 2.2)
-                }
-                roundDurationSec={
-                  config.doanChu?.difficulties[difficulty]?.roundDuration || (difficulty === 'legendary' ? 10 : difficulty === 'hard' ? 14 : 30)
-                }
-                players={players}
-                currentPlayerId={currentUserId}
-                onSurrender={handleSurrender}
-                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
-                onHome={handleReturnToLobby}
-                isMultiplayer={playType === 'multiplayer'}
-                onFinishRound={(round, scoreEarned, correct, targetId) => {
-                  const id = targetId || currentUserId;
-                  let nextPlayers: Player[] = [];
-                  setPlayers((prev) => {
-                    nextPlayers = prev.map((p) =>
-                      p.id === id
-                        ? { ...p, score: p.score + scoreEarned }
-                        : p
-                    );
-                    playersRef.current = nextPlayers;
-                    return nextPlayers;
-                  });
-                  if (playType === 'multiplayer' && currentRoomId && nextPlayers.length > 0) {
-                    updateRoomPlayers(currentRoomId, nextPlayers);
-                  }
-                }}
-                onFinishGame={(stats?: MysteryWordGameStats) => {
-                  if (stats) {
-                    setMysteryWordStats(stats);
-                  }
-                  let nextPlayers: Player[] = [];
-                  setPlayers((prev) => {
-                    nextPlayers = prev.map((p) =>
-                      p.id === currentUserId ? { ...p, isFinished: true, progress: 100 } : p
-                    );
-                    playersRef.current = nextPlayers;
-                    return nextPlayers;
-                  });
-
-                  if (playType === 'multiplayer' && currentRoomId) {
-                    sendPlayerProgress(currentRoomId, currentUserId, 100, 0, 0, 0, true);
-                    updateRoomPlayers(currentRoomId, nextPlayers);
-                  }
-
-                  const currentList = nextPlayers.length > 0 ? nextPlayers : (playersRef.current || players);
-                  const me = currentList.find((p) => p.id === currentUserId);
-                  const isPlayerSurrendered = me?.isSurrendered || false;
-                  const finalScore = me ? me.score : 0;
-
-                  // Chỉ người chơi tham gia trọn vẹn ván đấu, không đầu hàng và không out phòng mới được xét lên Bảng Vàng
-                  if (!isPlayerSurrendered && finalScore > 0) {
-                    submitScoreToLeaderboard({
-                      mode: 'doan_chu',
-                      username: currentUser?.username || username,
-                      displayName: currentUser?.displayName || username,
-                      score: finalScore,
-                      errors: 0,
-                      avatar,
-                      frame: userFrame,
-                      isSurrendered: false,
-                      isCompleted: true,
-                      roomId: currentRoomId || undefined,
-                      playerId: currentUserId,
-                    }).then((res) => {
-                      if (res && res.success && res.highScores) {
-                        setHighScores(res.highScores);
-                        saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
-                      }
-                    });
-
-                    if (finalScore >= 80) {
-                      announceLinhLungCheer(
-                        currentUser?.displayName || currentUser?.username || username,
-                        finalScore,
-                        100,
-                        'Đoán Chữ Thần Tốc'
-                      ).catch(() => {});
-                    }
-                  }
-
-                  const rivals = currentList.filter((p) => p.id !== currentUserId && !p.isSurrendered);
-                  const isTop = rivals.every((r) => (r.score || 0) <= finalScore);
-                  const matchResult: MatchResult = isPlayerSurrendered
-                    ? 'Đầu hàng'
-                    : playType === 'multiplayer'
-                    ? (isTop ? 'Thắng' : 'Thua')
-                    : (finalScore > 0 ? 'Thắng' : 'Thua');
-
-                  recordCurrentMatch({
-                    modeId: 'doan_chu',
-                    wpm: me?.wpm || (finalScore ? Math.round(finalScore / 2) : 0),
-                    accuracy: me?.accuracy ?? 100,
-                    result: matchResult,
-                    score: finalScore,
-                    isCompleted: !isPlayerSurrendered,
-                  });
-
-                  const activeHumanCompetitors = currentList.filter(
-                    (p) => p.id !== currentUserId && !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
-                  );
-
-                  if (playType === 'multiplayer' && activeHumanCompetitors.length > 0) {
-                    soundFx.playVictory();
-                  } else {
-                    if (currentRoomId && playType === 'multiplayer') {
-                      markRoomFinished(currentRoomId);
-                    }
-                    soundFx.playVictory();
-                    setGameState('gameover');
-                  }
-                }}
-              />
-            )}
-
-            {/* Ngẫu Hứng (Rush) Arena */}
-            {gameMode === 'ngau_hung' && (
-              <NgauHungArena
-                words={words}
-                totalRounds={
-                  config.ngauHung?.difficulties[difficulty]?.totalRounds || (difficulty === 'legendary' ? 20 : 15)
-                }
-                roundDurationSec={
-                  config.ngauHung?.difficulties[difficulty]?.roundDuration || (difficulty === 'legendary' ? 5 : 7)
-                }
-                intermissionDurationSec={
-                  config.ngauHung?.difficulties[difficulty]?.intermissionDuration || (difficulty === 'legendary' ? 2 : 3)
-                }
-                players={players}
-                currentPlayerId={currentUserId}
-                onSurrender={handleSurrender}
-                onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
-                onHome={handleReturnToLobby}
-                isMultiplayer={playType === 'multiplayer'}
-                onFinishGame={(stats?: NgauHungGameStats) => {
-                  if (stats) {
-                    setNgauHungStats(stats);
-                  }
-                  let nextPlayers: Player[] = [];
-                  setPlayers((prev) => {
-                    nextPlayers = prev.map((p) =>
-                      p.id === currentUserId ? { ...p, isFinished: true, progress: 100 } : p
-                    );
-                    playersRef.current = nextPlayers;
-                    return nextPlayers;
-                  });
-
-                  if (playType === 'multiplayer' && currentRoomId) {
-                    sendPlayerProgress(currentRoomId, currentUserId, 100, 0, 0, 0, true);
-                    updateRoomPlayers(currentRoomId, nextPlayers);
-                  }
-
-                  const currentList = nextPlayers.length > 0 ? nextPlayers : (playersRef.current || players);
-                  const me = currentList.find((p) => p.id === currentUserId);
-                  const isPlayerSurrendered = me?.isSurrendered || false;
-                  const finalScore = me ? me.score : 0;
-
-                  // Chỉ người chơi tham gia trọn vẹn ván đấu, không đầu hàng và không out phòng mới được xét lên Bảng Vàng
-                  if (!isPlayerSurrendered && finalScore > 0) {
-                    submitScoreToLeaderboard({
-                      mode: 'ngau_hung',
-                      username: currentUser?.username || username,
-                      displayName: currentUser?.displayName || username,
-                      score: finalScore,
-                      errors: 0,
-                      avatar,
-                      frame: userFrame,
-                      isSurrendered: false,
-                      isCompleted: true,
-                      roomId: currentRoomId || undefined,
-                      playerId: currentUserId,
-                    }).then((res) => {
-                      if (res && res.success && res.highScores) {
-                        setHighScores(res.highScores);
-                        saveLeaderboardToIndexedDB(res.highScores).catch(() => {});
-                      }
-                    });
-
-                    if (finalScore >= 100) {
-                      announceLinhLungCheer(
-                        currentUser?.displayName || currentUser?.username || username,
-                        finalScore,
-                        100,
-                        'Ngẫu Hứng (Rush)'
-                      ).catch(() => {});
-                    }
-                  }
-
-                  const rivals = currentList.filter((p) => p.id !== currentUserId && !p.isSurrendered);
-                  const isTop = rivals.every((r) => (r.score || 0) <= finalScore);
-                  const matchResult: MatchResult = isPlayerSurrendered
-                    ? 'Đầu hàng'
-                    : playType === 'multiplayer'
-                    ? (isTop ? 'Thắng' : 'Thua')
-                    : (finalScore > 0 ? 'Thắng' : 'Thua');
-
-                  recordCurrentMatch({
-                    modeId: 'ngau_hung',
-                    wpm: me?.wpm || (finalScore ? Math.round(finalScore / 2) : 0),
-                    accuracy: me?.accuracy ?? 100,
-                    result: matchResult,
-                    score: finalScore,
-                    isCompleted: !isPlayerSurrendered,
-                  });
-
-                  const activeHumanCompetitors = currentList.filter(
-                    (p) => p.id !== currentUserId && !p.isBot && !p.isSurrendered && !p.isFinished && p.inMatch !== false
-                  );
-
-                  if (playType === 'multiplayer' && activeHumanCompetitors.length > 0) {
-                    soundFx.playVictory();
-                  } else {
-                    if (currentRoomId && playType === 'multiplayer') {
-                      markRoomFinished(currentRoomId);
-                    }
-                    soundFx.playVictory();
-                    setGameState('gameover');
-                  }
-                }}
-                onUpdateScore={(pts, targetId) => {
-                  const id = targetId || currentUserId;
-                  const currentList = playersRef.current || players;
-                  const nextPlayers = currentList.map((p) =>
-                    p.id === id ? { ...p, score: p.score + pts } : p
-                  );
-                  playersRef.current = nextPlayers;
-                  setPlayers(nextPlayers);
-                  if (playType === 'multiplayer' && currentRoomId && nextPlayers.length > 0) {
-                    updateRoomPlayers(currentRoomId, nextPlayers);
-                  }
-                }}
-              />
-            )}
-          </>
+          <MemoizedArenaSection
+            gameMode={gameMode}
+            words={words}
+            mysteryWords={mysteryWords}
+            bossState={bossState}
+            config={config}
+            difficulty={difficulty}
+            roomPlayers={players}
+            currentPlayerId={currentUserId}
+            playType={playType}
+            currentRoomId={currentRoomId}
+            sectMatchContext={sectMatchContext}
+            conditionStats={conditionStats}
+            lastGameWpm={lastGameWpm}
+            sessionBestWpm={sessionBestWpm}
+            outplayPaceMode={outplayPaceMode}
+            outplayCustomWpm={outplayCustomWpm}
+            friendsList={friendsList}
+            currentUser={currentUser}
+            username={username}
+            avatar={avatar}
+            userFrame={userFrame}
+            modeTitle={getModeTitle()}
+            onFinishMatch={handleFinishMatch}
+            onSurrender={handleSurrender}
+            onAFK={handleAFK}
+            onRestart={playType === 'multiplayer' ? handleSurrenderRestart : handleStartGame}
+            onHome={handleReturnToLobby}
+            onUpdateConditionStats={handleUpdateConditionStats}
+            onUpdateSessionStats={(newLast, newBest) => {
+              setLastGameWpm(newLast);
+              setSessionBestWpm(newBest);
+            }}
+            onPaceModeChange={(newPace) => {
+              setOutplayPaceMode(newPace);
+              try {
+                localStorage.setItem('fasttyping_outplay_pacemode', newPace);
+              } catch {}
+            }}
+            onCustomWpmChange={(newWpm) => {
+              setOutplayCustomWpm(newWpm);
+              try {
+                localStorage.setItem('fasttyping_outplay_custom_wpm', newWpm.toString());
+              } catch {}
+            }}
+            onBossDamage={handleBossDamage}
+            onBossSelfDestruct={handleBossSelfDestruct}
+            onBossFinish={handleBossFinish}
+            recordCurrentMatch={recordCurrentMatch}
+            setHighScores={setHighScores}
+            setMysteryWordStats={setMysteryWordStats}
+            setNgauHungStats={setNgauHungStats}
+            setGameState={setGameState}
+          />
         )}
 
         {/* 4. GAME OVER MODAL */}
@@ -3754,7 +3482,7 @@ export default function App() {
       {isChatOpen && (
         <ChatDrawer
           messages={chatMessages}
-          currentUsername={username}
+          currentUsername={currentUser?.displayName || currentUser?.username || username}
           currentUserAvatar={avatar}
           currentUserFrame={userFrame}
           currentUserId={currentUser?.id || currentUserId}
@@ -3784,6 +3512,8 @@ export default function App() {
           initialChannel={chatInitialChannel}
           initialWhisperTarget={chatWhisperTarget || undefined}
           onOpenFriends={() => setIsFriendsOpen(true)}
+          onChannelChange={setChatInitialChannel}
+          onRefreshChannelMessages={fetchChannelMessages}
         />
       )}
 
@@ -3792,6 +3522,8 @@ export default function App() {
         isOpen={isFriendsOpen}
         onClose={() => setIsFriendsOpen(false)}
         currentUser={currentUser}
+        currentUserId={currentUser?.id || currentUserId}
+        currentUsername={currentUser?.username || username}
         currentRoomId={currentRoomId}
         currentMode={gameMode}
         initialTab={friendsInitialTab}
@@ -3808,13 +3540,18 @@ export default function App() {
           setIsFriendsOpen(false);
           setIsChatOpen(true);
         }}
+        onOpenAuth={() => {
+          setIsFriendsOpen(false);
+          setAuthModalInitialTab('login');
+          setIsAuthModalOpen(true);
+        }}
       />
 
       {/* Toast Lời Mời Vào Phòng Thi Đấu / Tương Tác Đạo Hữu */}
       {friendInviteToast && (
         <div
           id="friend-invite-toast"
-          className="fixed bottom-6 right-6 z-50 max-w-sm w-full p-4 rounded-2xl bg-slate-900/98 border-2 border-emerald-500/80 shadow-2xl backdrop-blur-xl animate-slideInRight text-left space-y-3"
+          className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full p-4 rounded-2xl bg-slate-900/98 border-2 border-emerald-500/80 shadow-2xl backdrop-blur-xl animate-slideInRight text-left space-y-3"
         >
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <span className="text-xs font-black uppercase text-emerald-400 flex items-center gap-1.5">
@@ -3827,6 +3564,8 @@ export default function App() {
                   ? '🎓 CHỈ ĐIỂM BÀN PHÍM'
                   : friendInviteToast.type === 'daolu'
                   ? '🌸 ĐẠO LỮ KẾT DUYÊN'
+                  : friendInviteToast.type === 'friend_request_accepted'
+                  ? '✨ KẾT BÁI THÀNH CÔNG'
                   : '🤝 LỜI MỜI KẾT BẠN'}
               </span>
             </span>
@@ -3846,6 +3585,11 @@ export default function App() {
             {friendInviteToast.type === 'friend_request' && (
               <>
                 Đạo hữu <strong className="text-amber-300">{friendInviteToast.fromUser?.displayName || friendInviteToast.fromUser?.username}</strong> vừa gửi lời mời kết bái đạo hữu tới bạn!
+              </>
+            )}
+            {friendInviteToast.type === 'friend_request_accepted' && (
+              <>
+                Đạo hữu <strong className="text-emerald-300">{friendInviteToast.fromName}</strong> đã đồng ý lời mời kết bái! Hai vị đã chính thức là đạo hữu tri kỷ!
               </>
             )}
             {friendInviteToast.type === 'tea_gift' && (
@@ -3881,16 +3625,57 @@ export default function App() {
               </button>
             )}
             {friendInviteToast.type === 'friend_request' && (
+              <>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const reqId = friendInviteToast.fromUser?.requestId || friendInviteToast.fromUser?.id;
+                    setFriendInviteToast(null);
+                    soundFx.playVictory();
+                    if (reqId) {
+                      const activeUid = currentUser?.id || currentUserId;
+                      const activeName = currentUser?.username || username;
+                      await respondFriendRequest(reqId, 'accept', activeUid, activeName);
+                      if (activeUid) {
+                        fetchFriendsList(activeUid, activeName).then((res) => {
+                          if (res && res.success) {
+                            if (res.friends) setFriendsList(res.friends);
+                            setFriendRequestsCount(res.pendingRequests ? res.pendingRequests.length : 0);
+                          }
+                        }).catch(() => {});
+                      }
+                    }
+                    setFriendsInitialTab('friends');
+                    setIsFriendsOpen(true);
+                  }}
+                  className="flex-1 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
+                >
+                  Chấp Nhận Nhanh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFriendInviteToast(null);
+                    setFriendsInitialTab('requests');
+                    setIsFriendsOpen(true);
+                  }}
+                  className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs cursor-pointer"
+                >
+                  Mở Sổ Tay
+                </button>
+              </>
+            )}
+            {friendInviteToast.type === 'friend_request_accepted' && (
               <button
                 type="button"
                 onClick={() => {
                   setFriendInviteToast(null);
-                  setFriendsInitialTab('requests');
+                  setFriendsInitialTab('friends');
                   setIsFriendsOpen(true);
                 }}
                 className="flex-1 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 text-center"
               >
-                Mở Sổ Tay Duyệt
+                Mở Sổ Tay Đạo Hữu
               </button>
             )}
             {friendInviteToast.type === 'daolu' && (

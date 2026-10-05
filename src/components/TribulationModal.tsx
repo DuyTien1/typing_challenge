@@ -452,27 +452,34 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     const isMastered = passRatio >= 0.6 || passed.length >= Math.ceil(totalWaves * 0.5);
 
     if (isMastered) {
-      // 100% Guaranteed Success!
-      soundFx.playVictory();
-      triggerScreenShake();
-      triggerLightningParticles(true);
-      setPhase('victory');
       const res = attemptRealmBreakthrough(cultivationState, usePhaCanh, useHoTam, true);
       setResultNotice(res.message);
 
-      if (nextRealm) {
-        announceBreakthrough(
-          displayName || username || 'Đạo Hữu',
-          nextRealm.name,
-          'Sơ Kỳ',
-          1,
-          true
-        ).catch(() => {});
-        if (res.unlockedFrameId && onSelectFrame) {
-          onSelectFrame(res.unlockedFrameId);
-          setStoredFrame(res.unlockedFrameId);
+      if (res.success) {
+        // 100% Guaranteed Success!
+        soundFx.playVictory();
+        triggerScreenShake();
+        triggerLightningParticles(true);
+        setPhase('victory');
+
+        if (nextRealm) {
+          announceBreakthrough(
+            displayName || username || 'Đạo Hữu',
+            nextRealm.name,
+            'Sơ Kỳ',
+            1,
+            true
+          ).catch(() => {});
+          if (res.unlockedFrameId && onSelectFrame) {
+            onSelectFrame(res.unlockedFrameId);
+            setStoredFrame(res.unlockedFrameId);
+          }
         }
+      } else {
+        soundFx.playError();
+        setPhase('defeat');
       }
+
       onBreakthroughComplete(res);
     } else {
       // Failed tribulation

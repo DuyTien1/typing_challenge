@@ -82,6 +82,7 @@ export interface UseRoomEngineProps {
     matchIdOverride?: string
   ) => void;
   onBossVictoryChange?: (isVictory: boolean) => void;
+  onFriendEvent?: (event: any) => void;
 }
 
 export function useRoomEngine({
@@ -107,6 +108,7 @@ export function useRoomEngine({
   onRecordMatch,
   onLaunchGame,
   onBossVictoryChange,
+  onFriendEvent,
 }: UseRoomEngineProps) {
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -143,6 +145,11 @@ export function useRoomEngine({
   const difficultyRef = useRef<DifficultyLevel>(difficulty);
   difficultyRef.current = difficulty;
 
+  // Bot Guard Refs: Bảo vệ trạng thái Bot trong môi trường Citrix Workspace và mạng có proxy trễ
+  const recentBotsRef = useRef<Map<string, { bot: Player; addedAt: number }>>(new Map());
+  const recentlyRemovedBotIdsRef = useRef<Map<string, number>>(new Map());
+  const lastKnownRoomVersionRef = useRef<number>(0);
+
   // Auto dismiss kicked notification after 7 seconds
   useEffect(() => {
     if (!kickedNotice) return;
@@ -173,6 +180,7 @@ export function useRoomEngine({
 
   // Presence metadata synchronization
   const metaRef = useRef({
+    userId: currentUser?.id || currentUserId,
     username,
     avatar,
     frame: userFrame,
@@ -202,6 +210,7 @@ export function useRoomEngine({
       : 'playing') as 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
 
     metaRef.current = {
+      userId: currentUser?.id || currentUserId,
       username,
       avatar,
       frame: userFrame,
@@ -271,11 +280,60 @@ export function useRoomEngine({
             return;
           }
 
+          // 1. Kiểm tra phiên bản phòng (out-of-order packet protection trong Citrix Workspace)
+          const roomVersion = updatedRoom.version || 0;
+          if (roomVersion > 0 && lastKnownRoomVersionRef.current > roomVersion) {
+            // Nhận được gói tin phòng cũ hơn gói tin hiện tại -> Bỏ qua để chống giật
+            return;
+          }
+          if (roomVersion > 0) {
+            lastKnownRoomVersionRef.current = roomVersion;
+          }
+
+          // 2. Dọn dẹp cache Bot Guard quá 6000ms
+          const now = Date.now();
+          for (const [id, meta] of recentBotsRef.current.entries()) {
+            if (now - meta.addedAt > 6000) {
+              recentBotsRef.current.delete(id);
+            }
+          }
+          for (const [id, removedAt] of recentlyRemovedBotIdsRef.current.entries()) {
+            if (now - removedAt > 6000) {
+              recentlyRemovedBotIdsRef.current.delete(id);
+            }
+          }
+
+          // 3. Xây dựng danh sách người chơi an toàn (Guarded Players):
+          let incomingPlayers = [...(updatedRoom.players || [])];
+
+          // Lọc bỏ bot nếu người dùng vừa mới bấm xóa bot đó trong vòng 6s (chống server trả kết quả cũ khôi phục lại bot)
+          incomingPlayers = incomingPlayers.filter((p) => {
+            if (p.isBot && recentlyRemovedBotIdsRef.current.has(p.id)) {
+              return false;
+            }
+            return true;
+          });
+
+          // Giữ lại bot nếu người dùng vừa mới bấm thêm bot đó trong vòng 6s nhưng server/polling chưa kịp ghi nhận
+          const existingBotIds = new Set(incomingPlayers.map((p) => p.id));
+          const existingBotNames = new Set(incomingPlayers.map((p) => p.username.toLowerCase()));
+          for (const [bId, { bot }] of recentBotsRef.current.entries()) {
+            if (existingBotIds.has(bId) || existingBotNames.has(bot.username.toLowerCase())) {
+              // Server đã ghi nhận bot này thành công
+              recentBotsRef.current.delete(bId);
+            } else if (incomingPlayers.length < (updatedRoom.maxSlots || 8)) {
+              // Server hoặc polling cũ chưa có bot -> Giữ nguyên bot, chống giật biến mất
+              incomingPlayers.push(bot);
+              existingBotIds.add(bId);
+              existingBotNames.add(bot.username.toLowerCase());
+            }
+          }
+
           setPlayers((currentPlayers) => {
             if (
-              currentPlayers.length === updatedRoom.players.length &&
+              currentPlayers.length === incomingPlayers.length &&
               currentPlayers.every((cp, i) => {
-                const up = updatedRoom.players[i];
+                const up = incomingPlayers[i];
                 return (
                   up &&
                   cp.id === up.id &&
@@ -294,7 +352,8 @@ export function useRoomEngine({
             ) {
               return currentPlayers;
             }
-            return updatedRoom.players;
+            playersRef.current = incomingPlayers;
+            return incomingPlayers;
           });
 
           setIsRoomHost(
@@ -452,6 +511,27 @@ export function useRoomEngine({
             `${kickedUsername || 'Một người chơi'} đã bị chủ phòng mời rời khỏi phòng.`
           );
         }
+      },
+      currentUser?.id || currentUserId,
+      currentUser?.username || username,
+      currentTabId,
+      (friendEv) => {
+        if (onFriendEvent) onFriendEvent(friendEv);
+        if (friendEv.type === 'friend_request_accepted' || friendEv.type === 'friends_data_updated') {
+          // Optimistically update isFriend on matching room players
+          setPlayers((prev) =>
+            prev.map((p) => {
+              const matchesTarget =
+                (friendEv.targetUserId && (p.userId === friendEv.targetUserId || p.id === friendEv.targetUserId)) ||
+                (friendEv.fromUserId && (p.userId === friendEv.fromUserId || p.id === friendEv.fromUserId)) ||
+                (friendEv.friendName && p.username?.toLowerCase() === String(friendEv.friendName).toLowerCase());
+              if (matchesTarget) {
+                return { ...p, isFriend: true };
+              }
+              return p;
+            })
+          );
+        }
       }
     );
 
@@ -460,6 +540,9 @@ export function useRoomEngine({
     gameState,
     currentRoomId,
     currentUserId,
+    currentUser,
+    username,
+    currentTabId,
     gameMode,
     onChatMessage,
     onGameStateChange,
@@ -468,7 +551,38 @@ export function useRoomEngine({
     onLaunchGame,
     onRecordMatch,
     onBossVictoryChange,
+    onFriendEvent,
   ]);
+
+  // Real-time synchronization of player friend badges across all windows/events
+  useEffect(() => {
+    const handleFriendSync = (e: any) => {
+      const detail = e?.detail;
+      if (!detail) return;
+      if (detail.type === 'friend_request_accepted') {
+        const friendId = detail.targetUserId || detail.fromUserId;
+        const friendName = detail.friendName ? String(detail.friendName).toLowerCase() : '';
+        setPlayers((prev) =>
+          prev.map((p) => {
+            if (
+              (friendId && (p.userId === friendId || p.id === friendId)) ||
+              (friendName && p.username?.toLowerCase() === friendName)
+            ) {
+              return { ...p, isFriend: true };
+            }
+            return p;
+          })
+        );
+      }
+    };
+
+    window.addEventListener('friend_request_accepted', handleFriendSync);
+    window.addEventListener('friends_data_updated', handleFriendSync);
+    return () => {
+      window.removeEventListener('friend_request_accepted', handleFriendSync);
+      window.removeEventListener('friends_data_updated', handleFriendSync);
+    };
+  }, []);
 
   // Note: Tab reload (F5) preserves room session; explicit leaveRoom is only invoked on manual exit
   useEffect(() => {
@@ -596,10 +710,18 @@ export function useRoomEngine({
     };
 
     soundFx.playKeyClick();
+    recentBotsRef.current.set(newBot.id, { bot: newBot, addedAt: Date.now() });
+    recentlyRemovedBotIdsRef.current.delete(newBot.id);
+
     const updated = [...playersRef.current, newBot];
     setPlayers(updated);
+    playersRef.current = updated;
     if (currentRoomIdRef.current) {
-      updateRoomPlayers(currentRoomIdRef.current, updated);
+      updateRoomPlayers(currentRoomIdRef.current, updated).then((res) => {
+        if (res && res.success && res.room) {
+          recentBotsRef.current.delete(newBot.id);
+        }
+      });
     }
   }, [gameMode]);
 
@@ -607,11 +729,21 @@ export function useRoomEngine({
     const lastBotIdx = [...playersRef.current].reverse().findIndex((p) => p.isBot);
     if (lastBotIdx === -1) return;
     const actualIdx = playersRef.current.length - 1 - lastBotIdx;
+    const botToRemove = playersRef.current[actualIdx];
+
+    recentBotsRef.current.delete(botToRemove.id);
+    recentlyRemovedBotIdsRef.current.set(botToRemove.id, Date.now());
+
     const updated = playersRef.current.filter((_, i) => i !== actualIdx);
     soundFx.playKeyClick();
     setPlayers(updated);
+    playersRef.current = updated;
     if (currentRoomIdRef.current) {
-      updateRoomPlayers(currentRoomIdRef.current, updated);
+      updateRoomPlayers(currentRoomIdRef.current, updated).then((res) => {
+        if (res && res.success && res.room) {
+          recentlyRemovedBotIdsRef.current.delete(botToRemove.id);
+        }
+      });
     }
   }, []);
 
@@ -645,8 +777,14 @@ export function useRoomEngine({
       const targetPlayer = playersRef.current.find((p) => p.id === targetPlayerId);
       if (!targetPlayer) return;
 
+      if (targetPlayer.isBot) {
+        recentBotsRef.current.delete(targetPlayerId);
+        recentlyRemovedBotIdsRef.current.set(targetPlayerId, Date.now());
+      }
+
       const updated = playersRef.current.filter((p) => p.id !== targetPlayerId);
       setPlayers(updated);
+      playersRef.current = updated;
 
       soundFx.playError();
       await kickRoomPlayer(currentRoomIdRef.current, targetPlayerId, currentUserId);
