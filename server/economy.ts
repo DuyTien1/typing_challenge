@@ -37,16 +37,56 @@ const ITEM_META: Record<string, { name: string; icon: string; category: 'herb' |
   dongTamToa: { name: 'Đồng Tâm Tỏa', icon: '🔐', category: 'tea' },
 };
 
+const DEFAULT_SERVER_SHOP_CATALOG: ShopItem[] = [
+  { id: 'herb_ulan', category: 'herbs', name: 'U Lan Thảo', desc: 'Dược thảo cơ bản thanh khiết dùng để luyện chế Thọ Nguyên Đan và Định Tâm Đan.', icon: '🌱', itemType: 'herb', targetKey: 'uLan', price: 30, dailyLimit: 15, discountPercent: 0, enabled: true },
+  { id: 'herb_huyettinh', category: 'herbs', name: 'Huyết Tinh Thảo', desc: 'Hấp thụ linh khí huyết mạch thiên địa, nguyên liệu quan trọng luyện Hộ Tâm Đan.', icon: '🌿', itemType: 'herb', targetKey: 'huyetTinh', price: 45, dailyLimit: 15, discountPercent: 0, enabled: true },
+  { id: 'herb_hoaanh', category: 'herbs', name: 'Hỏa Anh Thảo', desc: 'Hấp thụ địa hỏa ngàn năm bốc cháy, ngưng tụ chân hỏa dược lực.', icon: '🔥', itemType: 'herb', targetKey: 'hoaAnh', price: 75, dailyLimit: 8, discountPercent: 0, enabled: true },
+  { id: 'herb_huyenthiet', category: 'herbs', name: 'Huyền Thiết Chi', desc: 'Linh chi mọc trên khoáng mạch huyền thiết, hỗ trợ đột phá cảnh giới kiên cố.', icon: '🍄', itemType: 'herb', targetKey: 'huyenThiet', price: 120, dailyLimit: 5, discountPercent: 0, enabled: true },
+  { id: 'herb_longtu', category: 'herbs', name: 'Long Tu Thảo', desc: 'Kỳ hoa dị thảo vạn năm có râu rồng, dược liệu cốt lõi luyện Phá Cảnh Đan và Siêu Cấp Tu Vi Đan.', icon: '🐉', itemType: 'herb', targetKey: 'longTu', price: 280, dailyLimit: 3, discountPercent: 0, enabled: true },
+  { id: 'pill_thonguyen', category: 'pills', name: 'Thọ Nguyên Đan', desc: 'Gia tăng lập tức +5 Thọ Nguyên, ngăn chặn nguy cơ thiên thọ tận suy giảm tu vi.', icon: '💊', itemType: 'pill', targetKey: 'thoNguyen', price: 90, dailyLimit: 5, discountPercent: 0, enabled: true },
+  { id: 'pill_dinhtam', category: 'pills', name: 'Định Tâm Đan', desc: 'Định tâm an thần, giảm 50% phạt WPM khi gõ sai trong 3 trận đấu kế tiếp.', icon: '🧘', itemType: 'pill', targetKey: 'dinhTam', price: 110, dailyLimit: 5, discountPercent: 0, enabled: true },
+  { id: 'pill_ngungthan', category: 'pills', name: 'Ngưng Thần Đan', desc: 'Ngưng tụ thần niệm, tăng +20% tỷ lệ rơi dược liệu quý khi thi đấu trong 3 ván.', icon: '👁️', itemType: 'pill', targetKey: 'ngungThan', price: 110, dailyLimit: 5, discountPercent: 0, enabled: true },
+  { id: 'pill_tuvidan', category: 'pills', name: 'Tu Vi Đan (+1.000 Tu Vi)', desc: 'Ngưng tụ 1.000 Tu Vi tinh thuần, giúp thăng tầng thần tốc.', icon: '🔮', itemType: 'pill', targetKey: 'tuViDan', price: 150, dailyLimit: 5, discountPercent: 0, enabled: true },
+  { id: 'pill_hotam', category: 'pills', name: 'Hộ Tâm Đan', desc: 'Hộ trì đạo tâm kim cương, ngăn chặn hoàn toàn rớt tầng khi độ kiếp thất bại.', icon: '🛡️', itemType: 'pill', targetKey: 'hoTam', price: 380, dailyLimit: 2, discountPercent: 0, enabled: true },
+  { id: 'pill_phacanh', category: 'pills', name: 'Phá Cảnh Đan', desc: 'Gia tăng +15% tỷ lệ đột phá lôi kiếp thành công khi trùng quan độ kiếp.', icon: '⚡', itemType: 'pill', targetKey: 'phaCanh', price: 650, dailyLimit: 2, discountPercent: 0, enabled: true },
+  { id: 'pill_sieucap_tuvi', category: 'pills', name: 'Siêu Cấp Tu Vi Đan', desc: 'Chứa đựng 7.000 điểm Tu Vi tinh thuần của bậc đại năng tiền bối, dùng ngay tăng vọt công lực.', icon: '🔮', itemType: 'pill', targetKey: 'sieuCapTuViDan', price: 550, dailyLimit: 2, discountPercent: 0, enabled: true },
+  { id: 'tea_bat_tram', category: 'friendship', name: 'Bát Trảm Linh Trà', desc: 'Linh trà tiên giới dùng để mời Đạo Hữu đàm đạo, tăng +50 Hảo Cảm và thắt chặt tình tri kỷ.', icon: '🍵', itemType: 'tea', targetKey: 'linhTra', price: 160, dailyLimit: 5, discountPercent: 0, enabled: true },
+  { id: 'item_dong_tam_toa', category: 'friendship', name: 'Đồng Tâm Tỏa', desc: 'Tín vật kết bái Kim Lan Chi Giao hoặc Đạo Lữ, tăng +150 Hảo Cảm vĩnh cửu.', icon: '🔐', itemType: 'tea', targetKey: 'dongTamToa', price: 500, dailyLimit: 2, discountPercent: 0, enabled: true },
+  { id: 'frame_van_bao', category: 'customization', name: 'Khung Hào Quang Vạn Bảo', desc: 'Khung Avatar dát vàng kim quang lộng lẫy độc quyền của thương hội Vạn Bảo Các.', icon: '👑', itemType: 'frame', targetKey: 'admin_gold', price: 2500, dailyLimit: 1, discountPercent: 0, enabled: true },
+  { id: 'frame_linh_tien', category: 'customization', name: 'Khung Cực Phẩm Linh Tiên', desc: 'Hào quang tiên gia phiêu dật siêu phàm, khẳng định đẳng cấp phú hào chân nhân.', icon: '✨', itemType: 'frame', targetKey: 'cosmic_cyan', price: 4000, dailyLimit: 1, discountPercent: 0, enabled: true },
+];
+
+function seedDefaultMarketListings() {
+  const seedListings: MarketListing[] = [
+    { id: 'lst_npc_ulan', sellerId: 'npc_bachhac', sellerUsername: 'Bạch Hạc Chân Nhân', sellerAvatar: '🕊️', sellerFrame: 'admin_gold', itemType: 'herb', itemId: 'uLan', itemName: 'U Lan Thảo', itemIcon: '🌱', quality: 'trung_pham', quantity: 5, pricePerUnit: 25, totalPrice: 125, listedAt: Date.now() - 3600000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_huyettinh', sellerId: 'npc_thanhphong', sellerUsername: 'Thanh Phong Đạo Trưởng', sellerAvatar: '🍃', sellerFrame: 'emerald_dragon', itemType: 'herb', itemId: 'huyetTinh', itemName: 'Huyết Tinh Thảo', itemIcon: '🌿', quality: 'thuong_pham', quantity: 3, pricePerUnit: 40, totalPrice: 120, listedAt: Date.now() - 7200000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_linhtra', sellerId: 'npc_linhlung', sellerUsername: 'Linh Lung Tiên Tử', sellerAvatar: '🌸', sellerFrame: 'cosmic_cyan', itemType: 'tea', itemId: 'linhTra', itemName: 'Bát Trảm Linh Trà', itemIcon: '🍵', quality: 'cuc_pham', quantity: 2, pricePerUnit: 140, totalPrice: 280, listedAt: Date.now() - 10800000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_thonguyen', sellerId: 'npc_vocuc', sellerUsername: 'Vô Cực Tán Nhân', sellerAvatar: '⚡', sellerFrame: 'thunder_lord', itemType: 'pill', itemId: 'thoNguyen', itemName: 'Thọ Nguyên Đan', itemIcon: '💊', quality: 'trung_pham', quantity: 2, pricePerUnit: 80, totalPrice: 160, listedAt: Date.now() - 14400000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_dinhtam', sellerId: 'npc_huyenco', sellerUsername: 'Huyền Cơ Tử', sellerAvatar: '🔮', sellerFrame: 'ruby_fire', itemType: 'pill', itemId: 'dinhTam', itemName: 'Định Tâm Đan', itemIcon: '🧘', quality: 'thuong_pham', quantity: 1, pricePerUnit: 95, totalPrice: 95, listedAt: Date.now() - 18000000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_hotam', sellerId: 'npc_danha', sellerUsername: 'Đan Hà Trưởng Lão', sellerAvatar: '🔥', sellerFrame: 'fire_emperor', itemType: 'pill', itemId: 'hoTam', itemName: 'Hộ Tâm Đan', itemIcon: '🛡️', quality: 'cuc_pham', quantity: 1, pricePerUnit: 350, totalPrice: 350, listedAt: Date.now() - 21600000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_longtu', sellerId: 'npc_bacminh', sellerUsername: 'Bắc Minh Dị Nhân', sellerAvatar: '🐉', sellerFrame: 'admin_gold', itemType: 'herb', itemId: 'longTu', itemName: 'Long Tu Thảo', itemIcon: '🐉', quality: 'cuc_pham', quantity: 1, pricePerUnit: 250, totalPrice: 250, listedAt: Date.now() - 25200000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+  ];
+  for (const item of seedListings) {
+    marketListings.set(item.id, item);
+  }
+}
+
 export function loadEconomyData() {
   try {
     if (fs.existsSync(SHOP_CONFIG_FILE)) {
       const data = JSON.parse(fs.readFileSync(SHOP_CONFIG_FILE, 'utf-8'));
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         shopCatalog = data;
       }
     }
   } catch (err) {
     console.error('Error loading shop_config.json:', err);
+  }
+
+  // Đảm bảo Vạn Bảo Các luôn có danh mục đầy đủ, không bao giờ bị rỗng
+  if (!Array.isArray(shopCatalog) || shopCatalog.length === 0) {
+    shopCatalog = [...DEFAULT_SERVER_SHOP_CATALOG];
+    saveShopConfigData();
   }
 
   try {
@@ -79,6 +119,13 @@ export function loadEconomyData() {
     }
   } catch (err) {
     console.error('Error loading market.json:', err);
+  }
+
+  // Đảm bảo Phường Thị luôn có sạp hàng hoạt động
+  const activeCount = Array.from(marketListings.values()).filter((l) => l.status === 'active').length;
+  if (activeCount === 0) {
+    seedDefaultMarketListings();
+    saveMarketData();
   }
 
   // Hydrate from PostgreSQL if DATABASE_URL is configured
@@ -371,6 +418,11 @@ export function registerEconomyRoutes(
     saveMarketData();
 
     let list = Array.from(marketListings.values()).filter((l) => l.status === 'active');
+    if (list.length === 0) {
+      seedDefaultMarketListings();
+      saveMarketData();
+      list = Array.from(marketListings.values()).filter((l) => l.status === 'active');
+    }
 
     // Filter
     if (category && category !== 'all') {

@@ -914,7 +914,7 @@ export function getEffectiveClientUser(explicitId?: string, explicitUsername?: s
     id = cached?.id || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_player_id') || sessionStorage.getItem('fasttyping_player_id') || undefined : undefined);
   }
   if (!username) {
-    username = cached?.displayName || cached?.username || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_user') || localStorage.getItem('fasttyping_username') || undefined : undefined);
+    username = cached?.username || cached?.displayName || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_user') || localStorage.getItem('fasttyping_username') || undefined : undefined);
   }
   return { id, username };
 }
@@ -928,19 +928,28 @@ export async function fetchFriendsList(userId?: string, username?: string): Prom
 }> {
   try {
     const token = getStoredAuthToken();
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+    };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(userId, username);
     const params = new URLSearchParams();
     if (effectiveId) params.append('userId', effectiveId);
     if (effectiveUsername) params.append('username', effectiveUsername);
+    params.append('_t', Date.now().toString());
 
     const url = `/api/friends/list?${params.toString()}`;
     const res = await fetch(url, { headers, cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (data && data.success) {
+        if (typeof window !== 'undefined' && Array.isArray(data.friends)) {
+          try {
+            localStorage.setItem('fasttyping_friends_cache', JSON.stringify(data.friends));
+          } catch {}
+        }
         return data;
       }
     }
@@ -1044,6 +1053,7 @@ export async function respondFriendRequest(
   message?: string;
   error?: string;
   remainingCount?: number;
+  friend?: FriendRecord;
 }> {
   try {
     const token = getStoredAuthToken();
@@ -1064,7 +1074,7 @@ export async function respondFriendRequest(
     });
     const data = await res.json();
     if (data.success) {
-      broadcastLocalFriendsUpdate({ requestId, action, type: 'friend_request_responded' });
+      broadcastLocalFriendsUpdate({ requestId, action, type: 'friend_request_responded', friend: data.friend });
     }
     return data;
   } catch (err: any) {
@@ -2152,6 +2162,15 @@ export function subscribeToGlobalChat(
       if (typeof res.count === 'number') updatePresence(res.count);
       if (typeof res.pendingFriendRequestsCount === 'number') {
         if (onFriendEvent) onFriendEvent({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('friend_requests_count', { detail: { count: res.pendingFriendRequestsCount } }));
+          window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: { type: 'friend_requests_count', count: res.pendingFriendRequestsCount } }));
+        }
+        if (friendsBroadcastChannel) {
+          try {
+            friendsBroadcastChannel.postMessage({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
+          } catch {}
+        }
       }
       if (Array.isArray(res.friendEvents) && res.friendEvents.length > 0) {
         for (const ev of res.friendEvents) {

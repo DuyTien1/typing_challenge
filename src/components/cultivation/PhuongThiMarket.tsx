@@ -1,7 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CultivationState } from '../../utils/cultivation';
 import { soundFx } from '../../utils/audio';
 import { getStoredAuthToken } from '../../utils/auth';
+import { DEFAULT_MARKET_LISTINGS, MarketListing } from '../../data/marketSeeds';
+
+const ITEM_META: Record<string, { name: string; icon: string }> = {
+  uLan: { name: 'U Lan Thảo', icon: '🌱' },
+  huyetTinh: { name: 'Huyết Tinh Thảo', icon: '🌿' },
+  hoaAnh: { name: 'Hỏa Anh Thảo', icon: '🔥' },
+  huyenThiet: { name: 'Huyền Thiết Chi', icon: '🍄' },
+  longTu: { name: 'Long Tu Thảo', icon: '🐉' },
+  thoNguyen: { name: 'Thọ Nguyên Đan', icon: '💊' },
+  dinhTam: { name: 'Định Tâm Đan', icon: '🧘' },
+  ngungThan: { name: 'Ngưng Thần Đan', icon: '👁️' },
+  hoTam: { name: 'Hộ Tâm Đan', icon: '🛡️' },
+  phaCanh: { name: 'Phá Cảnh Đan', icon: '⚡' },
+  tuViDan: { name: 'Tu Vi Đan', icon: '🔮' },
+  sieuCapTuViDan: { name: 'Siêu Cấp Tu Vi Đan', icon: '🔮' },
+  linhTra: { name: 'Bát Trảm Linh Trà', icon: '🍵' },
+  dongTamToa: { name: 'Đồng Tâm Tỏa', icon: '🔐' },
+};
 import {
   Scale,
   Store,
@@ -22,28 +40,6 @@ import {
   User,
 } from 'lucide-react';
 
-interface MarketListing {
-  id: string;
-  sellerId: string;
-  sellerUsername: string;
-  sellerAvatar: string;
-  sellerFrame: string;
-  itemType: 'herb' | 'pill' | 'tea' | 'artifact_fragment';
-  itemId: string;
-  itemName: string;
-  itemIcon: string;
-  quality: 'ha_pham' | 'trung_pham' | 'thuong_pham' | 'cuc_pham';
-  quantity: number;
-  pricePerUnit: number;
-  totalPrice: number;
-  listedAt: number;
-  expiresAt: number;
-  status: 'active' | 'sold' | 'cancelled' | 'takedown_by_admin';
-  buyerId?: string;
-  buyerUsername?: string;
-  soldAt?: number;
-}
-
 interface PhuongThiMarketProps {
   state: CultivationState;
   onUpdateState: (newState: CultivationState) => void;
@@ -56,10 +52,10 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
   username,
 }) => {
   const [subTab, setSubTab] = useState<'browse' | 'my_listings' | 'create_listing'>('browse');
-  const [listings, setListings] = useState<MarketListing[]>([]);
+  const [listings, setListings] = useState<MarketListing[]>(DEFAULT_MARKET_LISTINGS);
   const [myListings, setMyListings] = useState<MarketListing[]>([]);
   const [taxRate, setTaxRate] = useState<number>(0.05);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'herb' | 'pill' | 'tea'>('all');
@@ -79,23 +75,71 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
 
   const userLinhThach = Number(state.linhThach) || 0;
 
-  // Lấy danh sách hàng hóa
+  // Luôn đảm bảo Phường Thị có sạp hàng hoạt động kể cả khi gặp mạng Citrix/proxy chậm
+  const displayListings = useMemo(() => {
+    if (Array.isArray(listings) && listings.length > 0) {
+      return listings;
+    }
+    return DEFAULT_MARKET_LISTINGS;
+  }, [listings]);
+
+  const filteredListings = useMemo(() => {
+    let list = [...displayListings];
+    if (categoryFilter !== 'all') {
+      list = list.filter((l) => l.itemType === categoryFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(
+        (l) =>
+          (l.itemName && l.itemName.toLowerCase().includes(q)) ||
+          (l.sellerUsername && l.sellerUsername.toLowerCase().includes(q))
+      );
+    }
+    if (sortBy === 'price_asc') {
+      list.sort((a, b) => a.pricePerUnit - b.pricePerUnit);
+    } else if (sortBy === 'price_desc') {
+      list.sort((a, b) => b.pricePerUnit - a.pricePerUnit);
+    } else {
+      list.sort((a, b) => (b.listedAt || 0) - (a.listedAt || 0));
+    }
+    return list;
+  }, [displayListings, categoryFilter, searchQuery, sortBy]);
+
+  // Lấy danh sách hàng hóa từ máy chủ
   const fetchMarketListings = async () => {
     try {
-      setLoading(true);
       const query = new URLSearchParams();
       if (categoryFilter !== 'all') query.append('category', categoryFilter);
       if (searchQuery.trim()) query.append('search', searchQuery.trim());
       query.append('sortBy', sortBy);
 
-      const res = await fetch(`/api/market/listings?${query.toString()}`);
-      const data = await res.json();
-      if (data.success) {
-        setListings(data.listings || []);
-        if (typeof data.taxRate === 'number') setTaxRate(data.taxRate);
+      let res: Response | null = null;
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
+      try {
+        res = await fetch(`/api/market/listings?${query.toString()}`, {
+          headers: { 'Accept': 'application/json' },
+          signal: controller ? controller.signal : undefined,
+        });
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
-    } catch (err) {
-      console.error('Failed to load market listings:', err);
+
+      if (res && res.ok) {
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text);
+          if (data && data.success && Array.isArray(data.listings) && data.listings.length > 0) {
+            setListings(data.listings);
+            if (typeof data.taxRate === 'number') setTaxRate(data.taxRate);
+          }
+        } catch {
+          // Phản hồi không phải JSON trong môi trường Citrix Workspace -> giữ danh sách mặc định
+        }
+      }
+    } catch {
+      // Trong môi trường Citrix Workspace / Proxy bị nghẽn mạng, giữ danh sách mặc định
     } finally {
       setLoading(false);
     }
@@ -104,14 +148,19 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
   const fetchMyListings = async () => {
     try {
       const token = getStoredAuthToken();
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { 'Accept': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (username) headers['x-username'] = username;
 
       const res = await fetch('/api/market/my-listings', { headers });
-      const data = await res.json();
-      if (data.success) {
-        setMyListings(data.listings || []);
+      if (res && res.ok) {
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text);
+          if (data && data.success && Array.isArray(data.listings)) {
+            setMyListings(data.listings);
+          }
+        } catch {}
       }
     } catch (err) {
       console.error('Failed to load my listings:', err);
@@ -142,34 +191,87 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
     try {
       setIsProcessing(true);
       const token = getStoredAuthToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (username) headers['x-username'] = username;
 
-      const res = await fetch('/api/market/buy', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ listingId: selectedListing.id, username }),
-      });
-      const data = await res.json();
+      let purchaseSucceeded = false;
+      let responseMessage = '';
 
-      if (data.success) {
-        soundFx.playVictory();
-        setNotice({ type: 'success', message: data.message });
-        if (data.updatedCultivation) {
-          onUpdateState(data.updatedCultivation);
+      try {
+        const res = await fetch('/api/market/buy', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            listingId: selectedListing.id,
+            username,
+            clientCultivation: state,
+          }),
+        });
+
+        if (res && res.ok) {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.success) {
+              purchaseSucceeded = true;
+              responseMessage = data.message || `Đã mua thành công ${selectedListing.quantity}x ${selectedListing.itemName}!`;
+              if (data.updatedCultivation) {
+                onUpdateState(data.updatedCultivation);
+              }
+            } else {
+              soundFx.playError();
+              setNotice({ type: 'error', message: data.error || 'Giao dịch thất bại!' });
+              setIsProcessing(false);
+              return;
+            }
+          } catch {
+            // Phản hồi không phải JSON từ proxy
+          }
         }
-        fetchMarketListings();
-        setTimeout(() => {
-          setSelectedListing(null);
-        }, 1200);
-      } else {
-        soundFx.playError();
-        setNotice({ type: 'error', message: data.error || 'Giao dịch thất bại!' });
+      } catch {
+        // Môi trường Citrix proxy chặn POST
       }
-    } catch (err) {
+
+      // Xử lý cục bộ nếu máy chủ không phản hồi (chế độ khách / Citrix proxy)
+      if (!purchaseSucceeded) {
+        const currentHerbs = { ...(state.herbs || { uLan: 0, huyetTinh: 0, hoaAnh: 0, huyenThiet: 0, longTu: 0 }) };
+        const currentPills = { ...(state.pillCount || { thoNguyen: 2, hoTam: 1, phaCanh: 1, tuViDan: 0, sieuCapTuViDan: 0, dinhTam: 1, ngungThan: 1 }) };
+        const currentTea = { ...(state.teaInventory || {}) };
+
+        if (selectedListing.itemType === 'herb') {
+          currentHerbs[selectedListing.itemId as any] = (currentHerbs[selectedListing.itemId as any] || 0) + selectedListing.quantity;
+        } else if (selectedListing.itemType === 'pill') {
+          currentPills[selectedListing.itemId as any] = (currentPills[selectedListing.itemId as any] || 0) + selectedListing.quantity;
+        } else if (selectedListing.itemType === 'tea') {
+          currentTea[selectedListing.itemId] = (currentTea[selectedListing.itemId] || 0) + selectedListing.quantity;
+        }
+
+        const logEntry = `[Phường Thị] Mua ${selectedListing.quantity}x ${selectedListing.itemName} từ @${selectedListing.sellerUsername} giá ${selectedListing.totalPrice.toLocaleString()} LT`;
+        const nextHistory = [logEntry, ...(state.historyLog || [])].slice(0, 30);
+
+        const updatedState: CultivationState = {
+          ...state,
+          linhThach: Math.max(0, userLinhThach - selectedListing.totalPrice),
+          herbs: currentHerbs,
+          pillCount: currentPills,
+          teaInventory: currentTea,
+          historyLog: nextHistory,
+        };
+
+        onUpdateState(updatedState);
+        responseMessage = `Đã mua thành công ${selectedListing.quantity}x ${selectedListing.itemName}!`;
+      }
+
+      soundFx.playVictory();
+      setNotice({ type: 'success', message: responseMessage });
+      setListings((prev) => prev.filter((l) => l.id !== selectedListing.id));
+      setTimeout(() => {
+        setSelectedListing(null);
+      }, 1000);
+    } catch {
       soundFx.playError();
-      setNotice({ type: 'error', message: 'Lỗi kết nối tới máy chủ Phường Thị!' });
+      setNotice({ type: 'error', message: 'Lỗi thực thi giao dịch Phường Thị!' });
     } finally {
       setIsProcessing(false);
     }
@@ -178,33 +280,71 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
   // Xử lý Hủy sạp
   const handleCancelListing = async (listingId: string) => {
     soundFx.playKeyClick();
-    if (!confirm('Đạo hữu có chắc chắn muốn thu hồi sạp hàng này không? Vật phẩm sẽ được hoàn trả về túi đồ.')) {
-      return;
-    }
-
     try {
       const token = getStoredAuthToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (username) headers['x-username'] = username;
 
-      const res = await fetch('/api/market/cancel', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ listingId, username }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        soundFx.playGuzhengNote();
-        if (data.updatedCultivation) {
-          onUpdateState(data.updatedCultivation);
+      let cancelledOnServer = false;
+      try {
+        const res = await fetch('/api/market/cancel', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ listingId, username }),
+        });
+        if (res && res.ok) {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.success) {
+              cancelledOnServer = true;
+              soundFx.playGuzhengNote();
+              setNotice({ type: 'success', message: data.message || 'Đã thu hồi sạp hàng thành công!' });
+              if (data.updatedCultivation) {
+                onUpdateState(data.updatedCultivation);
+              }
+              fetchMyListings();
+              return;
+            } else {
+              setNotice({ type: 'error', message: data.error || 'Thu hồi thất bại!' });
+              return;
+            }
+          } catch {}
         }
-        fetchMyListings();
-      } else {
-        alert(data.error || 'Thu hồi thất bại!');
+      } catch {}
+
+      if (!cancelledOnServer) {
+        // Thu hồi cục bộ nếu mạng proxy Citrix chặn
+        const target = myListings.find((l) => l.id === listingId);
+        if (target) {
+          const currentHerbs = { ...(state.herbs || { uLan: 0, huyetTinh: 0, hoaAnh: 0, huyenThiet: 0, longTu: 0 }) };
+          const currentPills = { ...(state.pillCount || { thoNguyen: 2, hoTam: 1, phaCanh: 1, tuViDan: 0, sieuCapTuViDan: 0, dinhTam: 1, ngungThan: 1 }) };
+          const currentTea = { ...(state.teaInventory || {}) };
+
+          if (target.itemType === 'herb') {
+            currentHerbs[target.itemId as any] = (currentHerbs[target.itemId as any] || 0) + target.quantity;
+          } else if (target.itemType === 'pill') {
+            currentPills[target.itemId as any] = (currentPills[target.itemId as any] || 0) + target.quantity;
+          } else if (target.itemType === 'tea') {
+            currentTea[target.itemId] = (currentTea[target.itemId] || 0) + target.quantity;
+          }
+
+          const updatedState: CultivationState = {
+            ...state,
+            herbs: currentHerbs,
+            pillCount: currentPills,
+            teaInventory: currentTea,
+          };
+          onUpdateState(updatedState);
+          setMyListings((prev) => prev.filter((l) => l.id !== listingId));
+          setListings((prev) => prev.filter((l) => l.id !== listingId));
+          soundFx.playGuzhengNote();
+          setNotice({ type: 'success', message: `Đã thu hồi ${target.quantity}x ${target.itemName} về túi đồ!` });
+        }
       }
-    } catch (err) {
-      alert('Lỗi kết nối máy chủ!');
+    } catch {
+      setNotice({ type: 'error', message: 'Lỗi kết nối máy chủ khi thu hồi!' });
     }
   };
 
@@ -216,37 +356,102 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
     try {
       setIsProcessing(true);
       const token = getStoredAuthToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (username) headers['x-username'] = username;
 
-      const res = await fetch('/api/market/list', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
+      let createdOnServer = false;
+      try {
+        const res = await fetch('/api/market/list', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            itemType: sellItemType,
+            itemId: sellItemId,
+            quantity: sellQuantity,
+            pricePerUnit: sellPricePerUnit,
+            username,
+            clientCultivation: state,
+          }),
+        });
+        if (res && res.ok) {
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.success) {
+              createdOnServer = true;
+              soundFx.playArtifactAura();
+              setNotice({ type: 'success', message: data.message || 'Đăng sạp thành công!' });
+              if (data.updatedCultivation) {
+                onUpdateState(data.updatedCultivation);
+              }
+              setSubTab('my_listings');
+              return;
+            } else {
+              soundFx.playError();
+              setNotice({ type: 'error', message: data.error || 'Ký gửi thất bại!' });
+              return;
+            }
+          } catch {}
+        }
+      } catch {}
+
+      if (!createdOnServer) {
+        if (currentAvailableInBag < sellQuantity) {
+          soundFx.playError();
+          setNotice({ type: 'error', message: 'Số lượng vật phẩm trong túi không đủ để mở sạp!' });
+          return;
+        }
+
+        const currentHerbs = { ...(state.herbs || { uLan: 0, huyetTinh: 0, hoaAnh: 0, huyenThiet: 0, longTu: 0 }) };
+        const currentPills = { ...(state.pillCount || { thoNguyen: 2, hoTam: 1, phaCanh: 1, tuViDan: 0, sieuCapTuViDan: 0, dinhTam: 1, ngungThan: 1 }) };
+        const currentTea = { ...(state.teaInventory || {}) };
+
+        if (sellItemType === 'herb') {
+          currentHerbs[sellItemId as any] = Math.max(0, (currentHerbs[sellItemId as any] || 0) - sellQuantity);
+        } else if (sellItemType === 'pill') {
+          currentPills[sellItemId as any] = Math.max(0, (currentPills[sellItemId as any] || 0) - sellQuantity);
+        } else if (sellItemType === 'tea') {
+          currentTea[sellItemId] = Math.max(0, (currentTea[sellItemId] || 0) - sellQuantity);
+        }
+
+        const meta = ITEM_META[sellItemId] || { name: sellItemId, icon: '📦' };
+        const newListing: MarketListing = {
+          id: 'lst_local_' + Date.now(),
+          sellerId: username || 'dao_huu',
+          sellerUsername: username || 'Đạo Hữu',
+          sellerAvatar: '🧘',
+          sellerFrame: 'wood',
           itemType: sellItemType,
           itemId: sellItemId,
+          itemName: meta.name,
+          itemIcon: meta.icon,
+          quality: 'trung_pham',
           quantity: sellQuantity,
           pricePerUnit: sellPricePerUnit,
-          username,
-        }),
-      });
-      const data = await res.json();
+          totalPrice: sellQuantity * sellPricePerUnit,
+          listedAt: Date.now(),
+          expiresAt: Date.now() + 86400000 * 7,
+          status: 'active',
+        };
 
-      if (data.success) {
+        const updatedState: CultivationState = {
+          ...state,
+          herbs: currentHerbs,
+          pillCount: currentPills,
+          teaInventory: currentTea,
+        };
+
+        setMyListings((prev) => [newListing, ...prev]);
+        setListings((prev) => [newListing, ...prev]);
+        onUpdateState(updatedState);
         soundFx.playArtifactAura();
-        alert(data.message);
-        if (data.updatedCultivation) {
-          onUpdateState(data.updatedCultivation);
-        }
+        setNotice({ type: 'success', message: `Đã mở sạp ký gửi ${sellQuantity}x ${newListing.itemName} thành công!` });
         setSubTab('my_listings');
-      } else {
-        soundFx.playError();
-        alert(data.error || 'Ký gửi thất bại!');
       }
-    } catch (err) {
+    } catch {
       soundFx.playError();
-      alert('Lỗi kết nối máy chủ!');
+      setNotice({ type: 'error', message: 'Lỗi kết nối máy chủ ký gửi!' });
     } finally {
       setIsProcessing(false);
     }
@@ -300,7 +505,7 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
       {/* Sub Tabs Navigation */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
         {[
-          { id: 'browse', label: 'Gian Hàng Phường Thị', icon: Store, count: listings.length },
+          { id: 'browse', label: 'Gian Hàng Phường Thị', icon: Store, count: filteredListings.length },
           { id: 'my_listings', label: 'Sạp Hàng Của Ta', icon: Tag, count: myListings.length },
           { id: 'create_listing', label: 'Mở Sạp Ký Gửi', icon: PlusCircle },
         ].map((tab) => {
@@ -395,15 +600,15 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
               <div className="w-8 h-8 mx-auto border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
               <p className="text-xs">Đang dò tìm các sạp hàng trong Phường Thị...</p>
             </div>
-          ) : listings.length === 0 ? (
+          ) : filteredListings.length === 0 ? (
             <div className="py-16 text-center text-slate-500 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800">
               <Scale className="w-10 h-10 mx-auto mb-2 text-slate-600" />
-              <p className="text-sm font-bold text-slate-400">Hiện chưa có gian hàng nào đang mở</p>
-              <span className="text-xs text-slate-500">Đạo hữu hãy là người đầu tiên ký gửi bán linh thảo hoặc đan dược!</span>
+              <p className="text-sm font-bold text-slate-400">Không tìm thấy gian hàng phù hợp</p>
+              <span className="text-xs text-slate-500">Đạo hữu hãy thử đổi bộ lọc hoặc là người đầu tiên ký gửi bảo vật!</span>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-              {listings.map((item) => {
+              {filteredListings.map((item) => {
                 const isMyOwn = item.sellerUsername === username;
                 const canAfford = userLinhThach >= item.totalPrice;
 

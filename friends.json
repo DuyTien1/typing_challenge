@@ -1,4 +1,31 @@
 {
-  "friendships": [],
+  "friendships": [
+    {
+      "id": "fs_1791295252747_deip",
+      "user1Id": "usr_1791173058536_0vqs3",
+      "user2Id": "usr_1791082802178_evj8f",
+      "intimacy": 60,
+      "createdAt": 1791295252747,
+      "updatedAt": 1791295252747
+    },
+    {
+      "id": "fs_1791297412140_ow1r",
+      "user1Id": "p_muws7tup_fhwz",
+      "user2Id": "p_user_b",
+      "intimacy": 60,
+      "createdAt": 1791297412140,
+      "updatedAt": 1791297412140
+    },
+    {
+      "id": "fs_1791300567948_uo1x",
+      "user1Id": "p_alpha_1",
+      "user2Id": "p_beta_1",
+      "user1Username": "PlayerAlpha",
+      "user2Username": "PlayerBeta",
+      "intimacy": 60,
+      "createdAt": 1791300567948,
+      "updatedAt": 1791300567948
+    }
+  ],
   "requests": []
 }

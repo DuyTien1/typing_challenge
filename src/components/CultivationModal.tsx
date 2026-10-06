@@ -12,6 +12,8 @@ import {
   useDinhTamPill,
   useNgungThanPill,
   getTodayDateString,
+  getVietnamDate,
+  ensureDailySync,
   TWO_HOURS_MS,
   DAILY_MATCH_EXP_CAP,
 } from '../utils/cultivation';
@@ -90,6 +92,16 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
       setActiveTab(initialTab);
     }
   }, [initialTab, isOpen]);
+
+  // Tự động kiểm tra và làm mới Nhiệm Vụ Hàng Ngày đồng bộ với Điểm Danh Hàng Ngày khi bước sang ngày mới
+  useEffect(() => {
+    if (isOpen && state) {
+      const syncRes = ensureDailySync(state);
+      if (syncRes.didResetQuests) {
+        onUpdateState(syncRes.updatedState);
+      }
+    }
+  }, [isOpen, activeTab, state?.dailyQuestsDate, state?.checkIn?.lastCheckInDate]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const [usePhaCanh, setUsePhaCanh] = useState(false);
@@ -932,7 +944,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           {activeTab === 'checkin' && (() => {
             const rawStreak = state.checkIn?.streak || 0;
             const currentCycleStep = rawStreak > 0 ? (rawStreak % 7 === 0 ? 7 : rawStreak % 7) : 0;
-            const currentDayOfWeek = new Date().getDay();
+            const currentDayOfWeek = getVietnamDate().getDay();
             const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
             return (
@@ -1308,7 +1320,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                 <div>
                   <h3 className="text-sm font-bold text-amber-300">Tu Luyện Hàng Ngày</h3>
                   <p className="text-xs text-slate-400">
-                    Hoàn thành bài tập gõ mỗi ngày để ngưng tụ Tu Vi tinh thuần. Tự động làm mới lúc 00:00!
+                    Hoàn thành bài tập gõ mỗi ngày để ngưng tụ Tu Vi tinh thuần. Tự động làm mới đồng bộ cùng Điểm Danh lúc 00:00!
                   </p>
                 </div>
                 <div className="text-right">

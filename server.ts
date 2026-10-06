@@ -2302,6 +2302,88 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   app.post('/api/auth/register', handleQuickRegister);
   app.post('/api/auth/register-email', handleQuickRegister);
 
+  // Cấu hình danh sách 4 Nhiệm Vụ Hàng Ngày chuẩn Tiên Hiệp trên Server
+  function createServerDefaultDailyQuests() {
+    return [
+      {
+        id: 'quest_meditation',
+        name: 'Tọa Thiền Nhập Định',
+        desc: 'Hoàn thành 1 bài thi đấu bất kỳ để ngưng tụ khí huyết',
+        rewardExp: 300,
+        progress: 0,
+        target: 1,
+        isCompleted: false,
+        isClaimed: false,
+      },
+      {
+        id: 'quest_accuracy',
+        name: 'Bách Phát Bách Trúng',
+        desc: 'Đạt độ chính xác ≥ 96% trong 1 trận đấu để rèn luyện tâm kiếm',
+        rewardExp: 450,
+        progress: 0,
+        target: 1,
+        isCompleted: false,
+        isClaimed: false,
+      },
+      {
+        id: 'quest_speed',
+        name: 'Lôi Đình Xuất Kích',
+        desc: 'Đạt WPM ≥ 50 trong 1 trận đấu để bứt phá tốc độ',
+        rewardExp: 350,
+        progress: 0,
+        target: 1,
+        isCompleted: false,
+        isClaimed: false,
+      },
+      {
+        id: 'quest_arena',
+        name: 'Trảm Yêu Phục Ma',
+        desc: 'Tham gia 1 trận Săn Boss, Đoán Chữ hoặc Ngẫu Hứng',
+        rewardExp: 500,
+        progress: 0,
+        target: 1,
+        isCompleted: false,
+        isClaimed: false,
+      },
+    ];
+  }
+
+  // Hàm đồng bộ nhiệm vụ hàng ngày và điểm danh trên máy chủ khi qua ngày mới (00:00 VN)
+  function ensureServerDailyCultivationSync(cult: any): boolean {
+    if (!cult || typeof cult !== 'object') return false;
+    const todayStr = getVietnamDateStr();
+    let changed = false;
+
+    if (!cult.checkIn) {
+      cult.checkIn = { lastCheckInDate: '', streak: 0, totalCheckIns: 0 };
+      changed = true;
+    }
+
+    const hasInvalidQuests = !Array.isArray(cult.dailyQuests) || cult.dailyQuests.length !== 4;
+    const isDifferentDate = cult.dailyQuestsDate !== todayStr;
+    const hasUnresetStaleQuests =
+      cult.checkIn?.lastCheckInDate !== todayStr &&
+      Array.isArray(cult.dailyQuests) &&
+      cult.dailyQuests.length > 0 &&
+      cult.dailyQuests.every((q: any) => q.isClaimed);
+
+    if (isDifferentDate || hasInvalidQuests || hasUnresetStaleQuests) {
+      cult.dailyQuests = createServerDefaultDailyQuests();
+      cult.dailyQuestsDate = todayStr;
+      cult.dailyExpEarned = 0;
+      cult.dailyExpDate = todayStr;
+      changed = true;
+    }
+
+    if (cult.dailyExpDate !== todayStr) {
+      cult.dailyExpEarned = 0;
+      cult.dailyExpDate = todayStr;
+      changed = true;
+    }
+
+    return changed;
+  }
+
   // POST /api/auth/login and /api/auth/login-email: Quick login by username OR email
   const handleQuickLogin = (req: express.Request, res: express.Response) => {
     const { email, username, account, identifier: reqIdentifier, password } = req.body || {};
@@ -2345,6 +2427,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     user.sessionTokens.push(sessionToken);
     if (user.sessionTokens.length > 20) user.sessionTokens.shift();
 
+    if (user.cultivation && ensureServerDailyCultivationSync(user.cultivation)) {
+      user.updatedAt = Date.now();
+    }
+
     serverUsers.set(user.id, user);
     saveUsersToFile();
 
@@ -2366,6 +2452,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (!user) {
       res.json({ success: false, isGuest: true, user: null });
       return;
+    }
+
+    if (user.cultivation && ensureServerDailyCultivationSync(user.cultivation)) {
+      user.updatedAt = Date.now();
+      serverUsers.set(user.id, user);
+      saveUsersToFile();
     }
 
     res.json({
@@ -2457,6 +2549,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       user.matchHistory = matchHistory.slice(0, 50);
     }
     if (cultivation && typeof cultivation === 'object') {
+      ensureServerDailyCultivationSync(cultivation);
       user.cultivation = cultivation;
     }
 
@@ -2598,6 +2691,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (!user) {
       res.status(404).json({ success: false, error: 'Không tìm thấy thông tin tài khoản.' });
       return;
+    }
+
+    if (user.cultivation) {
+      if (ensureServerDailyCultivationSync(user.cultivation)) {
+        user.updatedAt = Date.now();
+        serverUsers.set(user.id, user);
+        saveUsersToFile();
+      }
     }
 
     res.json({
@@ -3043,6 +3144,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     if (req.body.cultivation && typeof req.body.cultivation === 'object') {
+      ensureServerDailyCultivationSync(req.body.cultivation);
       user.cultivation = req.body.cultivation;
       user.updatedAt = Date.now();
       serverUsers.set(user.id, user);
@@ -4413,10 +4515,28 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         sName === lower ||
         (norm && normS === norm)
       ) {
-        // Chỉ nạp tài khoản nếu đã đăng ký trong serverUsers
         const existing = (sess.userId ? serverUsers.get(sess.userId) : null) || getUserByUsername(sess.username);
         if (existing) return existing;
-        // Người chơi Tán Tu không có UID và không lưu vào serverUsers
+        // Tự động tạo hồ sơ hợp lệ cho người chơi đang online để kết bái đạo hữu không bị gián đoạn
+        const guestId = sess.userId || `p_${sess.tabId}`;
+        const guestName = sess.username || 'Đạo Hữu';
+        const guestUser: ServerUserRecord = {
+          id: guestId,
+          username: guestName,
+          displayName: guestName,
+          avatar: sess.avatar || '⚡',
+          frame: sess.frame || 'default',
+          authProvider: 'guest',
+          isVerified: true,
+          sessionTokens: [],
+          bestWpm: sess.bestWpm || 0,
+          totalGames: sess.totalGames || 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        serverUsers.set(guestUser.id, guestUser);
+        saveUsersToFile();
+        return guestUser;
       }
     }
 
@@ -4429,7 +4549,23 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
           if (pId === lower || pName === lower || (norm && normalizeSearchText(pName) === norm)) {
             const existing = serverUsers.get(p.id) || getUserByUsername(p.username);
             if (existing) return existing;
-            // Người chơi Tán Tu không có UID và không lưu vào serverUsers
+            const roomUser: ServerUserRecord = {
+              id: p.id,
+              username: p.username || 'Đạo Hữu',
+              displayName: (p as any).displayName || p.username || 'Đạo Hữu',
+              avatar: (p as any).avatar || p.icon || '⚡',
+              frame: p.frame || 'default',
+              authProvider: 'guest',
+              isVerified: true,
+              sessionTokens: [],
+              bestWpm: p.wpm || 0,
+              totalGames: 1,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            serverUsers.set(roomUser.id, roomUser);
+            saveUsersToFile();
+            return roomUser;
           }
         }
       }
@@ -4438,24 +4574,58 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     return null;
   }
 
+  function isGenericPlaceholderName(name?: string): boolean {
+    if (!name) return false;
+    const n = normalizeSearchText(String(name).trim().toLowerCase());
+    return n === 'dao huu' || n === 'guest' || n === 'vo danh' || n === 'nguoi choi';
+  }
+
   // So sánh xem 2 định danh có trỏ tới cùng 1 người chơi hay không (ưu tiên so sánh ID chính xác)
   function isSameUser(idOrNameA?: string, idOrNameB?: string): boolean {
     if (!idOrNameA || !idOrNameB) return false;
     const cleanA = String(idOrNameA).trim().toLowerCase();
     const cleanB = String(idOrNameB).trim().toLowerCase();
-    if (cleanA === cleanB) return true;
+    if (cleanA === cleanB) {
+      // Nếu là tên mặc định chung như "đạo hữu" mà không phải id thực thụ thì không tự động coi là 1 người
+      if (isGenericPlaceholderName(cleanA) && !cleanA.startsWith('usr_') && !cleanA.startsWith('p_') && !cleanA.startsWith('tab_')) {
+        return false;
+      }
+      return true;
+    }
+
+    const normA = normalizeSearchText(cleanA);
+    const normB = normalizeSearchText(cleanB);
+    if (normA && normB && normA === normB) {
+      if (!isGenericPlaceholderName(cleanA)) return true;
+    }
 
     const userA = findUserByIdentifier(idOrNameA);
     const userB = findUserByIdentifier(idOrNameB);
 
     if (userA && userB) {
-      return userA.id.toLowerCase() === userB.id.toLowerCase();
+      if (userA.id.toLowerCase() === userB.id.toLowerCase()) return true;
+      if (!isGenericPlaceholderName(userA.username) && userA.username.toLowerCase() === userB.username.toLowerCase()) {
+        return true;
+      }
+      return false;
     }
     if (userA) {
-      return userA.id.toLowerCase() === cleanB || userA.username.toLowerCase() === cleanB;
+      if (userA.id.toLowerCase() === cleanB) return true;
+      if (!isGenericPlaceholderName(userA.username)) {
+        if (userA.username.toLowerCase() === cleanB) return true;
+        if (userA.displayName && userA.displayName.toLowerCase() === cleanB) return true;
+        if (normB && normalizeSearchText(userA.username) === normB) return true;
+        if (userA.displayName && normB && normalizeSearchText(userA.displayName) === normB) return true;
+      }
     }
     if (userB) {
-      return userB.id.toLowerCase() === cleanA || userB.username.toLowerCase() === cleanA;
+      if (userB.id.toLowerCase() === cleanA) return true;
+      if (!isGenericPlaceholderName(userB.username)) {
+        if (userB.username.toLowerCase() === cleanA) return true;
+        if (userB.displayName && userB.displayName.toLowerCase() === cleanA) return true;
+        if (normA && normalizeSearchText(userB.username) === normA) return true;
+        if (userB.displayName && normA && normalizeSearchText(userB.displayName) === normA) return true;
+      }
     }
 
     return false;
@@ -4744,7 +4914,13 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // GET /api/friends/list: Danh sách đạo hữu, trạng thái online, độ hảo cảm & lời mời chờ duyệt
   app.get('/api/friends/list', (req, res) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Surrogate-Control': 'no-store',
+    });
+
     const authHeader = req.headers.authorization;
     let authUser = getUserByToken(authHeader);
     const queryUserId = String(req.query.userId || '').trim();
@@ -4754,86 +4930,185 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       authUser = findUserByIdentifier(queryUserId) || (queryUsername ? findUserByIdentifier(queryUsername) : null);
     }
 
-    if (!authUser || authUser.authProvider === 'guest') {
+    const myIds = new Set<string>();
+    const myNames = new Set<string>();
+    if (queryUserId) myIds.add(queryUserId.toLowerCase().trim());
+    if (authUser?.id) myIds.add(authUser.id.toLowerCase().trim());
+
+    if (queryUsername) {
+      myNames.add(queryUsername.toLowerCase().trim());
+      const normQ = normalizeSearchText(queryUsername);
+      if (normQ) myNames.add(normQ);
+    }
+    if (authUser?.username) {
+      myNames.add(authUser.username.toLowerCase().trim());
+      const normU = normalizeSearchText(authUser.username);
+      if (normU) myNames.add(normU);
+    }
+    if (authUser?.displayName) {
+      myNames.add(authUser.displayName.toLowerCase().trim());
+      const normD = normalizeSearchText(authUser.displayName);
+      if (normD) myNames.add(normD);
+    }
+
+    // Quét activePresenceSessions để tìm thêm các định danh tabId/userId liên quan
+    for (const sess of activePresenceSessions.values()) {
+      const sUid = String(sess.userId || '').toLowerCase();
+      const sUname = String(sess.username || '').toLowerCase();
+      const sNorm = normalizeSearchText(sUname);
+      if ((sUid && myIds.has(sUid)) || (sUname && myNames.has(sUname)) || (sNorm && myNames.has(sNorm))) {
+        if (sess.tabId) myIds.add(sess.tabId.toLowerCase());
+        if (sess.userId) myIds.add(sess.userId.toLowerCase());
+        if (sess.username) myNames.add(sess.username.toLowerCase());
+      }
+    }
+
+    const myId = authUser?.id || queryUserId || Array.from(myIds)[0] || '';
+    const myName = String(authUser?.username || queryUsername || Array.from(myNames)[0] || '').toLowerCase();
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    if (myIds.size === 0 && myNames.size === 0) {
       res.json({
         success: true,
         friends: [],
         pendingRequests: [],
         sentRequests: [],
-        isGuest: true,
       });
       return;
     }
 
-    const myId = authUser.id;
-    const myName = String(authUser.username || '').toLowerCase();
-    const todayStr = new Date().toISOString().slice(0, 10);
-
     // Lọc danh sách bạn bè
     const friends: any[] = [];
+    const seenFriendIds = new Set<string>();
+
     for (const fsRecord of serverFriendships.values()) {
-      if (isSameUser(fsRecord.user1Id, myId) || isSameUser(fsRecord.user2Id, myId)) {
-        const otherId = isSameUser(fsRecord.user1Id, myId) ? fsRecord.user2Id : fsRecord.user1Id;
-        const otherUser = findUserByIdentifier(otherId);
+      const u1Id = String(fsRecord.user1Id || '').toLowerCase().trim();
+      const u2Id = String(fsRecord.user2Id || '').toLowerCase().trim();
+      const u1Name = String(fsRecord.user1Username || '').toLowerCase().trim();
+      const u2Name = String(fsRecord.user2Username || '').toLowerCase().trim();
 
-        // Kiểm tra trạng thái hiện diện online thời gian thực
-        let onlineSession: PresenceSession | undefined;
-        for (const sess of activePresenceSessions.values()) {
-          if (
-            (sess.userId && isSameUser(sess.userId, otherId)) ||
-            (otherUser && sess.username && isSameUser(sess.username, otherUser.username))
-          ) {
-            onlineSession = sess;
-            break;
-          }
-        }
+      // Check if I am User 1
+      const isMeUser1 =
+        (u1Id && myIds.has(u1Id)) ||
+        (!isGenericPlaceholderName(u1Name) && u1Name && myNames.has(u1Name)) ||
+        Array.from(myIds).some((id) => isSameUser(fsRecord.user1Id, id)) ||
+        (!isGenericPlaceholderName(u1Name) && Array.from(myNames).some((name) => isSameUser(fsRecord.user1Username, name)));
 
-        let friendStatus: 'online' | 'offline' | 'in_match' = 'offline';
-        if (onlineSession) {
-          friendStatus = (onlineSession.status === 'playing' || onlineSession.status === 'outplay')
-            ? 'in_match'
-            : 'online';
-        }
+      // Check if I am User 2
+      const isMeUser2 =
+        (u2Id && myIds.has(u2Id)) ||
+        (!isGenericPlaceholderName(u2Name) && u2Name && myNames.has(u2Name)) ||
+        Array.from(myIds).some((id) => isSameUser(fsRecord.user2Id, id)) ||
+        (!isGenericPlaceholderName(u2Name) && Array.from(myNames).some((name) => isSameUser(fsRecord.user2Username, name)));
 
-        const intimacy = fsRecord.intimacy || 0;
-        const intimacyLevel = calculateIntimacyLevel(intimacy, fsRecord.isDaoLu);
-        const lastTea = fsRecord.lastGiftTeaDate?.[myId];
-        const canGiftTeaToday = lastTea !== todayStr;
-
-        const myLevel = Number(authUser.cultivation?.level) || 1;
-        const friendLevel = Number(otherUser?.cultivation?.level) || (onlineSession?.totalGames ? onlineSession.totalGames * 2 : 1);
-        const lastGuided = fsRecord.lastGuidedDate?.[myId];
-        const canGuideToday = myLevel > friendLevel && lastGuided !== todayStr;
-
-        const otherRealmIdx = otherUser?.cultivation?.realmIndex || 0;
-        const otherRealm = XIANXIA_REALM_METAS[otherRealmIdx] || XIANXIA_REALM_METAS[0];
-
-        friends.push({
-          friendshipId: fsRecord.id,
-          userId: otherUser?.id || otherId,
-          username: otherUser?.username || onlineSession?.username || otherId,
-          displayName: otherUser?.displayName || otherUser?.username || onlineSession?.username || otherId,
-          avatar: otherUser?.avatar || onlineSession?.avatar || '⚡',
-          frame: otherUser?.frame || onlineSession?.frame || 'default',
-          bestWpm: otherUser?.bestWpm || onlineSession?.bestWpm || 0,
-          level: friendLevel,
-          realmName: otherRealm.name,
-          realmIcon: otherRealm.icon,
-          sectName: otherUser?.cultivation?.sectName,
-          sectTag: otherUser?.cultivation?.sectTag,
-          status: friendStatus,
-          currentRoomId: onlineSession?.currentRoomId || null,
-          currentMode: onlineSession?.currentMode || null,
-          intimacy,
-          intimacyLevel,
-          isDaoLu: Boolean(fsRecord.isDaoLu),
-          daoLuTitle: fsRecord.daoLuTitle || (fsRecord.isDaoLu ? 'Tâm Đầu Ý Hợp' : undefined),
-          canGiftTeaToday,
-          canGuideToday,
-          connectedAt: onlineSession?.connectedAt,
-          lastSeen: onlineSession?.lastSeen || otherUser?.updatedAt || fsRecord.updatedAt,
-        });
+      if (!isMeUser1 && !isMeUser2) {
+        continue;
       }
+
+      let otherId = '';
+      let otherUsernameHint = '';
+
+      if (isMeUser1 && !isMeUser2) {
+        otherId = fsRecord.user2Id;
+        otherUsernameHint = fsRecord.user2Username || '';
+      } else if (isMeUser2 && !isMeUser1) {
+        otherId = fsRecord.user1Id;
+        otherUsernameHint = fsRecord.user1Username || '';
+      } else {
+        // Both matched: pick the one that is NOT in myIds
+        if (myIds.has(u2Id) || (u2Name && myNames.has(u2Name))) {
+          otherId = fsRecord.user1Id;
+          otherUsernameHint = fsRecord.user1Username || '';
+        } else {
+          otherId = fsRecord.user2Id;
+          otherUsernameHint = fsRecord.user2Username || '';
+        }
+      }
+
+      const cleanOtherId = String(otherId || '').toLowerCase().trim();
+      if (!cleanOtherId || myIds.has(cleanOtherId)) {
+        continue;
+      }
+
+      let otherUser = serverUsers.get(otherId) || findUserByIdentifier(otherId) || (otherUsernameHint ? findUserByIdentifier(otherUsernameHint) : null);
+      if (otherUser && myIds.has(otherUser.id.toLowerCase())) {
+        otherUser = null;
+      }
+
+      const resolvedFriendId = otherUser?.id || otherId;
+      const resolvedFriendName = otherUser?.username || otherUsernameHint || otherId;
+      const resolvedDisplayName = otherUser?.displayName || otherUser?.username || otherUsernameHint || otherId;
+
+      if (myIds.has(resolvedFriendId.toLowerCase())) {
+        continue;
+      }
+
+      // Tránh trùng lặp bạn bè trong danh sách
+      const friendKey = resolvedFriendId.toLowerCase();
+      if (seenFriendIds.has(friendKey)) {
+        continue;
+      }
+      seenFriendIds.add(friendKey);
+
+      // Kiểm tra trạng thái hiện diện online thời gian thực
+      let onlineSession: PresenceSession | undefined;
+      for (const sess of activePresenceSessions.values()) {
+        if (
+          (sess.userId && isSameUser(sess.userId, otherId)) ||
+          (otherUser && sess.username && isSameUser(sess.username, otherUser.username)) ||
+          (otherUsernameHint && sess.username && isSameUser(sess.username, otherUsernameHint)) ||
+          isSameUser(sess.tabId, otherId)
+        ) {
+          onlineSession = sess;
+          break;
+        }
+      }
+
+      let friendStatus: 'online' | 'offline' | 'in_match' = 'offline';
+      if (onlineSession) {
+        friendStatus = (onlineSession.status === 'playing' || onlineSession.status === 'outplay')
+          ? 'in_match'
+          : 'online';
+      }
+
+      const intimacy = fsRecord.intimacy || 60;
+      const intimacyLevel = calculateIntimacyLevel(intimacy, fsRecord.isDaoLu);
+      const lastTea = fsRecord.lastGiftTeaDate?.[myId] || (authUser ? fsRecord.lastGiftTeaDate?.[authUser.id] : undefined);
+      const canGiftTeaToday = lastTea !== todayStr;
+
+      const myLevel = Number(authUser?.cultivation?.level) || 1;
+      const friendLevel = Number(otherUser?.cultivation?.level) || (onlineSession?.totalGames ? onlineSession.totalGames * 2 : 1);
+      const lastGuided = fsRecord.lastGuidedDate?.[myId] || (authUser ? fsRecord.lastGuidedDate?.[authUser.id] : undefined);
+      const canGuideToday = myLevel > friendLevel && lastGuided !== todayStr;
+
+      const otherRealmIdx = otherUser?.cultivation?.realmIndex || 0;
+      const otherRealm = XIANXIA_REALM_METAS[otherRealmIdx] || XIANXIA_REALM_METAS[0];
+
+      friends.push({
+        friendshipId: fsRecord.id,
+        userId: resolvedFriendId,
+        username: resolvedFriendName,
+        displayName: resolvedDisplayName,
+        avatar: otherUser?.avatar || onlineSession?.avatar || '⚡',
+        frame: otherUser?.frame || onlineSession?.frame || 'default',
+        bestWpm: otherUser?.bestWpm || onlineSession?.bestWpm || 0,
+        level: friendLevel,
+        realmName: otherRealm.name,
+        realmIcon: otherRealm.icon,
+        sectName: otherUser?.cultivation?.sectName,
+        sectTag: otherUser?.cultivation?.sectTag,
+        status: friendStatus,
+        currentRoomId: onlineSession?.currentRoomId || null,
+        currentMode: onlineSession?.currentMode || null,
+        intimacy,
+        intimacyLevel,
+        isDaoLu: Boolean(fsRecord.isDaoLu),
+        daoLuTitle: fsRecord.daoLuTitle || (fsRecord.isDaoLu ? 'Tâm Đầu Ý Hợp' : undefined),
+        canGiftTeaToday,
+        canGuideToday,
+        connectedAt: onlineSession?.connectedAt,
+        lastSeen: onlineSession?.lastSeen || otherUser?.updatedAt || fsRecord.updatedAt,
+      });
     }
 
     // Sắp xếp: Đang online/in_match lên trước, sau đó theo điểm Hảo Cảm cao nhất
@@ -4846,20 +5121,31 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Lời mời kết bạn đang chờ duyệt (Pending Requests)
     const pendingRequests: any[] = [];
     for (const reqRecord of serverFriendRequests.values()) {
-      if (isSameUser(reqRecord.toUserId, myId) || (myName && isSameUser(reqRecord.toUserId, myName))) {
-        const fromU = findUserByIdentifier(reqRecord.fromUserId);
+      const toId = String(reqRecord.toUserId || '').toLowerCase().trim();
+      const toName = String(reqRecord.toUsername || '').toLowerCase().trim();
+      const normToName = normalizeSearchText(toName);
+
+      const isTargetingMe =
+        (toId && myIds.has(toId)) ||
+        (!isGenericPlaceholderName(toName) && toName && myNames.has(toName)) ||
+        (normToName && Array.from(myNames).some((n) => normalizeSearchText(n) === normToName)) ||
+        Array.from(myIds).some((id) => isSameUser(reqRecord.toUserId, id)) ||
+        (!isGenericPlaceholderName(toName) && Array.from(myNames).some((name) => isSameUser(reqRecord.toUsername, name)));
+
+      if (isTargetingMe) {
+        const fromU = findUserByIdentifier(reqRecord.fromUserId) || serverUsers.get(reqRecord.fromUserId);
         const fromRealm = XIANXIA_REALM_METAS[fromU?.cultivation?.realmIndex || 0] || XIANXIA_REALM_METAS[0];
         pendingRequests.push({
           id: reqRecord.id,
           fromUserId: fromU?.id || reqRecord.fromUserId,
-          fromUsername: fromU?.username || reqRecord.fromUserId,
-          fromDisplayName: fromU?.displayName || fromU?.username || reqRecord.fromUserId,
+          fromUsername: fromU?.username || reqRecord.fromUsername || 'Đạo Hữu',
+          fromDisplayName: fromU?.displayName || reqRecord.fromUsername || 'Đạo Hữu',
           fromAvatar: fromU?.avatar || '⚡',
           fromFrame: fromU?.frame || 'default',
           fromRealmName: fromRealm.name,
           fromLevel: fromU?.cultivation?.level || 1,
           toUserId: reqRecord.toUserId,
-          toUsername: authUser.username,
+          toUsername: reqRecord.toUsername || myName || myId,
           createdAt: reqRecord.createdAt,
           message: reqRecord.message,
         });
@@ -4868,7 +5154,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // Lời mời đã gửi đi (Sent Requests)
     const sentRequests = Array.from(serverFriendRequests.values())
-      .filter((r) => isSameUser(r.fromUserId, myId) || (myName && isSameUser(r.fromUserId, myName)))
+      .filter((r) =>
+        (myId && isSameUser(r.fromUserId, myId)) ||
+        (myName && isSameUser(r.fromUserId, myName)) ||
+        (r.fromUsername && myName && isSameUser(r.fromUsername, myName))
+      )
       .map((r) => ({
         id: r.id,
         toUserId: r.toUserId,
@@ -4896,12 +5186,23 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
-    if (!authUser || authUser.authProvider === 'guest') {
-      res.status(401).json({
-        success: false,
-        error: 'Đạo hữu hiện đang là Tán Tu. Vui lòng đăng nhập tài khoản chính thức để nhận Mã UID và kết bạn!',
-      });
-      return;
+    if (!authUser) {
+      const myId = candidateMyId || `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const myName = candidateMyUsername || 'Đạo Hữu';
+      authUser = {
+        id: myId,
+        username: myName,
+        displayName: myName,
+        avatar: '⚡',
+        frame: 'default',
+        authProvider: 'guest',
+        isVerified: true,
+        sessionTokens: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      serverUsers.set(authUser.id, authUser);
+      saveUsersToFile();
     }
 
     const cleanTargetName = String(targetUsername || '').trim();
@@ -4909,10 +5210,41 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     let targetUser: ServerUserRecord | null = null;
     if (cleanTargetId) {
-      targetUser = findUserByIdentifier(cleanTargetId);
+      targetUser = findUserByIdentifier(cleanTargetId) || serverUsers.get(cleanTargetId) || null;
     }
     if (!targetUser && cleanTargetName) {
-      targetUser = findUserByIdentifier(cleanTargetName);
+      targetUser = findUserByIdentifier(cleanTargetName) || getUserByUsername(cleanTargetName) || null;
+    }
+
+    // Tìm trong activePresenceSessions nếu đối phương chưa có hồ sơ cố định
+    if (!targetUser) {
+      for (const sess of activePresenceSessions.values()) {
+        const sUid = String(sess.userId || '').toLowerCase();
+        const sName = String(sess.username || '').toLowerCase();
+        if (
+          (cleanTargetId && sUid === cleanTargetId.toLowerCase()) ||
+          (cleanTargetName && sName === cleanTargetName.toLowerCase()) ||
+          (cleanTargetName && normalizeSearchText(sName) === normalizeSearchText(cleanTargetName))
+        ) {
+          targetUser = {
+            id: sess.userId || `p_${sess.tabId}`,
+            username: sess.username || cleanTargetName || 'Đạo Hữu',
+            displayName: sess.username || cleanTargetName || 'Đạo Hữu',
+            avatar: sess.avatar || '⚡',
+            frame: sess.frame || 'default',
+            authProvider: 'guest',
+            isVerified: true,
+            sessionTokens: [],
+            bestWpm: sess.bestWpm || 0,
+            totalGames: sess.totalGames || 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          serverUsers.set(targetUser.id, targetUser);
+          saveUsersToFile();
+          break;
+        }
+      }
     }
 
     if (!targetUser) {
@@ -4923,24 +5255,16 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       return;
     }
 
-    if (targetUser.authProvider === 'guest') {
-      res.status(400).json({
-        success: false,
-        error: `Đạo hữu "${targetUser.displayName || targetUser.username}" hiện đang là Tán Tu. Tán Tu không có Mã UID và không thể lưu trữ quan hệ Đạo Hữu!`,
-      });
-      return;
-    }
-
-    if (targetUser.id.toLowerCase() === authUser.id.toLowerCase()) {
+    if (isSameUser(targetUser.id, authUser.id)) {
       res.status(400).json({ success: false, error: 'Không thể tự gửi lời mời kết bạn cho chính mình!' });
       return;
     }
 
-    // Kiểm tra đã là bạn bè chưa (so sánh trực tiếp ID)
+    // Kiểm tra đã là bạn bè chưa
     const alreadyFriends = Array.from(serverFriendships.values()).some(
       (f) =>
-        (f.user1Id.toLowerCase() === authUser.id.toLowerCase() && f.user2Id.toLowerCase() === targetUser!.id.toLowerCase()) ||
-        (f.user1Id.toLowerCase() === targetUser!.id.toLowerCase() && f.user2Id.toLowerCase() === authUser.id.toLowerCase())
+        (isSameUser(f.user1Id, authUser!.id) && isSameUser(f.user2Id, targetUser!.id)) ||
+        (isSameUser(f.user1Id, targetUser!.id) && isSameUser(f.user2Id, authUser!.id))
     );
 
     if (alreadyFriends) {
@@ -4951,8 +5275,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Kiểm tra nếu đối phương đã từng gửi lời mời kết bạn cho mình trước đó -> Tự động chấp thuận kết bái luôn!
     const reciprocalReq = Array.from(serverFriendRequests.values()).find(
       (r) =>
-        (r.fromUserId.toLowerCase() === targetUser!.id.toLowerCase() || (targetUser!.username && r.fromUsername?.toLowerCase() === targetUser!.username.toLowerCase())) &&
-        (r.toUserId.toLowerCase() === authUser.id.toLowerCase() || (authUser.username && r.toUsername?.toLowerCase() === authUser.username.toLowerCase()))
+        (isSameUser(r.fromUserId, targetUser!.id) || (r.fromUsername && isSameUser(r.fromUsername, targetUser!.username))) &&
+        (isSameUser(r.toUserId, authUser!.id) || (r.toUsername && isSameUser(r.toUsername, authUser!.username)))
     );
 
     if (reciprocalReq) {
@@ -4968,6 +5292,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       };
       serverFriendships.set(fsId, newFriendship);
       saveFriendsToFile();
+      saveUsersToFile();
 
       const acceptEvent = {
         type: 'friend_request_accepted',
@@ -4983,6 +5308,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
       broadcastToUser(targetUser.id, { type: 'friends_data_updated' });
       broadcastToUser(authUser.id, { type: 'friends_data_updated' });
+      queueFriendEvent(targetUser.id, { type: 'friends_data_updated' });
+      queueFriendEvent(authUser.id, { type: 'friends_data_updated' });
 
       res.json({
         success: true,
@@ -4995,8 +5322,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Kiểm tra xem đã gửi lời mời đang chờ hay chưa
     const alreadyPending = Array.from(serverFriendRequests.values()).some(
       (r) =>
-        r.fromUserId.toLowerCase() === authUser.id.toLowerCase() &&
-        r.toUserId.toLowerCase() === targetUser!.id.toLowerCase()
+        (isSameUser(r.fromUserId, authUser!.id) || (r.fromUsername && isSameUser(r.fromUsername, authUser!.username))) &&
+        (isSameUser(r.toUserId, targetUser!.id) || (r.toUsername && isSameUser(r.toUsername, targetUser!.username)))
     );
 
     if (alreadyPending) {
@@ -5040,9 +5367,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     queueFriendEvent(targetUser.username, eventPayload);
 
     const targetPendingCount = Array.from(serverFriendRequests.values()).filter((r) =>
-      r.toUserId.toLowerCase() === targetUser!.id.toLowerCase() ||
-      (targetUser!.username && r.toUsername?.toLowerCase() === targetUser!.username.toLowerCase()) ||
-      isSameUser(r.toUserId, targetUser!.id)
+      isSameUser(r.toUserId, targetUser!.id) ||
+      (targetUser!.username && isSameUser(r.toUsername, targetUser!.username))
     ).length;
 
     const countEvent = {
@@ -5057,6 +5383,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     broadcastToUser(targetUser.id, { type: 'friends_data_updated' });
     broadcastToUser(targetUser.username, { type: 'friends_data_updated' });
     broadcastToUser(authUser.id, { type: 'friends_data_updated' });
+    queueFriendEvent(targetUser.id, { type: 'friends_data_updated' });
+    queueFriendEvent(authUser.id, { type: 'friends_data_updated' });
 
     res.json({
       success: true,
@@ -5077,15 +5405,34 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
-    if (!authUser || authUser.authProvider === 'guest') {
-      res.status(401).json({
-        success: false,
-        error: 'Đạo hữu hiện đang là Tán Tu. Vui lòng đăng nhập tài khoản chính thức để kết bái Đạo Hữu!',
-      });
-      return;
+    if (!authUser) {
+      const myId = candidateMyId || `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const myName = candidateMyUsername || 'Đạo Hữu';
+      authUser = {
+        id: myId,
+        username: myName,
+        displayName: myName,
+        avatar: '⚡',
+        frame: 'default',
+        authProvider: 'guest',
+        isVerified: true,
+        sessionTokens: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      serverUsers.set(authUser.id, authUser);
+      saveUsersToFile();
     }
 
     const cleanRequestId = String(requestId || '').trim();
+    const myIds = new Set<string>();
+    const myNames = new Set<string>();
+    if (candidateMyId) myIds.add(candidateMyId.toLowerCase().trim());
+    if (authUser?.id) myIds.add(authUser.id.toLowerCase().trim());
+    if (candidateMyUsername) myNames.add(candidateMyUsername.toLowerCase().trim());
+    if (authUser?.username) myNames.add(authUser.username.toLowerCase().trim());
+    if (authUser?.displayName) myNames.add(authUser.displayName.toLowerCase().trim());
+
     let friendReq = serverFriendRequests.get(cleanRequestId);
     if (!friendReq) {
       for (const r of serverFriendRequests.values()) {
@@ -5097,19 +5444,20 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     // Nếu không tìm thấy bằng requestId, kiểm tra nếu cleanRequestId là id/username của người gửi
-    if (!friendReq) {
+    if (!friendReq && cleanRequestId) {
       for (const r of serverFriendRequests.values()) {
         const toMe =
-          isSameUser(r.toUserId, authUser.id) ||
-          r.toUserId.toLowerCase() === authUser.id.toLowerCase() ||
-          (authUser.username && r.toUsername?.toLowerCase() === authUser.username.toLowerCase()) ||
-          (candidateMyId && r.toUserId.toLowerCase() === candidateMyId.toLowerCase());
+          myIds.has(String(r.toUserId).toLowerCase()) ||
+          myNames.has(String(r.toUsername).toLowerCase()) ||
+          Array.from(myIds).some((id) => isSameUser(r.toUserId, id)) ||
+          Array.from(myNames).some((name) => isSameUser(r.toUsername, name));
 
         const fromTarget =
+          r.id === cleanRequestId ||
+          r.fromUserId === cleanRequestId ||
+          r.fromUsername === cleanRequestId ||
           isSameUser(r.fromUserId, cleanRequestId) ||
-          r.fromUserId.toLowerCase() === cleanRequestId.toLowerCase() ||
-          (r.fromUsername && r.fromUsername.toLowerCase() === cleanRequestId.toLowerCase()) ||
-          r.id === cleanRequestId;
+          (r.fromUsername && isSameUser(r.fromUsername, cleanRequestId));
 
         if (toMe && fromTarget) {
           friendReq = r;
@@ -5118,16 +5466,71 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       }
     }
 
-    // Nếu vẫn chưa tìm thấy và người chơi chỉ có duy nhất 1 lời mời chờ, chấp nhận lời mời đó
-    if (!friendReq && authUser) {
-      const myPending = Array.from(serverFriendRequests.values()).filter(
-        (r) =>
-          r.toUserId.toLowerCase() === authUser.id.toLowerCase() ||
-          (authUser.username && r.toUsername?.toLowerCase() === authUser.username.toLowerCase()) ||
-          isSameUser(r.toUserId, authUser.id)
+    // Nếu vẫn chưa tìm thấy, lấy bất kỳ lời mời nào đang chờ nhắm tới người chơi này
+    if (!friendReq) {
+      const myPending = Array.from(serverFriendRequests.values()).filter((r) => {
+        const toId = String(r.toUserId || '').toLowerCase();
+        const toName = String(r.toUsername || '').toLowerCase();
+        return (
+          myIds.has(toId) ||
+          myNames.has(toName) ||
+          Array.from(myIds).some((id) => isSameUser(r.toUserId, id)) ||
+          Array.from(myNames).some((name) => isSameUser(r.toUsername, name))
+        );
+      });
+      if (myPending.length > 0) {
+        // Ưu tiên lời mời từ cleanRequestId nếu khớp một phần
+        const targetMatch = myPending.find(
+          (r) =>
+            r.fromUserId === cleanRequestId ||
+            r.fromUsername === cleanRequestId ||
+            isSameUser(r.fromUserId, cleanRequestId) ||
+            isSameUser(r.fromUsername, cleanRequestId)
+        );
+        friendReq = targetMatch || myPending[0];
+      }
+    }
+
+    // Nếu đã không còn lời mời nhưng action là accept, kiểm tra xem đã là bạn bè từ trước hay chưa
+    if (!friendReq && action === 'accept') {
+      const existingFs = Array.from(serverFriendships.values()).find(
+        (f) =>
+          (myIds.has(String(f.user1Id).toLowerCase()) && (f.user2Id === cleanRequestId || f.user2Username === cleanRequestId || isSameUser(f.user2Id, cleanRequestId))) ||
+          (myIds.has(String(f.user2Id).toLowerCase()) && (f.user1Id === cleanRequestId || f.user1Username === cleanRequestId || isSameUser(f.user1Id, cleanRequestId))) ||
+          (myNames.has(String(f.user1Username).toLowerCase()) && (f.user2Id === cleanRequestId || f.user2Username === cleanRequestId || isSameUser(f.user2Id, cleanRequestId))) ||
+          (myNames.has(String(f.user2Username).toLowerCase()) && (f.user1Id === cleanRequestId || f.user1Username === cleanRequestId || isSameUser(f.user1Id, cleanRequestId)))
       );
-      if (myPending.length === 1) {
-        friendReq = myPending[0];
+      if (existingFs) {
+        const otherId = myIds.has(String(existingFs.user1Id).toLowerCase()) ? existingFs.user2Id : existingFs.user1Id;
+        const otherName = myIds.has(String(existingFs.user1Id).toLowerCase()) ? existingFs.user2Username : existingFs.user1Username;
+        const otherU = serverUsers.get(otherId) || findUserByIdentifier(otherId) || findUserByIdentifier(otherName);
+        const otherRealm = XIANXIA_REALM_METAS[otherU?.cultivation?.realmIndex || 0] || XIANXIA_REALM_METAS[0];
+        res.json({
+          success: true,
+          message: `Hai vị đã là đạo hữu tri kỷ từ trước!`,
+          friendshipId: existingFs.id,
+          friend: {
+            friendshipId: existingFs.id,
+            userId: otherU?.id || otherId,
+            username: otherU?.username || otherName || 'Đạo Hữu',
+            displayName: otherU?.displayName || otherU?.username || otherName || 'Đạo Hữu',
+            avatar: otherU?.avatar || '⚡',
+            frame: otherU?.frame || 'default',
+            bestWpm: otherU?.bestWpm || 0,
+            level: otherU?.cultivation?.level || 1,
+            realmName: otherRealm.name,
+            realmIcon: otherRealm.icon,
+            intimacy: existingFs.intimacy || 60,
+            intimacyLevel: 1,
+            status: 'online',
+            isDaoLu: Boolean(existingFs.isDaoLu),
+            canGiftTeaToday: true,
+            canGuideToday: false,
+            connectedAt: Date.now(),
+          },
+          remainingCount: 0,
+        });
+        return;
       }
     }
 
@@ -5137,46 +5540,94 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     if (action === 'accept') {
-      serverFriendRequests.delete(friendReq.id);
-
-      const fromU = serverUsers.get(friendReq.fromUserId) || findUserByIdentifier(friendReq.fromUserId);
-      const toU = serverUsers.get(friendReq.toUserId) || findUserByIdentifier(friendReq.toUserId) || authUser;
-
-      if (!fromU || !toU) {
-        res.status(404).json({ success: false, error: 'Không tìm thấy hồ sơ của một trong hai đạo hữu!' });
-        return;
+      let fromU = serverUsers.get(friendReq.fromUserId) || findUserByIdentifier(friendReq.fromUserId);
+      if (!fromU) {
+        fromU = {
+          id: friendReq.fromUserId,
+          username: friendReq.fromUsername || 'Đạo Hữu',
+          displayName: friendReq.fromUsername || 'Đạo Hữu',
+          avatar: '⚡',
+          frame: 'default',
+          authProvider: 'guest',
+          isVerified: true,
+          sessionTokens: [],
+          bestWpm: 0,
+          totalGames: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        serverUsers.set(fromU.id, fromU);
       }
 
-      const user1Id = fromU.id;
-      const user2Id = toU.id;
+      let toU = authUser || serverUsers.get(friendReq.toUserId) || findUserByIdentifier(friendReq.toUserId);
+      if (!toU) {
+        toU = {
+          id: friendReq.toUserId,
+          username: friendReq.toUsername || authUser?.username || 'Đạo Hữu',
+          displayName: friendReq.toUsername || authUser?.displayName || authUser?.username || 'Đạo Hữu',
+          avatar: '⚡',
+          frame: 'default',
+          authProvider: 'guest',
+          isVerified: true,
+          sessionTokens: [],
+          bestWpm: 0,
+          totalGames: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        serverUsers.set(toU.id, toU);
+      }
 
-      // Kiểm tra nếu đã có quan hệ kết bạn từ trước (so sánh trực tiếp ID)
-      const alreadyFriends = Array.from(serverFriendships.values()).some(
+      const user1Id = fromU.id || friendReq.fromUserId;
+      const user2Id = candidateMyId || authUser?.id || toU.id || friendReq.toUserId;
+      const user1Username = fromU.username || friendReq.fromUsername || 'Đạo Hữu';
+      const user2Username = candidateMyUsername || authUser?.username || toU.username || friendReq.toUsername || 'Đạo Hữu';
+
+      if (!serverUsers.has(user1Id)) {
+        serverUsers.set(user1Id, fromU);
+      }
+      if (!serverUsers.has(user2Id)) {
+        serverUsers.set(user2Id, toU);
+      }
+
+      // Kiểm tra nếu đã có quan hệ kết bạn từ trước (so sánh trực tiếp hoặc qua isSameUser)
+      let existingFs = Array.from(serverFriendships.values()).find(
         (f) =>
-          (f.user1Id.toLowerCase() === user1Id.toLowerCase() && f.user2Id.toLowerCase() === user2Id.toLowerCase()) ||
-          (f.user1Id.toLowerCase() === user2Id.toLowerCase() && f.user2Id.toLowerCase() === user1Id.toLowerCase())
+          (f.user1Id === user1Id && f.user2Id === user2Id) ||
+          (f.user1Id === user2Id && f.user2Id === user1Id) ||
+          (isSameUser(f.user1Id, user1Id) && isSameUser(f.user2Id, user2Id)) ||
+          (isSameUser(f.user1Id, user2Id) && isSameUser(f.user2Id, user1Id))
       );
 
-      let fsId = `fs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      if (!alreadyFriends) {
+      let fsId = existingFs ? existingFs.id : `fs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      if (!existingFs) {
         const newFriendship: ServerFriendshipRecord = {
           id: fsId,
           user1Id,
           user2Id,
+          user1Username,
+          user2Username,
           intimacy: 60, // Điểm hảo cảm khởi tạo
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
         serverFriendships.set(fsId, newFriendship);
+      } else {
+        // Cập nhật lại username mới nhất nếu cần
+        existingFs.user1Username = user1Username;
+        existingFs.user2Username = user2Username;
+        existingFs.updatedAt = Date.now();
       }
 
+      // CHỈ xóa lời mời sau khi khế ước Đạo Hữu đã được thiết lập an toàn
+      serverFriendRequests.delete(friendReq.id);
       saveFriendsToFile();
       saveUsersToFile();
 
       // Thông báo cho cả 2 người qua SSE và hàng đợi Ping
       const acceptEvent = {
         type: 'friend_request_accepted',
-        friendName: authUser.displayName || authUser.username,
+        friendName: authUser?.displayName || authUser?.username || toU.displayName || toU.username,
         fromUserId: user2Id,
         targetUserId: user1Id,
       };
@@ -5184,33 +5635,67 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       broadcastToUser(user1Id, acceptEvent);
       if (fromU?.username) broadcastToUser(fromU.username, acceptEvent);
       broadcastToUser(user2Id, acceptEvent);
+      if (toU?.username) broadcastToUser(toU.username, acceptEvent);
 
       queueFriendEvent(user1Id, acceptEvent);
       if (fromU?.username) queueFriendEvent(fromU.username, acceptEvent);
       queueFriendEvent(user2Id, acceptEvent);
+      if (toU?.username) queueFriendEvent(toU.username, acceptEvent);
 
       broadcastToUser(user1Id, { type: 'friends_data_updated' });
       broadcastToUser(user2Id, { type: 'friends_data_updated' });
+      if (fromU?.username) broadcastToUser(fromU.username, { type: 'friends_data_updated' });
+      if (toU?.username) broadcastToUser(toU.username, { type: 'friends_data_updated' });
       if (friendReq.fromUserId !== user1Id) broadcastToUser(friendReq.fromUserId, { type: 'friends_data_updated' });
       if (friendReq.toUserId !== user2Id) broadcastToUser(friendReq.toUserId, { type: 'friends_data_updated' });
 
+      queueFriendEvent(user1Id, { type: 'friends_data_updated' });
+      queueFriendEvent(user2Id, { type: 'friends_data_updated' });
+      if (fromU?.username) queueFriendEvent(fromU.username, { type: 'friends_data_updated' });
+      if (toU?.username) queueFriendEvent(toU.username, { type: 'friends_data_updated' });
+
       // Tính số lượng lời mời còn lại cho người vừa duyệt
-      const myId = authUser.id.toLowerCase();
-      const myName = String(authUser.username || '').toLowerCase();
+      const myId = authUser?.id || user2Id;
+      const myName = authUser?.username || user2Username;
       const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) =>
-        r.toUserId.toLowerCase() === myId || (myName && r.toUsername?.toLowerCase() === myName) || isSameUser(r.toUserId, authUser.id)
+        isSameUser(r.toUserId, myId) || (myName && isSameUser(r.toUsername, myName))
       ).length;
 
       const remainingEvent = {
         type: 'friend_requests_count',
         count: remainingPendingCount,
       };
-      broadcastToUser(authUser.id, remainingEvent);
-      queueFriendEvent(authUser.id, remainingEvent);
+      broadcastToUser(myId, remainingEvent);
+      if (myName) broadcastToUser(myName, remainingEvent);
+      queueFriendEvent(myId, remainingEvent);
+      if (myName) queueFriendEvent(myName, remainingEvent);
+
+      const fromRealm = XIANXIA_REALM_METAS[fromU.cultivation?.realmIndex || 0] || XIANXIA_REALM_METAS[0];
+      const friendPayload = {
+        friendshipId: fsId,
+        userId: fromU.id,
+        username: fromU.username,
+        displayName: fromU.displayName || fromU.username,
+        avatar: fromU.avatar || '⚡',
+        frame: fromU.frame || 'default',
+        bestWpm: fromU.bestWpm || 0,
+        level: fromU.cultivation?.level || 1,
+        realmName: fromRealm.name,
+        realmIcon: fromRealm.icon,
+        intimacy: 60,
+        intimacyLevel: 1,
+        status: 'online',
+        isDaoLu: false,
+        canGiftTeaToday: true,
+        canGuideToday: false,
+        connectedAt: Date.now(),
+      };
 
       res.json({
         success: true,
         message: `Đã kết bái đạo hữu thành công với ${fromU?.displayName || fromU?.username || 'đạo hữu'}!`,
+        friendshipId: fsId,
+        friend: friendPayload,
         remainingCount: remainingPendingCount,
       });
     } else {
@@ -5222,11 +5707,13 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
       broadcastToUser(user1Id, { type: 'friends_data_updated' });
       broadcastToUser(authUser.id, { type: 'friends_data_updated' });
+      queueFriendEvent(user1Id, { type: 'friends_data_updated' });
+      queueFriendEvent(authUser.id, { type: 'friends_data_updated' });
 
-      const myId = authUser.id.toLowerCase();
-      const myName = String(authUser.username || '').toLowerCase();
+      const myId = authUser.id;
+      const myName = authUser.username;
       const remainingPendingCount = Array.from(serverFriendRequests.values()).filter((r) =>
-        r.toUserId.toLowerCase() === myId || (myName && r.toUsername?.toLowerCase() === myName) || isSameUser(r.toUserId, authUser.id)
+        isSameUser(r.toUserId, myId) || (myName && isSameUser(r.toUsername, myName))
       ).length;
 
       const remainingEvent = {
@@ -5251,8 +5738,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const { friendshipId, targetUserId } = req.body;
 
     const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
-    if (!authUser && candidateMyId) {
-      authUser = serverUsers.get(candidateMyId) || null;
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
     if (!authUser) {
@@ -5264,8 +5752,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (!targetFs && targetUserId) {
       targetFs = Array.from(serverFriendships.values()).find(
         (f) =>
-          (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
-          (f.user1Id === targetUserId && f.user2Id === authUser.id)
+          (isSameUser(f.user1Id, authUser!.id) && isSameUser(f.user2Id, targetUserId)) ||
+          (isSameUser(f.user1Id, targetUserId) && isSameUser(f.user2Id, authUser!.id))
       ) || null;
     }
 
@@ -5274,12 +5762,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       return;
     }
 
-    const otherId = targetFs.user1Id === authUser.id ? targetFs.user2Id : targetFs.user1Id;
+    const otherId = isSameUser(targetFs.user1Id, authUser.id) ? targetFs.user2Id : targetFs.user1Id;
     serverFriendships.delete(targetFs.id);
     saveFriendsToFile();
 
     broadcastToUser(otherId, { type: 'friends_data_updated' });
     broadcastToUser(authUser.id, { type: 'friends_data_updated' });
+    queueFriendEvent(otherId, { type: 'friends_data_updated' });
+    queueFriendEvent(authUser.id, { type: 'friends_data_updated' });
 
     res.json({
       success: true,
@@ -5293,8 +5783,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { targetUserId } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
     if (!authUser) {
@@ -5304,8 +5796,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     const fsRecord = Array.from(serverFriendships.values()).find(
       (f) =>
-        (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
-        (f.user1Id === targetUserId && f.user2Id === authUser.id)
+        (isSameUser(f.user1Id, authUser!.id) && isSameUser(f.user2Id, targetUserId)) ||
+        (isSameUser(f.user1Id, targetUserId) && isSameUser(f.user2Id, authUser!.id))
     );
 
     if (!fsRecord) {
@@ -5327,7 +5819,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     saveFriendsToFile();
 
     // Cộng +50 Tu Vi cho người nhận
-    const recipient = serverUsers.get(targetUserId);
+    const recipient = findUserByIdentifier(targetUserId) || serverUsers.get(targetUserId);
     if (recipient) {
       if (!recipient.cultivation) recipient.cultivation = {};
       recipient.cultivation.exp = (recipient.cultivation.exp || 0) + 50;
@@ -5338,6 +5830,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // Thông báo SSE tới người nhận
     broadcastToUser(targetUserId, {
+      type: 'tea_gift_received',
+      fromName: authUser.displayName || authUser.username,
+      tuViBonus: 50,
+      newIntimacy: fsRecord.intimacy,
+    });
+    queueFriendEvent(targetUserId, {
       type: 'tea_gift_received',
       fromName: authUser.displayName || authUser.username,
       tuViBonus: 50,
@@ -5358,8 +5856,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { targetUserId } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
     if (!authUser) {
@@ -5369,8 +5869,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     const fsRecord = Array.from(serverFriendships.values()).find(
       (f) =>
-        (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
-        (f.user1Id === targetUserId && f.user2Id === authUser.id)
+        (isSameUser(f.user1Id, authUser!.id) && isSameUser(f.user2Id, targetUserId)) ||
+        (isSameUser(f.user1Id, targetUserId) && isSameUser(f.user2Id, authUser!.id))
     );
 
     if (!fsRecord) {
@@ -5391,7 +5891,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     fsRecord.updatedAt = Date.now();
     saveFriendsToFile();
 
-    const recipient = serverUsers.get(targetUserId);
+    const recipient = findUserByIdentifier(targetUserId) || serverUsers.get(targetUserId);
     if (recipient) {
       if (!recipient.cultivation) recipient.cultivation = {};
       recipient.cultivation.exp = (recipient.cultivation.exp || 0) + 30;
@@ -5401,6 +5901,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     broadcastToUser(targetUserId, {
+      type: 'mentor_guidance_received',
+      fromName: authUser.displayName || authUser.username,
+      tuViBonus: 30,
+    });
+    queueFriendEvent(targetUserId, {
       type: 'mentor_guidance_received',
       fromName: authUser.displayName || authUser.username,
       tuViBonus: 30,
@@ -5419,8 +5924,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { targetUserId } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
     if (!authUser) {
@@ -5430,8 +5937,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     const fsRecord = Array.from(serverFriendships.values()).find(
       (f) =>
-        (f.user1Id === authUser.id && f.user2Id === targetUserId) ||
-        (f.user1Id === targetUserId && f.user2Id === authUser.id)
+        (isSameUser(f.user1Id, authUser!.id) && isSameUser(f.user2Id, targetUserId)) ||
+        (isSameUser(f.user1Id, targetUserId) && isSameUser(f.user2Id, authUser!.id))
     );
 
     if (!fsRecord) {
@@ -5456,6 +5963,13 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       fromAvatar: authUser.avatar,
       fromFrame: authUser.frame,
     });
+    queueFriendEvent(targetUserId, {
+      type: 'daolu_proposal_received',
+      friendshipId: fsRecord.id,
+      fromName: authUser.displayName || authUser.username,
+      fromAvatar: authUser.avatar,
+      fromFrame: authUser.frame,
+    });
 
     res.json({
       success: true,
@@ -5469,8 +5983,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { friendshipId, accept } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
     if (!authUser) {
@@ -5491,8 +6007,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       fsRecord.updatedAt = Date.now();
       saveFriendsToFile();
 
-      const user1 = serverUsers.get(fsRecord.user1Id);
-      const user2 = serverUsers.get(fsRecord.user2Id);
+      const user1 = findUserByIdentifier(fsRecord.user1Id) || serverUsers.get(fsRecord.user1Id);
+      const user2 = findUserByIdentifier(fsRecord.user2Id) || serverUsers.get(fsRecord.user2Id);
       const name1 = user1?.displayName || user1?.username || 'Đạo Hữu';
       const name2 = user2?.displayName || user2?.username || 'Đạo Hữu';
 
@@ -5506,6 +6022,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
       broadcastToUser(fsRecord.user1Id, { type: 'daolu_ceremony_complete', partnerName: name2 });
       broadcastToUser(fsRecord.user2Id, { type: 'daolu_ceremony_complete', partnerName: name1 });
+      queueFriendEvent(fsRecord.user1Id, { type: 'daolu_ceremony_complete', partnerName: name2 });
+      queueFriendEvent(fsRecord.user2Id, { type: 'daolu_ceremony_complete', partnerName: name1 });
 
       res.json({
         success: true,
@@ -5522,8 +6040,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let authUser = getUserByToken(authHeader);
     const { targetUserId, roomId, mode } = req.body;
 
-    if (!authUser && req.body.currentUserId) {
-      authUser = serverUsers.get(String(req.body.currentUserId)) || null;
+    const candidateMyId = String(req.body.currentUserId || req.body.userId || '').trim();
+    const candidateMyUsername = String(req.body.currentUsername || req.body.username || '').trim();
+    if (!authUser && (candidateMyId || candidateMyUsername)) {
+      authUser = findUserByIdentifier(candidateMyId) || (candidateMyUsername ? findUserByIdentifier(candidateMyUsername) : null);
     }
 
     if (!authUser) {
@@ -5531,7 +6051,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       return;
     }
 
-    broadcastToUser(targetUserId, {
+    const payload = {
       type: 'room_invite',
       fromUser: {
         id: authUser.id,
@@ -5542,7 +6062,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       },
       roomId: normalizeRoomCode(roomId),
       mode,
-    });
+    };
+
+    broadcastToUser(targetUserId, payload);
+    queueFriendEvent(targetUserId, payload);
 
     res.json({ success: true, message: 'Đã gửi lời mời tham gia phòng thi đấu!' });
   });

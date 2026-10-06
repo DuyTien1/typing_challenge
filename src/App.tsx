@@ -132,6 +132,7 @@ import {
   processCultivationDecay,
   addTuViFromMatch,
   getSubStage,
+  ensureDailySync,
   attackSectWorldBoss,
   contributeTournamentScore,
   isSectWarEventActive,
@@ -997,7 +998,9 @@ export default function App() {
       if (activeUid) {
         fetchFriendsList(activeUid, activeName).then((res) => {
           if (res && res.success) {
-            setFriendsList(res.friends || []);
+            if (Array.isArray(res.friends) && res.friends.length > 0) {
+              setFriendsList(res.friends);
+            }
             setFriendRequestsCount(res.pendingRequests?.length || 0);
           }
         }).catch(() => {});
@@ -1014,7 +1017,9 @@ export default function App() {
       if (activeUid) {
         fetchFriendsList(activeUid, activeName).then((res) => {
           if (res && res.success) {
-            setFriendsList(res.friends || []);
+            if (Array.isArray(res.friends) && res.friends.length > 0) {
+              setFriendsList(res.friends);
+            }
             setFriendRequestsCount(res.pendingRequests?.length || 0);
           }
         }).catch(() => {});
@@ -1025,8 +1030,14 @@ export default function App() {
       if (activeUid) {
         fetchFriendsList(activeUid, activeName).then((res) => {
           if (res && res.success) {
-            setFriendsList(res.friends || []);
-            setFriendRequestsCount(res.pendingRequests?.length || 0);
+            if (Array.isArray(res.friends) && res.friends.length > 0) {
+              setFriendsList(res.friends);
+            }
+            if (typeof ev.count === 'number') {
+              setFriendRequestsCount(ev.count);
+            } else if (Array.isArray(res.pendingRequests)) {
+              setFriendRequestsCount(res.pendingRequests.length);
+            }
           }
         }).catch(() => {});
       }
@@ -2778,10 +2789,12 @@ export default function App() {
       }
     }
 
-    // Tiến độ tu vi tiên hiệp
+    // Tiến độ tu vi tiên hiệp (tự động đồng bộ và làm mới nhiệm vụ hàng ngày nếu qua ngày mới)
     if (user.cultivation) {
-      setCultivationState(user.cultivation);
-      saveStoredCultivationState(user.cultivation);
+      const syncRes = ensureDailySync(user.cultivation);
+      setCultivationState(syncRes.updatedState);
+      saveStoredCultivationState(syncRes.updatedState);
+      user.cultivation = syncRes.updatedState;
     }
 
     // Danh hiệu & thành tựu
@@ -2839,11 +2852,12 @@ export default function App() {
     const handleAdminReward = (e: any) => {
       const detail = e.detail;
       if (detail?.cultivation) {
-        setCultivationState(detail.cultivation);
-        saveStoredCultivationState(detail.cultivation);
+        const syncRes = ensureDailySync(detail.cultivation);
+        setCultivationState(syncRes.updatedState);
+        saveStoredCultivationState(syncRes.updatedState);
         soundFx.playLevelUp();
         if (currentUser) {
-          setCurrentUser((prev) => (prev ? { ...prev, cultivation: detail.cultivation } : prev));
+          setCurrentUser((prev) => (prev ? { ...prev, cultivation: syncRes.updatedState } : prev));
         }
       }
     };

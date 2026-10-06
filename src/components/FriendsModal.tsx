@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, 
   UserPlus, 
@@ -88,6 +88,15 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const [copiedUid, setCopiedUid] = useState(false);
   const [sendingTargetId, setSendingTargetId] = useState<string | null>(null);
 
+  // Live incoming friend request notification banner state inside modal
+  const [liveIncomingNotice, setLiveIncomingNotice] = useState<{
+    id: string;
+    fromUserId?: string;
+    fromUsername: string;
+    fromAvatar?: string;
+    message?: string;
+  } | null>(null);
+
   const effectiveUserId = currentUser?.id || currentUserId || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_player_id') || sessionStorage.getItem('fasttyping_player_id') || '' : '');
   const effectiveUsername = currentUser?.username || currentUsername || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_user') || localStorage.getItem('fasttyping_username') || 'Đạo Hữu' : 'Đạo Hữu');
 
@@ -109,23 +118,65 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, onClose]);
 
-  const loadData = async () => {
-    if (!effectiveUserId) return;
-    setIsLoading(true);
+  const loadData = async (silent = false) => {
+    if (!effectiveUserId && !effectiveUsername) return;
+    if (!silent) setIsLoading(true);
     try {
       const data = await fetchFriendsList(effectiveUserId, effectiveUsername);
       if (data && data.success) {
-        setFriends(data.friends || []);
-        const nextPending = data.pendingRequests || [];
+        setFriends((prev) => {
+          const serverFriends = Array.isArray(data.friends) ? data.friends : [];
+          if (serverFriends.length === 0 && prev.length > 0) {
+            // Bảo toàn danh sách bạn bè hiện tại nếu phản hồi máy chủ tạm thời rỗng
+            return prev;
+          }
+          // Hợp nhất dữ liệu máy chủ với các bạn bè vừa kết bái trong session
+          const merged = [...serverFriends];
+          for (const p of prev) {
+            const exists = merged.some(
+              (sf) => (p.userId && sf.userId === p.userId) ||
+                      (p.friendshipId && sf.friendshipId === p.friendshipId) ||
+                      (p.username && sf.username && p.username.toLowerCase() === sf.username.toLowerCase())
+            );
+            if (!exists) {
+              merged.push(p);
+            }
+          }
+          return merged;
+        });
+
+        const nextPending = Array.isArray(data.pendingRequests) ? data.pendingRequests : [];
         setPendingRequests(nextPending);
         onPendingRequestsCountChange?.(nextPending.length);
+
+        // Hiển thị ngay thanh thông báo lời mời nổi bật nếu có lời mời đang chờ
+        if (nextPending.length > 0) {
+          const newest = nextPending[0];
+          setLiveIncomingNotice((curr) => {
+            if (curr && nextPending.some((r) => r.id === curr.id)) return curr;
+            return {
+              id: newest.id,
+              fromUserId: newest.fromUserId,
+              fromUsername: newest.fromDisplayName || newest.fromUsername,
+              fromAvatar: newest.fromAvatar || '⚡',
+              message: newest.message || 'Muốn kết bái đạo hữu cùng bạn!',
+            };
+          });
+        } else {
+          setLiveIncomingNotice(null);
+        }
       }
     } catch {
       // ignore
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
+
+  const loadDataRef = useRef(loadData);
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  });
 
   const loadSuggestions = async () => {
     try {
@@ -144,7 +195,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       if (initialTab) {
         setActiveTab(initialTab);
       }
-      loadData();
+      loadData(false);
       loadSuggestions();
     }
   }, [isOpen, initialTab, effectiveUserId, effectiveUsername]);
@@ -153,30 +204,88 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    const handleFriendsUpdated = () => {
-      loadData();
+    const handleFriendsUpdated = (e?: any) => {
+      if (e?.detail?.friend) {
+        const nf = e.detail.friend;
+        setFriends((prev) => {
+          const filtered = prev.filter((f) => f.userId !== nf.userId && f.friendshipId !== nf.friendshipId);
+          return [nf, ...filtered];
+        });
+      }
+      loadDataRef.current(true);
       if (activeTab === 'search') {
         loadSuggestions();
       }
     };
 
+    const handleCountUpdated = () => {
+      loadDataRef.current(true);
+    };
+
+    const handleFriendRequestReceived = (e: any) => {
+      const detail = e?.detail;
+      const fromU = detail?.fromUser || {};
+      const reqId = fromU.requestId || detail?.requestId || `req_${Date.now()}`;
+      const fUid = fromU.id || detail?.fromUserId;
+      const fName = fromU.username || detail?.fromUsername || 'Đạo Hữu';
+      const fDisp = fromU.displayName || fName;
+
+      if (fUid || fName) {
+        setPendingRequests((prev) => {
+          if (prev.some((r) => r.id === reqId || (fUid && r.fromUserId === fUid))) {
+            return prev;
+          }
+          const newReq: FriendRequest = {
+            id: reqId,
+            fromUserId: fUid || `p_${Date.now()}`,
+            fromUsername: fName,
+            fromDisplayName: fDisp,
+            fromAvatar: fromU.avatar || '⚡',
+            fromFrame: fromU.frame || 'default',
+            fromRealmName: fromU.realmName || 'Luyện Khí Kỳ',
+            fromLevel: fromU.level || 1,
+            toUserId: effectiveUserId,
+            toUsername: effectiveUsername,
+            message: detail?.message || 'Kết bái đạo hữu!',
+            createdAt: Date.now(),
+          };
+          const next = [newReq, ...prev];
+          onPendingRequestsCountChange?.(next.length);
+          return next;
+        });
+
+        soundFx.playKeyClick();
+        setLiveIncomingNotice({
+          id: reqId,
+          fromUserId: fUid,
+          fromUsername: fDisp,
+          fromAvatar: fromU.avatar || '⚡',
+          message: detail?.message || 'Muốn kết bái đạo hữu cùng bạn!',
+        });
+      }
+
+      loadDataRef.current(true);
+    };
+
     window.addEventListener('friends_data_updated', handleFriendsUpdated);
-    window.addEventListener('friend_request_received', handleFriendsUpdated);
+    window.addEventListener('friend_request_received', handleFriendRequestReceived);
     window.addEventListener('friend_request_accepted', handleFriendsUpdated);
     window.addEventListener('friend_request_sent', handleFriendsUpdated);
     window.addEventListener('friend_request_responded', handleFriendsUpdated);
+    window.addEventListener('friend_requests_count', handleCountUpdated);
 
-    // Heartbeat fallback polling every 2.5s while modal is actively open for zero-delay synchronization
+    // Heartbeat fallback polling every 1.5s while modal is actively open for zero-delay synchronization
     const pollTimer = setInterval(() => {
-      loadData();
-    }, 2500);
+      loadDataRef.current(true);
+    }, 1500);
 
     return () => {
       window.removeEventListener('friends_data_updated', handleFriendsUpdated);
-      window.removeEventListener('friend_request_received', handleFriendsUpdated);
+      window.removeEventListener('friend_request_received', handleFriendRequestReceived);
       window.removeEventListener('friend_request_accepted', handleFriendsUpdated);
       window.removeEventListener('friend_request_sent', handleFriendsUpdated);
       window.removeEventListener('friend_request_responded', handleFriendsUpdated);
+      window.removeEventListener('friend_requests_count', handleCountUpdated);
       clearInterval(pollTimer);
     };
   }, [isOpen, activeTab, effectiveUserId, effectiveUsername]);
@@ -290,6 +399,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const handleRespondRequest = async (requestId: string, action: 'accept' | 'reject') => {
     soundFx.playKeyClick();
+    setLiveIncomingNotice(null);
     const pendingTarget = pendingRequests.find((r) => r.id === requestId || r.fromUserId === requestId);
 
     // Optimistic removal so badge and list update immediately
@@ -299,28 +409,29 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       return next;
     });
 
+    let optimisticFriend: FriendRecord | null = null;
     if (action === 'accept') {
       if (pendingTarget) {
+        optimisticFriend = {
+          friendshipId: `fs_opt_${Date.now()}`,
+          userId: pendingTarget.fromUserId,
+          username: pendingTarget.fromUsername,
+          displayName: pendingTarget.fromDisplayName,
+          avatar: pendingTarget.fromAvatar || '⚡',
+          frame: pendingTarget.fromFrame || 'default',
+          realmName: pendingTarget.fromRealmName || 'Luyện Khí Kỳ',
+          realmIcon: '🌿',
+          intimacy: 60,
+          intimacyLevel: 1,
+          status: 'online',
+          isDaoLu: false,
+          connectedAt: Date.now(),
+        };
         setFriends((prev) => {
-          if (prev.some((f) => f.userId === pendingTarget.fromUserId || f.username === pendingTarget.fromUsername)) {
+          if (prev.some((f) => f.userId === pendingTarget.fromUserId || f.username.toLowerCase() === pendingTarget.fromUsername.toLowerCase())) {
             return prev;
           }
-          const optimisticFriend: FriendRecord = {
-            friendshipId: `fs_opt_${Date.now()}`,
-            userId: pendingTarget.fromUserId,
-            username: pendingTarget.fromUsername,
-            displayName: pendingTarget.fromDisplayName,
-            avatar: pendingTarget.fromAvatar || '⚡',
-            frame: pendingTarget.fromFrame || 'default',
-            realmName: pendingTarget.fromRealmName || 'Luyện Khí',
-            realmIcon: '🌿',
-            intimacy: 60,
-            intimacyLevel: 1,
-            status: 'online',
-            isDaoLu: false,
-            connectedAt: Date.now(),
-          };
-          return [optimisticFriend, ...prev];
+          return [optimisticFriend!, ...prev];
         });
       }
 
@@ -346,15 +457,33 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
         soundFx.playVictory();
         showToast(res.message || 'Đã kết bái đạo hữu thành công!', 'success');
         setActiveTab('friends');
+        if (res.friend) {
+          const sf = res.friend;
+          setFriends((prev) => {
+            const filtered = prev.filter(
+              (f) => f.userId !== sf.userId && (f.friendshipId === sf.friendshipId || !f.friendshipId.startsWith('fs_opt_'))
+            );
+            const exists = filtered.some((f) => f.userId === sf.userId || f.friendshipId === sf.friendshipId);
+            if (exists) {
+              return filtered.map((f) => (f.userId === sf.userId || f.friendshipId === sf.friendshipId ? sf : f));
+            }
+            return [sf, ...filtered];
+          });
+          try {
+            const cached = JSON.parse(localStorage.getItem('fasttyping_friends_cache') || '[]');
+            const updated = [sf, ...cached.filter((f: any) => f.userId !== sf.userId)];
+            localStorage.setItem('fasttyping_friends_cache', JSON.stringify(updated));
+          } catch {}
+        }
       } else {
         showToast(res.message || 'Đã từ chối lời mời', 'success');
       }
-      loadData();
+      loadData(true);
       loadSuggestions();
     } else {
       soundFx.playError();
       showToast(res.error || 'Có lỗi xảy ra', 'error');
-      loadData();
+      loadData(true);
     }
   };
 
@@ -486,6 +615,55 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           </div>
         )}
 
+        {/* Live Incoming Friend Request Alert Banner */}
+        {liveIncomingNotice && (
+          <div className="shrink-0 p-3 sm:px-4 bg-gradient-to-r from-emerald-950/95 via-teal-900/95 to-slate-900 border-b border-emerald-500/60 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-slideDown">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-lg shrink-0 animate-bounce">
+                🤝
+              </div>
+              <div>
+                <p className="text-xs font-black text-white flex items-center gap-2">
+                  <span className="text-emerald-300">Lời Mời Kết Bạn Mới!</span>
+                  <span>Đạo hữu <strong className="text-amber-300">{liveIncomingNotice.fromUsername}</strong></span>
+                </p>
+                <p className="text-[11px] text-slate-300 italic truncate max-w-md">
+                  "{liveIncomingNotice.message || 'Muốn kết bái đạo hữu cùng bạn!'}"
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => handleRespondRequest(liveIncomingNotice.id, 'accept')}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Chấp Nhận Ngay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setActiveTab('requests');
+                  setLiveIncomingNotice(null);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs cursor-pointer"
+              >
+                Xem Lời Mời
+              </button>
+              <button
+                type="button"
+                onClick={() => setLiveIncomingNotice(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                title="Bỏ qua thông báo"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Tab Switcher */}
         <div className="flex border-b border-slate-800 bg-slate-950/50 p-2 gap-1.5 overflow-x-auto custom-scrollbar shrink-0">
           <button
@@ -562,22 +740,74 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           {/* TAB 1: DANH SÁCH ĐẠO HỮU */}
           {activeTab === 'friends' && (
             <div className="space-y-4 min-h-full">
+              {/* Lời nhắc khi có lời mời kết bạn chờ duyệt hiển thị ngay ở Tab Đạo Hữu */}
+              {pendingRequests.length > 0 && (
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-sky-950/80 via-slate-900 to-sky-950/80 border border-sky-500/50 shadow-md flex items-center justify-between gap-3 animate-fadeIn">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/40 flex items-center justify-center shrink-0">
+                      <UserPlus className="w-4 h-4 animate-bounce" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-sky-200">
+                        Đạo hữu có <strong className="text-amber-300 font-extrabold">{pendingRequests.length}</strong> lời mời kết bạn mới đang chờ duyệt!
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        Từ: {pendingRequests.map((r) => r.fromDisplayName || r.fromUsername).join(', ')}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setActiveTab('requests');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-xs cursor-pointer shadow-sm transition-all active:scale-95 shrink-0 flex items-center gap-1.5"
+                  >
+                    <span>Xem & Duyệt</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-950/30 text-white font-bold">{pendingRequests.length}</span>
+                  </button>
+                </div>
+              )}
+
               {friends.length === 0 ? (
-                <div className="min-h-[340px] flex flex-col items-center justify-center text-center py-12 px-4 space-y-3">
+                <div className="min-h-[340px] flex flex-col items-center justify-center text-center py-10 px-4 space-y-3">
                   <div className="w-16 h-16 rounded-3xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center mx-auto text-3xl">
                     📿
                   </div>
-                  <h4 className="text-sm font-bold text-slate-300">Chưa có đạo hữu kết bái</h4>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    Tiên lộ xa xôi vạn dặm, hãy chuyển sang tab "Tìm & Kết Giao" để tìm kiếm đạo hữu cùng chung chí hướng tu tiên gõ phím!
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('search')}
-                    className="px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold cursor-pointer transition-all active:scale-95"
-                  >
-                    Tìm bạn ngay
-                  </button>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-300">
+                      {pendingRequests.length > 0 ? 'Có lời mời kết bái đang chờ đạo hữu!' : 'Chưa có đạo hữu kết bái'}
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      {pendingRequests.length > 0
+                        ? `Bạn đang có ${pendingRequests.length} lời mời kết bạn. Hãy duyệt ngay để cùng nhau giao lưu đạo pháp!`
+                        : 'Tiên lộ xa xôi vạn dặm, hãy chuyển sang tab "Tìm & Kết Giao" để tìm kiếm đạo hữu cùng chung chí hướng tu tiên gõ phím!'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {pendingRequests.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundFx.playKeyClick();
+                          setActiveTab('requests');
+                        }}
+                        className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black cursor-pointer shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Xem {pendingRequests.length} Lời Mời Chờ Duyệt</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('search')}
+                        className="px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold cursor-pointer transition-all active:scale-95"
+                      >
+                        Tìm bạn ngay
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">

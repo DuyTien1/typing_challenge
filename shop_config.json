@@ -104,6 +104,19 @@
     "enabled": true
   },
   {
+    "id": "pill_tuvidan",
+    "category": "pills",
+    "name": "Tu Vi Đan (+1.000 Tu Vi)",
+    "desc": "Ngưng tụ 1.000 Tu Vi tinh thuần, giúp thăng tầng thần tốc.",
+    "icon": "🔮",
+    "itemType": "pill",
+    "targetKey": "tuViDan",
+    "price": 150,
+    "dailyLimit": 5,
+    "discountPercent": 0,
+    "enabled": true
+  },
+  {
     "id": "pill_hotam",
     "category": "pills",
     "name": "Hộ Tâm Đan",

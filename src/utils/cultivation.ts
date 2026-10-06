@@ -621,9 +621,60 @@ export const DEFAULT_SECTS: SectInfo[] = []
 export const DAILY_MATCH_EXP_CAP = 2500;
 export const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
+export function getVietnamDate(): Date {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc + 7 * 3600000);
+}
+
 export function getTodayDateString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const vnTime = getVietnamDate();
+  return `${vnTime.getFullYear()}-${String(vnTime.getMonth() + 1).padStart(2, '0')}-${String(vnTime.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Đảm bảo đồng bộ Nhiệm Vụ Hàng Ngày và Điểm Danh Hàng Ngày khi bước sang ngày mới
+ * Tự động làm mới 100% nhiệm vụ hàng ngày về ban đầu đồng bộ với chu kỳ điểm danh ngày mới (00:00)
+ */
+export function ensureDailySync(state: CultivationState): { updatedState: CultivationState; didResetQuests: boolean } {
+  if (!state) return { updatedState: state, didResetQuests: false };
+  const today = getTodayDateString();
+  let updated: CultivationState = { ...state };
+  let didResetQuests = false;
+
+  if (!updated.checkIn) {
+    updated.checkIn = {
+      lastCheckInDate: '',
+      streak: 0,
+      totalCheckIns: 0,
+    };
+  }
+
+  // Tự động làm mới nhiệm vụ hàng ngày khi:
+  // 1. dailyQuestsDate khác ngày hôm nay (bước sang ngày mới)
+  // 2. Không phải mảng hoặc số lượng nhiệm vụ không đúng chuẩn 4 nhiệm vụ
+  // 3. Chu kỳ điểm danh ngày mới: Điểm danh của ngày hôm nay chưa thực hiện (lastCheckInDate !== today)
+  //    nhưng nhiệm vụ đã bị đánh dấu nhận hết (isClaimed) từ ngày trước đó
+  const hasInvalidQuests = !Array.isArray(updated.dailyQuests) || updated.dailyQuests.length !== 4;
+  const isDifferentDate = updated.dailyQuestsDate !== today;
+  const hasUnresetStaleQuests =
+    updated.checkIn.lastCheckInDate !== today &&
+    Array.isArray(updated.dailyQuests) &&
+    updated.dailyQuests.length > 0 &&
+    updated.dailyQuests.every((q) => q.isClaimed);
+
+  if (isDifferentDate || hasInvalidQuests || hasUnresetStaleQuests) {
+    updated.dailyQuests = createDefaultDailyQuests();
+    updated.dailyQuestsDate = today;
+    didResetQuests = true;
+  }
+
+  if (updated.dailyExpDate !== today) {
+    updated.dailyExpEarned = 0;
+    updated.dailyExpDate = today;
+  }
+
+  return { updatedState: updated, didResetQuests };
 }
 
 export function getSubStage(tier: number): 'Sơ Kỳ' | 'Trung Kỳ' | 'Hậu Kỳ' | 'Đại Viên Mãn' {
@@ -931,7 +982,7 @@ export function loadStoredCultivationState(): CultivationState {
       historyLog: Array.isArray(parsed.historyLog) ? parsed.historyLog.slice(-20) : [],
     };
 
-    return state;
+    return ensureDailySync(state).updatedState;
   } catch {
     return createInitialCultivationState();
   }
@@ -961,15 +1012,19 @@ export async function syncCultivationToServer(state?: CultivationState): Promise
 export function saveStoredCultivationState(state: CultivationState): void {
   if (typeof window === 'undefined') return;
   
+  // Đảm bảo dữ liệu trước khi lưu luôn được đồng bộ ngày mới và làm mới nhiệm vụ nếu qua ngày
+  const syncRes = ensureDailySync(state);
+  const targetState = syncRes.updatedState;
+
   try {
-    localStorage.setItem(CULTIVATION_STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(CULTIVATION_STORAGE_KEY, JSON.stringify(targetState));
   } catch {}
 
   // Lưu vào bộ nhớ đệm và IndexedDB nền
-  saveCultivationToIndexedDB(state).catch(() => {});
+  saveCultivationToIndexedDB(targetState).catch(() => {});
 
   // Tự động đồng bộ ngầm tiến độ tu vi mới nhất lên máy chủ nếu người chơi đã đăng nhập
-  syncCultivationToServer(state).catch(() => {});
+  syncCultivationToServer(targetState).catch(() => {});
 }
 
 /**
@@ -1840,7 +1895,10 @@ export function claimDailyCheckIn(state: CultivationState): {
   const dayOfWeekName = dayNames[dayOfWeek];
   const isSunday = dayOfWeek === 0;
 
-  const currentCheckIn = state.checkIn || {
+  const syncRes = ensureDailySync(state);
+  const syncedState = syncRes.updatedState;
+
+  const currentCheckIn = syncedState.checkIn || {
     lastCheckInDate: '',
     streak: 0,
     totalCheckIns: 0,
@@ -1849,7 +1907,7 @@ export function claimDailyCheckIn(state: CultivationState): {
   if (currentCheckIn.lastCheckInDate === today) {
     return {
       success: false,
-      updatedState: state,
+      updatedState: syncedState,
       message: 'Hôm nay đạo hữu đã điểm danh rồi, ngày mai hãy quay lại!',
       rewardDetails: {
         dayOfWeekName,
@@ -1873,7 +1931,7 @@ export function claimDailyCheckIn(state: CultivationState): {
     }
   }
 
-  let updated = { ...state };
+  let updated = { ...syncedState };
   updated.pillCount = {
     ...updated.pillCount,
     thoNguyen: updated.pillCount.thoNguyen ?? 2,
@@ -1909,7 +1967,22 @@ export function claimDailyCheckIn(state: CultivationState): {
     totalCheckIns: (currentCheckIn.totalCheckIns || 0) + 1,
   };
 
-  const message = `📅 Điểm danh ${dayOfWeekName} thành công (Chuỗi ${nextStreak} ngày)! Nhận: ${rewardsGranted.join(', ')}.`;
+  // Đảm bảo tuyệt đối: Khi điểm danh ngày mới thành công, nhiệm vụ hàng ngày được làm mới đồng bộ 100%
+  if (
+    updated.dailyQuestsDate !== today ||
+    !Array.isArray(updated.dailyQuests) ||
+    updated.dailyQuests.length !== 4 ||
+    updated.dailyQuests.every((q) => q.isClaimed)
+  ) {
+    updated.dailyQuests = createDefaultDailyQuests();
+    updated.dailyQuestsDate = today;
+  }
+  if (updated.dailyExpDate !== today) {
+    updated.dailyExpEarned = 0;
+    updated.dailyExpDate = today;
+  }
+
+  const message = `📅 Điểm danh ${dayOfWeekName} thành công (Chuỗi ${nextStreak} ngày)! Nhận: ${rewardsGranted.join(', ')}. Nhiệm vụ hàng ngày đã được làm mới đồng bộ.`;
   updated.historyLog = [message, ...updated.historyLog.slice(0, 19)];
 
   return {

@@ -94,6 +94,8 @@ export interface ServerFriendshipRecord {
   id: string;
   user1Id: string;
   user2Id: string;
+  user1Username?: string;
+  user2Username?: string;
   intimacy: number; // 0 - 5000+
   isDaoLu?: boolean;
   daoLuTitle?: string;
