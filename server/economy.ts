@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { ShopItem, MarketListing, MarketLog, ServerUserRecord } from './types';
-import { getSafeStoragePath } from './utils';
+import { getSafeStoragePath, safeWriteJsonFile } from './utils';
 import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog } from './db';
 
 const SHOP_CONFIG_FILE = getSafeStoragePath('shop_config.json');
@@ -158,22 +158,22 @@ export function saveMarketData() {
       stats: marketStats,
       logs: marketLogs.slice(-100),
     };
-    fs.writeFileSync(MARKET_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    safeWriteJsonFile(MARKET_FILE, payload);
     if (isDatabaseConfigured()) {
       for (const item of marketListings.values()) {
         dbSaveMarketListing(item).catch(() => {});
       }
     }
   } catch (err) {
-    console.error('Error saving market.json:', err);
+    console.warn('[SafeStorage] Notice saving market.json:', err);
   }
 }
 
 export function saveShopConfigData() {
   try {
-    fs.writeFileSync(SHOP_CONFIG_FILE, JSON.stringify(shopCatalog, null, 2), 'utf-8');
+    safeWriteJsonFile(SHOP_CONFIG_FILE, shopCatalog);
   } catch (err) {
-    console.error('Error saving shop_config.json:', err);
+    console.warn('[SafeStorage] Notice saving shop_config.json:', err);
   }
 }
 

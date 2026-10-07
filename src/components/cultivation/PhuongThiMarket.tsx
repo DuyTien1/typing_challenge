@@ -75,18 +75,30 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
 
   const userLinhThach = Number(state.linhThach) || 0;
 
+  // Helper chuẩn hóa danh mục chợ Phường Thị (khớp linh hoạt cả số ít và số nhiều: herb/herbs, pill/pills, tea/friendship)
+  const matchMarketCategory = (itemType?: string, filterCat?: string) => {
+    if (!filterCat || filterCat === 'all') return true;
+    if (!itemType) return false;
+    const it = itemType.toLowerCase();
+    const fc = filterCat.toLowerCase();
+    if (it === fc) return true;
+    if ((fc === 'herb' || fc === 'herbs') && (it === 'herb' || it === 'herbs')) return true;
+    if ((fc === 'pill' || fc === 'pills') && (it === 'pill' || it === 'pills')) return true;
+    if ((fc === 'tea' || fc === 'friendship') && (it === 'tea' || it === 'friendship')) return true;
+    return false;
+  };
+
   // Luôn đảm bảo Phường Thị có sạp hàng hoạt động kể cả khi gặp mạng Citrix/proxy chậm
   const displayListings = useMemo(() => {
-    if (Array.isArray(listings) && listings.length > 0) {
-      return listings;
-    }
-    return DEFAULT_MARKET_LISTINGS;
+    const list = Array.isArray(listings) && listings.length > 0 ? listings : DEFAULT_MARKET_LISTINGS;
+    const active = list.filter((l) => l && l.status === 'active');
+    return active.length > 0 ? active : DEFAULT_MARKET_LISTINGS;
   }, [listings]);
 
   const filteredListings = useMemo(() => {
     let list = [...displayListings];
     if (categoryFilter !== 'all') {
-      list = list.filter((l) => l.itemType === categoryFilter);
+      list = list.filter((l) => matchMarketCategory(l.itemType, categoryFilter));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
@@ -348,6 +360,17 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
     }
   };
 
+  // Lấy tồn kho hiện tại cho form đăng bán (khai báo trước để form và handler sử dụng an toàn)
+  const currentAvailableInBag = (() => {
+    if (sellItemType === 'herb') return state.herbs?.[sellItemId as keyof typeof state.herbs] || 0;
+    if (sellItemType === 'pill') return state.pillCount?.[sellItemId as keyof typeof state.pillCount] || 0;
+    if (sellItemType === 'tea') return (state as any).teaInventory?.[sellItemId] || 0;
+    return 0;
+  })();
+
+  const estimatedTax = Math.round(sellQuantity * sellPricePerUnit * taxRate);
+  const estimatedPayout = Math.max(0, sellQuantity * sellPricePerUnit - estimatedTax);
+
   // Xử lý Đăng bán
   const handleCreateListing = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -456,17 +479,6 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
       setIsProcessing(false);
     }
   };
-
-  // Lấy tồn kho hiện tại cho form đăng bán
-  const currentAvailableInBag = (() => {
-    if (sellItemType === 'herb') return state.herbs?.[sellItemId as keyof typeof state.herbs] || 0;
-    if (sellItemType === 'pill') return state.pillCount?.[sellItemId as keyof typeof state.pillCount] || 0;
-    if (sellItemType === 'tea') return (state as any).teaInventory?.[sellItemId] || 0;
-    return 0;
-  })();
-
-  const estimatedTax = Math.round(sellQuantity * sellPricePerUnit * taxRate);
-  const estimatedPayout = Math.max(0, sellQuantity * sellPricePerUnit - estimatedTax);
 
   return (
     <div className="space-y-6">
@@ -601,10 +613,52 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
               <p className="text-xs">Đang dò tìm các sạp hàng trong Phường Thị...</p>
             </div>
           ) : filteredListings.length === 0 ? (
-            <div className="py-16 text-center text-slate-500 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800">
+            <div className="py-16 text-center text-slate-500 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 p-6">
               <Scale className="w-10 h-10 mx-auto mb-2 text-slate-600" />
-              <p className="text-sm font-bold text-slate-400">Không tìm thấy gian hàng phù hợp</p>
-              <span className="text-xs text-slate-500">Đạo hữu hãy thử đổi bộ lọc hoặc là người đầu tiên ký gửi bảo vật!</span>
+              <p className="text-sm font-bold text-slate-300">Không tìm thấy gian hàng phù hợp</p>
+              {searchQuery ? (
+                <div className="mt-2 space-y-2">
+                  <span className="text-xs text-slate-500 block">Không khớp với từ khóa "{searchQuery}"</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setSearchQuery('');
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-xl border border-emerald-500/30 cursor-pointer transition-all"
+                  >
+                    Xóa từ khóa tìm kiếm
+                  </button>
+                </div>
+              ) : categoryFilter !== 'all' ? (
+                <div className="mt-2 space-y-2">
+                  <span className="text-xs text-slate-500 block">Hiện tại chưa có gian hàng nào cho danh mục này.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setCategoryFilter('all');
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-xl border border-emerald-500/30 cursor-pointer transition-all"
+                  >
+                    Xem tất cả gian hàng ({displayListings.length} sạp)
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <span className="text-xs text-slate-500 block">Đạo hữu hãy là người đầu tiên ký gửi bảo vật lên thương hội!</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setSubTab('create_listing');
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-xl border border-emerald-500/30 cursor-pointer transition-all"
+                  >
+                    Mở Sạp Ký Gửi Ngay
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">

@@ -14,9 +14,12 @@
       "quantity": 5,
       "pricePerUnit": 25,
       "totalPrice": 125,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
     },
     {
       "id": "lst_npc_huyettinh",
@@ -32,45 +35,12 @@
       "quantity": 3,
       "pricePerUnit": 40,
       "totalPrice": 120,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
-    },
-    {
-      "id": "lst_npc_linhtra",
-      "sellerId": "npc_linhlung",
-      "sellerUsername": "Linh Lung Tiên Tử",
-      "sellerAvatar": "🌸",
-      "sellerFrame": "cosmic_cyan",
-      "itemType": "tea",
-      "itemId": "linhTra",
-      "itemName": "Bát Trảm Linh Trà",
-      "itemIcon": "🍵",
-      "quality": "cuc_pham",
-      "quantity": 2,
-      "pricePerUnit": 140,
-      "totalPrice": 280,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
-    },
-    {
-      "id": "lst_npc_thonguyen",
-      "sellerId": "npc_vocuc",
-      "sellerUsername": "Vô Cực Tán Nhân",
-      "sellerAvatar": "⚡",
-      "sellerFrame": "thunder_lord",
-      "itemType": "pill",
-      "itemId": "thoNguyen",
-      "itemName": "Thọ Nguyên Đan",
-      "itemIcon": "💊",
-      "quality": "trung_pham",
-      "quantity": 2,
-      "pricePerUnit": 80,
-      "totalPrice": 160,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
     },
     {
       "id": "lst_npc_dinhtam",
@@ -86,9 +56,54 @@
       "quantity": 1,
       "pricePerUnit": 95,
       "totalPrice": 95,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
+    },
+    {
+      "id": "lst_npc_linhtra",
+      "sellerId": "npc_linhlung",
+      "sellerUsername": "Linh Lung Tiên Tử",
+      "sellerAvatar": "🌸",
+      "sellerFrame": "cosmic_cyan",
+      "itemType": "tea",
+      "itemId": "linhTra",
+      "itemName": "Bát Trảm Linh Trà",
+      "itemIcon": "🍵",
+      "quality": "cuc_pham",
+      "quantity": 2,
+      "pricePerUnit": 140,
+      "totalPrice": 280,
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
+    },
+    {
+      "id": "lst_npc_thonguyen",
+      "sellerId": "npc_vocuc",
+      "sellerUsername": "Vô Cực Tán Nhân",
+      "sellerAvatar": "⚡",
+      "sellerFrame": "thunder_lord",
+      "itemType": "pill",
+      "itemId": "thoNguyen",
+      "itemName": "Thọ Nguyên Đan",
+      "itemIcon": "💊",
+      "quality": "trung_pham",
+      "quantity": 2,
+      "pricePerUnit": 80,
+      "totalPrice": 160,
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
     },
     {
       "id": "lst_npc_hotam",
@@ -104,9 +119,12 @@
       "quantity": 1,
       "pricePerUnit": 350,
       "totalPrice": 350,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
     },
     {
       "id": "lst_npc_longtu",
@@ -122,9 +140,12 @@
       "quantity": 1,
       "pricePerUnit": 250,
       "totalPrice": 250,
-      "listedAt": 1728200000000,
-      "expiresAt": 1928200000000,
-      "status": "active"
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
     }
   ],
   "taxRate": 0.05,
@@ -133,5 +154,15 @@
     "totalTaxBurned": 0,
     "totalTradesCount": 0
   },
-  "logs": []
+  "logs": [
+    {
+      "id": "log_1790608201043_whe3",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1790608201043",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 30
+    }
+  ]
 }

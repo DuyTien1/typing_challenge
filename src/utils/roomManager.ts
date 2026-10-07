@@ -180,6 +180,22 @@ export function subscribeToRooms(callback: (event: RoomEvent) => void): () => vo
 }
 
 /**
+ * Trợ giúp phân tích phản hồi JSON an toàn, không bao giờ ném ngoại lệ SyntaxError khi server trả về HTML (502, 503, 404 proxy).
+ */
+export async function safeResponseJson<T = any>(res: Response): Promise<T | null> {
+  try {
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return null;
+    }
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 1. Tạo phòng mới hoàn toàn thông qua Server API:
  */
 export async function createNewRoom(
@@ -194,13 +210,13 @@ export async function createNewRoom(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode, host, isQuickRoom, difficulty }),
     });
-    const data = await res.json();
-    if (data.success && data.room) {
+    const data = await safeResponseJson<{ success: boolean; room: GameRoom }>(res);
+    if (data?.success && data.room) {
       broadcastLocalEvent({ type: 'room_updated', room: data.room });
       return data.room;
     }
   } catch (err) {
-    console.error('createNewRoom server error:', err);
+    console.warn('createNewRoom network/server fallback:', err);
   }
 
   // Local fallback nếu server tạm thời bận
@@ -249,8 +265,8 @@ export async function joinExistingRoom(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rawCode: normCode, player, currentMode }),
     });
-    const data = await res.json();
-    if (data.success && data.room) {
+    const data = await safeResponseJson<{ success: boolean; room?: GameRoom; error?: string; isHost?: boolean }>(res);
+    if (data?.success && data.room) {
       broadcastLocalEvent({ type: 'room_updated', room: data.room });
       return {
         success: true,
@@ -260,11 +276,11 @@ export async function joinExistingRoom(
     } else {
       return {
         success: false,
-        error: data.error || 'Không thể tham gia phòng.',
+        error: data?.error || 'Không thể tham gia phòng hoặc máy chủ đang phản hồi lại.',
       };
     }
   } catch (err) {
-    console.error('joinExistingRoom server error:', err);
+    console.warn('joinExistingRoom network fallback:', err);
     return {
       success: false,
       error: 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng!',
@@ -290,8 +306,8 @@ export async function quickJoinOrCreateRoom(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode, player, difficulty }),
     });
-    const data = await res.json();
-    if (data.success && data.room) {
+    const data = await safeResponseJson<{ success: boolean; room: GameRoom; isHost?: boolean; isNewlyCreated?: boolean }>(res);
+    if (data?.success && data.room) {
       broadcastLocalEvent({ type: 'room_updated', room: data.room });
       return {
         room: data.room,
@@ -300,7 +316,7 @@ export async function quickJoinOrCreateRoom(
       };
     }
   } catch (err) {
-    console.error('quickJoinOrCreateRoom server error:', err);
+    console.warn('quickJoinOrCreateRoom network fallback:', err);
   }
 
   // Fallback
@@ -329,13 +345,13 @@ export async function updateRoomPlayers(
       cache: 'no-store',
       body: JSON.stringify({ players }),
     });
-    const data = await res.json();
-    if (data.success && data.room) {
+    const data = await safeResponseJson<{ success: boolean; room?: GameRoom }>(res);
+    if (data?.success && data.room) {
       broadcastLocalEvent({ type: 'room_updated', room: data.room });
       return { success: true, room: data.room };
     }
   } catch (err) {
-    console.error('updateRoomPlayers error:', err);
+    console.warn('updateRoomPlayers fallback:', err);
   }
   return { success: false };
 }
@@ -536,9 +552,9 @@ export function subscribeToRoom(
     cache: 'no-store',
     headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
   })
-    .then((r) => r.json())
+    .then((r) => safeResponseJson<{ success: boolean; room?: GameRoom }>(r))
     .then((data) => {
-      if (isSubscribed && data.success && data.room) {
+      if (isSubscribed && data?.success && data.room) {
         safeCallback(data.room);
       }
     })
@@ -657,9 +673,9 @@ export function subscribeToRoom(
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
     })
-      .then((r) => r.json())
+      .then((r) => safeResponseJson<{ success: boolean; room?: GameRoom; status?: number; error?: string }>(r))
       .then((data) => {
-        if (!isSubscribed) return;
+        if (!isSubscribed || !data) return;
         if (data.success && data.room) {
           callback(data.room);
         } else if (data.status === 404 || data.error === 'Room not found') {

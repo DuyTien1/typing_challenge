@@ -18,7 +18,7 @@ import {
   ServerMultiLeaderboard,
   ServerLeaderboardEntry,
 } from './server/types';
-import { normalizeRoomCode, getModeDisplayName, hashPassword } from './server/utils';
+import { normalizeRoomCode, getModeDisplayName, hashPassword, safeWriteJsonFile } from './server/utils';
 import { registerEconomyRoutes } from './server/economy';
 import { registerAdminDatabaseRoutes } from './server/adminDatabase';
 import {
@@ -54,21 +54,32 @@ const roomChatMessages = new Map<string, ServerChatMessage[]>();
 
 // Helper to get safe writable storage path (Hỗ trợ Vercel Serverless /tmp)
 export function getSafeStoragePath(filename: string): string {
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  const isServerless = Boolean(
+    process.env.VERCEL ||
+    process.env.VERCEL_ENV ||
+    process.env.NOW_REGION ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    (typeof process.cwd === 'function' && (process.cwd().startsWith('/var/task') || process.cwd() === '/'))
+  );
+
+  if (isServerless) {
     const tmpDir = path.join('/tmp', 'fasttyping_data');
     if (!fs.existsSync(tmpDir)) {
       try {
         fs.mkdirSync(tmpDir, { recursive: true });
-      } catch {}
+      } catch {
+        return path.join('/tmp', filename);
+      }
     }
     const tmpPath = path.join(tmpDir, filename);
     if (!fs.existsSync(tmpPath)) {
-      const seedPath = path.join(process.cwd(), filename);
-      if (fs.existsSync(seedPath)) {
-        try {
+      try {
+        const seedPath = path.join(process.cwd(), filename);
+        if (fs.existsSync(seedPath)) {
           fs.copyFileSync(seedPath, tmpPath);
-        } catch {}
-      }
+        }
+      } catch {}
     }
     return tmpPath;
   }
@@ -100,7 +111,7 @@ function loadChatFromFile(): ServerChatMessage[] {
       }
     }
   } catch (err) {
-    console.error('Error reading chat_history.json:', err);
+    console.warn('[SafeStorage] Notice reading chat_history.json:', err);
   }
   return [...DEFAULT_GLOBAL_CHAT];
 }
@@ -109,9 +120,9 @@ const globalChatMessages: ServerChatMessage[] = loadChatFromFile();
 
 function saveChatToFile() {
   try {
-    fs.writeFileSync(CHAT_FILE, JSON.stringify(globalChatMessages.slice(-150), null, 2), 'utf-8');
+    safeWriteJsonFile(CHAT_FILE, globalChatMessages.slice(-150));
   } catch (err) {
-    console.error('Error saving chat_history.json:', err);
+    console.warn('[SafeStorage] Notice saving chat_history.json:', err);
   }
 }
 
@@ -304,12 +315,12 @@ function checkLeaderboardResets(): boolean {
 
 function saveLeaderboardToFile() {
   try {
-    fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(serverLeaderboardData, null, 2), 'utf-8');
+    safeWriteJsonFile(LEADERBOARD_FILE, serverLeaderboardData);
     if (isDatabaseConfigured()) {
       dbSaveLeaderboard(serverLeaderboardData).catch(() => {});
     }
   } catch (err) {
-    console.error('Error saving leaderboard file:', err);
+    console.warn('[SafeStorage] Notice saving leaderboard file:', err);
   }
 }
 
@@ -446,7 +457,7 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
       for (const [id, u] of map.entries()) {
         obj[id] = u;
       }
-      fs.writeFileSync(USERS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+      safeWriteJsonFile(USERS_FILE, obj);
     } catch {
       // ignore
     }
@@ -468,9 +479,9 @@ function saveUsersToFile() {
         });
       }
     }
-    fs.writeFileSync(USERS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+    safeWriteJsonFile(USERS_FILE, obj);
   } catch (err) {
-    console.error('Error saving users.json:', err);
+    console.warn('[SafeStorage] Notice saving users.json:', err);
   }
 }
 
@@ -598,7 +609,7 @@ function loadSectsFromFile(): Map<string, ServerSectRecord> {
 
   // Tông môn hoàn toàn do người chơi tự sáng lập, không tự động sinh bất kỳ tông môn mặc định nào
   try {
-    fs.writeFileSync(SECTS_FILE, JSON.stringify(Array.from(map.values()), null, 2), 'utf-8');
+    safeWriteJsonFile(SECTS_FILE, Array.from(map.values()));
   } catch {}
 
   return map;
@@ -609,14 +620,14 @@ const serverSects = loadSectsFromFile();
 async function saveSectsToFile(): Promise<void> {
   try {
     const arr = Array.from(serverSects.values());
-    fs.writeFileSync(SECTS_FILE, JSON.stringify(arr, null, 2), 'utf-8');
+    safeWriteJsonFile(SECTS_FILE, arr);
     if (isDatabaseConfigured()) {
       await dbSaveSects(arr).catch((err) => {
         console.error('[Database] Failed to save sects to PostgreSQL:', err);
       });
     }
   } catch (err) {
-    console.error('Error saving sects.json:', err);
+    console.warn('[SafeStorage] Notice saving sects.json:', err);
   }
 }
 
@@ -853,12 +864,12 @@ function saveBansToFile() {
         obj[k] = v;
       }
     }
-    fs.writeFileSync(BANS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+    safeWriteJsonFile(BANS_FILE, obj);
     if (isDatabaseConfigured()) {
       dbSaveBannedUsers(Object.keys(obj)).catch(() => {});
     }
   } catch (err) {
-    console.error('Error saving banned_users.json:', err);
+    console.warn('[SafeStorage] Notice saving banned_users.json:', err);
   }
 }
 
@@ -1305,9 +1316,9 @@ function saveFriendsToFile() {
       friendships: Array.from(serverFriendships.values()),
       requests: Array.from(serverFriendRequests.values()),
     };
-    fs.writeFileSync(FRIENDS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    safeWriteJsonFile(FRIENDS_FILE, data);
   } catch (err) {
-    console.error('Error saving friends.json:', err);
+    console.warn('[SafeStorage] Notice saving friends.json:', err);
   }
 }
 

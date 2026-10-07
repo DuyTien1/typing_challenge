@@ -62,6 +62,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
 
   const isRoundSolvedRef = useRef(false);
   const revealedCharsRef = useRef<(string | null)[]>([]);
+  const roundHandledForRef = useRef<number>(0);
+  const roundTransitionTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Performance & deduction capability stats tracking
   const historyRef = useRef<MysteryWordRoundResult[]>([]);
@@ -219,6 +221,10 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   }, [guessInput, isRoundSolved, updateCaret]);
 
   const finishEntireGame = useCallback(() => {
+    if (roundTransitionTimerRef.current) {
+      clearTimeout(roundTransitionTimerRef.current);
+      roundTransitionTimerRef.current = null;
+    }
     const history = historyRef.current;
     const correctGuesses = history.filter((h) => h.isCorrect).length;
     const accuracyRate = totalRounds > 0 ? Math.round((correctGuesses / totalRounds) * 100) : 0;
@@ -241,19 +247,49 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
   }, [totalRounds, onFinishGame]);
 
   const nextRound = useCallback(() => {
+    if (roundTransitionTimerRef.current) {
+      clearTimeout(roundTransitionTimerRef.current);
+      roundTransitionTimerRef.current = null;
+    }
     if (currentRound >= totalRounds) {
       finishEntireGame();
     } else {
-      setCurrentRound((r) => r + 1);
+      const nextR = currentRound + 1;
+      // Khởi tạo đồng bộ các state cho vòng mới ngay lập tức
+      // Tránh việc roundTimeLeft = 0 từ vòng trước kích hoạt nhầm timeout của vòng sau!
+      setCurrentRound(nextR);
+      setRoundTimeLeft(roundDurationSec);
+      setIsRoundSolved(false);
+      isRoundSolvedRef.current = false;
+      setSolvedMessage(null);
+      setGuessInput('');
+      setRoundSolvers([]);
+      roundStartTimeRef.current = performance.now();
     }
-  }, [currentRound, totalRounds, finishEntireGame]);
+  }, [currentRound, totalRounds, finishEntireGame, roundDurationSec]);
+
+  // Dọn dẹp timer khi component unmount
+  useEffect(() => {
+    return () => {
+      if (roundTransitionTimerRef.current) {
+        clearTimeout(roundTransitionTimerRef.current);
+        roundTransitionTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Initialize round
   useEffect(() => {
+    if (roundTransitionTimerRef.current) {
+      clearTimeout(roundTransitionTimerRef.current);
+      roundTransitionTimerRef.current = null;
+    }
+
     setIsRoundSolved(false);
     isRoundSolvedRef.current = false;
     setSolvedMessage(null);
     setGuessInput('');
+    setRoundSolvers([]);
     setRoundTimeLeft(roundDurationSec);
     roundStartTimeRef.current = performance.now();
 
@@ -287,7 +323,12 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     // Round countdown
     const countdownTimer = setInterval(() => {
       if (isRoundSolvedRef.current) return;
-      setRoundTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+      setRoundTimeLeft((prev) => {
+        if (prev <= 1) {
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     if (!isSurrendered) {
@@ -298,7 +339,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       clearInterval(revealTimer);
       clearInterval(countdownTimer);
     };
-  }, [currentRound, targetWord, revealIntervalSec, roundDurationSec]);
+  }, [currentRound, targetWord, revealIntervalSec, roundDurationSec, isSurrendered]);
 
   // Stable bot key so player score changes don't cancel active bot deduction timers
   const botKey = players
@@ -326,7 +367,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       const delayMs = Math.round(finalDelaySec * 1000);
 
       const timer = setTimeout(() => {
-        if (isRoundSolvedRef.current) return;
+        if (isRoundSolvedRef.current || roundHandledForRef.current === currentRound) return;
+        roundHandledForRef.current = currentRound;
         isRoundSolvedRef.current = true;
         setIsRoundSolved(true);
 
@@ -354,7 +396,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         if (currentRound >= totalRounds) {
           finishEntireGame();
         } else {
-          setTimeout(() => {
+          if (roundTransitionTimerRef.current) clearTimeout(roundTransitionTimerRef.current);
+          roundTransitionTimerRef.current = setTimeout(() => {
             nextRound();
           }, 2500);
         }
@@ -368,9 +411,10 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     };
   }, [currentRound, targetWord, botKey, roundDurationSec, onFinishRound, nextRound, totalRounds, finishEntireGame, currentItem.hint]);
 
-  // Round timeout handler triggered safely when roundTimeLeft reaches 0 (vòng cuối thì kết thúc và tổng kết ngay)
+  // Round timeout handler: kích hoạt khi roundTimeLeft giảm về 0 (người chơi không đoán hoặc đoán không kịp)
   useEffect(() => {
-    if (roundTimeLeft <= 0 && !isRoundSolvedRef.current) {
+    if (roundTimeLeft <= 0 && !isRoundSolvedRef.current && roundHandledForRef.current !== currentRound) {
+      roundHandledForRef.current = currentRound;
       isRoundSolvedRef.current = true;
       setIsRoundSolved(true);
 
@@ -384,18 +428,21 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         hiddenCount: 0,
       });
 
+      // Thông báo kết thúc vòng cho hệ thống (0 điểm)
+      onFinishRound(currentRound, 0, false);
+
       if (currentRound >= totalRounds) {
         finishEntireGame();
       } else {
         setRevealedChars(targetWord.split(''));
         setSolvedMessage(`Hết giờ! Đáp án chính xác là: "${targetWord}"`);
-        const timer = setTimeout(() => {
+        if (roundTransitionTimerRef.current) clearTimeout(roundTransitionTimerRef.current);
+        roundTransitionTimerRef.current = setTimeout(() => {
           nextRound();
         }, 2500);
-        return () => clearTimeout(timer);
       }
     }
-  }, [roundTimeLeft, targetWord, nextRound, currentRound, totalRounds, finishEntireGame, currentItem.hint]);
+  }, [roundTimeLeft, targetWord, nextRound, currentRound, totalRounds, finishEntireGame, currentItem.hint, onFinishRound]);
 
   const handleGuessSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,6 +452,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
     const correct = targetWord.toLowerCase();
 
     if (guess === correct) {
+      if (roundHandledForRef.current === currentRound) return;
+      roundHandledForRef.current = currentRound;
       isRoundSolvedRef.current = true;
       setIsRoundSolved(true);
       soundFx.playVictory();
@@ -437,7 +486,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       if (currentRound >= totalRounds) {
         finishEntireGame();
       } else {
-        setTimeout(() => {
+        if (roundTransitionTimerRef.current) clearTimeout(roundTransitionTimerRef.current);
+        roundTransitionTimerRef.current = setTimeout(() => {
           nextRound();
         }, 2000);
       }

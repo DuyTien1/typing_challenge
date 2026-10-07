@@ -240,24 +240,37 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
     }
   };
 
+  // Helper chuẩn hóa so sánh danh mục (Hỗ trợ linh hoạt cả số ít và số nhiều: herbs/herb, pills/pill, v.v.)
+  const matchCategory = (itemCat?: string, filterCat?: string) => {
+    if (!filterCat || filterCat === 'all') return true;
+    if (!itemCat) return false;
+    const it = itemCat.toLowerCase();
+    const fc = filterCat.toLowerCase();
+    if (it === fc) return true;
+    if ((fc === 'herbs' || fc === 'herb') && (it === 'herbs' || it === 'herb')) return true;
+    if ((fc === 'pills' || fc === 'pill') && (it === 'pills' || it === 'pill')) return true;
+    if ((fc === 'friendship' || fc === 'tea') && (it === 'friendship' || it === 'tea')) return true;
+    if ((fc === 'customization' || fc === 'frame') && (it === 'customization' || it === 'frame')) return true;
+    return false;
+  };
+
   // Hiển thị danh mục Vạn Bảo Các: Luôn đảm bảo có sẵn vật phẩm ngay cả khi kết nối mạng Citrix bị chậm hoặc chặn
   const displayCatalog = useMemo(() => {
-    if (Array.isArray(catalog) && catalog.length > 0) {
-      return catalog;
-    }
-    return DEFAULT_SHOP_CATALOG;
+    const source = Array.isArray(catalog) && catalog.length > 0 ? catalog : DEFAULT_SHOP_CATALOG;
+    const enabled = source.filter((item) => item && item.enabled !== false);
+    return enabled.length > 0 ? enabled : DEFAULT_SHOP_CATALOG;
   }, [catalog]);
 
   const filteredItems = useMemo(() => {
     return displayCatalog.filter((item) => {
       if (!item) return false;
       if (item.enabled === false) return false;
-      if (selectedCategory !== 'all' && item.category !== selectedCategory) return false;
+      if (!matchCategory(item.category, selectedCategory)) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         return (
-          item.name.toLowerCase().includes(q) ||
-          item.desc.toLowerCase().includes(q) ||
+          (item.name && item.name.toLowerCase().includes(q)) ||
+          (item.desc && item.desc.toLowerCase().includes(q)) ||
           (item.targetKey && item.targetKey.toLowerCase().includes(q))
         );
       }
@@ -381,10 +394,38 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
           <p className="text-xs">Đang thỉnh cầu thương đoàn Vạn Bảo Các...</p>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="py-16 text-center text-slate-500 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800">
+        <div className="py-16 text-center text-slate-500 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 p-6">
           <ShoppingBag className="w-10 h-10 mx-auto mb-2 text-slate-600" />
-          <p className="text-sm font-bold text-slate-400">Không tìm thấy vật phẩm phù hợp trong Vạn Bảo Các</p>
-          <span className="text-xs text-slate-500">Hãy thử đổi danh mục hoặc từ khóa tìm kiếm.</span>
+          <p className="text-sm font-bold text-slate-300">Không tìm thấy vật phẩm phù hợp trong Vạn Bảo Các</p>
+          {searchQuery ? (
+            <div className="mt-2 space-y-2">
+              <span className="text-xs text-slate-500 block">Không khớp với từ khóa "{searchQuery}"</span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setSearchQuery('');
+                }}
+                className="px-3.5 py-1.5 text-xs font-bold text-amber-300 bg-amber-500/20 hover:bg-amber-500/30 rounded-xl border border-amber-500/30 cursor-pointer transition-all"
+              >
+                Xóa từ khóa tìm kiếm
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              <span className="text-xs text-slate-500 block">Chưa có vật phẩm trong danh mục này hoặc danh mục đang làm mới.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playKeyClick();
+                  setSelectedCategory('all');
+                }}
+                className="px-3.5 py-1.5 text-xs font-bold text-amber-300 bg-amber-500/20 hover:bg-amber-500/30 rounded-xl border border-amber-500/30 cursor-pointer transition-all"
+              >
+                Xem tất cả bảo vật ({displayCatalog.length} món)
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
