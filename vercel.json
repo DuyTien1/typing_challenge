@@ -6,7 +6,7 @@
   "functions": {
     "api/**/*.ts": {
       "includeFiles": "dist/server.cjs",
-      "maxDuration": 15
+      "maxDuration": 30
     }
   },
   "rewrites": [

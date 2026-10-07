@@ -492,11 +492,6 @@ function saveUsersToFile() {
     const obj: Record<string, ServerUserRecord> = {};
     for (const [id, u] of serverUsers.entries()) {
       obj[id] = u;
-      if (isDatabaseConfigured()) {
-        dbSaveUser(u).catch((err) => {
-          console.error(`[Database] ❌ Lỗi lưu tài khoản ${u.username} vào PostgreSQL:`, err?.message || err);
-        });
-      }
     }
     safeWriteJsonFile(USERS_FILE, obj);
   } catch (err) {
@@ -1395,14 +1390,17 @@ function removeFriendRequest(reqId: string) {
 }
 
 let lastDbReqsFetch = 0;
+let isDbReqsFetching = false;
 async function refreshFriendRequestsFromDbIfNeeded(force = false) {
   if (!isDatabaseConfigured()) return;
   const now = Date.now();
-  if (!force && now - lastDbReqsFetch < 2000) return;
+  if (!force && now - lastDbReqsFetch < 5000) return;
+  if (isDbReqsFetching) return;
+  isDbReqsFetching = true;
   lastDbReqsFetch = now;
   try {
     const dbReqs = await dbLoadFriendRequests();
-    if (dbReqs) {
+    if (dbReqs && Array.isArray(dbReqs)) {
       serverFriendRequests.clear();
       for (const r of dbReqs) {
         serverFriendRequests.set(r.id, r);
@@ -1410,24 +1408,31 @@ async function refreshFriendRequestsFromDbIfNeeded(force = false) {
     }
   } catch (err) {
     // Ignore query error if DB is warming up
+  } finally {
+    isDbReqsFetching = false;
   }
 }
 
 let lastDbFriendshipsFetch = 0;
+let isDbFriendshipsFetching = false;
 async function refreshFriendshipsFromDbIfNeeded(force = false) {
   if (!isDatabaseConfigured()) return;
   const now = Date.now();
-  if (!force && now - lastDbFriendshipsFetch < 5000) return;
+  if (!force && now - lastDbFriendshipsFetch < 10000) return;
+  if (isDbFriendshipsFetching) return;
+  isDbFriendshipsFetching = true;
   lastDbFriendshipsFetch = now;
   try {
     const dbFs = await dbLoadFriendships();
-    if (dbFs && dbFs.length > 0) {
+    if (dbFs && Array.isArray(dbFs) && dbFs.length > 0) {
       for (const f of dbFs) {
         if (f && f.id) serverFriendships.set(f.id, f);
       }
     }
   } catch (err) {
     // Ignore query error if DB is warming up
+  } finally {
+    isDbFriendshipsFetching = false;
   }
 }
 
@@ -4224,8 +4229,22 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       }
     }, 10000);
 
+    // Trên môi trường Vercel Serverless, chủ động kết thúc êm sau 9.5s trước khi chạm mốc timeout của Lambda
+    let serverlessTimer: any;
+    if (process.env.VERCEL) {
+      serverlessTimer = setTimeout(() => {
+        try {
+          if (!res.writableEnded) {
+            res.write(': sse_cycle\n\n');
+            res.end();
+          }
+        } catch {}
+      }, 9500);
+    }
+
     req.on('close', () => {
       clearInterval(heartbeat);
+      if (serverlessTimer) clearTimeout(serverlessTimer);
       clientSet?.delete(res);
       sseRoomClientMeta.delete(res);
       if (clientSet && clientSet.size === 0) {
@@ -4284,8 +4303,22 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       }
     }, 15000);
 
+    // Trên môi trường Vercel Serverless, chủ động kết thúc êm sau 9.5s trước khi chạm mốc timeout của Lambda
+    let serverlessTimer: any;
+    if (process.env.VERCEL) {
+      serverlessTimer = setTimeout(() => {
+        try {
+          if (!res.writableEnded) {
+            res.write(': sse_cycle\n\n');
+            res.end();
+          }
+        } catch {}
+      }, 9500);
+    }
+
     req.on('close', () => {
       clearInterval(heartbeat);
+      if (serverlessTimer) clearTimeout(serverlessTimer);
       sseGlobalChatClients.delete(res);
       sseGlobalClients.delete(res);
       sseClientMeta.delete(res);

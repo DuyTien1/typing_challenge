@@ -254,9 +254,9 @@ export function getDbPool(): pg.Pool | null {
     pool = new Pool({
       connectionString,
       ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-      max: process.env.VERCEL ? 4 : 20, // Giới hạn connection pool trên Vercel Serverless Function tránh làm tràn quota của Supabase
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      max: process.env.VERCEL ? 3 : 10, // Giới hạn connection pool trên Serverless tránh cạn kiệt PgBouncer
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 3500, // Thất bại nhanh sau 3.5s nếu pool bận, không treo tiến trình
     });
 
     pool.on('error', (err) => {
@@ -264,6 +264,36 @@ export function getDbPool(): pg.Pool | null {
     });
   }
   return pool;
+}
+
+/**
+ * Thực thi câu lệnh SQL an toàn với giới hạn thời gian (Timeout 4000ms),
+ * tuyệt đối không bao giờ làm treo Lambda / Serverless Function trên Vercel.
+ */
+export async function safeDbQuery<T = any>(queryText: string, values?: any[]): Promise<pg.QueryResult<T> | null> {
+  const p = getDbPool();
+  if (!p) return null;
+
+  let timer: any;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(null);
+    }, 4000);
+  });
+
+  try {
+    const queryPromise = p.query<T>(queryText, values);
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    return result;
+  } catch (err: any) {
+    // Không in log spam khi gặp lỗi timeout checkout của PgBouncer
+    if (err?.code !== 'ECHECKOUTTIMEOUT' && !String(err?.message || '').includes('timeout')) {
+      console.warn('[Database] Query warning:', err?.message || err);
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -390,6 +420,11 @@ export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
   const p = getDbPool();
   if (!p) return;
 
+  // Bỏ qua tài khoản khách tạm thời (p_...) để tránh làm tràn quota pooler của PostgreSQL
+  if (!user || !user.id || user.id.startsWith('p_') || user.authProvider === 'guest') {
+    return;
+  }
+
   const query = `
     INSERT INTO app_users (
       id, username, email, display_name, avatar, frame,
@@ -451,7 +486,7 @@ export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
   ];
 
   try {
-    await p.query(query, values);
+    await safeDbQuery(query, values);
   } catch (err) {
     console.error(`[Database] Failed to upsert user ${user.id} (${user.username}):`, err);
   }
@@ -1047,11 +1082,13 @@ export async function dbLoadFriendships(): Promise<ServerFriendshipRecord[]> {
   if (!p) return [];
 
   try {
-    const res = await p.query(`
+    const res = await safeDbQuery(`
       SELECT id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at
       FROM app_friendships
       ORDER BY updated_at DESC
     `);
+
+    if (!res || !res.rows) return [];
 
     return res.rows.map((r) => ({
       id: r.id,
@@ -1064,7 +1101,6 @@ export async function dbLoadFriendships(): Promise<ServerFriendshipRecord[]> {
       updatedAt: Number(r.updated_at) || Date.now(),
     }));
   } catch (err) {
-    console.warn('[Database] dbLoadFriendships error (table may not exist yet):', err);
     return [];
   }
 }
@@ -1074,7 +1110,7 @@ export async function dbSaveFriendship(fsRecord: ServerFriendshipRecord): Promis
   if (!p) return false;
 
   try {
-    await p.query(
+    const res = await safeDbQuery(
       `
       INSERT INTO app_friendships (id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -1099,9 +1135,8 @@ export async function dbSaveFriendship(fsRecord: ServerFriendshipRecord): Promis
         fsRecord.updatedAt || Date.now(),
       ]
     );
-    return true;
+    return Boolean(res);
   } catch (err) {
-    console.error('[Database] dbSaveFriendship error:', err);
     return false;
   }
 }
@@ -1111,10 +1146,9 @@ export async function dbDeleteFriendship(id: string): Promise<boolean> {
   if (!p) return false;
 
   try {
-    await p.query(`DELETE FROM app_friendships WHERE id = $1`, [id]);
-    return true;
+    const res = await safeDbQuery(`DELETE FROM app_friendships WHERE id = $1`, [id]);
+    return Boolean(res);
   } catch (err) {
-    console.error('[Database] dbDeleteFriendship error:', err);
     return false;
   }
 }
@@ -1130,12 +1164,14 @@ export async function dbLoadFriendRequests(): Promise<ServerFriendRequestRecord[
   if (!p) return [];
 
   try {
-    const res = await p.query(`
+    const res = await safeDbQuery(`
       SELECT id, from_user_id, from_username, from_avatar, from_frame, to_user_id, to_username, message, status, created_at, updated_at
       FROM app_friend_requests
       WHERE status = 'pending'
       ORDER BY created_at DESC
     `);
+
+    if (!res || !res.rows) return [];
 
     return res.rows.map((r) => ({
       id: r.id,
@@ -1150,7 +1186,6 @@ export async function dbLoadFriendRequests(): Promise<ServerFriendRequestRecord[
       fromFrame: r.from_frame,
     }));
   } catch (err) {
-    console.warn('[Database] dbLoadFriendRequests error (table may not exist yet):', err);
     return [];
   }
 }
@@ -1160,7 +1195,7 @@ export async function dbSaveFriendRequest(reqRecord: ServerFriendRequestRecord &
   if (!p) return false;
 
   try {
-    await p.query(
+    const res = await safeDbQuery(
       `
       INSERT INTO app_friend_requests (id, from_user_id, from_username, from_avatar, from_frame, to_user_id, to_username, message, status, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -1183,9 +1218,8 @@ export async function dbSaveFriendRequest(reqRecord: ServerFriendRequestRecord &
         Date.now(),
       ]
     );
-    return true;
+    return Boolean(res);
   } catch (err) {
-    console.error('[Database] dbSaveFriendRequest error:', err);
     return false;
   }
 }
@@ -1195,10 +1229,9 @@ export async function dbDeleteFriendRequest(id: string): Promise<boolean> {
   if (!p) return false;
 
   try {
-    await p.query(`DELETE FROM app_friend_requests WHERE id = $1`, [id]);
-    return true;
+    const res = await safeDbQuery(`DELETE FROM app_friend_requests WHERE id = $1`, [id]);
+    return Boolean(res);
   } catch (err) {
-    console.error('[Database] dbDeleteFriendRequest error:', err);
     return false;
   }
 }
