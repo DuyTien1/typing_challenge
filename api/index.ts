@@ -1,3 +1,16 @@
+// Triệt tiêu cảnh báo [DEP0169] DeprecationWarning: url.parse() do Express 4.x (parseurl) trên Node.js 22+
+const origEmitWarning = process.emitWarning;
+process.emitWarning = function (warning: any, ...args: any[]) {
+  if (
+    (typeof warning === 'string' && (warning.includes('DEP0169') || warning.includes('url.parse()'))) ||
+    args[1] === 'DEP0169' ||
+    (args[0] && typeof args[0] === 'object' && (args[0] as any).code === 'DEP0169')
+  ) {
+    return;
+  }
+  return (origEmitWarning as any).apply(process, [warning, ...args]);
+};
+
 import type { Request, Response } from 'express';
 
 // Bảo đảm định danh môi trường Vercel Serverless

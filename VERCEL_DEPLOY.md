@@ -14,6 +14,8 @@ Tài liệu này hướng dẫn chi tiết cách triển khai toàn bộ ứng d
   - Chợ Phường Thị P2P & nhật ký giao dịch (`app_market_listings`, `app_market_logs`)
   - Bảng Vàng WPM Toàn Cầu các thể thức (`app_leaderboards`)
   - Danh sách Bàn Cổ Thần Thức xử phạt (`app_banned_users`)
+  - Quan hệ Đạo Hữu, Hảo cảm & Đạo Lữ Song Tu (`app_friendships`)
+  - Lời mời kết bái Đạo Hữu Realtime (`app_friend_requests`)
   - Phòng đua thời gian thực & tán gẫu liên máy chủ (`app_game_rooms`, `app_chat_messages`)
 
 ---

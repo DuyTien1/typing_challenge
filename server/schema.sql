@@ -125,3 +125,39 @@ CREATE TABLE IF NOT EXISTS app_chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_channel_time ON app_chat_messages (channel, timestamp DESC);
 
+-- 9. BẢNG QUAN HỆ ĐẠO HỮU TRI KỶ (app_friendships) - Lưu trữ bạn bè & đạo lữ vĩnh viễn trên Supabase
+CREATE TABLE IF NOT EXISTS app_friendships (
+  id TEXT PRIMARY KEY,
+  user1_id TEXT NOT NULL,
+  user2_id TEXT NOT NULL,
+  intimacy INTEGER DEFAULT 60,
+  is_daolu BOOLEAN DEFAULT FALSE,
+  daolu_sworn_at BIGINT,
+  last_interact_at BIGINT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_friendships_u1 ON app_friendships (user1_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_u2 ON app_friendships (user2_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_pair ON app_friendships (LEAST(user1_id, user2_id), GREATEST(user1_id, user2_id));
+
+-- 10. BẢNG LỜI MỜI KẾT BÁI ĐẠO HỮU (app_friend_requests) - Đồng bộ lời mời chờ duyệt Realtime
+CREATE TABLE IF NOT EXISTS app_friend_requests (
+  id TEXT PRIMARY KEY,
+  from_user_id TEXT NOT NULL,
+  from_username TEXT NOT NULL,
+  from_avatar TEXT DEFAULT '🧘',
+  from_frame TEXT DEFAULT 'wood',
+  to_user_id TEXT NOT NULL,
+  to_username TEXT NOT NULL,
+  message TEXT DEFAULT 'Kết bái đạo hữu, cùng đàm đạo gõ phím!',
+  status TEXT DEFAULT 'pending',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_friend_req_to ON app_friend_requests (to_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_friend_req_from ON app_friend_requests (from_user_id, status);
+
+

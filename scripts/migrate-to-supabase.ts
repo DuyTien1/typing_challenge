@@ -316,6 +316,69 @@ async function runMigration() {
       }
     }
 
+    // Di chuyển danh sách Đạo Hữu & Lời Mời Kết Bạn (friends.json -> app_friendships & app_friend_requests)
+    const friendsPath = path.resolve(process.cwd(), 'friends.json');
+    if (fs.existsSync(friendsPath)) {
+      console.log('\n👥 Đang chuyển đổi danh sách Đạo Hữu (friends.json)...');
+      try {
+        const rawFriends = JSON.parse(fs.readFileSync(friendsPath, 'utf8') || '{}');
+        const friendships = Array.isArray(rawFriends.friendships) ? rawFriends.friendships : [];
+        const requests = Array.isArray(rawFriends.requests) ? rawFriends.requests : [];
+
+        let fCount = 0;
+        for (const f of friendships) {
+          if (!f || !f.id || !f.user1Id || !f.user2Id) continue;
+          await client.query(`
+            INSERT INTO app_friendships (
+              id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO UPDATE SET
+              intimacy = EXCLUDED.intimacy,
+              is_daolu = EXCLUDED.is_daolu,
+              updated_at = EXCLUDED.updated_at;
+          `, [
+            f.id,
+            f.user1Id,
+            f.user2Id,
+            Number(f.intimacy) || 60,
+            Boolean(f.isDaoLu),
+            f.isDaoLu ? f.updatedAt || Date.now() : null,
+            f.updatedAt || Date.now(),
+            f.createdAt || Date.now(),
+            f.updatedAt || Date.now(),
+          ]);
+          fCount++;
+        }
+
+        let rCount = 0;
+        for (const r of requests) {
+          if (!r || !r.id || !r.fromUserId || !r.toUserId) continue;
+          await client.query(`
+            INSERT INTO app_friend_requests (
+              id, from_user_id, from_username, from_avatar, from_frame, to_user_id, to_username, message, status, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (id) DO NOTHING;
+          `, [
+            r.id,
+            r.fromUserId,
+            r.fromUsername || 'Đạo Hữu',
+            r.fromAvatar || '🧘',
+            r.fromFrame || 'wood',
+            r.toUserId,
+            r.toUsername || 'Đạo Hữu',
+            r.message || 'Kết bái đạo hữu!',
+            'pending',
+            r.createdAt || Date.now(),
+            Date.now(),
+          ]);
+          rCount++;
+        }
+        console.log(`✅ Đã đồng bộ ${fCount} quan hệ Đạo Hữu & ${rCount} lời mời kết bạn lên Supabase.`);
+      } catch (fErr) {
+        console.warn('⚠️ Cảnh báo chuyển đổi friends.json:', fErr);
+      }
+    }
+
     // -------------------------------------------------------------------------
     // BÁO CÁO TỔNG KẾT SAU KHI MIGRATION HOÀN TẤT
     // -------------------------------------------------------------------------
@@ -334,7 +397,11 @@ async function runMigration() {
       UNION ALL
       SELECT 'app_market_logs', count(*) FROM app_market_logs
       UNION ALL
-      SELECT 'app_banned_users', count(*) FROM app_banned_users;
+      SELECT 'app_banned_users', count(*) FROM app_banned_users
+      UNION ALL
+      SELECT 'app_friendships', count(*) FROM app_friendships
+      UNION ALL
+      SELECT 'app_friend_requests', count(*) FROM app_friend_requests;
     `);
 
     for (const row of checkRes.rows) {
