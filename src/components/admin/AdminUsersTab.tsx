@@ -23,9 +23,17 @@ import {
   Crown
 } from 'lucide-react';
 import { soundFx } from '../../utils/audio';
-import { CultivationState, saveStoredCultivationState } from '../../utils/cultivation';
+import { 
+  CultivationState, 
+  saveStoredCultivationState,
+  XIANXIA_REALMS,
+  getSubStage,
+  getLevelForRealmAndTier,
+  getRealmAndTierFromLevel,
+} from '../../utils/cultivation';
 import { getStoredAuthToken } from '../../utils/auth';
 import { AVATAR_FRAMES, AvatarWithFrame } from '../../utils/frames';
+import { broadcastAdminEvent } from '../../utils/adminEventSync';
 
 export interface AdminUserData {
   id: string;
@@ -53,6 +61,7 @@ interface AdminUsersTabProps {
   cultivationState?: CultivationState;
   onUpdateCultivationState?: (nextState: CultivationState) => void;
   onRewardSuccess?: (msg: string) => void;
+  onChangeFrame?: (newFrame: string) => void;
   showToast: (msg: string) => void;
 }
 
@@ -62,6 +71,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   cultivationState,
   onUpdateCultivationState,
   onRewardSuccess,
+  onChangeFrame,
   showToast,
 }) => {
   const [users, setUsers] = useState<AdminUserData[]>([]);
@@ -72,18 +82,24 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
   // Modal states for actions
   const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null);
-  const [actionType, setActionType] = useState<'ban' | 'reward' | 'reset_pwd' | 'delete' | 'set_frame' | null>(null);
+  const [actionType, setActionType] = useState<'ban' | 'reward' | 'set_level' | 'reset_pwd' | 'delete' | 'set_frame' | null>(null);
   const [selectedFrameId, setSelectedFrameId] = useState<string>('admin_gold');
 
   // Form states
   const [banDurationMinutes, setBanDurationMinutes] = useState(120); // 2 hours default
   const [banReason, setBanReason] = useState('Nghi vấn Auto/Macro phím hoặc bất thường WPM');
-  const [rewardStones, setRewardStones] = useState(1000);
-  const [rewardExp, setRewardExp] = useState(2500);
-  const [rewardThoNguyen, setRewardThoNguyen] = useState(0);
-  const [rewardHoTam, setRewardHoTam] = useState(0);
-  const [rewardPhaCanh, setRewardPhaCanh] = useState(0);
+  const [rewardStones, setRewardStones] = useState(5000);
+  const [rewardExp, setRewardExp] = useState(10000);
+  const [rewardThoNguyen, setRewardThoNguyen] = useState(1);
+  const [rewardHoTam, setRewardHoTam] = useState(1);
+  const [rewardPhaCanh, setRewardPhaCanh] = useState(1);
   const [newPasswordInput, setNewPasswordInput] = useState('fasttyping123');
+
+  // Set level & realm states
+  const [selectedRealmIdx, setSelectedRealmIdx] = useState<number>(0);
+  const [selectedTier, setSelectedTier] = useState<number>(1);
+  const [targetLevel, setTargetLevel] = useState<number>(1);
+  const [refillThoNguyen, setRefillThoNguyen] = useState<boolean>(true);
 
   const fetchUsers = async () => {
     try {
@@ -147,6 +163,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         }
         return u;
       }));
+    } else if (currentAction === 'set_level') {
+      const realmName = XIANXIA_REALMS[selectedRealmIdx]?.name || 'Tu Chân';
+      setUsers((prev) => prev.map((u) => {
+        if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
+          return { ...u, cultivationRealm: realmName, cultivationTier: selectedTier };
+        }
+        return u;
+      }));
     } else if (currentAction === 'set_frame') {
       setUsers((prev) => prev.map((u) => {
         if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
@@ -174,6 +198,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         if (rewardThoNguyen > 0) body.thoNguyenPills = rewardThoNguyen;
         if (rewardHoTam > 0) body.hoTamPills = rewardHoTam;
         if (rewardPhaCanh > 0) body.phaCanhPills = rewardPhaCanh;
+      } else if (currentAction === 'set_level') {
+        body.action = 'set_level';
+        body.targetLevel = targetLevel;
+        body.realmIndex = selectedRealmIdx;
+        body.tier = selectedTier;
+        body.refillThoNguyen = refillThoNguyen;
       } else if (currentAction === 'reset_pwd') {
         body.action = 'reset_password';
         body.newPassword = newPasswordInput;
@@ -200,28 +230,42 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         const successMsg = data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${playerDisplayName}` : 'Thao tác thành công!');
         showToast(successMsg);
 
-        if (currentAction === 'reward' && onRewardSuccess) {
-          onRewardSuccess(successMsg);
-        }
+        const isTargetCurrent =
+          (currentUser?.id && (targetUserId === currentUser.id || targetUser.id === currentUser.id)) ||
+          (currentUser?.username && targetUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
+          (currentUsername && targetUsername.toLowerCase() === currentUsername.toLowerCase());
 
-        // If rewarding current user, immediately synchronize their React state & LocalStorage
-        if (currentAction === 'reward' && data.cultivation) {
-          const isTargetCurrent =
-            (currentUser?.id && (targetUserId === currentUser.id || targetUser.id === currentUser.id)) ||
-            (currentUser?.username && targetUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
-            (currentUsername && targetUsername.toLowerCase() === currentUsername.toLowerCase());
-
-          if (isTargetCurrent && onUpdateCultivationState) {
-            onUpdateCultivationState(data.cultivation);
-            saveStoredCultivationState(data.cultivation);
-          }
-        }
-
-        // Always update user item in table with latest cultivation data
+        // 1. REWARD ACTION DISPATCH
         if (currentAction === 'reward') {
+          if (onRewardSuccess) onRewardSuccess(successMsg);
+
+          const cult = data.cultivation;
+          if (cult && isTargetCurrent && onUpdateCultivationState) {
+            onUpdateCultivationState(cult);
+            saveStoredCultivationState(cult);
+          }
+
+          // Broadcast real-time event across tabs & windows
+          broadcastAdminEvent({
+            type: 'cultivation_reward_received',
+            userId: targetUserId,
+            username: targetUsername,
+            displayName: playerDisplayName,
+            cultivation: cult,
+            reward: {
+              spiritStones: rewardStones,
+              exp: rewardExp,
+              thoNguyenPills: rewardThoNguyen,
+              hoTamPills: rewardHoTam,
+              phaCanhPills: rewardPhaCanh,
+            },
+            title: 'BÀN CỔ THẦN ĐIỆN BAN THƯỞNG',
+            message: `🎉 Bàn Cổ Thần Điện ban thưởng: +${rewardStones.toLocaleString()} Linh Thạch, +${rewardExp.toLocaleString()} Tu Vi${rewardThoNguyen > 0 ? `, +${rewardThoNguyen} Thọ Nguyên Đan` : ''}${rewardHoTam > 0 ? `, +${rewardHoTam} Hộ Tâm Đan` : ''}${rewardPhaCanh > 0 ? `, +${rewardPhaCanh} Phá Cảnh Đan` : ''}!`,
+          });
+
+          // Always update user item in table
           setUsers((prev) => prev.map((u) => {
             if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
-              const cult = data.cultivation;
               const stones = cult && typeof cult.linhThach === 'number'
                 ? cult.linhThach
                 : (cult && typeof cult.spiritStones === 'number' ? cult.spiritStones : (u.spiritStones || 0) + rewardStones);
@@ -234,6 +278,82 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             }
             return u;
           }));
+        }
+
+        // 2. SET LEVEL & REALM ACTION DISPATCH
+        if (currentAction === 'set_level') {
+          const cult = data.cultivation;
+          if (cult && isTargetCurrent && onUpdateCultivationState) {
+            onUpdateCultivationState(cult);
+            saveStoredCultivationState(cult);
+          }
+
+          broadcastAdminEvent({
+            type: 'cultivation_level_updated',
+            userId: targetUserId,
+            username: targetUsername,
+            displayName: playerDisplayName,
+            cultivation: cult,
+            level: targetLevel,
+            realmIndex: selectedRealmIdx,
+            tier: selectedTier,
+            realmName: XIANXIA_REALMS[selectedRealmIdx]?.name || 'Tu Chân',
+            title: 'THĂNG CẤP CẢNH GIỚI',
+            message: `🌟 Quản Trị Viên đã sắc phong cảnh giới cho bạn: ${XIANXIA_REALMS[selectedRealmIdx]?.name} Tầng ${selectedTier} (Cấp ${targetLevel})!`,
+          });
+
+          setUsers((prev) => prev.map((u) => {
+            if (u.id === targetUserId || u.username.toLowerCase() === targetUsername.toLowerCase()) {
+              return {
+                ...u,
+                cultivationRealm: (cult && cult.realmName) || XIANXIA_REALMS[selectedRealmIdx]?.name || u.cultivationRealm,
+                cultivationTier: (cult && cult.tier) || selectedTier,
+              };
+            }
+            return u;
+          }));
+        }
+
+        // 3. SET FRAME ACTION DISPATCH
+        if (currentAction === 'set_frame') {
+          if (isTargetCurrent && onChangeFrame) {
+            onChangeFrame(selectedFrameId);
+          }
+
+          broadcastAdminEvent({
+            type: 'frame_updated',
+            userId: targetUserId,
+            username: targetUsername,
+            frame: selectedFrameId,
+            title: 'BAN THƯỞNG KHUNG VIỀN',
+            message: `👑 Quản Trị Viên đã ban thưởng khung viền [${selectedFrameId}] cho bạn!`,
+          });
+        }
+
+        // 4. BAN ACTION DISPATCH
+        if (currentAction === 'ban') {
+          broadcastAdminEvent({
+            type: 'user_banned',
+            userId: targetUserId,
+            username: targetUsername,
+            reason: banReason,
+            durationMs: banDurationMinutes * 60 * 1000,
+            bannedUntil: Date.now() + banDurationMinutes * 60 * 1000,
+            remainingMinutes: banDurationMinutes,
+            title: 'LỆNH TRỪNG PHẠT BÀN CỔ',
+            message: `⚡ Bạn đã bị cấm thi đấu ${banDurationMinutes} phút: ${banReason}`,
+          });
+        }
+
+        // 5. RESET PASSWORD DISPATCH
+        if (currentAction === 'reset_pwd') {
+          broadcastAdminEvent({
+            type: 'password_reset_notice',
+            userId: targetUserId,
+            username: targetUsername,
+            title: 'ĐẶT LẠI MẬT KHẨU',
+            message: `🔑 Mật khẩu tài khoản của bạn đã được quản trị viên đặt lại: ${newPasswordInput}`,
+          });
         }
 
         // Sync with backend to ensure perfect consistency
@@ -264,6 +384,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       const data = await res.json();
       if (data.success) {
         soundFx.playSuccess();
+        broadcastAdminEvent({
+          type: 'user_unbanned',
+          userId: u.id,
+          username: u.username,
+          title: 'HÓA GIẢI PHONG ẤN',
+          message: `✨ Lệnh cấm thi đấu cho @${u.displayName || u.username} đã được giải trừ!`,
+        });
         showToast(data.message || `Đã gỡ cấm cho ${u.username}!`);
         fetchUsers();
       } else {
@@ -290,6 +417,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       const data = await res.json();
       if (data.success) {
         soundFx.playSuccess();
+        broadcastAdminEvent({
+          type: 'admin_role_updated',
+          userId: u.id,
+          username: u.username,
+          isAdmin: !u.isAdmin,
+          title: 'PHÂN QUYỀN HỆ THỐNG',
+          message: !u.isAdmin
+            ? `🛡️ Đã phong Quản Trị Viên cho @${u.displayName || u.username}!`
+            : `🛡️ Đã chuyển quyền @${u.displayName || u.username} về Thành Viên.`,
+        });
         showToast(data.message || 'Thay đổi quyền thành công!');
         fetchUsers();
       } else {
@@ -528,10 +665,31 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                       setActionType('reward');
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:border-amber-500/60 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                    title="Tặng thưởng Linh Thạch hoặc Tu Vi"
+                    title="Tặng thưởng Linh Thạch, Tu Vi, Đan Dược"
                   >
                     <Gift className="w-3.5 h-3.5 text-amber-400" />
                     <span>Thưởng</span>
+                  </button>
+
+                  {/* Sắc Phong Cảnh Giới / Thăng Cấp Trực Tiếp */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playKeyClick();
+                      setSelectedUser(u);
+                      const rIdx = XIANXIA_REALMS.findIndex((r) => r.name === u.cultivationRealm);
+                      const initR = rIdx >= 0 ? rIdx : 0;
+                      const initT = Math.max(1, Math.min(10, u.cultivationTier || 1));
+                      setSelectedRealmIdx(initR);
+                      setSelectedTier(initT);
+                      setTargetLevel(getLevelForRealmAndTier(initR, initT));
+                      setActionType('set_level');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:border-purple-500/60 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                    title="Cài đặt cấp độ & sắc phong cảnh giới tu vi trực tiếp"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Cấp</span>
                   </button>
 
                   {/* Gắn Khung Đại Diện */}
@@ -600,20 +758,22 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       {/* Action Dialog / Modal Popover */}
       {actionType && selectedUser && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full max-w-md bg-slate-950 border rounded-2xl shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 ${
-            actionType === 'delete' ? 'border-rose-500/50 shadow-rose-950/40' : 'border-amber-500/40'
+          <div className={`w-full ${actionType === 'set_level' ? 'max-w-lg' : 'max-w-md'} bg-slate-950 border rounded-2xl shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 ${
+            actionType === 'delete' ? 'border-rose-500/50 shadow-rose-950/40' : (actionType === 'set_level' ? 'border-purple-500/50 shadow-purple-950/40' : 'border-amber-500/40')
           }`}>
             {/* Modal Title */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h5 className="font-bold text-sm text-white flex items-center gap-2">
                 {actionType === 'ban' && <ShieldAlert className="w-4 h-4 text-rose-500" />}
                 {actionType === 'reward' && <Gift className="w-4 h-4 text-amber-400" />}
+                {actionType === 'set_level' && <Sparkles className="w-4 h-4 text-purple-400" />}
                 {actionType === 'set_frame' && <Crown className="w-4 h-4 text-amber-400" />}
                 {actionType === 'reset_pwd' && <Key className="w-4 h-4 text-sky-400" />}
                 {actionType === 'delete' && <Trash2 className="w-4 h-4 text-rose-500" />}
                 <span>
                   {actionType === 'ban' && `Thi Hành Phạt: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'reward' && `Ban Thưởng: ${selectedUser.displayName || selectedUser.username}`}
+                  {actionType === 'set_level' && `Sắc Phong Cảnh Giới: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'set_frame' && `Gắn Khung Đại Diện: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'reset_pwd' && `Đặt Lại Mật Khẩu: ${selectedUser.displayName || selectedUser.username}`}
                   {actionType === 'delete' && `Xác Nhận Xóa Vĩnh Viễn: ${selectedUser.displayName || selectedUser.username}`}
@@ -855,6 +1015,149 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               </div>
             )}
 
+            {/* SET LEVEL & REALM FORM */}
+            {actionType === 'set_level' && (
+              <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+                {/* Live Preview Card */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-br from-purple-950/40 via-slate-900 to-slate-950 border border-purple-500/40 flex items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-purple-900/40 border border-purple-500/50 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                      {XIANXIA_REALMS[selectedRealmIdx]?.icon || '🧘'}
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-white flex items-center gap-2">
+                        <span>{selectedUser.displayName || selectedUser.username}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                          Cấp {targetLevel}
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-amber-300 mt-0.5">
+                        {XIANXIA_REALMS[selectedRealmIdx]?.name} • Tầng {selectedTier} ({getSubStage(selectedTier)})
+                      </div>
+                      <div className="text-[10px] text-purple-300/80 font-medium mt-0.5">
+                        Danh hiệu: &ldquo;{XIANXIA_REALMS[selectedRealmIdx]?.titleName}&rdquo;
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-500 block">Hiện tại:</span>
+                    <span className="text-xs font-mono text-slate-300 font-bold">
+                      {selectedUser.cultivationRealm || 'Luyện Khí'} T.{selectedUser.cultivationTier || 1}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Chọn 1 trong 12 Cảnh Giới */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-300 flex items-center justify-between">
+                    <span>1. Chọn Cảnh Giới ({XIANXIA_REALMS.length} cảnh giới):</span>
+                    <span className="text-purple-400 font-mono text-[11px] font-bold">
+                      {XIANXIA_REALMS[selectedRealmIdx]?.name}
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto p-1 bg-slate-900/60 rounded-xl border border-slate-800">
+                    {XIANXIA_REALMS.map((r, idx) => {
+                      const isSel = selectedRealmIdx === idx;
+                      return (
+                        <button
+                          key={r.id || idx}
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            setSelectedRealmIdx(idx);
+                            setTargetLevel(getLevelForRealmAndTier(idx, selectedTier));
+                          }}
+                          className={`p-2 rounded-xl text-left transition-all cursor-pointer border flex items-center gap-2 ${
+                            isSel
+                              ? 'bg-purple-600/30 border-purple-400 text-white font-black shadow-md'
+                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className="text-base shrink-0">{r.icon}</span>
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-bold truncate leading-tight">{r.name}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">Cấp {idx * 10 + 1}-{idx * 10 + 10}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Chọn Tầng (1 -> 10) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-300">
+                      2. Chọn Tầng Tu Vi (1 - 10):
+                    </label>
+                    <span className="text-xs font-bold text-amber-400">
+                      Tầng {selectedTier} ({getSubStage(selectedTier)})
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 sm:grid-cols-10 gap-1">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((t) => {
+                      const isSel = selectedTier === t;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            soundFx.playKeyClick();
+                            setSelectedTier(t);
+                            setTargetLevel(getLevelForRealmAndTier(selectedRealmIdx, t));
+                          }}
+                          className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border text-center ${
+                            isSel
+                              ? 'bg-amber-400 text-slate-950 border-amber-300 font-black shadow-sm'
+                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          T.{t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Target Level input & Refill Lifespan */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-800">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Cấp Độ Chính Xác (1 - 1000):
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={targetLevel}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(1000, Number(e.target.value) || 1));
+                        setTargetLevel(val);
+                        const { realmIndex, tier } = getRealmAndTierFromLevel(val);
+                        setSelectedRealmIdx(realmIndex);
+                        setSelectedTier(tier);
+                      }}
+                      className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-purple-300 font-mono font-bold focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 sm:mt-5">
+                    <input
+                      type="checkbox"
+                      id="refillThoNguyenChk"
+                      checked={refillThoNguyen}
+                      onChange={(e) => setRefillThoNguyen(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700 focus:ring-purple-500 cursor-pointer"
+                    />
+                    <label htmlFor="refillThoNguyenChk" className="text-xs text-slate-300 font-semibold cursor-pointer select-none">
+                      Hồi đầy 100% Thọ Nguyên ({240 + selectedRealmIdx * 200 + (selectedTier - 1) * 20}h)
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* RESET PASSWORD FORM */}
             {actionType === 'reset_pwd' && (
               <div className="space-y-3">
@@ -973,6 +1276,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 className={`px-4 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-lg ${
                   actionType === 'delete'
                     ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-950/50'
+                    : actionType === 'set_level'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-950/50'
                     : 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 hover:from-amber-400 hover:to-yellow-300'
                 }`}
               >
@@ -980,6 +1285,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Xác Nhận Xóa Vĩnh Viễn</span>
+                  </>
+                ) : actionType === 'set_level' ? (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Xác Nhận Đổi Cảnh Giới</span>
                   </>
                 ) : (
                   <>

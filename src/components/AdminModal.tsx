@@ -101,6 +101,7 @@ interface AdminModalProps {
   onUpdateCultivationState?: (nextState: CultivationState) => void;
   onSyncAchievements?: (unlockedIds: string[]) => void;
   onRewardSuccess?: (message: string) => void;
+  onChangeFrame?: (newFrame: string) => void;
 }
 
 type AdminTab = 
@@ -139,6 +140,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onUpdateCultivationState,
   onSyncAchievements,
   onRewardSuccess,
+  onChangeFrame,
 }) => {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -906,6 +908,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   cultivationState={cultivationState}
                   onUpdateCultivationState={onUpdateCultivationState}
                   onRewardSuccess={onRewardSuccess}
+                  onChangeFrame={onChangeFrame}
                   showToast={showToast}
                 />
               )}

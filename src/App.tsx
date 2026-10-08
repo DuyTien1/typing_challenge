@@ -51,6 +51,7 @@ import {
   checkClientBanStatus,
   getStoredBanInfo,
   saveStoredBanInfo,
+  clearStoredBanInfo,
   executeBanPenalty,
   syncServerBanStatus,
 } from './utils/banManager';
@@ -2848,25 +2849,223 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Lắng nghe sự kiện Bàn Cổ Thần Điện ban thưởng tài nguyên thời gian thực từ Admin qua SSE
+  // Lắng nghe toàn bộ sự kiện Ban Quản Trị thời gian thực (Ban Thưởng, Cảnh Giới, Khung, Cấm đấu, Phân quyền)
   useEffect(() => {
+    const isTargetMe = (detail: any): boolean => {
+      if (!detail) return false;
+      const targetUid = String(detail.userId || '').toLowerCase().trim();
+      const targetUname = String(detail.username || '').toLowerCase().trim();
+      const myUid = String(currentUser?.id || currentUserId || '').toLowerCase().trim();
+      const myUname = String(currentUser?.username || username || '').toLowerCase().trim();
+
+      if (!targetUid && !targetUname) return true; // Global broadcast
+      if (targetUid && myUid && targetUid === myUid) return true;
+      if (targetUname && myUname && targetUname === myUname) return true;
+      return false;
+    };
+
+    // 1. Nhận thưởng Linh Thạch, Tu Vi, Đan Dược
     const handleAdminReward = (e: any) => {
       const detail = e.detail;
+      if (!isTargetMe(detail)) return;
+
       if (detail?.cultivation) {
         const syncRes = ensureDailySync(detail.cultivation);
         setCultivationState(syncRes.updatedState);
         saveStoredCultivationState(syncRes.updatedState);
         soundFx.playLevelUp();
-        if (currentUser) {
-          setCurrentUser((prev) => (prev ? { ...prev, cultivation: syncRes.updatedState } : prev));
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, cultivation: syncRes.updatedState };
+          try {
+            localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+
+        if (detail.message) {
+          window.dispatchEvent(
+            new CustomEvent('admin_reward_notification', {
+              detail: {
+                title: 'BÀN CỔ THẦN ĐIỆN BAN THƯỞNG',
+                message: detail.message,
+                timestamp: Date.now(),
+              },
+            })
+          );
         }
       }
     };
+
+    // 2. Nhận thăng cấp cảnh giới & tầng tu vi trực tiếp
+    const handleLevelUpdate = (e: any) => {
+      const detail = e.detail;
+      if (!isTargetMe(detail)) return;
+
+      if (detail?.cultivation) {
+        const syncRes = ensureDailySync(detail.cultivation);
+        setCultivationState(syncRes.updatedState);
+        saveStoredCultivationState(syncRes.updatedState);
+        soundFx.playVictory();
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, cultivation: syncRes.updatedState };
+          try {
+            localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+
+        window.dispatchEvent(
+          new CustomEvent('admin_reward_notification', {
+            detail: {
+              title: 'THĂNG CẤP CẢNH GIỚI',
+              message: detail.message || `Cảnh giới của bạn đã được nâng lên ${detail.realmName || syncRes.updatedState.realmName} Tầng ${detail.tier || syncRes.updatedState.tier}!`,
+              timestamp: Date.now(),
+            },
+          })
+        );
+      }
+    };
+
+    // 3. Nhận ban thưởng khung viền đại diện
+    const handleFrameUpdate = (e: any) => {
+      const detail = e.detail;
+      if (!isTargetMe(detail) || !detail.frame) return;
+
+      setUserFrame(detail.frame);
+      setStoredFrame(detail.frame);
+      metaRef.current.frame = detail.frame;
+      soundFx.playAchievementUnlock();
+
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, frame: detail.frame };
+        try {
+          localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+          localStorage.setItem('fasttyping_user_frame', detail.frame);
+        } catch {}
+        return updated;
+      });
+
+      window.dispatchEvent(
+        new CustomEvent('admin_reward_notification', {
+          detail: {
+            title: 'BAN THƯỞNG KHUNG VIỀN',
+            message: detail.message || `Bạn vừa được ban thưởng khung viền mới [${detail.frame}]!`,
+            timestamp: Date.now(),
+          },
+        })
+      );
+    };
+
+    // 4. Án phạt cấm thi đấu (Bàn Cổ Thần Phạt)
+    const handleUserBanned = (e: any) => {
+      const detail = e.detail;
+      if (!isTargetMe(detail)) return;
+
+      const banTime = detail.bannedUntil || (Date.now() + (detail.durationMs || 7200000));
+      saveStoredBanInfo(banTime, detail.reason || 'Quyết định từ Ban Quản Trị');
+      setIsBanModalOpen(true);
+      handleLeaveRoom();
+      soundFx.playError();
+
+      window.dispatchEvent(
+        new CustomEvent('admin_reward_notification', {
+          detail: {
+            title: 'LỆNH TRỪNG PHẠT BÀN CỔ',
+            message: detail.message || `Tài khoản đã bị cấm thi đấu: ${detail.reason || 'Vi phạm quy định'}`,
+            timestamp: Date.now(),
+          },
+        })
+      );
+    };
+
+    // 5. Hóa giải lệnh cấm thi đấu
+    const handleUserUnbanned = (e: any) => {
+      const detail = e.detail;
+      if (!isTargetMe(detail)) return;
+
+      clearStoredBanInfo();
+      setIsBanModalOpen(false);
+      soundFx.playSuccess();
+
+      window.dispatchEvent(
+        new CustomEvent('admin_reward_notification', {
+          detail: {
+            title: 'HÓA GIẢI PHONG ẤN',
+            message: detail.message || 'Lệnh cấm thi đấu đã được giải trừ, bạn có thể tự do tham gia thi đấu!',
+            timestamp: Date.now(),
+          },
+        })
+      );
+    };
+
+    // 6. Cập nhật quyền Quản Trị Viên (Admin)
+    const handleAdminRoleUpdate = (e: any) => {
+      const detail = e.detail;
+      if (!isTargetMe(detail)) return;
+
+      const isAdm = Boolean(detail.isAdmin);
+      setIsAdmin(isAdm);
+      setAdminStatus(isAdm);
+      soundFx.playSuccess();
+
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, isAdmin: isAdm };
+        try {
+          localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+          localStorage.setItem('fasttyping_is_admin', isAdm ? 'true' : 'false');
+        } catch {}
+        return updated;
+      });
+
+      window.dispatchEvent(
+        new CustomEvent('admin_reward_notification', {
+          detail: {
+            title: 'PHÂN QUYỀN HỆ THỐNG',
+            message: detail.message || (isAdm ? 'Bạn đã được bổ nhiệm làm Quản Trị Viên!' : 'Quyền Quản Trị Viên của bạn đã kết thúc.'),
+            timestamp: Date.now(),
+          },
+        })
+      );
+    };
+
+    // 7. Thông báo đặt lại mật khẩu
+    const handlePasswordReset = (e: any) => {
+      const detail = e.detail;
+      if (!isTargetMe(detail)) return;
+
+      window.dispatchEvent(
+        new CustomEvent('admin_reward_notification', {
+          detail: {
+            title: 'ĐẶT LẠI MẬT KHẨU',
+            message: detail.message || 'Mật khẩu tài khoản của bạn đã được quản trị viên đặt lại!',
+            timestamp: Date.now(),
+          },
+        })
+      );
+    };
+
     window.addEventListener('cultivation_reward_received', handleAdminReward);
+    window.addEventListener('cultivation_level_updated', handleLevelUpdate);
+    window.addEventListener('frame_updated', handleFrameUpdate);
+    window.addEventListener('user_banned', handleUserBanned);
+    window.addEventListener('user_unbanned', handleUserUnbanned);
+    window.addEventListener('admin_role_updated', handleAdminRoleUpdate);
+    window.addEventListener('password_reset_notice', handlePasswordReset);
+
     return () => {
       window.removeEventListener('cultivation_reward_received', handleAdminReward);
+      window.removeEventListener('cultivation_level_updated', handleLevelUpdate);
+      window.removeEventListener('frame_updated', handleFrameUpdate);
+      window.removeEventListener('user_banned', handleUserBanned);
+      window.removeEventListener('user_unbanned', handleUserUnbanned);
+      window.removeEventListener('admin_role_updated', handleAdminRoleUpdate);
+      window.removeEventListener('password_reset_notice', handlePasswordReset);
     };
-  }, [currentUser, setCultivationState]);
+  }, [currentUser, currentUserId, username, setCultivationState, handleLeaveRoom]);
 
   const handleAuthSuccess = (user: UserAccount) => {
     applyAuthenticatedUser(user);

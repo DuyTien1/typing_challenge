@@ -7505,7 +7505,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
   });
 
   // POST /api/admin/users/action: Execute administrative actions on accounts
-  app.post('/api/admin/users/action', (req, res) => {
+  app.post('/api/admin/users/action', async (req, res) => {
     const { action, username, userId, reason, durationMs, spiritStones, exp, newPassword, thoNguyenPills, hoTamPills, phaCanhPills } = req.body || {};
     const targetUsername = String(username || '').trim();
     if (!targetUsername && !userId) {
@@ -7533,6 +7533,49 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
              getUserByDisplayNameOrUsername(cleanTarget);
     }
 
+    if (!user && isDatabaseConfigured()) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          let dbUserRow: any = null;
+          if (userId) {
+            const q = await pool.query('SELECT * FROM app_users WHERE id = $1', [userId]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && targetUsername) {
+            const cleanTarget = targetUsername.replace(/^@/, '').trim();
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(username) = LOWER($1)', [cleanTarget]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (dbUserRow) {
+            user = {
+              id: dbUserRow.id,
+              username: dbUserRow.username,
+              displayName: dbUserRow.display_name || dbUserRow.username,
+              email: dbUserRow.email,
+              avatar: dbUserRow.avatar || '👤',
+              frame: dbUserRow.frame || 'default',
+              isAdmin: Boolean(dbUserRow.is_admin),
+              isVerified: Boolean(dbUserRow.is_verified),
+              authProvider: dbUserRow.auth_provider || 'email',
+              passwordHash: dbUserRow.password_hash,
+              salt: dbUserRow.salt,
+              sessionTokens: dbUserRow.session_tokens || [],
+              cultivation: dbUserRow.cultivation || {},
+              bestWpm: dbUserRow.best_wpm || 0,
+              bestWpmRecord: dbUserRow.best_wpm_record,
+              totalGames: dbUserRow.total_games || 0,
+              createdAt: Number(dbUserRow.created_at) || Date.now(),
+              updatedAt: Number(dbUserRow.updated_at) || Date.now(),
+            };
+            serverUsers.set(user.id, user);
+          }
+        }
+      } catch (err) {
+        console.warn('[AdminAction] Lỗi tra cứu tài khoản từ cơ sở dữ liệu:', err);
+      }
+    }
+
     if (action === 'ban') {
       const ms = Number(durationMs) || (2 * 60 * 60 * 1000);
       const cleanReason = String(reason || 'Quyết định từ Ban Quản Trị Hệ Thống').trim();
@@ -7551,6 +7594,21 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         highlightText: `Admin phạt ${targetDisplayName}`,
         personaId: 'ban_co',
       });
+
+      const banEvent = {
+        type: 'user_banned',
+        username: user?.username || targetUsername,
+        userId: user?.id || userId,
+        reason: cleanReason,
+        durationMs: ms,
+        bannedUntil: Date.now() + ms,
+        remainingMinutes: Math.round(ms / 60000),
+        message: `⚡ Bạn đã bị cấm thi đấu ${Math.round(ms / 60000)} phút: ${cleanReason}`,
+      };
+      broadcastToUser(targetUsername, banEvent);
+      if (user?.id) broadcastToUser(user.id, banEvent);
+      if (user?.username && user.username !== targetUsername) broadcastToUser(user.username, banEvent);
+
       res.json({ success: true, message: `Đã cấm tài khoản ${targetDisplayName} thành công!` });
       return;
     }
@@ -7567,6 +7625,17 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       }
       saveBansToFile();
       const targetDisplayName = user?.displayName || user?.username || targetUsername;
+
+      const unbanEvent = {
+        type: 'user_unbanned',
+        username: targetUsername,
+        userId: user?.id || userId,
+        message: '✨ Lệnh phong ấn đã được giải trừ, bạn có thể tự do tham gia thi đấu!',
+      };
+      broadcastToUser(targetUsername, unbanEvent);
+      if (user?.id) broadcastToUser(user.id, unbanEvent);
+      if (user?.username && user.username !== targetUsername) broadcastToUser(user.username, unbanEvent);
+
       res.json({ success: true, message: `Đã gỡ cấm cho ${targetDisplayName}!` });
       return;
     }
@@ -7583,6 +7652,19 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       user.isAdmin = !user.isAdmin;
       saveUsersToFile();
       const targetDisplayName = user.displayName || user.username;
+
+      const adminRoleEvent = {
+        type: 'admin_role_updated',
+        username: user.username,
+        userId: user.id,
+        isAdmin: user.isAdmin,
+        message: user.isAdmin
+          ? '🛡️ Bạn đã được thăng cấp làm Quản Trị Viên hệ thống!'
+          : '🛡️ Quyền Quản Trị Viên của bạn đã được chuyển về Thành Viên.',
+      };
+      broadcastToUser(user.username, adminRoleEvent);
+      broadcastToUser(user.id, adminRoleEvent);
+
       res.json({
         success: true,
         isAdmin: user.isAdmin,
@@ -7621,10 +7703,19 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       try {
         broadcastOnlinePresence();
         broadcastLeaderboard();
-        broadcastToUser(user.username, { type: 'frame_updated', frame: frameId, userId: user.id });
       } catch (bcErr) {
         console.warn('[Admin] Lỗi broadcast frame update:', bcErr);
       }
+
+      const frameEvent = {
+        type: 'frame_updated',
+        frame: frameId,
+        userId: user.id,
+        username: user.username,
+        message: `👑 Quản Trị Viên đã ban thưởng khung viền [${frameId}] cho bạn!`,
+      };
+      broadcastToUser(user.username, frameEvent);
+      broadcastToUser(user.id, frameEvent);
 
       const targetDisplayName = user.displayName || user.username;
 
@@ -7644,6 +7735,109 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         success: true,
         frame: frameId,
         message: `Đã gắn khung viền [${frameId}] cho tài khoản @${targetDisplayName} thành công!`,
+      });
+      return;
+    }
+
+    if (action === 'set_level' || action === 'set_realm') {
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người chơi để đặt cảnh giới' });
+        return;
+      }
+
+      if (!user.cultivation || typeof user.cultivation !== 'object') {
+        user.cultivation = {
+          level: 1,
+          realmIndex: 0,
+          tier: 1,
+          realmName: 'Luyện Khí Kỳ',
+          subStage: 'Sơ Kỳ',
+          titleName: 'Luyện Khí Tu Sĩ',
+          exp: 0,
+          maxExp: 100,
+          thoNguyen: 240,
+          maxThoNguyen: 240,
+          lastThoNguyenDecay: Date.now(),
+          lastCultivateTime: Date.now(),
+          dailyExpEarned: 0,
+          dailyExpDate: getVietnamDateStr(),
+          pillCount: { thoNguyen: 0, hoTam: 0, phaCanh: 0 },
+          dailyQuests: [],
+          dailyQuestsDate: getVietnamDateStr(),
+          linhThach: 0,
+          historyLog: [],
+        };
+      }
+
+      const targetLvl = Math.max(1, Math.min(1000, Math.round(Number(req.body?.targetLevel || req.body?.level) || 1)));
+      const customRealmIdx = typeof req.body?.realmIndex === 'number' ? Math.max(0, Math.min(11, req.body.realmIndex)) : undefined;
+      const customTier = typeof req.body?.tier === 'number' ? Math.max(1, Math.min(10, req.body.tier)) : undefined;
+
+      let realmIdx = customRealmIdx !== undefined ? customRealmIdx : Math.min(11, Math.floor((targetLvl - 1) / 10));
+      let tier = customTier !== undefined ? customTier : (((targetLvl - 1) % 10) + 1);
+
+      const realmMeta = XIANXIA_REALM_METAS[realmIdx] || XIANXIA_REALM_METAS[0];
+      const subStage = tier <= 3 ? 'Sơ Kỳ' : tier <= 6 ? 'Trung Kỳ' : tier <= 9 ? 'Hậu Kỳ' : 'Đại Viên Mãn';
+      const baseMaxExp = 100;
+      const factor = Math.pow(1.25, tier - 1);
+      const realmExpMultiplier = Math.pow(2.2, realmIdx);
+      const calculatedMaxExp = Math.round(baseMaxExp * factor * realmExpMultiplier);
+
+      const maxLifespan = 240 + realmIdx * 200 + (tier - 1) * 20;
+
+      user.cultivation.level = targetLvl;
+      user.cultivation.realmIndex = realmIdx;
+      user.cultivation.tier = tier;
+      user.cultivation.realmName = realmMeta.name;
+      user.cultivation.subStage = subStage;
+      user.cultivation.titleName = realmMeta.titleName;
+      user.cultivation.maxExp = calculatedMaxExp;
+      user.cultivation.exp = Math.min(Number(user.cultivation.exp) || 0, calculatedMaxExp);
+      user.cultivation.maxThoNguyen = maxLifespan;
+      if (req.body?.refillThoNguyen !== false) {
+        user.cultivation.thoNguyen = maxLifespan;
+      }
+
+      const logText = `⚡ Quản Trị Viên sắc phong cảnh giới: ${realmMeta.name} Tầng ${tier} (${subStage}) - Cấp ${targetLvl}`;
+      user.cultivation.historyLog = [logText, ...(Array.isArray(user.cultivation.historyLog) ? user.cultivation.historyLog.slice(0, 19) : [])];
+      user.updatedAt = Date.now();
+
+      serverUsers.set(user.id, user);
+      saveUsersToFile();
+      syncUserCultivationToCache(user);
+      if (isDatabaseConfigured()) {
+        dbSaveUser(user).catch((err) => console.error('[Database] Lỗi lưu cấp user:', err));
+      }
+
+      const targetDisplayName = user.displayName || user.username;
+
+      broadcastHeavenlyDaoEvent({
+        title: 'THIÊN BAN CẢNH GIỚI',
+        eventType: 'breakthrough',
+        targetUser: targetDisplayName,
+        content: `Ban Quản Trị sắc phong @${targetDisplayName} đạt cảnh giới ${realmMeta.name} Tầng ${tier} (Cấp ${targetLvl})!`,
+        highlightText: `@${targetDisplayName} đạt ${realmMeta.name}`,
+        personaId: 'chuong_mon',
+      });
+
+      const levelEvent = {
+        type: 'cultivation_level_updated',
+        userId: user.id,
+        username: user.username,
+        cultivation: user.cultivation,
+        level: targetLvl,
+        realmIndex: realmIdx,
+        tier: tier,
+        realmName: realmMeta.name,
+        message: `🌟 Quản Trị Viên đã sắc phong cảnh giới cho bạn: ${realmMeta.name} Tầng ${tier} (Cấp ${targetLvl})!`,
+      };
+      broadcastToUser(user.username, levelEvent);
+      broadcastToUser(user.id, levelEvent);
+
+      res.json({
+        success: true,
+        cultivation: user.cultivation,
+        message: `Đã thiết lập cảnh giới cho @${targetDisplayName} thành ${realmMeta.name} Tầng ${tier} (Cấp ${targetLvl}) thành công!`,
       });
       return;
     }
@@ -7770,30 +7964,24 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         personaId: 'ban_co',
       });
 
-      // 8. Bắn sự kiện thời gian thực (SSE) trực tiếp đến máy khách của người chơi nếu đang trực tuyến
-      const targetUserIdLower = user.id ? String(user.id).toLowerCase() : '';
-      const targetUsernameLower = user.username ? String(user.username).toLowerCase() : '';
-      for (const [resClient, meta] of sseClientMeta.entries()) {
-        const matchUser = 
-          (meta.userId && targetUserIdLower && String(meta.userId).toLowerCase() === targetUserIdLower) ||
-          (meta.username && targetUsernameLower && String(meta.username).toLowerCase() === targetUsernameLower);
-        if (matchUser) {
-          try {
-            resClient.write(`data: ${JSON.stringify({
-              type: 'cultivation_reward_received',
-              cultivation: user.cultivation,
-              reward: {
-                spiritStones: addedStones,
-                exp: addedExp,
-                thoNguyenPills: addedThoNguyen,
-                hoTamPills: addedHoTam,
-                phaCanhPills: addedPhaCanh,
-              },
-              message: `🎉 Ban Quản Trị đã ban thưởng cho bạn: ${logParts.join(', ')}!`,
-            })}\n\n`);
-          } catch {}
-        }
-      }
+      // 8. Bắn sự kiện thời gian thực (SSE & Polling & Room) trực tiếp đến máy khách của người chơi
+      const rewardEvent = {
+        type: 'cultivation_reward_received',
+        userId: user.id,
+        username: user.username,
+        cultivation: user.cultivation,
+        reward: {
+          spiritStones: addedStones,
+          exp: addedExp,
+          thoNguyenPills: addedThoNguyen,
+          hoTamPills: addedHoTam,
+          phaCanhPills: addedPhaCanh,
+        },
+        message: `🎉 Bàn Cổ Thần Điện ban thưởng cho bạn: ${logParts.join(', ')}!`,
+      };
+      broadcastToUser(user.username, rewardEvent);
+      broadcastToUser(user.id, rewardEvent);
+      if (targetUsername && targetUsername !== user.username) broadcastToUser(targetUsername, rewardEvent);
 
       res.json({
         success: true,
@@ -7815,6 +8003,16 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       user.salt = salt;
       saveUsersToFile();
       const targetDisplayName = user.displayName || user.username;
+
+      const resetNoticeEvent = {
+        type: 'password_reset_notice',
+        username: user.username,
+        userId: user.id,
+        message: `🔑 Mật khẩu tài khoản của bạn đã được quản trị viên đặt lại: ${newPwd}`,
+      };
+      broadcastToUser(user.username, resetNoticeEvent);
+      broadcastToUser(user.id, resetNoticeEvent);
+
       res.json({
         success: true,
         message: `Đã đặt lại mật khẩu cho ${targetDisplayName} thành công! Mật khẩu mới: ${newPwd}`,

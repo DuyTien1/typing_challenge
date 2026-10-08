@@ -26,6 +26,7 @@ import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardSto
 import { getStoredAuthToken, getStoredCachedUser } from './auth';
 import { saveDaoDecree } from './heavenlyDaoBot';
 import { getStoredSects } from './cultivation';
+import { broadcastAdminEvent } from './adminEventSync';
 
 export interface PresenceUserMeta {
   userId?: string;
@@ -653,6 +654,16 @@ export function subscribeToRoom(
                 window.dispatchEvent(new CustomEvent('room_invite', { detail: event }));
               }
             }
+          } else if (
+            event.type === 'cultivation_reward_received' ||
+            event.type === 'cultivation_level_updated' ||
+            event.type === 'frame_updated' ||
+            event.type === 'user_banned' ||
+            event.type === 'user_unbanned' ||
+            event.type === 'admin_role_updated' ||
+            event.type === 'password_reset_notice'
+          ) {
+            broadcastAdminEvent(event);
           }
         } catch {
           // Ignore
@@ -2154,10 +2165,16 @@ export function subscribeToGlobalChat(
                 window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: ev }));
               }
             }
-          } else if (ev.type === 'cultivation_reward_received' && ev.cultivation) {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('cultivation_reward_received', { detail: ev }));
-            }
+          } else if (
+            ev.type === 'cultivation_reward_received' ||
+            ev.type === 'cultivation_level_updated' ||
+            ev.type === 'frame_updated' ||
+            ev.type === 'user_banned' ||
+            ev.type === 'user_unbanned' ||
+            ev.type === 'admin_role_updated' ||
+            ev.type === 'password_reset_notice'
+          ) {
+            broadcastAdminEvent(ev);
           }
         } catch {
           // Ignore
@@ -2190,14 +2207,26 @@ export function subscribeToGlobalChat(
       }
       if (Array.isArray(res.friendEvents) && res.friendEvents.length > 0) {
         for (const ev of res.friendEvents) {
-          if (onFriendEvent) onFriendEvent(ev);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: ev }));
-            if (ev.type === 'friend_request_received') {
-              window.dispatchEvent(new CustomEvent('friend_request_received', { detail: ev }));
-            }
-            if (ev.type === 'friend_request_accepted') {
-              window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: ev }));
+          if (
+            ev.type === 'cultivation_reward_received' ||
+            ev.type === 'cultivation_level_updated' ||
+            ev.type === 'frame_updated' ||
+            ev.type === 'user_banned' ||
+            ev.type === 'user_unbanned' ||
+            ev.type === 'admin_role_updated' ||
+            ev.type === 'password_reset_notice'
+          ) {
+            broadcastAdminEvent(ev);
+          } else {
+            if (onFriendEvent) onFriendEvent(ev);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: ev }));
+              if (ev.type === 'friend_request_received') {
+                window.dispatchEvent(new CustomEvent('friend_request_received', { detail: ev }));
+              }
+              if (ev.type === 'friend_request_accepted') {
+                window.dispatchEvent(new CustomEvent('friend_request_accepted', { detail: ev }));
+              }
             }
           }
         }

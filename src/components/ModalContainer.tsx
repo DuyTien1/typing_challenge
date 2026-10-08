@@ -192,6 +192,20 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
     return () => clearTimeout(timer);
   }, [adminRewardToast]);
 
+  // Lắng nghe thông báo ban thưởng / trừng phạt từ Ban Quản Trị thời gian thực
+  useEffect(() => {
+    const handleNotification = (e: any) => {
+      const detail = e.detail;
+      if (detail?.message) {
+        triggerAdminRewardToast(detail.message, detail.title || 'BAN THƯỞNG THÀNH CÔNG');
+      }
+    };
+    window.addEventListener('admin_reward_notification', handleNotification);
+    return () => {
+      window.removeEventListener('admin_reward_notification', handleNotification);
+    };
+  }, []);
+
   // Master Escape handler: Closes whichever modal is currently active
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -297,6 +311,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           currentUser={currentUser}
           defaultConfig={defaultConfig}
           cultivationState={cultivationState}
+          onChangeFrame={onChangeFrame}
           onRewardSuccess={(msg) => {
             triggerAdminRewardToast(msg, 'BAN THƯỞNG THÀNH CÔNG');
           }}
