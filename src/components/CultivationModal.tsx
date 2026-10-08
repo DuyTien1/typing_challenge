@@ -13,6 +13,7 @@ import {
   useNgungThanPill,
   getTodayDateString,
   getVietnamDate,
+  getVietnamDayOfWeek,
   ensureDailySync,
   TWO_HOURS_MS,
   DAILY_MATCH_EXP_CAP,
@@ -944,7 +945,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           {activeTab === 'checkin' && (() => {
             const rawStreak = state.checkIn?.streak || 0;
             const currentCycleStep = rawStreak > 0 ? (rawStreak % 7 === 0 ? 7 : rawStreak % 7) : 0;
-            const currentDayOfWeek = getVietnamDate().getDay();
+            const currentDayOfWeek = getVietnamDayOfWeek();
             const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
             return (
@@ -1117,7 +1118,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                           )}
                         </h4>
                         <p className="text-[11px] text-slate-400">
-                          Mỗi ngày điểm danh thanh tiến độ sẽ tăng thêm 1 ngày. Chạm Ngày 7 nhận thưởng lớn!
+                          Mỗi ngày điểm danh sau 00:00 GMT+7 tiến độ sẽ tăng thêm 1 ngày. Chuỗi điểm danh được bảo lưu liên tục, không bị reset khi qua ngày!
                         </p>
                       </div>
                     </div>

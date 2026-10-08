@@ -159,11 +159,6 @@ export function saveMarketData() {
       logs: marketLogs.slice(-100),
     };
     safeWriteJsonFile(MARKET_FILE, payload);
-    if (isDatabaseConfigured()) {
-      for (const item of marketListings.values()) {
-        dbSaveMarketListing(item).catch(() => {});
-      }
-    }
   } catch (err) {
     console.warn('[SafeStorage] Notice saving market.json:', err);
   }
@@ -404,18 +399,25 @@ export function registerEconomyRoutes(
     const { category, search, sortBy } = req.query;
 
     const now = Date.now();
+    let hasExpired = false;
     // Auto-expire listings older than 48 hours
     for (const [id, listing] of marketListings.entries()) {
       if (listing.status === 'active' && listing.expiresAt <= now) {
         listing.status = 'cancelled';
+        hasExpired = true;
         const seller = serverUsers.get(listing.sellerId) || Array.from(serverUsers.values()).find(u => u.username === listing.sellerUsername);
         if (seller) {
           returnItemsToSeller(seller, listing);
           saveUsersToFile();
         }
+        if (isDatabaseConfigured()) {
+          dbSaveMarketListing(listing).catch(() => {});
+        }
       }
     }
-    saveMarketData();
+    if (hasExpired) {
+      saveMarketData();
+    }
 
     let list = Array.from(marketListings.values()).filter((l) => l.status === 'active');
     if (list.length === 0) {
@@ -552,6 +554,9 @@ export function registerEconomyRoutes(
     marketListings.set(listingId, newListing);
     saveMarketData();
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      dbSaveMarketListing(newListing).catch(() => {});
+    }
 
     addMarketLog({
       type: 'list',
@@ -645,6 +650,9 @@ export function registerEconomyRoutes(
 
     saveMarketData();
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      dbSaveMarketListing(listing).catch(() => {});
+    }
 
     addMarketLog({
       type: 'buy',
@@ -686,6 +694,9 @@ export function registerEconomyRoutes(
 
     saveMarketData();
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      dbSaveMarketListing(listing).catch(() => {});
+    }
 
     addMarketLog({
       type: 'cancel',
@@ -868,6 +879,9 @@ export function registerEconomyRoutes(
 
     listing.status = 'takedown_by_admin';
     saveMarketData();
+    if (isDatabaseConfigured()) {
+      dbSaveMarketListing(listing).catch(() => {});
+    }
 
     addMarketLog({
       type: 'admin_takedown',

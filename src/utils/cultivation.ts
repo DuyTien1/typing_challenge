@@ -628,13 +628,44 @@ export function getVietnamDate(): Date {
 }
 
 export function getTodayDateString(): string {
-  const vnTime = getVietnamDate();
-  return `${vnTime.getFullYear()}-${String(vnTime.getMonth() + 1).padStart(2, '0')}-${String(vnTime.getDate()).padStart(2, '0')}`;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    const vnTime = getVietnamDate();
+    return `${vnTime.getFullYear()}-${String(vnTime.getMonth() + 1).padStart(2, '0')}-${String(vnTime.getDate()).padStart(2, '0')}`;
+  }
+}
+
+export function getVietnamDayOfWeek(d: Date = new Date()): number {
+  try {
+    const weekdayStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      weekday: 'short',
+    }).format(d);
+    const map: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+    return map[weekdayStr] ?? d.getDay();
+  } catch {
+    return getVietnamDate().getDay();
+  }
 }
 
 /**
- * Đảm bảo đồng bộ Nhiệm Vụ Hàng Ngày và Điểm Danh Hàng Ngày khi bước sang ngày mới
- * Tự động làm mới 100% nhiệm vụ hàng ngày về ban đầu đồng bộ với chu kỳ điểm danh ngày mới (00:00)
+ * Đảm bảo đồng bộ Nhiệm Vụ Hàng Ngày và Điểm Danh Hàng Ngày khi bước sang ngày mới (00:00 GMT+7)
+ * Tự động làm mới 100% nhiệm vụ hàng ngày về ban đầu đồng bộ với chu kỳ điểm danh ngày mới (00:00).
+ * TUYỆT ĐỐI BẢO LƯU CHUỖI ĐIỂM DANH (streak), không bao giờ reset chuỗi điểm danh của người chơi.
  */
 export function ensureDailySync(state: CultivationState): { updatedState: CultivationState; didResetQuests: boolean } {
   if (!state) return { updatedState: state, didResetQuests: false };
@@ -647,6 +678,13 @@ export function ensureDailySync(state: CultivationState): { updatedState: Cultiv
       lastCheckInDate: '',
       streak: 0,
       totalCheckIns: 0,
+    };
+  } else {
+    // Bảo lưu trọn vẹn chuỗi điểm danh và tổng số ngày đã điểm danh
+    updated.checkIn = {
+      lastCheckInDate: updated.checkIn.lastCheckInDate || '',
+      streak: Number(updated.checkIn.streak) || 0,
+      totalCheckIns: Number(updated.checkIn.totalCheckIns) || 0,
     };
   }
 
@@ -1888,8 +1926,7 @@ export function claimDailyCheckIn(state: CultivationState): {
   };
 } {
   const today = getTodayDateString();
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0 is Sunday, 1..6 is Mon..Sat
+  const dayOfWeek = getVietnamDayOfWeek(); // 0 is Sunday, 1..6 is Mon..Sat
 
   const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
   const dayOfWeekName = dayNames[dayOfWeek];
@@ -1918,18 +1955,10 @@ export function claimDailyCheckIn(state: CultivationState): {
     };
   }
 
-  // Calculate streak: check if last check-in was yesterday
-  let nextStreak = 1;
-  if (currentCheckIn.lastCheckInDate) {
-    const lastDate = new Date(currentCheckIn.lastCheckInDate + 'T00:00:00');
-    const todayDate = new Date(today + 'T00:00:00');
-    const diffDays = Math.round((todayDate.getTime() - lastDate.getTime()) / (24 * 60 * 60 * 1000));
-    if (diffDays === 1) {
-      nextStreak = currentCheckIn.streak + 1;
-    } else {
-      nextStreak = 1; // Ngắt quãng -> đếm lại từ đầu
-    }
-  }
+  // Chuỗi điểm danh (Streak) được bảo lưu và cộng dồn liên tục, TUYỆT ĐỐI KHÔNG BỊ RESET khi sang ngày mới:
+  // Mỗi lần điểm danh ngày mới (sau 00:00 GMT+7), chuỗi ngày điểm danh tăng thêm 1 (+1)
+  const prevStreak = Number(currentCheckIn.streak) || 0;
+  const nextStreak = prevStreak + 1;
 
   let updated = { ...syncedState };
   updated.pillCount = {

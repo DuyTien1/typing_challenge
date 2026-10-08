@@ -149,10 +149,19 @@ function saveChatToFile() {
 const LEADERBOARD_FILE = getSafeStoragePath('leaderboard.json');
 
 export function getVietnamDateStr(): string {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const vnTime = new Date(utc + 7 * 3600000);
-  return vnTime.toISOString().slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const vnTime = new Date(utc + 7 * 3600000);
+    return `${vnTime.getFullYear()}-${String(vnTime.getMonth() + 1).padStart(2, '0')}-${String(vnTime.getDate()).padStart(2, '0')}`;
+  }
 }
 
 export function getVietnamWeekStr(): string {
@@ -2483,6 +2492,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (!cult.checkIn) {
       cult.checkIn = { lastCheckInDate: '', streak: 0, totalCheckIns: 0 };
       changed = true;
+    } else {
+      cult.checkIn.streak = Number(cult.checkIn.streak) || 0;
+      cult.checkIn.totalCheckIns = Number(cult.checkIn.totalCheckIns) || 0;
     }
 
     const hasInvalidQuests = !Array.isArray(cult.dailyQuests) || cult.dailyQuests.length !== 4;

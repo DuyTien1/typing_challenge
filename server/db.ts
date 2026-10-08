@@ -359,7 +359,7 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
   if (!p) return null;
 
   try {
-    const res = await p.query(`
+    const res = await safeDbQuery(`
       SELECT id, username, email, display_name as "displayName", avatar, frame,
              password_hash as "passwordHash", salt, is_admin as "isAdmin",
              is_verified as "isVerified", auth_provider as "authProvider",
@@ -371,6 +371,8 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
              cultivation, created_at as "createdAt", updated_at as "updatedAt"
       FROM app_users
     `);
+
+    if (!res || !res.rows) return null;
 
     const usersMap = new Map<string, ServerUserRecord>();
     const DEFAULT_SECT_IDS = new Set(['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh']);
@@ -501,14 +503,14 @@ export async function dbLoadSects(): Promise<any[] | null> {
 
   try {
     // Tự động dọn dẹp triệt để các tông môn mặc định tự sinh trước đây
-    await p.query(`
+    await safeDbQuery(`
       DELETE FROM app_sects 
       WHERE id IN ('sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh') 
          OR id LIKE 'sect_thuc_son%'
-    `).catch(() => {});
+    `);
 
-    const res = await p.query('SELECT * FROM app_sects ORDER BY level DESC, exp DESC');
-    if (res.rows.length === 0) return [];
+    const res = await safeDbQuery('SELECT * FROM app_sects ORDER BY level DESC, exp DESC');
+    if (!res || !res.rows || res.rows.length === 0) return [];
     const DEFAULT_SECT_IDS = new Set(['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh']);
     const validRows = res.rows.filter(
       (row) => row && row.id && !DEFAULT_SECT_IDS.has(row.id) && !String(row.id).startsWith('sect_thuc_son')
@@ -593,9 +595,12 @@ export async function dbSaveSect(sect: any): Promise<boolean> {
       sect.createdAt || Date.now(),
     ];
 
-    await p.query(query, values);
-    console.log(`[Database] ✅ Đã lưu tông môn "${sect.name}" [${sect.tag}] (${sect.id}) vào Supabase.`);
-    return true;
+    const result = await safeDbQuery(query, values);
+    if (result) {
+      console.log(`[Database] ✅ Đã lưu tông môn "${sect.name}" [${sect.tag}] (${sect.id}) vào Supabase.`);
+      return true;
+    }
+    return false;
   } catch (err: any) {
     console.error(`[Database] ❌ Lỗi lưu tông môn "${sect.name}" vào Supabase:`, err?.message || err);
     return false;
@@ -624,7 +629,7 @@ export async function dbLoadMarket(): Promise<{ listings: MarketListing[]; logs:
   if (!p) return null;
 
   try {
-    const listingsRes = await p.query(`
+    const listingsRes = await safeDbQuery(`
       SELECT id, seller_id as "sellerId", seller_username as "sellerUsername",
              seller_avatar as "sellerAvatar", seller_frame as "sellerFrame",
              item_type as "itemType", item_id as "itemId",
@@ -637,7 +642,7 @@ export async function dbLoadMarket(): Promise<{ listings: MarketListing[]; logs:
       ORDER BY listed_at DESC
     `);
 
-    const logsRes = await p.query(`
+    const logsRes = await safeDbQuery(`
       SELECT id, type, details, timestamp,
              actor_username as "actorUsername", target_username as "targetUsername",
              amount
@@ -647,11 +652,10 @@ export async function dbLoadMarket(): Promise<{ listings: MarketListing[]; logs:
     `);
 
     return {
-      listings: listingsRes.rows,
-      logs: logsRes.rows,
+      listings: listingsRes?.rows || [],
+      logs: logsRes?.rows || [],
     };
   } catch (err) {
-    console.error('[Database] Error loading market from PostgreSQL:', err);
     return null;
   }
 }
@@ -661,10 +665,10 @@ export async function dbLoadMarket(): Promise<{ listings: MarketListing[]; logs:
  */
 export async function dbSaveMarketListing(listing: MarketListing): Promise<void> {
   const p = getDbPool();
-  if (!p) return;
+  if (!p || !listing || !listing.id) return;
 
   try {
-    await p.query(`
+    await safeDbQuery(`
       INSERT INTO app_market_listings (
         id, seller_id, seller_username, seller_avatar, seller_frame,
         item_type, item_id, item_name, item_icon, quality,
@@ -699,7 +703,7 @@ export async function dbSaveMarketListing(listing: MarketListing): Promise<void>
       listing.soldAt || null,
     ]);
   } catch (err) {
-    console.error('[Database] Error saving market listing:', err);
+    // Không ném lỗi làm nghẽn tiến trình
   }
 }
 
@@ -708,10 +712,10 @@ export async function dbSaveMarketListing(listing: MarketListing): Promise<void>
  */
 export async function dbSaveMarketLog(log: MarketLog): Promise<void> {
   const p = getDbPool();
-  if (!p) return;
+  if (!p || !log || !log.id) return;
 
   try {
-    await p.query(`
+    await safeDbQuery(`
       INSERT INTO app_market_logs (
         id, type, details, timestamp, actor_username, target_username, amount
       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -726,7 +730,7 @@ export async function dbSaveMarketLog(log: MarketLog): Promise<void> {
       log.amount || null,
     ]);
   } catch (err) {
-    console.error('[Database] Error saving market log:', err);
+    // Không ném lỗi làm nghẽn tiến trình
   }
 }
 
@@ -738,13 +742,12 @@ export async function dbLoadLeaderboard(): Promise<ServerMultiLeaderboard | null
   if (!p) return null;
 
   try {
-    const res = await p.query("SELECT data FROM app_leaderboards WHERE id = 'main'");
-    if (res.rows.length > 0 && res.rows[0].data) {
+    const res = await safeDbQuery("SELECT data FROM app_leaderboards WHERE id = 'main'");
+    if (res && res.rows.length > 0 && res.rows[0].data) {
       return res.rows[0].data as ServerMultiLeaderboard;
     }
     return null;
   } catch (err) {
-    console.error('[Database] Error loading leaderboard from PostgreSQL:', err);
     return null;
   }
 }
@@ -757,7 +760,7 @@ export async function dbSaveLeaderboard(board: ServerMultiLeaderboard): Promise<
   if (!p) return;
 
   try {
-    await p.query(`
+    await safeDbQuery(`
       INSERT INTO app_leaderboards (id, data, updated_at)
       VALUES ('main', $1, NOW())
       ON CONFLICT (id) DO UPDATE SET
@@ -765,7 +768,7 @@ export async function dbSaveLeaderboard(board: ServerMultiLeaderboard): Promise<
         updated_at = NOW();
     `, [JSON.stringify(board)]);
   } catch (err) {
-    console.error('[Database] Error saving leaderboard to PostgreSQL:', err);
+    // Ignore
   }
 }
 
@@ -777,10 +780,12 @@ export async function dbLoadBannedUsers(): Promise<string[] | null> {
   if (!p) return null;
 
   try {
-    const res = await p.query('SELECT identifier FROM app_banned_users');
-    return res.rows.map((r) => r.identifier);
+    const res = await safeDbQuery('SELECT identifier FROM app_banned_users');
+    if (res && res.rows) {
+      return res.rows.map((r) => r.identifier);
+    }
+    return null;
   } catch (err) {
-    console.error('[Database] Error loading banned users from PostgreSQL:', err);
     return null;
   }
 }
@@ -792,23 +797,17 @@ export async function dbSaveBannedUsers(bannedIdentifiers: string[]): Promise<vo
   const p = getDbPool();
   if (!p) return;
 
-  const client = await p.connect();
   try {
-    await client.query('BEGIN');
-    await client.query('DELETE FROM app_banned_users');
+    await safeDbQuery('DELETE FROM app_banned_users');
     for (const id of bannedIdentifiers) {
-      await client.query(`
+      await safeDbQuery(`
         INSERT INTO app_banned_users (identifier, created_at)
         VALUES ($1, EXTRACT(EPOCH FROM NOW()) * 1000)
         ON CONFLICT (identifier) DO NOTHING
       `, [id]);
     }
-    await client.query('COMMIT');
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('[Database] Error saving banned users to PostgreSQL:', err);
-  } finally {
-    client.release();
+    // Ignore
   }
 }
 
@@ -820,7 +819,7 @@ export async function dbSaveRoom(room: any): Promise<void> {
   if (!p || !room || !room.id) return;
 
   try {
-    await p.query(`
+    await safeDbQuery(`
       INSERT INTO app_game_rooms (id, data, status, updated_at)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (id) DO UPDATE SET
@@ -846,8 +845,8 @@ export async function dbLoadRoom(roomId: string): Promise<any | null> {
   if (!p || !roomId) return null;
 
   try {
-    const res = await p.query('SELECT data FROM app_game_rooms WHERE id = $1', [roomId]);
-    if (res.rows.length > 0 && res.rows[0].data) {
+    const res = await safeDbQuery('SELECT data FROM app_game_rooms WHERE id = $1', [roomId]);
+    if (res && res.rows.length > 0 && res.rows[0].data) {
       return res.rows[0].data;
     }
     return null;
@@ -865,11 +864,14 @@ export async function dbLoadActiveRooms(): Promise<any[] | null> {
 
   try {
     const threshold = Date.now() - 30 * 60 * 1000;
-    const res = await p.query(
+    const res = await safeDbQuery(
       "SELECT data FROM app_game_rooms WHERE status != 'closed' AND updated_at > $1 ORDER BY updated_at DESC LIMIT 50",
       [threshold]
     );
-    return res.rows.map((r) => r.data);
+    if (res && res.rows) {
+      return res.rows.map((r) => r.data);
+    }
+    return null;
   } catch (err) {
     return null;
   }
@@ -883,7 +885,7 @@ export async function dbDeleteRoom(roomId: string): Promise<void> {
   if (!p || !roomId) return;
 
   try {
-    await p.query("UPDATE app_game_rooms SET status = 'closed', updated_at = $1 WHERE id = $2", [Date.now(), roomId]);
+    await safeDbQuery("UPDATE app_game_rooms SET status = 'closed', updated_at = $1 WHERE id = $2", [Date.now(), roomId]);
   } catch (err) {
     // Ignore
   }
@@ -897,7 +899,7 @@ export async function dbSaveChatMessage(msg: any): Promise<void> {
   if (!p || !msg || !msg.id) return;
 
   try {
-    await p.query(`
+    await safeDbQuery(`
       INSERT INTO app_chat_messages (id, channel, data, timestamp)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (id) DO NOTHING;
@@ -920,11 +922,14 @@ export async function dbLoadChatMessages(limit = 100): Promise<any[] | null> {
   if (!p) return null;
 
   try {
-    const res = await p.query(
+    const res = await safeDbQuery(
       'SELECT data FROM app_chat_messages ORDER BY timestamp DESC LIMIT $1',
       [limit]
     );
-    return res.rows.map((r) => r.data).reverse();
+    if (res && res.rows) {
+      return res.rows.map((r) => r.data).reverse();
+    }
+    return null;
   } catch (err) {
     return null;
   }
@@ -993,8 +998,8 @@ export async function dbDeleteUser(userId: string): Promise<boolean> {
   if (!p) return false;
 
   try {
-    await p.query('DELETE FROM app_users WHERE id = $1', [userId]);
-    return true;
+    const res = await safeDbQuery('DELETE FROM app_users WHERE id = $1', [userId]);
+    return Boolean(res);
   } catch (err) {
     console.error(`[Database] Lỗi xóa tài khoản ${userId} khỏi PostgreSQL:`, err);
     return false;
