@@ -30,7 +30,7 @@ export type {
   SectMemberRecord,
   SectLeaderboardEntry,
 };
-import { getStoredAuthToken } from './auth';
+import { getStoredAuthToken, getStoredCachedUser } from './auth';
 import { getCultivationSync, saveCultivationToIndexedDB } from './leaderboardStorage';
 
 export interface XianxiaRealmConfig {
@@ -346,6 +346,7 @@ export interface CultivationState {
   activeBuffs?: ActivePillBuffs;
   sect?: CultivationSectMember;
   linhThach?: number;
+  teaInventory?: Record<string, number>;
   historyLog: string[];
 }
 
@@ -1026,20 +1027,134 @@ export function loadStoredCultivationState(): CultivationState {
   }
 }
 
+/**
+ * Hợp nhất an toàn 2 trạng thái Tu Vi mà không bao giờ làm giảm Tu Vi, cảnh giới hoặc mất điểm danh
+ */
+export function mergeCultivationStates(
+  current?: CultivationState | null,
+  incoming?: CultivationState | null
+): CultivationState {
+  if (!current && !incoming) return createInitialCultivationState();
+  if (!current) return incoming!;
+  if (!incoming) return current;
+
+  // 1. So sánh tổng điểm tiến độ để TUYỆT ĐỐI không bao giờ bị thụt lùi Tu Vi / Cảnh giới
+  const scoreCurrent = (current.realmIndex ?? 0) * 100_000_000 + (current.tier ?? 1) * 1_000_000 + (current.exp ?? 0);
+  const scoreIncoming = (incoming.realmIndex ?? 0) * 100_000_000 + (incoming.tier ?? 1) * 1_000_000 + (incoming.exp ?? 0);
+
+  const primary = scoreCurrent >= scoreIncoming ? current : incoming;
+  const secondary = scoreCurrent >= scoreIncoming ? incoming : current;
+
+  // 2. Điểm danh: TUYỆT ĐỐI BẢO LƯU điểm danh hôm nay và chuỗi điểm danh
+  const todayStr = getTodayDateString();
+  const checkedToday = current.checkIn?.lastCheckInDate === todayStr || incoming.checkIn?.lastCheckInDate === todayStr;
+  const lastCheckInDate = checkedToday
+    ? todayStr
+    : (current.checkIn?.lastCheckInDate || incoming.checkIn?.lastCheckInDate || '');
+  const streak = Math.max(current.checkIn?.streak || 0, incoming.checkIn?.streak || 0);
+  const totalCheckIns = Math.max(current.checkIn?.totalCheckIns || 0, incoming.checkIn?.totalCheckIns || 0);
+
+  // 3. Đan dược
+  const pillCount = {
+    thoNguyen: Math.max(current.pillCount?.thoNguyen ?? 0, incoming.pillCount?.thoNguyen ?? 0),
+    hoTam: Math.max(current.pillCount?.hoTam ?? 0, incoming.pillCount?.hoTam ?? 0),
+    phaCanh: Math.max(current.pillCount?.phaCanh ?? 0, incoming.pillCount?.phaCanh ?? 0),
+    tuViDan: Math.max(current.pillCount?.tuViDan ?? 0, incoming.pillCount?.tuViDan ?? 0),
+    sieuCapTuViDan: Math.max(current.pillCount?.sieuCapTuViDan ?? 0, incoming.pillCount?.sieuCapTuViDan ?? 0),
+    dinhTam: Math.max(current.pillCount?.dinhTam ?? 0, incoming.pillCount?.dinhTam ?? 0),
+    ngungThan: Math.max(current.pillCount?.ngungThan ?? 0, incoming.pillCount?.ngungThan ?? 0),
+  };
+
+  if (scoreCurrent > scoreIncoming) {
+    if (typeof current.pillCount?.tuViDan === 'number') pillCount.tuViDan = current.pillCount.tuViDan;
+    if (typeof current.pillCount?.sieuCapTuViDan === 'number') pillCount.sieuCapTuViDan = current.pillCount.sieuCapTuViDan;
+  } else if (scoreIncoming > scoreCurrent) {
+    if (typeof incoming.pillCount?.tuViDan === 'number') pillCount.tuViDan = incoming.pillCount.tuViDan;
+    if (typeof incoming.pillCount?.sieuCapTuViDan === 'number') pillCount.sieuCapTuViDan = incoming.pillCount.sieuCapTuViDan;
+  }
+
+  // 4. Dược liệu
+  const herbs = {
+    uLan: Math.max(current.herbs?.uLan ?? 0, incoming.herbs?.uLan ?? 0),
+    huyetTinh: Math.max(current.herbs?.huyetTinh ?? 0, incoming.herbs?.huyetTinh ?? 0),
+    hoaAnh: Math.max(current.herbs?.hoaAnh ?? 0, incoming.herbs?.hoaAnh ?? 0),
+    huyenThiet: Math.max(current.herbs?.huyenThiet ?? 0, incoming.herbs?.huyenThiet ?? 0),
+    longTu: Math.max(current.herbs?.longTu ?? 0, incoming.herbs?.longTu ?? 0),
+  };
+
+  // 5. Trà đạo
+  const teaInventory: Record<string, number> = {
+    ...(secondary.teaInventory || {}),
+    ...(primary.teaInventory || {}),
+  };
+  for (const k of Object.keys(secondary.teaInventory || {})) {
+    teaInventory[k] = Math.max(primary.teaInventory?.[k] || 0, secondary.teaInventory?.[k] || 0);
+  }
+
+  // 6. Linh Thạch
+  const linhThach = Math.max(Number(current.linhThach) || 0, Number(incoming.linhThach) || 0);
+
+  // 7. Thọ Nguyên
+  const thoNguyen = Math.max(current.thoNguyen ?? 0, incoming.thoNguyen ?? 0);
+  const maxThoNguyen = Math.max(current.maxThoNguyen ?? 240, incoming.maxThoNguyen ?? 240);
+
+  // 8. Lịch sử ký sự tu tiên
+  const combinedLog = Array.from(new Set([...(primary.historyLog || []), ...(secondary.historyLog || [])])).slice(0, 30);
+
+  // 9. Nhiệm vụ hàng ngày
+  const dailyQuests = Array.isArray(primary.dailyQuests) && primary.dailyQuests.length === 4
+    ? primary.dailyQuests
+    : (Array.isArray(secondary.dailyQuests) && secondary.dailyQuests.length === 4 ? secondary.dailyQuests : createDefaultDailyQuests());
+
+  return {
+    ...secondary,
+    ...primary,
+    thoNguyen,
+    maxThoNguyen,
+    linhThach,
+    pillCount,
+    herbs,
+    teaInventory,
+    checkIn: {
+      lastCheckInDate,
+      streak,
+      totalCheckIns,
+    },
+    dailyQuests,
+    dailyQuestsDate: primary.dailyQuestsDate || incoming.dailyQuestsDate || todayStr,
+    historyLog: combinedLog,
+    sect: primary.sect || secondary.sect,
+    artifacts: primary.artifacts || secondary.artifacts,
+    tamPhap: primary.tamPhap || secondary.tamPhap,
+    activeBuffs: primary.activeBuffs || secondary.activeBuffs,
+  };
+}
+
 export async function syncCultivationToServer(state?: CultivationState): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   const targetState = state || loadStoredCultivationState();
   const token = getStoredAuthToken();
-  if (!token) return false;
+  const cachedUser = getStoredCachedUser();
+  const savedUsername = localStorage.getItem('fasttyping_user') || localStorage.getItem('fasttyping_username') || '';
+  const userId = cachedUser?.id || localStorage.getItem('fasttyping_player_id') || '';
+  const username = cachedUser?.username || savedUsername;
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (username) headers['x-username'] = username;
+    if (userId) headers['x-user-id'] = userId;
+
     const res = await fetch('/api/cultivation', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ cultivation: targetState }),
+      headers,
+      body: JSON.stringify({
+        cultivation: targetState,
+        username,
+        userId,
+      }),
     });
     return res.ok;
   } catch {

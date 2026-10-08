@@ -31,7 +31,7 @@ import {
   ServerMultiLeaderboard,
   ServerLeaderboardEntry,
 } from './server/types';
-import { normalizeRoomCode, getModeDisplayName, hashPassword, safeWriteJsonFile } from './server/utils';
+import { normalizeRoomCode, getModeDisplayName, hashPassword, safeWriteJsonFile, mergeServerCultivationStates } from './server/utils';
 import { registerEconomyRoutes } from './server/economy';
 import { registerAdminDatabaseRoutes } from './server/adminDatabase';
 import {
@@ -2363,7 +2363,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   });
 
   // POST /api/auth/register and /api/auth/register-email: Quick 1-step account creation
-  const handleQuickRegister = (req: express.Request, res: express.Response) => {
+  const handleQuickRegister = async (req: express.Request, res: express.Response) => {
     const { password, username, displayName, avatar } = req.body || {};
 
     const cleanUsername = String(username || '').trim();
@@ -2423,6 +2423,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     serverUsers.set(userId, user);
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      await dbSaveUser(user).catch((err) => console.error('[FastTyping Auth] Lỗi lưu DB user đăng ký:', err));
+    }
 
     console.log(`[FastTyping Auth] Đăng ký thành công: Username="${cleanUsername}", DisplayName="${cleanDisplayName}"`);
 
@@ -2523,7 +2526,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   }
 
   // POST /api/auth/login and /api/auth/login-email: Quick login by username OR email
-  const handleQuickLogin = (req: express.Request, res: express.Response) => {
+  const handleQuickLogin = async (req: express.Request, res: express.Response) => {
     const { email, username, account, identifier: reqIdentifier, password } = req.body || {};
     const identifier = String(reqIdentifier || account || username || email || '').trim();
 
@@ -2571,6 +2574,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     serverUsers.set(user.id, user);
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      await dbSaveUser(user).catch((err) => console.error('[FastTyping Auth] Lỗi lưu DB user sau khi login:', err));
+    }
 
     res.json({
       success: true,
@@ -2596,6 +2602,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       user.updatedAt = Date.now();
       serverUsers.set(user.id, user);
       saveUsersToFile();
+      if (isDatabaseConfigured()) {
+        dbSaveUser(user).catch(() => {});
+      }
     }
 
     res.json({
@@ -2606,7 +2615,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   });
 
   // POST /api/auth/profile: Update name, avatar, frame (Restricted to verified accounts)
-  app.post('/api/auth/profile', (req, res) => {
+  app.post('/api/auth/profile', async (req, res) => {
     const authHeader = req.headers.authorization;
     const user = getUserByToken(authHeader);
 
@@ -2688,12 +2697,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
     if (cultivation && typeof cultivation === 'object') {
       ensureServerDailyCultivationSync(cultivation);
-      user.cultivation = cultivation;
+      user.cultivation = mergeServerCultivationStates(user.cultivation, cultivation);
     }
 
     user.updatedAt = Date.now();
     serverUsers.set(user.id, user);
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      await dbSaveUser(user).catch((err) => console.error('[FastTyping Auth] Lỗi lưu DB profile:', err));
+    }
 
     // Cập nhật tên hiển thị trên Bảng Vàng nếu người chơi đang nắm giữ kỷ lục
     let updatedHighScores = false;
@@ -2815,19 +2827,68 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   });
 
   // GET /api/cultivation: Retrieve user's cultivation data
-  app.get('/api/cultivation', (req, res) => {
+  app.get('/api/cultivation', async (req, res) => {
+    if (isDatabaseConfigured() && !isDbHydrated) {
+      await ensureDatabaseHydrated().catch(() => {});
+    }
+
     const authHeader = req.headers.authorization;
     let user = getUserByToken(authHeader);
 
-    if (!user && req.query.userId) {
-      user = serverUsers.get(String(req.query.userId)) || null;
+    const queryUserId = (req.query.userId || req.headers['x-user-id']) as string;
+    const queryUsername = (req.query.username || req.headers['x-username']) as string;
+
+    if (!user && queryUserId) {
+      user = serverUsers.get(String(queryUserId)) || null;
     }
-    if (!user && req.query.username) {
-      user = getUserByUsername(String(req.query.username));
+    if (!user && queryUsername) {
+      user = getUserByUsername(String(queryUsername));
+    }
+    if (!user && req.headers['x-auth-token']) {
+      user = getUserByToken(String(req.headers['x-auth-token']));
+    }
+
+    if (!user && isDatabaseConfigured()) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          let dbUserRow: any = null;
+          if (queryUserId) {
+            const q = await pool.query('SELECT * FROM app_users WHERE id = $1', [queryUserId]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && queryUsername) {
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(username) = LOWER($1)', [queryUsername]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (dbUserRow) {
+            user = {
+              id: dbUserRow.id,
+              username: dbUserRow.username,
+              email: dbUserRow.email,
+              displayName: dbUserRow.display_name,
+              avatar: dbUserRow.avatar || '🧘',
+              frame: dbUserRow.frame || 'wood',
+              isAdmin: Boolean(dbUserRow.is_admin),
+              isVerified: Boolean(dbUserRow.is_verified),
+              authProvider: dbUserRow.auth_provider || 'email',
+              passwordHash: dbUserRow.password_hash,
+              salt: dbUserRow.salt,
+              sessionTokens: Array.isArray(dbUserRow.session_tokens) ? dbUserRow.session_tokens : [],
+              cultivation: dbUserRow.cultivation || null,
+              createdAt: Number(dbUserRow.created_at) || Date.now(),
+              updatedAt: Number(dbUserRow.updated_at) || Date.now(),
+            };
+            serverUsers.set(user.id, user);
+          }
+        }
+      } catch (err) {
+        console.warn('[Cultivation] Notice querying fallback user for GET:', err);
+      }
     }
 
     if (!user) {
-      res.status(404).json({ success: false, error: 'Không tìm thấy thông tin tài khoản.' });
+      res.json({ success: true, isGuest: true, cultivation: null });
       return;
     }
 
@@ -2836,6 +2897,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         user.updatedAt = Date.now();
         serverUsers.set(user.id, user);
         saveUsersToFile();
+        if (isDatabaseConfigured()) {
+          await dbSaveUser(user).catch(() => {});
+        }
       }
     }
 
@@ -3265,29 +3329,88 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   }
 
   // POST /api/cultivation: Update user's cultivation state
-  app.post('/api/cultivation', (req, res) => {
+  app.post('/api/cultivation', async (req, res) => {
+    if (isDatabaseConfigured() && !isDbHydrated) {
+      await ensureDatabaseHydrated().catch(() => {});
+    }
+
     const authHeader = req.headers.authorization;
     let user = getUserByToken(authHeader);
 
-    if (!user && req.body.userId) {
-      user = serverUsers.get(String(req.body.userId)) || null;
+    const reqUserId = (req.body?.userId || req.headers['x-user-id'] || req.query?.userId) as string;
+    const reqUsername = (req.body?.username || req.headers['x-username'] || req.query?.username) as string;
+
+    if (!user && reqUserId) {
+      user = serverUsers.get(String(reqUserId)) || null;
     }
-    if (!user && req.body.username) {
-      user = getUserByUsername(String(req.body.username));
+    if (!user && reqUsername) {
+      user = getUserByUsername(String(reqUsername));
+    }
+    if (!user && req.headers['x-auth-token']) {
+      user = getUserByToken(String(req.headers['x-auth-token']));
     }
 
+    if (!user && isDatabaseConfigured()) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          let dbUserRow: any = null;
+          if (reqUserId) {
+            const q = await pool.query('SELECT * FROM app_users WHERE id = $1', [reqUserId]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && reqUsername) {
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(username) = LOWER($1)', [reqUsername]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (dbUserRow) {
+            user = {
+              id: dbUserRow.id,
+              username: dbUserRow.username,
+              email: dbUserRow.email,
+              displayName: dbUserRow.display_name,
+              avatar: dbUserRow.avatar || '🧘',
+              frame: dbUserRow.frame || 'wood',
+              isAdmin: Boolean(dbUserRow.is_admin),
+              isVerified: Boolean(dbUserRow.is_verified),
+              authProvider: dbUserRow.auth_provider || 'email',
+              passwordHash: dbUserRow.password_hash,
+              salt: dbUserRow.salt,
+              sessionTokens: Array.isArray(dbUserRow.session_tokens) ? dbUserRow.session_tokens : [],
+              cultivation: dbUserRow.cultivation || null,
+              createdAt: Number(dbUserRow.created_at) || Date.now(),
+              updatedAt: Number(dbUserRow.updated_at) || Date.now(),
+            };
+            serverUsers.set(user.id, user);
+          }
+        }
+      } catch (err) {
+        console.warn('[Cultivation] Notice querying fallback user for POST:', err);
+      }
+    }
+
+    // Người chơi vãng lai / Tán Tu (không có tài khoản trên máy chủ):
+    // Luôn phản hồi thành công và trả về dữ liệu gửi lên để client lưu trọn vẹn, không sinh mã lỗi 401
     if (!user) {
-      res.status(401).json({ success: false, error: 'Chưa đăng nhập hoặc không tìm thấy tài khoản.' });
+      res.json({
+        success: true,
+        guest: true,
+        cultivation: req.body?.cultivation || null,
+        message: 'Lưu tiến độ tu tiên cục bộ thành công.',
+      });
       return;
     }
 
     if (req.body.cultivation && typeof req.body.cultivation === 'object') {
       ensureServerDailyCultivationSync(req.body.cultivation);
-      user.cultivation = req.body.cultivation;
+      const merged = mergeServerCultivationStates(user.cultivation, req.body.cultivation);
+      user.cultivation = merged;
       user.updatedAt = Date.now();
       serverUsers.set(user.id, user);
       saveUsersToFile();
-      // Đồng bộ ngay tu vi thực tế vào cache để đảm bảo không bị lệch
+      if (isDatabaseConfigured()) {
+        await dbSaveUser(user).catch((err) => console.error('[Database] Lỗi lưu tu vi user:', err));
+      }
       syncUserCultivationToCache(user);
     }
 

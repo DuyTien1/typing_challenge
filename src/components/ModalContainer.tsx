@@ -406,6 +406,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
             if (targetUsername) headers['x-username'] = targetUsername;
+            if (currentUser?.id) headers['x-user-id'] = currentUser.id;
             fetch('/api/cultivation', {
               method: 'POST',
               headers,

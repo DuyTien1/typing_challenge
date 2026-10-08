@@ -166,14 +166,20 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
       }
 
       const token = getStoredAuthToken();
-      if (token) {
+      if (token || userNow) {
         fetch('/api/cultivation', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(userNow?.username ? { 'x-username': userNow.username } : {}),
+            ...(userNow?.id ? { 'x-user-id': userNow.id } : {}),
           },
-          body: JSON.stringify({ cultivation: cultRes.updatedState }),
+          body: JSON.stringify({
+            cultivation: cultRes.updatedState,
+            username: userNow?.username,
+            userId: userNow?.id,
+          }),
         }).catch(() => {});
       }
 

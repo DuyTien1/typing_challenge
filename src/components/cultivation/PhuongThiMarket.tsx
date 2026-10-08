@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CultivationState } from '../../utils/cultivation';
+import { CultivationState, mergeCultivationStates } from '../../utils/cultivation';
 import { soundFx } from '../../utils/audio';
 import { getStoredAuthToken } from '../../utils/auth';
 import { DEFAULT_MARKET_LISTINGS, MarketListing } from '../../data/marketSeeds';
@@ -229,7 +229,8 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
               purchaseSucceeded = true;
               responseMessage = data.message || `Đã mua thành công ${selectedListing.quantity}x ${selectedListing.itemName}!`;
               if (data.updatedCultivation) {
-                onUpdateState(data.updatedCultivation);
+                const merged = mergeCultivationStates(state, data.updatedCultivation);
+                onUpdateState(merged);
               }
             } else {
               soundFx.playError();

@@ -2,8 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { ShopItem, MarketListing, MarketLog, ServerUserRecord } from './types';
-import { getSafeStoragePath, safeWriteJsonFile } from './utils';
-import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog } from './db';
+import { getSafeStoragePath, safeWriteJsonFile, mergeServerCultivationStates } from './utils';
+import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog, dbSaveUser } from './db';
 
 const SHOP_CONFIG_FILE = getSafeStoragePath('shop_config.json');
 const MARKET_FILE = getSafeStoragePath('market.json');
@@ -304,19 +304,9 @@ export function registerEconomyRoutes(
       user.cultivation = {};
     }
 
-    // Đồng bộ Linh Thạch và tài sản từ client nếu client vừa thu hoạch được nhiều hơn máy chủ
+    // Đồng bộ và bảo toàn toàn bộ tiến độ Tu Vi, Điểm Danh, Đan Dược từ client trước khi mua
     if (clientCultivation && typeof clientCultivation === 'object') {
-      const clientLt = Number(clientCultivation.linhThach) || 0;
-      const serverLt = Number(user.cultivation.linhThach) || 0;
-      if (clientLt > serverLt) {
-        user.cultivation.linhThach = clientLt;
-      }
-      if (clientCultivation.herbs && !user.cultivation.herbs) {
-        user.cultivation.herbs = { ...clientCultivation.herbs };
-      }
-      if (clientCultivation.pillCount && !user.cultivation.pillCount) {
-        user.cultivation.pillCount = { ...clientCultivation.pillCount };
-      }
+      user.cultivation = mergeServerCultivationStates(user.cultivation, clientCultivation);
     }
 
     const purchasesToday = ensureUserShopPurchases(user);
@@ -376,7 +366,11 @@ export function registerEconomyRoutes(
     );
     if (user.cultivation.historyLog.length > 50) user.cultivation.historyLog.pop();
 
+    user.updatedAt = Date.now();
     saveUsersToFile();
+    if (isDatabaseConfigured()) {
+      dbSaveUser(user).catch((err) => console.error('[Shop] Lỗi lưu DB user sau khi mua:', err));
+    }
 
     addMarketLog({
       type: 'buy',
@@ -482,9 +476,14 @@ export function registerEconomyRoutes(
       return;
     }
 
-    const { itemType, itemId, quantity = 1, pricePerUnit } = req.body;
+    const { itemType, itemId, quantity = 1, pricePerUnit, clientCultivation } = req.body;
     const qty = Math.max(1, parseInt(quantity, 10) || 1);
     const unitPrice = Math.max(1, parseInt(pricePerUnit, 10) || 1);
+
+    // Đồng bộ và bảo toàn toàn bộ tiến độ Tu Vi từ client trước khi mở sạp
+    if (clientCultivation && typeof clientCultivation === 'object') {
+      user.cultivation = mergeServerCultivationStates(user.cultivation, clientCultivation);
+    }
 
     // Limit active listings
     const userActiveCount = Array.from(marketListings.values()).filter(
@@ -553,9 +552,11 @@ export function registerEconomyRoutes(
 
     marketListings.set(listingId, newListing);
     saveMarketData();
+    user.updatedAt = Date.now();
     saveUsersToFile();
     if (isDatabaseConfigured()) {
       dbSaveMarketListing(newListing).catch(() => {});
+      dbSaveUser(user).catch(() => {});
     }
 
     addMarketLog({
@@ -579,6 +580,12 @@ export function registerEconomyRoutes(
     if (!buyer) {
       res.status(401).json({ success: false, error: 'Vui lòng đăng nhập để mua sắm trên Phường Thị!' });
       return;
+    }
+
+    // Bảo tồn và hợp nhất toàn bộ tiến độ Tu Vi, Điểm Danh, Đan Dược từ client trước khi trừ Linh Thạch
+    const clientCultivation = req.body.clientCultivation;
+    if (clientCultivation && typeof clientCultivation === 'object') {
+      buyer.cultivation = mergeServerCultivationStates(buyer.cultivation, clientCultivation);
     }
 
     const { listingId } = req.body;
@@ -635,6 +642,7 @@ export function registerEconomyRoutes(
         `[Phường Thị] Đạo hữu @${buyer.username} đã mua ${listing.quantity}x ${listing.itemName}. Thu về +${sellerPayout.toLocaleString()} Linh Thạch (Thuế 5%: ${tax} LT).`
       );
       if (seller.cultivation.historyLog.length > 50) seller.cultivation.historyLog.pop();
+      seller.updatedAt = Date.now();
     }
 
     // Update listing
@@ -649,9 +657,14 @@ export function registerEconomyRoutes(
     marketStats.totalTradesCount += 1;
 
     saveMarketData();
+    buyer.updatedAt = Date.now();
     saveUsersToFile();
     if (isDatabaseConfigured()) {
       dbSaveMarketListing(listing).catch(() => {});
+      dbSaveUser(buyer).catch((err) => console.error('[Market] Lỗi lưu buyer:', err));
+      if (seller) {
+        dbSaveUser(seller).catch((err) => console.error('[Market] Lỗi lưu seller:', err));
+      }
     }
 
     addMarketLog({

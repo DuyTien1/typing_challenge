@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CultivationState } from '../../utils/cultivation';
+import { CultivationState, mergeCultivationStates } from '../../utils/cultivation';
 import { soundFx } from '../../utils/audio';
 import { getStoredAuthToken } from '../../utils/auth';
 import { setStoredFrame } from '../../utils/frames';
@@ -198,7 +198,8 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
                 setPurchasesToday(data.purchasesToday);
               }
               if (data.updatedCultivation) {
-                onUpdateState(data.updatedCultivation);
+                const merged = mergeCultivationStates(state, data.updatedCultivation);
+                onUpdateState(merged);
               }
             } else {
               // Máy chủ trả về lỗi cụ thể (ví dụ hết hạn mức)

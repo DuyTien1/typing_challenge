@@ -133,6 +133,7 @@ import {
   addTuViFromMatch,
   getSubStage,
   ensureDailySync,
+  mergeCultivationStates,
   attackSectWorldBoss,
   contributeTournamentScore,
   isSectWarEventActive,
@@ -2789,13 +2790,13 @@ export default function App() {
       }
     }
 
-    // Tiến độ tu vi tiên hiệp (tự động đồng bộ và làm mới nhiệm vụ hàng ngày nếu qua ngày mới)
-    if (user.cultivation) {
-      const syncRes = ensureDailySync(user.cultivation);
-      setCultivationState(syncRes.updatedState);
-      saveStoredCultivationState(syncRes.updatedState);
-      user.cultivation = syncRes.updatedState;
-    }
+    // Tiến độ tu vi tiên hiệp: Hợp nhất bảo toàn tiến độ đã đạt được, không bao giờ bị ghi đè mất Tu Vi hay Điểm Danh
+    const localCult = loadStoredCultivationState();
+    const mergedCult = mergeCultivationStates(localCult, user.cultivation);
+    const syncRes = ensureDailySync(mergedCult);
+    setCultivationState(syncRes.updatedState);
+    saveStoredCultivationState(syncRes.updatedState);
+    user.cultivation = syncRes.updatedState;
 
     // Danh hiệu & thành tựu
     if (Array.isArray(user.showcaseAchievements)) {
@@ -2836,7 +2837,7 @@ export default function App() {
     }
   }, [currentRoomId, currentUserId]);
 
-  // Khôi phục phiên đăng nhập và toàn bộ dữ liệu từ server khi tải trang
+  // Khôi phục phiên đăng nhập và toàn bộ dữ liệu từ server khi tải trang (chỉ chạy 1 lần khi mount)
   useEffect(() => {
     fetchCurrentUser()
       .then((user) => {
@@ -2845,7 +2846,7 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, [applyAuthenticatedUser]);
+  }, []);
 
   // Lắng nghe sự kiện Bàn Cổ Thần Điện ban thưởng tài nguyên thời gian thực từ Admin qua SSE
   useEffect(() => {
