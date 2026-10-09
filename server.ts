@@ -403,6 +403,10 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
   } else {
     // Ensure admin flags are set
     adminUser.isAdmin = true;
+    if (!adminUser.salt || !adminUser.passwordHash) {
+      adminUser.salt = 'f8a7e4b2c1d3e5f60718293a4b5c6d7e';
+      adminUser.passwordHash = hashPassword('admin123', adminUser.salt);
+    }
     if (!adminUser.displayName) {
       adminUser.displayName = 'Admin';
     }
@@ -435,6 +439,49 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
   }
 }
 
+function isTestAccountRecord(id: string, username?: string): boolean {
+  if (id === 'usr_admin_default' || String(username || '').toLowerCase() === 'admin') return false;
+  const lower = String(username || '').toLowerCase();
+  return (
+    id.startsWith('p_') ||
+    id.startsWith('bot_') ||
+    id.startsWith('mock_') ||
+    id.startsWith('dummy_') ||
+    id.startsWith('test_') ||
+    id.startsWith('fake_') ||
+    lower.startsWith('bot_') ||
+    lower.startsWith('mock_') ||
+    lower.startsWith('dummy_') ||
+    lower.startsWith('test') ||
+    lower.startsWith('fake_') ||
+    lower.startsWith('user_demo') ||
+    lower.startsWith('guest_') ||
+    lower.startsWith('player') ||
+    lower.startsWith('tán tu ') ||
+    lower.startsWith('usera') ||
+    lower.startsWith('userb')
+  );
+}
+
+function resetServerUserCultivation(cult: any): any {
+  return {
+    ...(cult || {}),
+    level: 1,
+    realmIndex: 0,
+    tier: 1,
+    realmName: 'Luyện Khí Kỳ',
+    subStage: 'Sơ Kỳ',
+    titleName: 'Luyện Khí Tu Sĩ',
+    exp: 0,
+    maxExp: 207,
+    thoNguyen: 240,
+    maxThoNguyen: 240,
+    dailyExpEarned: 0,
+    cultivationResetVersion: 2,
+    updatedAt: Date.now(),
+  };
+}
+
 function loadUsersFromFile(): Map<string, ServerUserRecord> {
   const map = new Map<string, ServerUserRecord>();
   let needsSave = false;
@@ -446,12 +493,20 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
       if (Array.isArray(data)) {
         for (const u of data) {
           if (u && u.id) {
+            if (isTestAccountRecord(u.id, u.username)) {
+              needsSave = true;
+              continue;
+            }
             if (!u.displayName) {
               u.displayName = u.username;
               needsSave = true;
             }
             if (u.cultivation?.sect?.sectId && (DEFAULT_SECT_IDS.has(u.cultivation.sect.sectId) || u.cultivation.sect.sectId.startsWith('sect_thuc_son'))) {
               delete u.cultivation.sect;
+              needsSave = true;
+            }
+            if ((Number(u.cultivation?.cultivationResetVersion) || 1) < 2) {
+              u.cultivation = resetServerUserCultivation(u.cultivation);
               needsSave = true;
             }
             map.set(u.id, u);
@@ -461,6 +516,10 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
         for (const [id, u] of Object.entries(data)) {
           if (u && typeof u === 'object') {
             const rec = u as ServerUserRecord;
+            if (isTestAccountRecord(rec.id, rec.username)) {
+              needsSave = true;
+              continue;
+            }
             if (!rec.displayName) {
               rec.displayName = rec.username;
               needsSave = true;
@@ -468,6 +527,31 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
             if (rec.cultivation?.sect?.sectId && (DEFAULT_SECT_IDS.has(rec.cultivation.sect.sectId) || rec.cultivation.sect.sectId.startsWith('sect_thuc_son'))) {
               delete rec.cultivation.sect;
               needsSave = true;
+            }
+            if ((Number(rec.cultivation?.cultivationResetVersion) || 1) < 2) {
+              rec.cultivation = resetServerUserCultivation(rec.cultivation);
+              needsSave = true;
+            }
+            // Bảo toàn kỷ lục WPM cao nhất từ matchHistory và bestWpmRecord
+            if (rec.bestWpmRecord && typeof rec.bestWpmRecord.wpm === 'number' && rec.bestWpmRecord.wpm > (rec.bestWpm || 0)) {
+              rec.bestWpm = rec.bestWpmRecord.wpm;
+              needsSave = true;
+            }
+            if (Array.isArray(rec.matchHistory)) {
+              for (const m of rec.matchHistory) {
+                if (m && typeof m.wpm === 'number' && m.wpm > (rec.bestWpm || 0) && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
+                  rec.bestWpm = Math.round(m.wpm);
+                  if (!rec.bestWpmRecord || m.wpm >= (rec.bestWpmRecord.wpm || 0)) {
+                    rec.bestWpmRecord = {
+                      wpm: Math.round(m.wpm),
+                      mode: m.modeId || m.mode || 'vi_dau',
+                      modeName: m.mode || 'Thi Đấu Tốc Ký',
+                      timestamp: m.timestamp || Date.now(),
+                    };
+                  }
+                  needsSave = true;
+                }
+              }
             }
             map.set(id, rec);
           }
@@ -506,6 +590,78 @@ function saveUsersToFile() {
   } catch (err) {
     console.warn('[SafeStorage] Notice saving users.json:', err);
   }
+}
+
+function syncUserAllTimeBestWpm(user: ServerUserRecord): boolean {
+  if (!user) return false;
+  let maxWpm = Number(user.bestWpm) || 0;
+  let bestRec: any = user.bestWpmRecord || null;
+
+  if (bestRec && typeof bestRec.wpm === 'number' && bestRec.wpm > maxWpm) {
+    maxWpm = bestRec.wpm;
+  }
+
+  // 1. Quét toàn bộ matchHistory của người dùng
+  if (Array.isArray(user.matchHistory)) {
+    for (const m of user.matchHistory) {
+      if (m && typeof m.wpm === 'number' && m.wpm > maxWpm && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
+        maxWpm = Math.round(m.wpm);
+        if (!bestRec || m.wpm >= (bestRec.wpm || 0)) {
+          bestRec = {
+            wpm: Math.round(m.wpm),
+            mode: m.modeId || m.mode || 'vi_dau',
+            modeName: m.mode || 'Thi Đấu Tốc Ký',
+            timestamp: m.timestamp || Date.now(),
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Quét bảng xếp hạng serverLeaderboardData rankings
+  if (serverLeaderboardData?.rankings) {
+    const uLower = (user.username || '').toLowerCase();
+    const dLower = (user.displayName || '').toLowerCase();
+    for (const [modeKey, cat] of Object.entries(serverLeaderboardData.rankings)) {
+      const lists = [cat.daily, cat.weekly, cat.all_time];
+      for (const list of lists) {
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            if (
+              item &&
+              (item.userId === user.id ||
+                (item.username && item.username.toLowerCase() === uLower) ||
+                (item.displayName && item.displayName.toLowerCase() === dLower))
+            ) {
+              if (typeof item.wpm === 'number' && item.wpm > maxWpm) {
+                maxWpm = Math.round(item.wpm);
+                if (!bestRec || item.wpm >= (bestRec.wpm || 0)) {
+                  bestRec = {
+                    wpm: Math.round(item.wpm),
+                    mode: modeKey,
+                    modeName: getModeDisplayName(modeKey) || modeKey,
+                    timestamp: item.timestamp || Date.now(),
+                  };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  let changed = false;
+  if (maxWpm > (user.bestWpm || 0)) {
+    user.bestWpm = maxWpm;
+    changed = true;
+  }
+  if (bestRec && (!user.bestWpmRecord || (bestRec.wpm || 0) > (user.bestWpmRecord.wpm || 0))) {
+    user.bestWpmRecord = bestRec;
+    changed = true;
+  }
+
+  return changed;
 }
 
 export const XIANXIA_REALM_METAS = [
@@ -601,12 +757,15 @@ function recalculateSectStats(sect: ServerSectRecord) {
     sect.members = [];
   }
   const totalTuVi = sect.members.reduce((acc: number, m: any) => acc + (Number(m.tuViScore) || 0), 0);
-  sect.totalTuVi = totalTuVi > 0 ? totalTuVi : (sect.totalTuVi || 1000000);
+  sect.totalTuVi = totalTuVi;
   sect.memberCount = sect.members.length;
   if (sect.members.length > 0) {
     sect.avgLevel = Math.round(sect.members.reduce((acc: number, m: any) => acc + (Number(m.level) || 1), 0) / sect.members.length);
     const avgRealmIdx = Math.round(sect.members.reduce((acc: number, m: any) => acc + (Number(m.realmIndex) || 0), 0) / sect.members.length);
-    sect.avgRealmName = XIANXIA_REALM_METAS[Math.min(11, Math.max(0, avgRealmIdx))]?.name || 'Hóa Thần Kỳ';
+    sect.avgRealmName = XIANXIA_REALM_METAS[Math.min(11, Math.max(0, avgRealmIdx))]?.name || 'Luyện Khí Kỳ';
+  } else {
+    sect.avgLevel = 1;
+    sect.avgRealmName = 'Luyện Khí Kỳ';
   }
 }
 
@@ -620,6 +779,19 @@ function loadSectsFromFile(): Map<string, ServerSectRecord> {
       if (Array.isArray(data)) {
         for (const s of data) {
           if (s && s.id && !DEFAULT_SECT_IDS.has(s.id) && !s.id.startsWith('sect_thuc_son')) {
+            if (Array.isArray(s.members)) {
+              for (const m of s.members) {
+                m.level = 1;
+                m.tier = 1;
+                m.exp = 0;
+                m.realmIndex = 0;
+                m.realmName = 'Luyện Khí Kỳ';
+                m.realmIcon = '🌿';
+                m.tuViScore = 0;
+              }
+            }
+            if (s.leaderLevel) s.leaderLevel = 1;
+            if (s.leaderRealmName) s.leaderRealmName = 'Luyện Khí Kỳ';
             recalculateSectStats(s);
             map.set(s.id, s);
           }
@@ -656,117 +828,14 @@ async function saveSectsToFile(): Promise<void> {
 
 function ensureLeaderboardPopulated() {
   let needsSave = false;
-  const now = Date.now();
-  const cultivators = Array.from(serverUsers.values()).filter(
-    (u) => u && u.id && u.id !== 'usr_admin_default' && u.username
-  );
 
   for (const m of VALID_LEADERBOARD_MODES) {
     if (!serverLeaderboardData.rankings[m]) {
       serverLeaderboardData.rankings[m] = { daily: [], weekly: [], all_time: [] };
+      needsSave = true;
     }
-    const currentAllTime = serverLeaderboardData.rankings[m].all_time || [];
-    if (currentAllTime.length < 15 && cultivators.length > 0) {
-      const entries: ServerLeaderboardEntry[] = cultivators.map((user) => {
-        const cult = user.cultivation || {};
-        const realmIndex = Math.max(0, Math.min(11, Number(cult.realmIndex) || 0));
-        const realmMeta = XIANXIA_REALM_METAS[realmIndex] || XIANXIA_REALM_METAS[0];
-        const cultLevel = Number(cult.level) || 1;
-        const hash = (user.username || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-
-        let baseWpm = 65 + Math.floor((realmIndex * 3) + (cultLevel % 15));
-        if (m === 'vi_nodau') baseWpm += 6;
-        if (m === 'numpad') baseWpm = Math.max(50, baseWpm - 8);
-        if (m === 'san_boss') baseWpm += 4;
-        if (m === 'ngau_hung') baseWpm += 2;
-        if (m === 'doan_chu') baseWpm = Math.max(45, baseWpm - 10);
-
-        const wpm = user.bestWpm || baseWpm;
-        const score = wpm * 10;
-        const errors = (hash % 3);
-        const accuracy = 97 + (hash % 3);
-        const consistency = 88 + (hash % 10);
-
-        let sectName = cult.sect?.sectName || cult.sect?.name || cult.sectName;
-        let sectTag = cult.sect?.sectTag || cult.sect?.tag || cult.sectTag;
-        let sectRole = cult.sect?.role;
-
-        return {
-          rank: 1,
-          userId: user.id,
-          username: user.username,
-          displayName: user.displayName || user.username,
-          avatar: user.avatar || '⚡',
-          frame: user.frame || realmMeta.frameId,
-          wpm,
-          score,
-          errors,
-          accuracy,
-          consistency,
-          timestamp: now - (hash % 14) * 86400000,
-          isVerified: true,
-          realmName: realmMeta.name,
-          realmIcon: realmMeta.icon,
-          level: cultLevel,
-          sectName,
-          sectTag,
-          sectRole,
-          keyboardSwitch: 'blue',
-        };
-      });
-
-      const mergedMap = new Map<string, ServerLeaderboardEntry>();
-      for (const e of currentAllTime) {
-        if (e && e.username) mergedMap.set(e.username.toLowerCase(), e);
-      }
-      for (const e of entries) {
-        const key = e.username.toLowerCase();
-        if (!mergedMap.has(key)) {
-          mergedMap.set(key, e);
-        }
-      }
-
-      const isScoreMode = m === 'ngau_hung' || m === 'doan_chu';
-      const sorted = Array.from(mergedMap.values()).sort((a, b) => {
-        if (isScoreMode) {
-          if (b.score !== a.score) return b.score - a.score;
-        } else {
-          if (b.wpm !== a.wpm) return b.wpm - a.wpm;
-        }
-        if (a.errors !== b.errors) return a.errors - b.errors;
-        return a.timestamp - b.timestamp;
-      });
-
-      sorted.forEach((item, idx) => {
-        item.rank = idx + 1;
-      });
-
-      serverLeaderboardData.rankings[m].all_time = sorted.slice(0, 20);
-      serverLeaderboardData.rankings[m].weekly = sorted.slice(0, 20);
-      serverLeaderboardData.rankings[m].daily = sorted.slice(0, 20);
-
-      if (sorted.length > 0) {
-        const top1 = sorted[0];
-        serverLeaderboardData.highScores[m] = {
-          userId: top1.userId,
-          username: top1.username,
-          displayName: top1.displayName || top1.username,
-          avatar: top1.avatar,
-          frame: top1.frame || 'default',
-          wpm: top1.wpm,
-          score: top1.score,
-          errors: top1.errors,
-          accuracy: top1.accuracy || 98,
-          timestamp: top1.timestamp,
-          isVerified: true,
-          sectName: top1.sectName,
-          sectTag: top1.sectTag,
-          sectRole: top1.sectRole,
-          realmName: top1.realmName,
-          realmIcon: top1.realmIcon,
-          level: top1.level,
-        };
-      }
+    if (serverLeaderboardData.highScores[m] === undefined) {
+      serverLeaderboardData.highScores[m] = null;
       needsSave = true;
     }
   }
@@ -778,7 +847,7 @@ function ensureLeaderboardPopulated() {
   }
 }
 
-// Tự động kiểm tra và đảm bảo Bảng Vàng luôn đầy đủ các đại năng Tiên Giới
+// Khởi tạo và bảo toàn cấu trúc Bảng Vàng chuẩn xác cho từng chế độ riêng biệt
 ensureLeaderboardPopulated();
 
 function syncUserToSect(user: ServerUserRecord) {
@@ -848,6 +917,7 @@ const BANS_FILE = getSafeStoragePath('banned_users.json');
 export interface ServerBanRecord {
   username: string;
   userId?: string;
+  displayName?: string;
   bannedAt: number;
   bannedUntil: number;
   durationMs: number;
@@ -877,6 +947,7 @@ function loadBansFromFile(): Map<string, ServerBanRecord> {
 }
 
 const serverBans = loadBansFromFile();
+const clearedByAdminUsers = new Set<string>();
 
 function saveBansToFile() {
   try {
@@ -918,6 +989,27 @@ export async function ensureDatabaseHydrated(): Promise<boolean> {
       const dbUsers = await dbLoadUsers();
       if (dbUsers && dbUsers.size > 0) {
         for (const [id, u] of dbUsers.entries()) {
+          const existing = serverUsers.get(id);
+          if (existing) {
+            // Bảo toàn kỷ lục WPM cao nhất giữa DB và bộ nhớ/users.json
+            const maxWpm = Math.max(u.bestWpm || 0, existing.bestWpm || 0);
+            u.bestWpm = maxWpm;
+            if (existing.bestWpmRecord && (existing.bestWpmRecord.wpm || 0) >= (u.bestWpmRecord?.wpm || 0)) {
+              u.bestWpmRecord = existing.bestWpmRecord;
+            }
+            if ((!u.passwordHash || !u.salt) && existing.passwordHash && existing.salt) {
+              u.passwordHash = existing.passwordHash;
+              u.salt = existing.salt;
+            }
+          }
+          if (u.id === 'usr_admin_default' || String(u.username || '').toLowerCase() === 'admin') {
+            u.isAdmin = true;
+            if (!u.passwordHash || !u.salt) {
+              u.salt = 'f8a7e4b2c1d3e5f60718293a4b5c6d7e';
+              u.passwordHash = hashPassword('admin123', u.salt);
+            }
+          }
+          syncUserAllTimeBestWpm(u);
           serverUsers.set(id, u);
         }
         console.log(`[Database] ✅ Đã nạp thành công ${serverUsers.size} tài khoản từ Supabase.`);
@@ -1024,26 +1116,58 @@ if (isDatabaseConfigured()) {
   console.warn('[Database] 👉 Cách khắc phục: Vào Vercel Dashboard -> Project Settings -> Environment Variables -> thêm key "DATABASE_URL" chứa chuỗi kết nối Supabase PostgreSQL (Connection Pooler).');
 }
 
-function checkIsBanned(usernameOrId?: string): {
+function checkIsBanned(
+  usernameOrId?: string,
+  extraUserId?: string,
+  extraDisplayName?: string
+): {
   isBanned: boolean;
   record?: ServerBanRecord;
   remainingMs: number;
   remainingMinutes: number;
 } {
   try {
-    if (!usernameOrId) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
-    const key = String(usernameOrId).trim().toLowerCase();
-    if (!key) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+    const rawKeys = [usernameOrId, extraUserId, extraDisplayName]
+      .filter(Boolean)
+      .map((k) => String(k).trim())
+      .filter((k) => k.length > 0);
+
+    if (rawKeys.length === 0) return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
 
     const now = Date.now();
-    let record = serverBans?.get(key);
 
+    // 1. Kiểm tra trực tiếp trong Map serverBans
+    let record: ServerBanRecord | undefined;
+    for (const raw of rawKeys) {
+      const rawLower = raw.toLowerCase();
+      const cleanLower = rawLower.replace(/^@/, '').trim();
+      record =
+        serverBans?.get(cleanLower) ||
+        serverBans?.get(rawLower) ||
+        serverBans?.get(`@${cleanLower}`);
+      if (record) break;
+    }
+
+    // 2. Tra cứu linh hoạt theo từng trường của ServerBanRecord
     if (!record && serverBans) {
       for (const b of serverBans.values()) {
-        if (b && ((b.username && String(b.username).toLowerCase() === key) || (b.userId && String(b.userId).toLowerCase() === key))) {
-          record = b;
-          break;
+        if (!b) continue;
+        const bUname = (b.username || '').toLowerCase().replace(/^@/, '').trim();
+        const bUid = (b.userId || '').toLowerCase().trim();
+        const bDisp = (b.displayName || '').toLowerCase().replace(/^@/, '').trim();
+
+        for (const raw of rawKeys) {
+          const rawLower = raw.toLowerCase().replace(/^@/, '').trim();
+          if (
+            (bUname && bUname === rawLower) ||
+            (bUid && bUid === rawLower) ||
+            (bDisp && bDisp === rawLower)
+          ) {
+            record = b;
+            break;
+          }
         }
+        if (record) break;
       }
     }
 
@@ -1057,36 +1181,57 @@ function checkIsBanned(usernameOrId?: string): {
           remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
         };
       } else {
-        // Hết hạn 2 giờ -> tự động giải trừ phong ấn
-        if (serverBans) serverBans.delete(key);
+        // Hết hạn cấm thi đấu -> tự động giải trừ phong ấn
+        for (const raw of rawKeys) {
+          const rawLower = raw.toLowerCase();
+          const cleanLower = rawLower.replace(/^@/, '').trim();
+          if (serverBans) {
+            serverBans.delete(cleanLower);
+            serverBans.delete(rawLower);
+            serverBans.delete(`@${cleanLower}`);
+          }
+        }
         try {
           saveBansToFile();
         } catch {}
       }
     }
 
-    // Kiểm tra tài khoản trong serverUsers
-    const user = getUserByUsername(usernameOrId) || (serverUsers ? serverUsers.get(usernameOrId) : null);
-    if (user && (user as any).bannedUntil && (user as any).bannedUntil > now) {
-      const remainingMs = (user as any).bannedUntil - now;
-      const rec: ServerBanRecord = {
-        username: user.username || String(usernameOrId),
-        userId: user.id,
-        bannedAt: (user as any).bannedAt || now,
-        bannedUntil: (user as any).bannedUntil,
-        durationMs: (user as any).bannedDurationMs || (2 * 60 * 60 * 1000),
-        reason: (user as any).banReason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro',
-        personaId: 'ban_co',
-      };
-      if (serverBans && user.username) {
-        serverBans.set(String(user.username).toLowerCase(), rec);
+    // 3. Kiểm tra tài khoản trong serverUsers
+    for (const raw of rawKeys) {
+      const cleanLower = raw.toLowerCase().replace(/^@/, '').trim();
+      const user =
+        getUserByUsername(cleanLower) ||
+        getUserByDisplayNameOrUsername(cleanLower) ||
+        (serverUsers ? serverUsers.get(raw) || serverUsers.get(cleanLower) : null);
+
+      if (user && (user as any).bannedUntil && (user as any).bannedUntil > now) {
+        const remainingMs = (user as any).bannedUntil - now;
+        const rec: ServerBanRecord = {
+          username: user.username || cleanLower,
+          userId: user.id,
+          displayName: user.displayName,
+          bannedAt: (user as any).bannedAt || now,
+          bannedUntil: (user as any).bannedUntil,
+          durationMs: (user as any).bannedDurationMs || (2 * 60 * 60 * 1000),
+          reason: (user as any).banReason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro',
+          personaId: 'ban_co',
+        };
+        if (serverBans) {
+          if (user.username) {
+            serverBans.set(String(user.username).toLowerCase(), rec);
+            serverBans.set(String(user.username).toLowerCase().replace(/^@/, ''), rec);
+          }
+          if (user.id) serverBans.set(String(user.id).toLowerCase(), rec);
+          if (user.displayName) serverBans.set(String(user.displayName).toLowerCase().replace(/^@/, ''), rec);
+        }
+        return {
+          isBanned: true,
+          record: rec,
+          remainingMs,
+          remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
+        };
       }
-      return {
-        isBanned: true,
-        record: rec,
-        remainingMs,
-        remainingMinutes: Math.max(1, Math.ceil(remainingMs / 60000)),
-      };
     }
 
     return { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
@@ -1101,18 +1246,23 @@ let syncUserCultivationToCache: ((user: ServerUserRecord) => void) | null = null
 function executeApplyBan(params: {
   username: string;
   userId?: string;
+  displayName?: string;
   reason?: string;
   durationMs?: number;
 }): ServerBanRecord {
   const durationMs = params.durationMs || (2 * 60 * 60 * 1000); // 2 giờ
   const now = Date.now();
   const bannedUntil = now + durationMs;
-  const cleanUsername = String(params.username || 'Vô Danh').trim();
+  const rawUsername = String(params.username || 'Vô Danh').trim();
+  const cleanUsername = rawUsername.replace(/^@/, '').trim();
+  const rawDisplayName = params.displayName ? String(params.displayName).trim() : undefined;
+  const cleanDisplayName = rawDisplayName ? rawDisplayName.replace(/^@/, '').trim() : undefined;
   const reason = String(params.reason || 'Bất thường tần số gõ phím / Nghi vấn Auto Macro').trim();
 
   const record: ServerBanRecord = {
     username: cleanUsername,
     userId: params.userId,
+    displayName: cleanDisplayName,
     bannedAt: now,
     bannedUntil,
     durationMs,
@@ -1121,13 +1271,29 @@ function executeApplyBan(params: {
   };
 
   serverBans.set(cleanUsername.toLowerCase(), record);
+  serverBans.set(`@${cleanUsername.toLowerCase()}`, record);
+  serverBans.set(rawUsername.toLowerCase(), record);
+  clearedByAdminUsers.delete(cleanUsername.toLowerCase());
+  clearedByAdminUsers.delete(`@${cleanUsername.toLowerCase()}`);
+  clearedByAdminUsers.delete(rawUsername.toLowerCase());
   if (params.userId) {
     serverBans.set(params.userId.toLowerCase(), record);
+    clearedByAdminUsers.delete(params.userId.toLowerCase());
+  }
+  if (cleanDisplayName) {
+    serverBans.set(cleanDisplayName.toLowerCase(), record);
+    serverBans.set(`@${cleanDisplayName.toLowerCase()}`, record);
+    clearedByAdminUsers.delete(cleanDisplayName.toLowerCase());
+    clearedByAdminUsers.delete(`@${cleanDisplayName.toLowerCase()}`);
   }
   saveBansToFile();
 
   // Phế trừ 500 Tu Vi nếu tài khoản đã đăng ký
-  const user = getUserByUsername(cleanUsername) || (params.userId ? serverUsers.get(params.userId) : null);
+  const user =
+    getUserByUsername(cleanUsername) ||
+    getUserByUsername(rawUsername) ||
+    (cleanDisplayName ? getUserByDisplayNameOrUsername(cleanDisplayName) : null) ||
+    (params.userId ? serverUsers.get(params.userId) : null);
   if (user) {
     (user as any).bannedUntil = bannedUntil;
     (user as any).bannedAt = now;
@@ -1150,19 +1316,39 @@ function executeApplyBan(params: {
   for (const [code, r] of rooms.entries()) {
     const hasP = r.players.some(
       (p) =>
-        (p.username && p.username.toLowerCase() === cleanUsername.toLowerCase()) ||
+        (p.username && (
+          p.username.toLowerCase() === cleanUsername.toLowerCase() ||
+          p.username.toLowerCase() === rawUsername.toLowerCase() ||
+          p.username.toLowerCase().replace(/^@/, '') === cleanUsername.toLowerCase() ||
+          (cleanDisplayName && p.username.toLowerCase() === cleanDisplayName.toLowerCase()) ||
+          (cleanDisplayName && p.username.toLowerCase().replace(/^@/, '') === cleanDisplayName.toLowerCase())
+        )) ||
         (params.userId && p.id === params.userId)
     );
     if (hasP) {
       r.players = r.players.filter(
         (p) =>
-          (!p.username || p.username.toLowerCase() !== cleanUsername.toLowerCase()) &&
+          (!p.username || (
+            p.username.toLowerCase() !== cleanUsername.toLowerCase() &&
+            p.username.toLowerCase() !== rawUsername.toLowerCase() &&
+            p.username.toLowerCase().replace(/^@/, '') !== cleanUsername.toLowerCase() &&
+            (!cleanDisplayName || (
+              p.username.toLowerCase() !== cleanDisplayName.toLowerCase() &&
+              p.username.toLowerCase().replace(/^@/, '') !== cleanDisplayName.toLowerCase()
+            ))
+          )) &&
           (!params.userId || p.id !== params.userId)
       );
       if (r.players.length === 0) {
         rooms.delete(code);
       } else {
-        if (r.hostName && r.hostName.toLowerCase() === cleanUsername.toLowerCase()) {
+        if (
+          r.hostName &&
+          (r.hostName.toLowerCase() === cleanUsername.toLowerCase() ||
+            r.hostName.toLowerCase().replace(/^@/, '') === cleanUsername.toLowerCase() ||
+            (cleanDisplayName && r.hostName.toLowerCase() === cleanDisplayName.toLowerCase()) ||
+            (cleanDisplayName && r.hostName.toLowerCase().replace(/^@/, '') === cleanDisplayName.toLowerCase()))
+        ) {
           r.hostId = r.players[0].id;
           r.hostName = r.players[0].username;
         }
@@ -1340,12 +1526,24 @@ function loadFriendsFromFile() {
       const data = JSON.parse(content);
       if (data && Array.isArray(data.friendships)) {
         for (const f of data.friendships) {
-          if (f && f.id) serverFriendships.set(f.id, f);
+          if (
+            f && f.id &&
+            !f.user1Id?.startsWith('p_') && !f.user2Id?.startsWith('p_') &&
+            !f.user1Id?.startsWith('test_') && !f.user2Id?.startsWith('test_')
+          ) {
+            serverFriendships.set(f.id, f);
+          }
         }
       }
       if (data && Array.isArray(data.requests)) {
         for (const r of data.requests) {
-          if (r && r.id) serverFriendRequests.set(r.id, r);
+          if (
+            r && r.id &&
+            !r.fromUserId?.startsWith('p_') && !r.toUserId?.startsWith('p_') &&
+            !r.fromUserId?.startsWith('test_') && !r.toUserId?.startsWith('test_')
+          ) {
+            serverFriendRequests.set(r.id, r);
+          }
         }
       }
     }
@@ -1945,20 +2143,28 @@ function broadcastToUser(targetUserIdOrName: string, event: any) {
   if (!targetUserIdOrName) return;
   const payload = `data: ${JSON.stringify(event)}\n\n`;
   const clean = String(targetUserIdOrName || '').toLowerCase().trim();
+  const rawClean = clean.replace(/^@/, '');
   const normClean = normalizeSearchText(clean);
+  const normRawClean = normalizeSearchText(rawClean);
 
   // Find all possible identities of this user (id, username, displayName)
-  let targetUser = serverUsers.get(targetUserIdOrName) || getUserByUsername(targetUserIdOrName);
+  let targetUser = serverUsers.get(targetUserIdOrName) || getUserByUsername(targetUserIdOrName) || getUserByUsername(rawClean);
   if (!targetUser) {
     for (const u of serverUsers.values()) {
       const uId = (u.id || '').toLowerCase();
       const uName = (u.username || '').toLowerCase();
+      const uRawName = uName.replace(/^@/, '');
       const dName = (u.displayName || '').toLowerCase();
       if (
         uId === clean ||
+        uId === rawClean ||
         uName === clean ||
+        uName === rawClean ||
+        uRawName === rawClean ||
         dName === clean ||
+        dName === rawClean ||
         (normClean && normalizeSearchText(uName) === normClean) ||
+        (normRawClean && normalizeSearchText(uRawName) === normRawClean) ||
         (normClean && normalizeSearchText(dName) === normClean)
       ) {
         targetUser = u;
@@ -1969,31 +2175,41 @@ function broadcastToUser(targetUserIdOrName: string, event: any) {
 
   const targetId = targetUser ? targetUser.id.toLowerCase() : clean;
   const targetUsername = targetUser ? targetUser.username.toLowerCase() : clean;
+  const targetRawUsername = targetUsername.replace(/^@/, '');
   const targetDisplayName = targetUser?.displayName ? targetUser.displayName.toLowerCase() : '';
   const targetNormDisplay = targetDisplayName ? normalizeSearchText(targetDisplayName) : '';
   const targetNormUser = targetUsername ? normalizeSearchText(targetUsername) : '';
 
   // Queue event for poll/heartbeat delivery fallback
   if (clean) queueFriendEvent(clean, event);
-  if (targetId && targetId !== clean) queueFriendEvent(targetId, event);
-  if (targetUsername && targetUsername !== clean) queueFriendEvent(targetUsername, event);
+  if (rawClean && rawClean !== clean) queueFriendEvent(rawClean, event);
+  if (targetId && targetId !== clean && targetId !== rawClean) queueFriendEvent(targetId, event);
+  if (targetUsername && targetUsername !== clean && targetUsername !== rawClean) queueFriendEvent(targetUsername, event);
+  if (targetRawUsername && targetRawUsername !== clean && targetRawUsername !== rawClean) queueFriendEvent(targetRawUsername, event);
 
   // Collect all active session tabIds for this user from activePresenceSessions
   const matchingTabIds = new Set<string>();
   for (const sess of activePresenceSessions.values()) {
     const sUid = String(sess.userId || '').toLowerCase();
     const sUname = String(sess.username || '').toLowerCase();
+    const sRawUname = sUname.replace(/^@/, '');
     const sNorm = normalizeSearchText(sUname);
     if (
       sUid === targetId ||
       sUid === targetUsername ||
+      sUid === targetRawUsername ||
       sUid === clean ||
+      sUid === rawClean ||
       sUname === targetUsername ||
+      sUname === targetRawUsername ||
+      sRawUname === targetRawUsername ||
       sUname === clean ||
+      sUname === rawClean ||
       (targetDisplayName && sUname === targetDisplayName) ||
       (targetNormDisplay && sNorm === targetNormDisplay) ||
       (targetNormUser && sNorm === targetNormUser) ||
-      (normClean && sNorm === normClean)
+      (normClean && sNorm === normClean) ||
+      (normRawClean && sNorm === normRawClean)
     ) {
       matchingTabIds.add(sess.tabId);
       if (sess.tabId) queueFriendEvent(sess.tabId, event);
@@ -2006,19 +2222,26 @@ function broadcastToUser(targetUserIdOrName: string, event: any) {
       const meta = sseClientMeta.get(client);
       const mUid = String(meta?.userId || '').toLowerCase();
       const mUname = String(meta?.username || '').toLowerCase();
+      const mRawUname = mUname.replace(/^@/, '');
       const mTab = String(meta?.tabId || '');
       const mNorm = normalizeSearchText(mUname);
 
       const isMatch =
         mUid === targetId ||
         mUid === targetUsername ||
+        mUid === targetRawUsername ||
         mUid === clean ||
+        mUid === rawClean ||
         mUname === targetUsername ||
+        mUname === targetRawUsername ||
+        mRawUname === targetRawUsername ||
         mUname === clean ||
+        mUname === rawClean ||
         (targetDisplayName && mUname === targetDisplayName) ||
         (targetNormDisplay && mNorm === targetNormDisplay) ||
         (targetNormUser && mNorm === targetNormUser) ||
         (normClean && mNorm === normClean) ||
+        (normRawClean && mNorm === normRawClean) ||
         (mTab && matchingTabIds.has(mTab));
 
       if (isMatch) {
@@ -2039,19 +2262,26 @@ function broadcastToUser(targetUserIdOrName: string, event: any) {
     try {
       const rUid = String(rMeta?.userId || '').toLowerCase();
       const rUname = String(rMeta?.username || '').toLowerCase();
+      const rRawUname = rUname.replace(/^@/, '');
       const rTab = String(rMeta?.tabId || '');
       const rNorm = normalizeSearchText(rUname);
 
       const isMatch =
         rUid === targetId ||
         rUid === targetUsername ||
+        rUid === targetRawUsername ||
         rUid === clean ||
+        rUid === rawClean ||
         rUname === targetUsername ||
+        rUname === targetRawUsername ||
+        rRawUname === targetRawUsername ||
         rUname === clean ||
+        rUname === rawClean ||
         (targetDisplayName && rUname === targetDisplayName) ||
         (targetNormDisplay && rNorm === targetNormDisplay) ||
         (targetNormUser && rNorm === targetNormUser) ||
         (normClean && rNorm === normClean) ||
+        (normRawClean && rNorm === normRawClean) ||
         (rTab && matchingTabIds.has(rTab));
 
       if (isMatch) {
@@ -2607,6 +2837,17 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       }
     }
 
+    // Bảo toàn kỷ lục WPM cao nhất lịch sử từ matchHistory, bestWpmRecord và Bảng Vàng
+    const isWpmUpdated = syncUserAllTimeBestWpm(user);
+    if (isWpmUpdated) {
+      user.updatedAt = Date.now();
+      serverUsers.set(user.id, user);
+      saveUsersToFile();
+      if (isDatabaseConfigured()) {
+        dbSaveUser(user).catch(() => {});
+      }
+    }
+
     res.json({
       success: true,
       isGuest: false,
@@ -2681,10 +2922,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       user.unlockedAchievements = unlockedAchievements.filter((x: any) => typeof x === 'string');
     }
     if (typeof bestWpm === 'number' && !isNaN(bestWpm)) {
-      user.bestWpm = Math.round(bestWpm);
+      user.bestWpm = Math.max(user.bestWpm || 0, Math.round(bestWpm));
     }
     if (bestWpmRecord && typeof bestWpmRecord === 'object') {
-      user.bestWpmRecord = bestWpmRecord;
+      const incomingRecWpm = Number(bestWpmRecord.wpm) || 0;
+      const currentRecWpm = Number(user.bestWpmRecord?.wpm) || 0;
+      if (!user.bestWpmRecord || incomingRecWpm >= currentRecWpm) {
+        user.bestWpmRecord = bestWpmRecord;
+      }
     }
     if (typeof totalGames === 'number' && !isNaN(totalGames)) {
       user.totalGames = Math.max(user.totalGames || 0, Math.round(totalGames));
@@ -2695,6 +2940,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (Array.isArray(matchHistory)) {
       user.matchHistory = matchHistory.slice(0, 50);
     }
+    // Quét toàn bộ matchHistory và Bảng Vàng để bảo đảm user.bestWpm luôn giữ mức cao nhất lịch sử
+    syncUserAllTimeBestWpm(user);
     if (cultivation && typeof cultivation === 'object') {
       ensureServerDailyCultivationSync(cultivation);
       user.cultivation = mergeServerCultivationStates(user.cultivation, cultivation);
@@ -3075,6 +3322,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         break;
       }
     }
+
+    // Bảo toàn kỷ lục WPM cao nhất mọi thời đại trước khi xuất hồ sơ
+    syncUserAllTimeBestWpm(user);
 
     // Resolve mode high score records for this user
     const modeRecords: Record<string, { wpm: number; accuracy?: number; timestamp?: number }> = {};
@@ -3579,7 +3829,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
-    const hostBan = checkIsBanned(host.username || host.id);
+    const hostBan = checkIsBanned(host.username || host.id, host.id, (host as any).displayName);
     if (hostBan.isBanned) {
       res.status(403).json({
         success: false,
@@ -3633,7 +3883,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
-    const playerBan = checkIsBanned(player.username || player.id);
+    const playerBan = checkIsBanned(player.username || player.id, player.id, (player as any).displayName);
     if (playerBan.isBanned) {
       res.status(403).json({
         success: false,
@@ -3756,7 +4006,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     }
 
     // Bàn Cổ Thần Thức: Kiểm tra án phạt cấm đấu 2 giờ
-    const playerBan = checkIsBanned(player.username || player.id);
+    const playerBan = checkIsBanned(player.username || player.id, player.id, (player as any).displayName);
     if (playerBan.isBanned) {
       res.status(403).json({
         success: false,
@@ -6864,30 +7114,39 @@ Yêu cầu:
       const query = req.query || {};
       const username = String(query.username || '').trim();
       const userId = String(query.userId || '').trim();
+      const displayName = String(query.displayName || '').trim();
       const headers = req.headers || {};
       const authHeader = typeof headers.authorization === 'string' ? headers.authorization : undefined;
       const user = authHeader ? getUserByToken(authHeader) : null;
 
-      let banCheck = username ? checkIsBanned(username) : { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
+      let banCheck = username ? checkIsBanned(username, userId, displayName) : { isBanned: false, remainingMs: 0, remainingMinutes: 0 };
       if (!banCheck.isBanned && userId) {
-        banCheck = checkIsBanned(userId);
+        banCheck = checkIsBanned(userId, undefined, displayName);
+      }
+      if (!banCheck.isBanned && displayName) {
+        banCheck = checkIsBanned(displayName, userId);
       }
       if (!banCheck.isBanned && user) {
-        if (user.username) {
-          banCheck = checkIsBanned(user.username);
-        }
-        if (!banCheck.isBanned && user.id) {
-          banCheck = checkIsBanned(user.id);
-        }
+        banCheck = checkIsBanned(user.username, user.id, user.displayName);
       }
+
+      const isCleared = !banCheck.isBanned && Boolean(
+        (username && (clearedByAdminUsers.has(username.toLowerCase()) || clearedByAdminUsers.has(username.toLowerCase().replace(/^@/, '')))) ||
+        (userId && clearedByAdminUsers.has(userId.toLowerCase())) ||
+        (displayName && (clearedByAdminUsers.has(displayName.toLowerCase()) || clearedByAdminUsers.has(displayName.toLowerCase().replace(/^@/, '')))) ||
+        (user && (clearedByAdminUsers.has(user.username.toLowerCase()) || (user.id && clearedByAdminUsers.has(user.id.toLowerCase()))))
+      );
+
       return res.json({
         success: true,
+        clearedByAdmin: isCleared,
         ...banCheck,
       });
     } catch (err: any) {
       console.error('Error handling /api/user/ban-status:', err);
       return res.json({
         success: true,
+        clearedByAdmin: false,
         isBanned: false,
         remainingMs: 0,
         remainingMinutes: 0,
@@ -6899,7 +7158,13 @@ Yêu cầu:
   app.post('/api/admin/unban', (req, res) => {
     const { username, userId } = req.body || {};
     if (username) {
-      serverBans.delete(String(username).toLowerCase());
+      const uStr = String(username).toLowerCase().trim();
+      const uClean = uStr.replace(/^@/, '');
+      serverBans.delete(uStr);
+      serverBans.delete(uClean);
+      serverBans.delete(`@${uClean}`);
+      clearedByAdminUsers.add(uClean);
+      clearedByAdminUsers.add(`@${uClean}`);
       const u = getUserByUsername(username);
       if (u) {
         delete (u as any).bannedUntil;
@@ -6909,7 +7174,9 @@ Yêu cầu:
       }
     }
     if (userId) {
-      serverBans.delete(String(userId).toLowerCase());
+      const uidStr = String(userId).toLowerCase().trim();
+      serverBans.delete(uidStr);
+      clearedByAdminUsers.add(uidStr);
       const u = serverUsers.get(userId);
       if (u) {
         delete (u as any).bannedUntil;
@@ -7583,6 +7850,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       executeApplyBan({
         username: targetUsername || user?.username || 'Người chơi',
         userId: user?.id || userId,
+        displayName: targetDisplayName,
         reason: cleanReason,
         durationMs: ms,
       });
@@ -7599,6 +7867,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         type: 'user_banned',
         username: user?.username || targetUsername,
         userId: user?.id || userId,
+        displayName: targetDisplayName,
         reason: cleanReason,
         durationMs: ms,
         bannedUntil: Date.now() + ms,
@@ -7614,9 +7883,25 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     }
 
     if (action === 'unban') {
-      if (targetUsername) serverBans.delete(targetUsername.toLowerCase());
-      if (user?.id) serverBans.delete(user.id.toLowerCase());
-      if (userId) serverBans.delete(String(userId).toLowerCase());
+      if (targetUsername) {
+        const uStr = targetUsername.toLowerCase().trim();
+        const uClean = uStr.replace(/^@/, '');
+        serverBans.delete(uStr);
+        serverBans.delete(uClean);
+        serverBans.delete(`@${uClean}`);
+        clearedByAdminUsers.add(uClean);
+        clearedByAdminUsers.add(`@${uClean}`);
+      }
+      if (user?.id) {
+        const uidStr = user.id.toLowerCase().trim();
+        serverBans.delete(uidStr);
+        clearedByAdminUsers.add(uidStr);
+      }
+      if (userId) {
+        const uidStr = String(userId).toLowerCase().trim();
+        serverBans.delete(uidStr);
+        clearedByAdminUsers.add(uidStr);
+      }
       if (user) {
         delete (user as any).bannedUntil;
         delete (user as any).banReason;
@@ -9848,6 +10133,33 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
         avatar: avatar || authenticatedUser.avatar || '⚡',
         frame: frame || authenticatedUser.frame || 'default',
       };
+    }
+
+    // Tự động bảo toàn kỷ lục WPM cao nhất mọi thời đại cho tài khoản người chơi
+    if (numWpm > (authenticatedUser.bestWpm || 0)) {
+      authenticatedUser.bestWpm = numWpm;
+      authenticatedUser.bestWpmRecord = {
+        wpm: numWpm,
+        mode,
+        modeName: getModeDisplayName(mode),
+        timestamp: Date.now(),
+      };
+      authenticatedUser.updatedAt = Date.now();
+      serverUsers.set(authenticatedUser.id, authenticatedUser);
+      saveUsersToFile();
+      if (isDatabaseConfigured()) {
+        dbSaveUser(authenticatedUser).catch(() => {});
+      }
+    } else {
+      const isSyncUpdated = syncUserAllTimeBestWpm(authenticatedUser);
+      if (isSyncUpdated) {
+        authenticatedUser.updatedAt = Date.now();
+        serverUsers.set(authenticatedUser.id, authenticatedUser);
+        saveUsersToFile();
+        if (isDatabaseConfigured()) {
+          dbSaveUser(authenticatedUser).catch(() => {});
+        }
+      }
     }
 
     saveLeaderboardToFile();

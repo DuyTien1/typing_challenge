@@ -10,28 +10,6 @@
     "channel": "global"
   },
   {
-    "id": "msg-1791215646525-7elhy",
-    "username": "TestA",
-    "avatar": "⚡",
-    "frame": "default",
-    "message": "Hello world test",
-    "timestamp": 1791215646525,
-    "channel": "global",
-    "isAdmin": false,
-    "isDaoBot": false
-  },
-  {
-    "id": "msg-1791215675804-7oeii",
-    "username": "UserA",
-    "avatar": "⚡",
-    "frame": "default",
-    "message": "Hello from UserA to UserB",
-    "timestamp": 1791215675804,
-    "channel": "global",
-    "isAdmin": false,
-    "isDaoBot": false
-  },
-  {
     "id": "ll-banter-1791215782846",
     "username": "Linh Lung Tiên Đồng",
     "avatar": "🪷",
@@ -43,38 +21,5 @@
     "isDaoBot": true,
     "daoEventType": "guidance",
     "daoTitle": "LINH LUNG BÌNH PHẨM"
-  },
-  {
-    "id": "msg-1791216034440-w5hui",
-    "username": "PlayerOne",
-    "avatar": "⚡",
-    "frame": "default",
-    "message": "Hello global test",
-    "timestamp": 1791216034440,
-    "channel": "global",
-    "isAdmin": false,
-    "isDaoBot": false
-  },
-  {
-    "id": "msg-1791216040493-pha2c",
-    "username": "PlayerOne",
-    "avatar": "⚡",
-    "frame": "default",
-    "message": "SSE Global Check",
-    "timestamp": 1791216040493,
-    "channel": "global",
-    "isAdmin": false,
-    "isDaoBot": false
-  },
-  {
-    "id": "msg-1791216050630-q9o95",
-    "username": "PlayerOne",
-    "avatar": "⚡",
-    "frame": "default",
-    "message": "SSE Global Check",
-    "timestamp": 1791216050630,
-    "channel": "global",
-    "isAdmin": false,
-    "isDaoBot": false
   }
 ]

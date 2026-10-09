@@ -138,6 +138,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
       pillCount: currentPills,
       teaInventory: currentTea,
       historyLog: nextHistory,
+      updatedAt: Date.now(),
     };
 
     setPurchasesToday((prev) => ({
@@ -187,36 +188,35 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
           }),
         });
 
-        if (res && res.ok) {
+        if (res) {
           const text = await res.text();
+          let data: any = null;
           try {
-            const data = JSON.parse(text);
-            if (data.success) {
-              purchaseSucceeded = true;
-              responseMessage = data.message || `Đã mua thành công ${buyQuantity}x ${buyingItem.name}!`;
-              if (data.purchasesToday && typeof data.purchasesToday === 'object') {
-                setPurchasesToday(data.purchasesToday);
-              }
-              if (data.updatedCultivation) {
-                const merged = mergeCultivationStates(state, data.updatedCultivation);
-                onUpdateState(merged);
-              }
-            } else {
-              // Máy chủ trả về lỗi cụ thể (ví dụ hết hạn mức)
-              soundFx.playError();
-              setNotice({ type: 'error', message: data.error || 'Giao dịch thất bại!' });
-              setIsSubmitting(false);
-              return;
+            data = JSON.parse(text);
+          } catch {}
+
+          if (res.ok && data?.success) {
+            purchaseSucceeded = true;
+            responseMessage = data.message || `Đã mua thành công ${buyQuantity}x ${buyingItem.name}!`;
+            if (data.purchasesToday && typeof data.purchasesToday === 'object') {
+              setPurchasesToday(data.purchasesToday);
             }
-          } catch {
-            // Phản hồi không phải JSON
+            if (data.updatedCultivation) {
+              onUpdateState(data.updatedCultivation);
+            }
+          } else {
+            // Máy chủ trả về lỗi cụ thể (ví dụ hết hạn mức hoặc thiếu Linh Thạch)
+            soundFx.playError();
+            setNotice({ type: 'error', message: data?.error || 'Giao dịch thất bại!' });
+            setIsSubmitting(false);
+            return;
           }
         }
       } catch {
-        // Lỗi kết nối máy chủ (ví dụ môi trường proxy Citrix Workspace chặn cổng POST)
+        // Lỗi mất kết nối mạng hoàn toàn
       }
 
-      // Nếu máy chủ không phản hồi thành công do rào cản mạng Citrix, tự động thực thi giao dịch cục bộ
+      // Nếu ngoại tuyến hoàn toàn, tự động thực thi giao dịch cục bộ
       if (!purchaseSucceeded) {
         executeLocalPurchase(buyingItem, buyQuantity, totalCost);
         responseMessage = `Đã mua thành công ${buyQuantity}x ${buyingItem.name}!`;

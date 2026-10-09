@@ -60,7 +60,7 @@ export function broadcastAdminEvent(event: AdminSyncEvent) {
   // 1. Dispatch custom event on current window
   try {
     window.dispatchEvent(new CustomEvent(enrichedEvent.type, { detail: enrichedEvent }));
-    if (enrichedEvent.message) {
+    if (enrichedEvent.message && enrichedEvent.type !== 'user_banned') {
       window.dispatchEvent(
         new CustomEvent('admin_reward_notification', {
           detail: {
@@ -96,7 +96,7 @@ if (adminBroadcastChannel) {
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent(data.type, { detail: data }));
-        if (data.message) {
+        if (data.message && data.type !== 'user_banned') {
           window.dispatchEvent(
             new CustomEvent('admin_reward_notification', {
               detail: {

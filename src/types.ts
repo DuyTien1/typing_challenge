@@ -206,7 +206,7 @@ export interface PlayerProfileDetail {
 }
 
 export type LeaderboardTimePeriod = 'daily' | 'weekly' | 'all_time';
-export type LeaderboardGroup = 'battle' | 'cultivation';
+export type LeaderboardGroup = 'battle' | 'challenge' | 'cultivation';
 
 export interface LeaderboardEntry {
   rank: number;

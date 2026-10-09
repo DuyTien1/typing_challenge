@@ -64,6 +64,7 @@ export interface ModalContainerProps {
   setCultivationState: (state: CultivationState) => void;
   currentUserId: string;
   gameMode: GameMode;
+  setGameMode?: (mode: GameMode) => void;
   config: GameConfig;
   setConfig: (config: GameConfig) => void;
   defaultConfig: GameConfig;
@@ -137,6 +138,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   setCultivationState,
   currentUserId,
   gameMode,
+  setGameMode,
   config,
   setConfig,
   defaultConfig,
@@ -287,6 +289,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           onStartGhostChallenge={onStartGhostChallenge}
           onOpenWhisper={onOpenWhisper}
           onAddFriend={onAddFriend}
+          onSelectMode={setGameMode}
         />
       )}
 
@@ -410,10 +413,14 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         onStartSectBoss={onStartSectBoss}
         onStartSectTournament={onStartSectTournament}
         onUpdateState={(next) => {
-          setCultivationState(next);
-          saveStoredCultivationState(next);
+          const stampedState = {
+            ...next,
+            updatedAt: Math.max(Number(next.updatedAt) || 0, Date.now()),
+          };
+          setCultivationState(stampedState);
+          saveStoredCultivationState(stampedState);
           if (currentUser) {
-            setCurrentUser((prev) => (prev ? { ...prev, cultivation: next } : prev));
+            setCurrentUser((prev) => (prev ? { ...prev, cultivation: stampedState } : prev));
           }
           const token = getStoredAuthToken();
           const targetUsername = currentUser?.username || username;
@@ -426,7 +433,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
               method: 'POST',
               headers,
               body: JSON.stringify({
-                cultivation: next,
+                cultivation: stampedState,
                 username: targetUsername,
                 userId: currentUser?.id,
               }),

@@ -60,8 +60,8 @@ function seedDefaultMarketListings() {
   const seedListings: MarketListing[] = [
     { id: 'lst_npc_ulan', sellerId: 'npc_bachhac', sellerUsername: 'Bạch Hạc Chân Nhân', sellerAvatar: '🕊️', sellerFrame: 'admin_gold', itemType: 'herb', itemId: 'uLan', itemName: 'U Lan Thảo', itemIcon: '🌱', quality: 'trung_pham', quantity: 5, pricePerUnit: 25, totalPrice: 125, listedAt: Date.now() - 3600000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
     { id: 'lst_npc_huyettinh', sellerId: 'npc_thanhphong', sellerUsername: 'Thanh Phong Đạo Trưởng', sellerAvatar: '🍃', sellerFrame: 'emerald_dragon', itemType: 'herb', itemId: 'huyetTinh', itemName: 'Huyết Tinh Thảo', itemIcon: '🌿', quality: 'thuong_pham', quantity: 3, pricePerUnit: 40, totalPrice: 120, listedAt: Date.now() - 7200000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
-    { id: 'lst_npc_linhtra', sellerId: 'npc_linhlung', sellerUsername: 'Linh Lung Tiên Tử', sellerAvatar: '🌸', sellerFrame: 'cosmic_cyan', itemType: 'tea', itemId: 'linhTra', itemName: 'Bát Trảm Linh Trà', itemIcon: '🍵', quality: 'cuc_pham', quantity: 2, pricePerUnit: 140, totalPrice: 280, listedAt: Date.now() - 10800000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
-    { id: 'lst_npc_thonguyen', sellerId: 'npc_vocuc', sellerUsername: 'Vô Cực Tán Nhân', sellerAvatar: '⚡', sellerFrame: 'thunder_lord', itemType: 'pill', itemId: 'thoNguyen', itemName: 'Thọ Nguyên Đan', itemIcon: '💊', quality: 'trung_pham', quantity: 2, pricePerUnit: 80, totalPrice: 160, listedAt: Date.now() - 14400000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_linhtra', sellerId: 'npc_linhlung', sellerUsername: 'Linh Lung Tiên Tử', sellerAvatar: '🌸', sellerFrame: 'cosmic_cyan', itemType: 'tea', itemId: 'linhTra', itemName: 'Bát Trảm Linh Trà', itemIcon: '🍵', quality: 'cuc_pham', quantity: 1, pricePerUnit: 140, totalPrice: 140, listedAt: Date.now() - 10800000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
+    { id: 'lst_npc_thonguyen', sellerId: 'npc_vocuc', sellerUsername: 'Vô Cực Tán Nhân', sellerAvatar: '⚡', sellerFrame: 'thunder_lord', itemType: 'pill', itemId: 'thoNguyen', itemName: 'Thọ Nguyên Đan', itemIcon: '💊', quality: 'trung_pham', quantity: 1, pricePerUnit: 80, totalPrice: 80, listedAt: Date.now() - 14400000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
     { id: 'lst_npc_dinhtam', sellerId: 'npc_huyenco', sellerUsername: 'Huyền Cơ Tử', sellerAvatar: '🔮', sellerFrame: 'ruby_fire', itemType: 'pill', itemId: 'dinhTam', itemName: 'Định Tâm Đan', itemIcon: '🧘', quality: 'thuong_pham', quantity: 1, pricePerUnit: 95, totalPrice: 95, listedAt: Date.now() - 18000000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
     { id: 'lst_npc_hotam', sellerId: 'npc_danha', sellerUsername: 'Đan Hà Trưởng Lão', sellerAvatar: '🔥', sellerFrame: 'fire_emperor', itemType: 'pill', itemId: 'hoTam', itemName: 'Hộ Tâm Đan', itemIcon: '🛡️', quality: 'cuc_pham', quantity: 1, pricePerUnit: 350, totalPrice: 350, listedAt: Date.now() - 21600000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
     { id: 'lst_npc_longtu', sellerId: 'npc_bacminh', sellerUsername: 'Bắc Minh Dị Nhân', sellerAvatar: '🐉', sellerFrame: 'admin_gold', itemType: 'herb', itemId: 'longTu', itemName: 'Long Tu Thảo', itemIcon: '🐉', quality: 'cuc_pham', quantity: 1, pricePerUnit: 250, totalPrice: 250, listedAt: Date.now() - 25200000, expiresAt: Date.now() + 86400000 * 30, status: 'active' },
@@ -135,6 +135,10 @@ export function loadEconomyData() {
         marketListings.clear();
         for (const item of dbData.listings) {
           if (item && item.id) {
+            if (item.id === 'lst_npc_thonguyen' || item.id === 'lst_npc_linhtra') {
+              item.quantity = 1;
+              item.totalPrice = item.pricePerUnit;
+            }
             marketListings.set(item.id, item);
           }
         }
@@ -366,6 +370,7 @@ export function registerEconomyRoutes(
     );
     if (user.cultivation.historyLog.length > 50) user.cultivation.historyLog.pop();
 
+    user.cultivation.updatedAt = Date.now();
     user.updatedAt = Date.now();
     saveUsersToFile();
     if (isDatabaseConfigured()) {
@@ -552,6 +557,7 @@ export function registerEconomyRoutes(
 
     marketListings.set(listingId, newListing);
     saveMarketData();
+    user.cultivation.updatedAt = Date.now();
     user.updatedAt = Date.now();
     saveUsersToFile();
     if (isDatabaseConfigured()) {
@@ -574,7 +580,7 @@ export function registerEconomyRoutes(
     });
   });
 
-  // 6. POST /api/market/buy: Mua vật phẩm từ sạp của Đạo Hữu khác
+  // 6. POST /api/market/buy: Mua vật phẩm từ sạp của Đạo Hữu khác (Hỗ trợ mua lẻ hoặc mua cả lô)
   app.post('/api/market/buy', (req, res) => {
     const buyer = resolveUserFromReq(req);
     if (!buyer) {
@@ -588,7 +594,7 @@ export function registerEconomyRoutes(
       buyer.cultivation = mergeServerCultivationStates(buyer.cultivation, clientCultivation);
     }
 
-    const { listingId } = req.body;
+    const { listingId, quantity = 1 } = req.body;
     const listing = marketListings.get(listingId);
     if (!listing || listing.status !== 'active') {
       res.status(404).json({ success: false, error: 'Gian hàng này không còn tồn tại hoặc đã được bán!' });
@@ -600,12 +606,13 @@ export function registerEconomyRoutes(
       return;
     }
 
-    const totalCost = listing.totalPrice;
+    const buyQty = Math.min(listing.quantity, Math.max(1, parseInt(quantity, 10) || 1));
+    const totalCost = listing.pricePerUnit * buyQty;
     const buyerLinhThach = Number(buyer.cultivation?.linhThach) || 0;
     if (buyerLinhThach < totalCost) {
       res.status(400).json({
         success: false,
-        error: `Linh Thạch không đủ! Cần ${totalCost.toLocaleString()} LT, đạo hữu hiện có ${buyerLinhThach.toLocaleString()} LT.`,
+        error: `Linh Thạch không đủ! Cần ${totalCost.toLocaleString()} LT để mua ${buyQty}x ${listing.itemName}, đạo hữu hiện có ${buyerLinhThach.toLocaleString()} LT.`,
       });
       return;
     }
@@ -620,13 +627,13 @@ export function registerEconomyRoutes(
     // Credit buyer with item
     if (listing.itemType === 'herb') {
       if (!buyer.cultivation.herbs) buyer.cultivation.herbs = { uLan: 0, huyetTinh: 0, hoaAnh: 0, huyenThiet: 0, longTu: 0 };
-      buyer.cultivation.herbs[listing.itemId] = (buyer.cultivation.herbs[listing.itemId] || 0) + listing.quantity;
+      buyer.cultivation.herbs[listing.itemId] = (buyer.cultivation.herbs[listing.itemId] || 0) + buyQty;
     } else if (listing.itemType === 'pill') {
       if (!buyer.cultivation.pillCount) buyer.cultivation.pillCount = { thoNguyen: 0, hoTam: 0, phaCanh: 0 };
-      buyer.cultivation.pillCount[listing.itemId] = (buyer.cultivation.pillCount[listing.itemId] || 0) + listing.quantity;
+      buyer.cultivation.pillCount[listing.itemId] = (buyer.cultivation.pillCount[listing.itemId] || 0) + buyQty;
     } else if (listing.itemType === 'tea') {
       if (!buyer.cultivation.teaInventory) buyer.cultivation.teaInventory = {};
-      buyer.cultivation.teaInventory[listing.itemId] = (buyer.cultivation.teaInventory[listing.itemId] || 0) + listing.quantity;
+      buyer.cultivation.teaInventory[listing.itemId] = (buyer.cultivation.teaInventory[listing.itemId] || 0) + buyQty;
     }
 
     // Credit seller
@@ -637,19 +644,25 @@ export function registerEconomyRoutes(
     if (seller) {
       if (!seller.cultivation) seller.cultivation = {};
       seller.cultivation.linhThach = (Number(seller.cultivation.linhThach) || 0) + sellerPayout;
+      seller.cultivation.updatedAt = Date.now();
       if (!Array.isArray(seller.cultivation.historyLog)) seller.cultivation.historyLog = [];
       seller.cultivation.historyLog.unshift(
-        `[Phường Thị] Đạo hữu @${buyer.username} đã mua ${listing.quantity}x ${listing.itemName}. Thu về +${sellerPayout.toLocaleString()} Linh Thạch (Thuế 5%: ${tax} LT).`
+        `[Phường Thị] Đạo hữu @${buyer.username} đã mua ${buyQty}x ${listing.itemName}. Thu về +${sellerPayout.toLocaleString()} Linh Thạch (Thuế 5%: ${tax} LT).`
       );
       if (seller.cultivation.historyLog.length > 50) seller.cultivation.historyLog.pop();
       seller.updatedAt = Date.now();
     }
 
-    // Update listing
-    listing.status = 'sold';
-    listing.buyerId = buyer.id;
-    listing.buyerUsername = buyer.username;
-    listing.soldAt = Date.now();
+    // Update listing: Đánh dấu đã bán nếu mua hết, hoặc trừ số lượng sạp nếu mua lẻ
+    if (buyQty >= listing.quantity) {
+      listing.status = 'sold';
+      listing.buyerId = buyer.id;
+      listing.buyerUsername = buyer.username;
+      listing.soldAt = Date.now();
+    } else {
+      listing.quantity -= buyQty;
+      listing.totalPrice = listing.pricePerUnit * listing.quantity;
+    }
 
     // Stats
     marketStats.totalVolume += totalCost;
@@ -657,6 +670,7 @@ export function registerEconomyRoutes(
     marketStats.totalTradesCount += 1;
 
     saveMarketData();
+    buyer.cultivation.updatedAt = Date.now();
     buyer.updatedAt = Date.now();
     saveUsersToFile();
     if (isDatabaseConfigured()) {
@@ -671,13 +685,17 @@ export function registerEconomyRoutes(
       type: 'buy',
       actorUsername: buyer.username,
       targetUsername: listing.sellerUsername,
-      details: `@${buyer.username} đã mua ${listing.quantity}x ${listing.itemName} từ @${listing.sellerUsername} giá ${totalCost} LT (Thuế sàn thiêu hủy: ${tax} LT).`,
+      details: `@${buyer.username} đã mua ${buyQty}x ${listing.itemName} từ @${listing.sellerUsername} giá ${totalCost} LT (Thuế sàn thiêu hủy: ${tax} LT).`,
       amount: totalCost,
     });
 
     res.json({
       success: true,
-      message: `Đã mua thành công ${listing.quantity}x ${listing.itemName} từ @${listing.sellerUsername}!`,
+      message: `Đã mua thành công ${buyQty}x ${listing.itemName} từ @${listing.sellerUsername}!`,
+      purchasedQuantity: buyQty,
+      remainingQuantity: listing.status === 'sold' ? 0 : listing.quantity,
+      listingStatus: listing.status,
+      listingId: listing.id,
       updatedCultivation: buyer.cultivation,
     });
   });
@@ -704,6 +722,9 @@ export function registerEconomyRoutes(
 
     returnItemsToSeller(user, listing);
     listing.status = 'cancelled';
+
+    user.cultivation.updatedAt = Date.now();
+    user.updatedAt = Date.now();
 
     saveMarketData();
     saveUsersToFile();

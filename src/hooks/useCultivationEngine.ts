@@ -57,34 +57,81 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
     }
 
     const checkAndSyncDayTurnover = () => {
-      setCultivationState((prev) => {
-        const intervalSync = ensureDailySync(prev);
-        const checkRes = processCultivationDecay(intervalSync.updatedState);
-        if (
-          intervalSync.didResetQuests ||
-          checkRes.updatedState.thoNguyen !== prev.thoNguyen ||
-          checkRes.updatedState.exp !== prev.exp ||
-          checkRes.updatedState.dailyQuestsDate !== prev.dailyQuestsDate
-        ) {
-          saveStoredCultivationState(checkRes.updatedState);
-          cultivationStateRef.current = checkRes.updatedState;
-          return checkRes.updatedState;
-        }
-        return prev;
-      });
+      // Luôn đọc trạng thái lưu trữ mới nhất từ storage để không bị ghi đè bởi state cũ từ tab khác
+      const stored = loadStoredCultivationState();
+      const currentRef = cultivationStateRef.current;
+      const baseState = (Number(stored.updatedAt) || 0) >= (Number(currentRef?.updatedAt) || 0)
+        ? stored
+        : (currentRef || stored);
+
+      const intervalSync = ensureDailySync(baseState);
+      const checkRes = processCultivationDecay(intervalSync.updatedState);
+
+      setCultivationState(checkRes.updatedState);
+      cultivationStateRef.current = checkRes.updatedState;
+
+      if (
+        intervalSync.didResetQuests ||
+        checkRes.updatedState.thoNguyen !== baseState.thoNguyen ||
+        checkRes.updatedState.exp !== baseState.exp ||
+        checkRes.updatedState.dailyQuestsDate !== baseState.dailyQuestsDate
+      ) {
+        saveStoredCultivationState(checkRes.updatedState);
+      }
     };
+
+    // Lắng nghe sự kiện đồng bộ giữa các tab trình duyệt
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'fasttyping_cultivation_state_v1' && e.newValue) {
+        try {
+          const incoming = JSON.parse(e.newValue);
+          if (incoming && typeof incoming === 'object') {
+            setCultivationState(incoming);
+            cultivationStateRef.current = incoming;
+          }
+        } catch {}
+      }
+    };
+
+    const handleCustomSync = (e: any) => {
+      if (e?.detail) {
+        setCultivationState(e.detail);
+        cultivationStateRef.current = e.detail;
+      }
+    };
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('fasttyping_cultivation_sync');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'CULTIVATION_UPDATED' && event.data?.state) {
+            setCultivationState(event.data.state);
+            cultivationStateRef.current = event.data.state;
+          }
+        };
+      }
+    } catch {}
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('cultivation_state_updated', handleCustomSync);
 
     // Periodic check every 30s for day turnover & 2-hour thọ nguyên decay
     const interval = setInterval(checkAndSyncDayTurnover, 30000);
 
-    // Kích hoạt đồng bộ ngay khi người chơi quay lại tab (sau khi ngủ máy hoặc qua nửa đêm)
+    // Kích hoạt đồng bộ ngay khi người chơi quay lại tab (sau khi chuyển tab hoặc ngủ máy)
     window.addEventListener('visibilitychange', checkAndSyncDayTurnover);
     window.addEventListener('focus', checkAndSyncDayTurnover);
 
     return () => {
       clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('cultivation_state_updated', handleCustomSync);
       window.removeEventListener('visibilitychange', checkAndSyncDayTurnover);
       window.removeEventListener('focus', checkAndSyncDayTurnover);
+      if (bc) {
+        bc.close();
+      }
     };
   }, []);
 

@@ -444,6 +444,10 @@ export default function App() {
     }
     return id;
   });
+  const currentUserIdRef = useRef<string>(currentUserId);
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
   // Tab ID persistent per tab across F5 reloads via sessionStorage
   const [currentTabId] = useState<string>(() => {
@@ -531,24 +535,34 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let lastServerSync = 0;
+
     const updateBan = async () => {
+      const now = Date.now();
       const myUsername = currentUserRef.current?.username || usernameRef.current;
-      const myUserId = currentUserRef.current?.id;
-      if (myUsername) {
+      const myUserId = currentUserRef.current?.id || currentUserIdRef.current;
+      const myDisplayName = currentUserRef.current?.displayName || myUsername;
+
+      // Sync with server every 3 seconds if user information exists
+      if ((myUsername || myUserId) && now - lastServerSync > 3000) {
+        lastServerSync = now;
         try {
-          const srvStatus = await syncServerBanStatus(myUsername, myUserId);
-          if (srvStatus.isBanned && isMounted) {
+          const srvStatus = await syncServerBanStatus(myUsername, myUserId, myDisplayName);
+          if (isMounted) {
             setClientBanStatus(checkClientBanStatus());
             return;
           }
         } catch {}
       }
+
       if (isMounted) {
         setClientBanStatus(checkClientBanStatus());
       }
     };
+
     updateBan();
-    const interval = setInterval(updateBan, 2500);
+    // 1-second interval ensures accurate countdown timer display on homepage
+    const interval = setInterval(updateBan, 1000);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -705,17 +719,18 @@ export default function App() {
 
         // Tự động đồng bộ số trận, kỷ lục WPM và lịch sử đấu lên tài khoản máy chủ
         const updatedHistory = [newRecord, ...matchHistory].slice(0, 50);
-        let bestRecordToSave: any = undefined;
-        if (isActuallyCompleted && data.wpm > (bestWpmRef.current || 0)) {
+        const allTimeBestWpm = Math.max(bestWpmRef.current || 0, bestWpm, nextBestWpm, data.wpm || 0);
+        let bestRecordToSave: any = bestWpmRecord || null;
+        if (isActuallyCompleted && (data.wpm >= allTimeBestWpm || !bestRecordToSave)) {
           bestRecordToSave = {
-            wpm: data.wpm,
+            wpm: Math.max(data.wpm, allTimeBestWpm),
             mode: data.mode || getFriendlyModeName(data.modeId),
             modeName: getFriendlyModeName(data.modeId),
             timestamp: Date.now(),
           };
         }
         updateUserProfile({
-          bestWpm: nextBestWpm,
+          bestWpm: allTimeBestWpm,
           ...(bestRecordToSave ? { bestWpmRecord: bestRecordToSave } : {}),
           totalGames: nextTotalGames,
           matchHistory: updatedHistory,
@@ -1224,14 +1239,23 @@ export default function App() {
   // Lắng nghe Thiên Đạo Chiếu Thư theo thời gian thực
   useEffect(() => {
     const unsub = subscribeToDaoDecrees((decree) => {
-      const myUsername = currentUserRef.current?.username || usernameRef.current || '';
-      const myDisplayName = currentUserRef.current?.displayName || myUsername || '';
-      const targetUser = String(decree.targetUser || '').toLowerCase();
+      if (!decree) return;
+      const curUser = currentUserRef.current;
+      const myUid = String(curUser?.id || currentUserIdRef.current || '').toLowerCase().trim();
+      const myUsername = String(curUser?.username || '').toLowerCase().trim().replace(/^@/, '');
+      const myDisp = String(curUser?.displayName || usernameRef.current || '').toLowerCase().trim().replace(/^@/, '');
+      const myCurrentName = String(usernameRef.current || '').toLowerCase().trim().replace(/^@/, '');
+
+      const targetRaw = String(decree.targetUser || '').toLowerCase().trim().replace(/^@/, '');
+
       const isTargetMe =
-        Boolean(targetUser) &&
-        Boolean(myUsername) &&
-        (targetUser === myUsername.toLowerCase() ||
-          targetUser === myDisplayName.toLowerCase());
+        Boolean(targetRaw) &&
+        (
+          (myUsername && targetRaw === myUsername) ||
+          (myDisp && targetRaw === myDisp) ||
+          (myCurrentName && targetRaw === myCurrentName) ||
+          (myUid && targetRaw === myUid)
+        );
 
       if (isTargetMe) {
         if (decree.eventType === 'penalty') {
@@ -1276,7 +1300,7 @@ export default function App() {
     });
   }, []);
 
-  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết cho mọi chế độ chơi
+  // Tự động đồng bộ và khôi phục kỷ lục WPM chi tiết cho mọi chế độ chơi (Tuyệt đối không bao giờ làm giảm kỷ lục)
   useEffect(() => {
     const resolved = resolveBestWpmRecord({
       bestWpm,
@@ -1287,9 +1311,10 @@ export default function App() {
       isMe: true,
     });
     if (resolved && resolved.wpm > 0) {
-      if (!bestWpmRecord || bestWpmRecord.wpm !== resolved.wpm) {
+      if (resolved.wpm > bestWpm || (!bestWpmRecord && resolved.wpm >= bestWpm)) {
         setBestWpmRecord(resolved);
         setBestWpm(resolved.wpm);
+        bestWpmRef.current = resolved.wpm;
         try {
           localStorage.setItem('fasttyping_best_wpm', resolved.wpm.toString());
           localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(resolved));
@@ -2011,6 +2036,7 @@ export default function App() {
       promptWords?: string[];
       outplaySubMode?: any;
       maxCombo?: number;
+      score?: number;
     }
   ) => {
     // Validate anti-cheat with true elapsed duration
@@ -2074,38 +2100,47 @@ export default function App() {
       setSessionBestWpm(updatedBest);
     }
 
-    // Update Career stats: CHỈ CẬP NHẬT KHI VÁN ĐẤU THỰC SỰ HOÀN THÀNH (KHÔNG ĐẦU HÀNG)
+    // Update Career stats: KỶ LỤC CAO NHẤT LỊCH SỬ KHI VÁN ĐẤU THỰC SỰ HOÀN THÀNH (MỌI CHẾ ĐỘ CHƠI)
     if (!isPlayerSurrendered && isMatchCompleted) {
-      // QUY ĐỊNH BẮT BUỘC: KỶ LỤC WPM HỒ SƠ CHỈ CẬP NHẬT TỪ CHẾ ĐỘ OUTPLAY YOURSELF!
-      // Các chế độ multiplayer KHÔNG tính vào kỷ lục WPM hồ sơ.
-      if (gameMode === 'outplay') {
-        if (verifiedWpm > bestWpm) {
-          setBestWpm(verifiedWpm);
-          localStorage.setItem('fasttyping_best_wpm', verifiedWpm.toString());
-          localStorage.setItem('fasttyping_outplay_best_wpm', verifiedWpm.toString());
-          const newRec: BestWpmRecord = {
-            wpm: verifiedWpm,
-            mode: 'outplay',
-            modeName: 'Outplay Yourself (Solo)',
-            timestamp: Date.now(),
-          };
-          setBestWpmRecord(newRec);
-          try {
-            localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(newRec));
+      const currentPeak = Math.max(bestWpm, bestWpmRef.current || 0);
+      if (verifiedWpm > currentPeak) {
+        setBestWpm(verifiedWpm);
+        bestWpmRef.current = verifiedWpm;
+        localStorage.setItem('fasttyping_best_wpm', verifiedWpm.toString());
+        const newRec: BestWpmRecord = {
+          wpm: verifiedWpm,
+          mode: gameMode,
+          modeName: getFriendlyModeName(gameMode),
+          timestamp: Date.now(),
+        };
+        setBestWpmRecord(newRec);
+        try {
+          localStorage.setItem('fasttyping_best_wpm_record', JSON.stringify(newRec));
+          if (isOutplayMode(gameMode)) {
+            localStorage.setItem('fasttyping_outplay_best_wpm', verifiedWpm.toString());
             localStorage.setItem('fasttyping_outplay_best_record', JSON.stringify(newRec));
-          } catch {}
+          }
+        } catch {}
 
-          // Huyền Thiên Khí Linh ban chiếu thư Kim Bảng Đề Danh
-          announceRecord(
-            currentUser?.displayName || currentUser?.username || username,
-            verifiedWpm,
-            accuracy,
-            'Outplay Yourself (Solo)',
-            verifiedWpm >= 120
-          ).then((dec) => {
-            setActiveDaoDecreePopup(dec);
+        // Tự động đồng bộ ngay lập tức kỷ lục lên tài khoản máy chủ
+        const activeUser = currentUserRef.current || currentUser;
+        if (activeUser) {
+          updateUserProfile({
+            bestWpm: verifiedWpm,
+            bestWpmRecord: newRec,
           }).catch(() => {});
         }
+
+        // Huyền Thiên Khí Linh ban chiếu thư Kim Bảng Đề Danh
+        announceRecord(
+          activeUser?.displayName || activeUser?.username || username,
+          verifiedWpm,
+          accuracy,
+          getFriendlyModeName(gameMode),
+          verifiedWpm >= 120
+        ).then((dec) => {
+          setActiveDaoDecreePopup(dec);
+        }).catch(() => {});
       }
       const nextGameCount = totalGames + 1;
       setTotalGames(nextGameCount);
@@ -2150,14 +2185,17 @@ export default function App() {
         username: currentUser?.username || username,
         displayName: currentUser?.displayName || username,
         wpm: verifiedWpm,
-        score: 0,
+        score: (gameMode === 'ngau_hung' || gameMode === 'doan_chu' || gameMode === 'san_boss') ? (extraStats?.score || 0) : 0,
         errors,
+        accuracy,
+        consistency,
         avatar,
         frame: userFrame,
         isSurrendered: false,
         isCompleted: true,
         roomId: currentRoomId || undefined,
         playerId: currentUserId,
+        keyboardSwitch: (currentUser as any)?.keyboardSwitch || 'Cherry MX Blue Clicky',
       }).then((res) => {
         if (res && res.success && res.highScores) {
           setHighScores(res.highScores);
@@ -2332,7 +2370,7 @@ export default function App() {
       soundFx.playVictory();
       setGameState('gameover');
     }
-  }, [bestWpm, totalGames, currentUserId, highScores, gameMode, username, lastGameWpm, sessionBestWpm, avatar, userFrame, players, playType, recordCurrentMatch, currentRoomId]);
+  }, [bestWpm, totalGames, currentUserId, currentUser, highScores, gameMode, username, lastGameWpm, sessionBestWpm, avatar, userFrame, players, playType, recordCurrentMatch, currentRoomId]);
 
   // Boss Mode Damage & Victory Handlers
   const handleBossDamage = (dmg: number, errors: number, targetPlayerId?: string) => {
@@ -2415,6 +2453,8 @@ export default function App() {
         setActiveDaoDecreePopup(dec);
       }).catch(() => {});
 
+      const bossAcc = Math.max(0, Math.min(100, Math.round((totalDmg / Math.max(1, totalDmg + errors * 5)) * 100)));
+
       // Save Boss High Score to server
       submitScoreToLeaderboard({
         mode: 'san_boss',
@@ -2423,12 +2463,14 @@ export default function App() {
         wpm: 0,
         score: totalDmg,
         errors,
+        accuracy: bossAcc,
         avatar,
         frame: userFrame,
         isSurrendered: false,
         isCompleted: true,
         roomId: currentRoomId || undefined,
         playerId: currentUserId,
+        keyboardSwitch: (currentUser as any)?.keyboardSwitch || 'Cherry MX Blue Clicky',
       }).then((res) => {
         if (res && res.success && res.highScores) {
           setHighScores(res.highScores);
@@ -2713,8 +2755,18 @@ export default function App() {
   // Auth Success & Logout Handlers
   const applyAuthenticatedUser = useCallback((user: UserAccount) => {
     setCurrentUser(user);
+    currentUserRef.current = user;
+    if (user.id) {
+      setCurrentUserId(user.id);
+      currentUserIdRef.current = user.id;
+      try {
+        localStorage.setItem('fasttyping_player_id', user.id);
+        sessionStorage.setItem('fasttyping_player_id', user.id);
+      } catch {}
+    }
     const activeName = user.displayName || user.username;
     setUsername(activeName);
+    usernameRef.current = activeName;
     const userAvatarChoice = user.avatar || '🤖';
     setAvatar(userAvatarChoice);
     const userFrameChoice = user.frame || 'default';
@@ -2725,7 +2777,7 @@ export default function App() {
     setIsAdmin(isUserAdmin);
     setAdminStatus(isUserAdmin);
 
-    // Dữ liệu kỷ lục WPM: Hỗ trợ mọi chế độ chơi
+    // Dữ liệu kỷ lục WPM: ĐẢM BẢO BẢO TOÀN TUYỆT ĐỐI KỶ LỤC CAO NHẤT LỊCH SỬ, TUYỆT ĐỐI KHÔNG BAO GIỜ BỊ RESET HOẶC GIẢM ĐIỂM
     let effectiveBestWpm = typeof user.bestWpm === 'number' && user.bestWpm > 0 ? user.bestWpm : 0;
     let effectiveRecord: BestWpmRecord | null = user.bestWpmRecord || null;
 
@@ -2733,6 +2785,7 @@ export default function App() {
       effectiveBestWpm = effectiveRecord.wpm;
     }
 
+    // 1. Quét lịch sử ván đấu từ server
     if (Array.isArray(user.matchHistory) && user.matchHistory.length > 0) {
       for (const m of user.matchHistory) {
         if (m && typeof m.wpm === 'number' && m.wpm > effectiveBestWpm && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
@@ -2747,17 +2800,52 @@ export default function App() {
       }
     }
 
-    const localSavedWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
-    if (localSavedWpm > effectiveBestWpm) {
-      effectiveBestWpm = localSavedWpm;
+    // 2. Quét toàn bộ các khóa lưu trữ trên máy (LocalStorage, Outplay, v.v.)
+    const localGeneralWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
+    const localOutplayWpm = Number(localStorage.getItem('fasttyping_outplay_best_wpm')) || 0;
+    const statePeakWpm = Math.max(bestWpmRef.current || 0, bestWpm || 0);
+    const localHighestWpm = Math.max(localGeneralWpm, localOutplayWpm, statePeakWpm);
+
+    if (localHighestWpm > effectiveBestWpm) {
+      effectiveBestWpm = localHighestWpm;
       try {
-        const localRec = localStorage.getItem('fasttyping_best_wpm_record');
-        if (localRec) effectiveRecord = JSON.parse(localRec);
+        const outplayRecStr = localStorage.getItem('fasttyping_outplay_best_record');
+        if (outplayRecStr) {
+          const parsed = JSON.parse(outplayRecStr);
+          if (parsed && typeof parsed.wpm === 'number' && parsed.wpm >= (effectiveRecord?.wpm || 0)) {
+            effectiveRecord = parsed;
+          }
+        }
+        const generalRecStr = localStorage.getItem('fasttyping_best_wpm_record');
+        if (generalRecStr) {
+          const parsed = JSON.parse(generalRecStr);
+          if (parsed && typeof parsed.wpm === 'number' && parsed.wpm >= (effectiveRecord?.wpm || 0)) {
+            effectiveRecord = parsed;
+          }
+        }
       } catch {}
+    }
+
+    // 3. Quét lịch sử đấu cục bộ để không bỏ sót bất kỳ ván đấu nào có điểm cao hơn
+    const storedHistory = getStoredMatchHistory();
+    if (Array.isArray(storedHistory)) {
+      for (const m of storedHistory) {
+        if (m && typeof m.wpm === 'number' && m.wpm > effectiveBestWpm && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
+          effectiveBestWpm = m.wpm;
+          effectiveRecord = {
+            wpm: m.wpm,
+            mode: m.modeId || m.mode || 'vi_dau',
+            modeName: m.mode || getFriendlyModeName(m.modeId || 'vi_dau'),
+            timestamp: m.timestamp || Date.now(),
+          };
+        }
+      }
     }
 
     setBestWpm(effectiveBestWpm);
     setBestWpmRecord(effectiveRecord);
+    bestWpmRef.current = effectiveBestWpm;
+
     if (effectiveBestWpm > 0) {
       localStorage.setItem('fasttyping_best_wpm', effectiveBestWpm.toString());
       if (effectiveRecord) {
@@ -2769,6 +2857,14 @@ export default function App() {
           }
         } catch {}
       }
+
+      // Nếu máy khách đang có kỷ lục cao hơn kỷ lục máy chủ lưu trữ, tự động đồng bộ lên máy chủ để sửa chữa
+      if (effectiveBestWpm > (user.bestWpm || 0)) {
+        updateUserProfile({
+          bestWpm: effectiveBestWpm,
+          bestWpmRecord: effectiveRecord,
+        }).catch(() => {});
+      }
     }
 
     const serverTotalGames = typeof user.totalGames === 'number' ? user.totalGames : 0;
@@ -2779,16 +2875,27 @@ export default function App() {
       localStorage.setItem('fasttyping_games_count', effectiveTotalGames.toString());
     }
 
-    if (Array.isArray(user.matchHistory) && user.matchHistory.length > 0) {
-      setMatchHistory(user.matchHistory);
-      try {
-        localStorage.setItem('fasttyping_match_history', JSON.stringify(user.matchHistory));
-      } catch {}
-    } else {
-      const stored = getStoredMatchHistory();
-      if (stored && stored.length > 0) {
-        setMatchHistory(stored);
+    // Hợp nhất an toàn lịch sử đấu: Giữ trọn vẹn cả lịch sử máy chủ lẫn các ván mới ở máy khách
+    const serverHistory = Array.isArray(user.matchHistory) ? user.matchHistory : [];
+    const localHistList = getStoredMatchHistory() || [];
+    const mergedHistoryMap = new Map<string, MatchRecord>();
+    for (const m of [...serverHistory, ...localHistList, ...matchHistory]) {
+      if (m && m.id) {
+        const existing = mergedHistoryMap.get(m.id);
+        if (!existing || (m.wpm || 0) >= (existing.wpm || 0)) {
+          mergedHistoryMap.set(m.id, m);
+        }
       }
+    }
+    const finalHistory = Array.from(mergedHistoryMap.values())
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      .slice(0, 50);
+
+    if (finalHistory.length > 0) {
+      setMatchHistory(finalHistory);
+      try {
+        localStorage.setItem('fasttyping_match_history', JSON.stringify(finalHistory));
+      } catch {}
     }
 
     // Tiến độ tu vi tiên hiệp: Hợp nhất bảo toàn tiến độ đã đạt được, không bao giờ bị ghi đè mất Tu Vi hay Điểm Danh
@@ -2854,13 +2961,22 @@ export default function App() {
     const isTargetMe = (detail: any): boolean => {
       if (!detail) return false;
       const targetUid = String(detail.userId || '').toLowerCase().trim();
-      const targetUname = String(detail.username || '').toLowerCase().trim();
-      const myUid = String(currentUser?.id || currentUserId || '').toLowerCase().trim();
-      const myUname = String(currentUser?.username || username || '').toLowerCase().trim();
+      const targetUname = String(detail.username || '').toLowerCase().trim().replace(/^@/, '');
+      const targetDisp = String(detail.displayName || '').toLowerCase().trim().replace(/^@/, '');
 
-      if (!targetUid && !targetUname) return true; // Global broadcast
+      const curUser = currentUserRef.current;
+      const myUid = String(curUser?.id || currentUserIdRef.current || '').toLowerCase().trim();
+      const myUsername = String(curUser?.username || '').toLowerCase().trim().replace(/^@/, '');
+      const myDisp = String(curUser?.displayName || usernameRef.current || '').toLowerCase().trim().replace(/^@/, '');
+      const myCurrentName = String(usernameRef.current || '').toLowerCase().trim().replace(/^@/, '');
+
+      if (!targetUid && !targetUname && !targetDisp) return true; // Global broadcast
       if (targetUid && myUid && targetUid === myUid) return true;
-      if (targetUname && myUname && targetUname === myUname) return true;
+      if (targetUname && myUsername && targetUname === myUsername) return true;
+      if (targetUname && myDisp && targetUname === myDisp) return true;
+      if (targetUname && myCurrentName && targetUname === myCurrentName) return true;
+      if (targetDisp && myDisp && targetDisp === myDisp) return true;
+      if (targetDisp && myUsername && targetDisp === myUsername) return true;
       return false;
     };
 
@@ -2966,19 +3082,11 @@ export default function App() {
 
       const banTime = detail.bannedUntil || (Date.now() + (detail.durationMs || 7200000));
       saveStoredBanInfo(banTime, detail.reason || 'Quyết định từ Ban Quản Trị');
+      setClientBanStatus(checkClientBanStatus());
       setIsBanModalOpen(true);
       handleLeaveRoom();
+      handleReturnToLobby();
       soundFx.playError();
-
-      window.dispatchEvent(
-        new CustomEvent('admin_reward_notification', {
-          detail: {
-            title: 'LỆNH TRỪNG PHẠT BÀN CỔ',
-            message: detail.message || `Tài khoản đã bị cấm thi đấu: ${detail.reason || 'Vi phạm quy định'}`,
-            timestamp: Date.now(),
-          },
-        })
-      );
     };
 
     // 5. Hóa giải lệnh cấm thi đấu
@@ -2987,18 +3095,9 @@ export default function App() {
       if (!isTargetMe(detail)) return;
 
       clearStoredBanInfo();
+      setClientBanStatus(checkClientBanStatus());
       setIsBanModalOpen(false);
       soundFx.playSuccess();
-
-      window.dispatchEvent(
-        new CustomEvent('admin_reward_notification', {
-          detail: {
-            title: 'HÓA GIẢI PHONG ẤN',
-            message: detail.message || 'Lệnh cấm thi đấu đã được giải trừ, bạn có thể tự do tham gia thi đấu!',
-            timestamp: Date.now(),
-          },
-        })
-      );
     };
 
     // 6. Cập nhật quyền Quản Trị Viên (Admin)
@@ -3522,6 +3621,7 @@ export default function App() {
             onJoinWaitingRoom={handleJoinWaitingRoom}
             isBanned={clientBanStatus.isBanned}
             bannedRemainingFormatted={clientBanStatus.formatted}
+            banReason={clientBanStatus.reason}
             onOpenBanModal={() => setIsBanModalOpen(true)}
             onOpenSectModal={() => {
               setCultivationInitialTab('sects');
@@ -3957,6 +4057,7 @@ export default function App() {
         setCultivationState={setCultivationState}
         currentUserId={currentUserId}
         gameMode={gameMode}
+        setGameMode={setGameMode}
         config={config}
         setConfig={setConfig}
         defaultConfig={DEFAULT_CONFIG}

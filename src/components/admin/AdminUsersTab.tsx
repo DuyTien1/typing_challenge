@@ -34,6 +34,7 @@ import {
 import { getStoredAuthToken } from '../../utils/auth';
 import { AVATAR_FRAMES, AvatarWithFrame } from '../../utils/frames';
 import { broadcastAdminEvent } from '../../utils/adminEventSync';
+import { saveStoredBanInfo } from '../../utils/banManager';
 
 export interface AdminUserData {
   id: string;
@@ -230,10 +231,18 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         const successMsg = data.message || (currentAction === 'delete' ? `Đã xóa vĩnh viễn tài khoản @${playerDisplayName}` : 'Thao tác thành công!');
         showToast(successMsg);
 
-        const isTargetCurrent =
+        const cleanTargetUser = targetUsername.toLowerCase().replace(/^@/, '');
+        const cleanCurrentUser = (currentUser?.username || '').toLowerCase().replace(/^@/, '');
+        const cleanCurrentName = (currentUsername || '').toLowerCase().replace(/^@/, '');
+        const cleanDisplayName = (targetUser.displayName || '').toLowerCase().replace(/^@/, '');
+        const cleanMyDisplayName = ((currentUser as any)?.displayName || '').toLowerCase().replace(/^@/, '');
+
+        const isTargetCurrent = Boolean(
           (currentUser?.id && (targetUserId === currentUser.id || targetUser.id === currentUser.id)) ||
-          (currentUser?.username && targetUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
-          (currentUsername && targetUsername.toLowerCase() === currentUsername.toLowerCase());
+          (cleanCurrentUser && (cleanTargetUser === cleanCurrentUser || cleanDisplayName === cleanCurrentUser)) ||
+          (cleanCurrentName && (cleanTargetUser === cleanCurrentName || cleanDisplayName === cleanCurrentName)) ||
+          (cleanMyDisplayName && (cleanDisplayName === cleanMyDisplayName || cleanTargetUser === cleanMyDisplayName))
+        );
 
         // 1. REWARD ACTION DISPATCH
         if (currentAction === 'reward') {
@@ -332,13 +341,21 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
         // 4. BAN ACTION DISPATCH
         if (currentAction === 'ban') {
+          const banDurationMs = banDurationMinutes * 60 * 1000;
+          const bannedUntilTs = Date.now() + banDurationMs;
+
+          if (isTargetCurrent) {
+            saveStoredBanInfo(bannedUntilTs, banReason);
+          }
+
           broadcastAdminEvent({
             type: 'user_banned',
             userId: targetUserId,
             username: targetUsername,
+            displayName: playerDisplayName,
             reason: banReason,
-            durationMs: banDurationMinutes * 60 * 1000,
-            bannedUntil: Date.now() + banDurationMinutes * 60 * 1000,
+            durationMs: banDurationMs,
+            bannedUntil: bannedUntilTs,
             remainingMinutes: banDurationMinutes,
             title: 'LỆNH TRỪNG PHẠT BÀN CỔ',
             message: `⚡ Bạn đã bị cấm thi đấu ${banDurationMinutes} phút: ${banReason}`,
@@ -374,6 +391,19 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     soundFx.playKeyClick();
     // Instant optimistic update
     setUsers((prev) => prev.map((item) => (item.id === u.id ? { ...item, isBanned: false, remainingMinutes: 0 } : item)));
+
+    const cleanUname = (u.username || '').toLowerCase().replace(/^@/, '');
+    const cleanCur = (currentUser?.username || '').toLowerCase().replace(/^@/, '');
+    const cleanCurName = (currentUsername || '').toLowerCase().replace(/^@/, '');
+    if (
+      (currentUser?.id && u.id === currentUser.id) ||
+      (cleanCur && cleanUname === cleanCur) ||
+      (cleanCurName && cleanUname === cleanCurName)
+    ) {
+      try {
+        localStorage.removeItem('fasttyping_banco_ban_v1');
+      } catch {}
+    }
 
     try {
       const res = await fetch('/api/admin/users/action', {

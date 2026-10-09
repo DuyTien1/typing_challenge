@@ -24,6 +24,7 @@ interface LobbyViewProps {
   hasAnyModalOpen?: boolean;
   isBanned?: boolean;
   bannedRemainingFormatted?: string;
+  banReason?: string;
   onOpenBanModal?: () => void;
   onOpenSectModal?: () => void;
 }
@@ -36,6 +37,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   hasAnyModalOpen = false,
   isBanned = false,
   bannedRemainingFormatted,
+  banReason,
   onOpenBanModal,
   onOpenSectModal,
 }) => {
@@ -279,11 +281,15 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         onOpenSectModal={onOpenSectModal}
         onQuickStartRace={() => {
           soundFx.playKeyClick();
+          if (isBanned) {
+            if (onOpenBanModal) onOpenBanModal();
+            return;
+          }
           onJoinWaitingRoom(currentMode);
         }}
       />
 
-      {/* Ban Warning Banner if active */}
+      {/* Ban Warning Banner if active - Persistent until ban expires */}
       {isBanned && (
         <div
           id="banner-banco-ban"
@@ -298,22 +304,27 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-2xl animate-bounce">⚡</span>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-black text-rose-300 uppercase tracking-wide">
-                  Bàn Cổ Thần Thức Phong Ấn • Cấm Đấu 2 Giờ
+                  Án Phạt Cấm Thi Đấu • Bàn Cổ Thần Thức
                 </span>
-                <span className="text-xs font-mono font-black text-amber-300 px-2 py-0.5 rounded-full bg-black/50 border border-red-500/50">
-                  {bannedRemainingFormatted || '02:00:00'}
+                <span className="text-xs font-mono font-black text-amber-300 px-2.5 py-0.5 rounded-full bg-black/60 border border-red-500/60 shadow-inner">
+                  {bannedRemainingFormatted || '00:00:00'}
+                </span>
+                <span className="text-[10px] font-bold text-red-300 px-2 py-0.5 rounded-full bg-red-950/80 border border-red-800">
+                  Đang Thụ Án
                 </span>
               </div>
-              <p className="text-[11px] text-slate-300 truncate">
-                Tài khoản đang bị giam cầm tại U Minh Hàn Ngục do nghi vấn gian lận/macro. Bấm để xem chi tiết án phạt.
+              <p className="text-[11px] text-slate-200 truncate mt-0.5">
+                <span className="text-red-400 font-bold">Lý do: </span>
+                <span>{banReason || 'Bất thường tần số gõ phím / Quyết định từ Ban Quản Trị'}</span>
+                <span className="text-slate-400 ml-1.5 hidden sm:inline">• Khóa toàn bộ chế độ thi đấu. Bấm để xem chi tiết án phạt.</span>
               </p>
             </div>
           </div>
           <button
             type="button"
-            className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs shrink-0 cursor-pointer shadow-md"
+            className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs shrink-0 cursor-pointer shadow-md transition-transform active:scale-95"
           >
             Chi tiết
           </button>

@@ -143,21 +143,65 @@ export function getVietnamDateStr(): string {
 }
 
 /**
- * Hợp nhất an toàn 2 trạng thái Tu Vi mà không bao giờ làm giảm Tu Vi, cảnh giới hoặc mất điểm danh
+ * Hợp nhất an toàn 2 trạng thái Tu Vi theo phiên bản thời gian (updatedAt)
+ * Không bao giờ làm thụt lùi cảnh giới/tu vi, và không làm hồi sinh Linh Thạch đã tiêu
  */
 export function mergeServerCultivationStates(current: any, incoming: any): any {
   if (!current && !incoming) return null;
-  if (!current) return incoming;
-  if (!incoming) return current;
+  if (!current) return { ...incoming, updatedAt: incoming?.updatedAt || Date.now(), cultivationResetVersion: 2 };
+  if (!incoming) return { ...current, updatedAt: current?.updatedAt || Date.now(), cultivationResetVersion: 2 };
+
+  // 0. Xử lý phiên bản reset tu vi toàn cục (v2: reset toàn bộ tu vi người chơi về 0)
+  const currentResetVer = Number(current.cultivationResetVersion) || 1;
+  const incomingResetVer = Number(incoming.cultivationResetVersion) || 1;
+  let activeCurrent = current;
+  let activeIncoming = incoming;
+
+  if (currentResetVer >= 2 && incomingResetVer < 2) {
+    // current đã reset, incoming mang tu vi cũ -> loại bỏ tu vi cũ của incoming
+    activeIncoming = {
+      ...incoming,
+      level: 1,
+      realmIndex: 0,
+      tier: 1,
+      exp: 0,
+      maxExp: 207,
+      realmName: 'Luyện Khí Kỳ',
+      subStage: 'Sơ Kỳ',
+      titleName: 'Luyện Khí Tu Sĩ',
+      cultivationResetVersion: 2,
+    };
+  } else if (incomingResetVer >= 2 && currentResetVer < 2) {
+    // incoming đã reset, current mang tu vi cũ -> loại bỏ tu vi cũ của current
+    activeCurrent = {
+      ...current,
+      level: 1,
+      realmIndex: 0,
+      tier: 1,
+      exp: 0,
+      maxExp: 207,
+      realmName: 'Luyện Khí Kỳ',
+      subStage: 'Sơ Kỳ',
+      titleName: 'Luyện Khí Tu Sĩ',
+      cultivationResetVersion: 2,
+    };
+  }
 
   // 1. So sánh tổng điểm tiến độ tu vi để không bao giờ bị thụt lùi cảnh giới hay tu vi
-  const scoreCurrent = (Number(current.realmIndex) || 0) * 100_000_000 + (Number(current.tier) || 1) * 1_000_000 + (Number(current.exp) || 0);
-  const scoreIncoming = (Number(incoming.realmIndex) || 0) * 100_000_000 + (Number(incoming.tier) || 1) * 1_000_000 + (Number(incoming.exp) || 0);
+  const scoreCurrent = (Number(activeCurrent.realmIndex) || 0) * 100_000_000 + (Number(activeCurrent.tier) || 1) * 1_000_000 + (Number(activeCurrent.exp) || 0);
+  const scoreIncoming = (Number(activeIncoming.realmIndex) || 0) * 100_000_000 + (Number(activeIncoming.tier) || 1) * 1_000_000 + (Number(activeIncoming.exp) || 0);
 
-  const primary = scoreCurrent >= scoreIncoming ? current : incoming;
-  const secondary = scoreCurrent >= scoreIncoming ? incoming : current;
+  const levelLeader = scoreCurrent >= scoreIncoming ? activeCurrent : activeIncoming;
+  const levelFollower = scoreCurrent >= scoreIncoming ? activeIncoming : activeCurrent;
 
-  // 2. Điểm danh: TUYỆT ĐỐI BẢO LƯU điểm danh hôm nay và chuỗi điểm danh
+  // 2. Xác định trạng thái mới nhất theo timestamp updatedAt (để Linh Thạch, kho đồ phản ánh chính xác)
+  const currentTs = Number(activeCurrent.updatedAt) || 0;
+  const incomingTs = Number(activeIncoming.updatedAt) || 0;
+  const isIncomingNewer = incomingTs >= currentTs;
+  const newestState = isIncomingNewer ? activeIncoming : activeCurrent;
+  const oldestState = isIncomingNewer ? activeCurrent : activeIncoming;
+
+  // 3. Điểm danh: TUYỆT ĐỐI BẢO LƯU điểm danh hôm nay và chuỗi điểm danh
   const todayStr = getVietnamDateStr();
   const checkedToday = current.checkIn?.lastCheckInDate === todayStr || incoming.checkIn?.lastCheckInDate === todayStr;
   const lastCheckInDate = checkedToday
@@ -166,61 +210,58 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
   const streak = Math.max(Number(current.checkIn?.streak) || 0, Number(incoming.checkIn?.streak) || 0);
   const totalCheckIns = Math.max(Number(current.checkIn?.totalCheckIns) || 0, Number(incoming.checkIn?.totalCheckIns) || 0);
 
-  // 3. Đan dược
+  // 4. Linh Thạch: Lấy theo trạng thái mới nhất (không dùng Math.max để tránh hồi sinh Linh Thạch đã tiêu)
+  const linhThach = typeof newestState.linhThach === 'number'
+    ? newestState.linhThach
+    : (typeof oldestState.linhThach === 'number' ? oldestState.linhThach : 0);
+
+  // 5. Đan dược: Lấy từ trạng thái mới nhất
+  const newestPills = newestState.pillCount || {};
+  const oldestPills = oldestState.pillCount || {};
   const pillCount = {
-    thoNguyen: Math.max(Number(current.pillCount?.thoNguyen) || 0, Number(incoming.pillCount?.thoNguyen) || 0),
-    hoTam: Math.max(Number(current.pillCount?.hoTam) || 0, Number(incoming.pillCount?.hoTam) || 0),
-    phaCanh: Math.max(Number(current.pillCount?.phaCanh) || 0, Number(incoming.pillCount?.phaCanh) || 0),
-    tuViDan: Math.max(Number(current.pillCount?.tuViDan) || 0, Number(incoming.pillCount?.tuViDan) || 0),
-    sieuCapTuViDan: Math.max(Number(current.pillCount?.sieuCapTuViDan) || 0, Number(incoming.pillCount?.sieuCapTuViDan) || 0),
-    dinhTam: Math.max(Number(current.pillCount?.dinhTam) || 0, Number(incoming.pillCount?.dinhTam) || 0),
-    ngungThan: Math.max(Number(current.pillCount?.ngungThan) || 0, Number(incoming.pillCount?.ngungThan) || 0),
+    thoNguyen: typeof newestPills.thoNguyen === 'number' ? newestPills.thoNguyen : (Number(oldestPills.thoNguyen) || 0),
+    hoTam: typeof newestPills.hoTam === 'number' ? newestPills.hoTam : (Number(oldestPills.hoTam) || 0),
+    phaCanh: typeof newestPills.phaCanh === 'number' ? newestPills.phaCanh : (Number(oldestPills.phaCanh) || 0),
+    tuViDan: typeof newestPills.tuViDan === 'number' ? newestPills.tuViDan : (Number(oldestPills.tuViDan) || 0),
+    sieuCapTuViDan: typeof newestPills.sieuCapTuViDan === 'number' ? newestPills.sieuCapTuViDan : (Number(oldestPills.sieuCapTuViDan) || 0),
+    dinhTam: typeof newestPills.dinhTam === 'number' ? newestPills.dinhTam : (Number(oldestPills.dinhTam) || 0),
+    ngungThan: typeof newestPills.ngungThan === 'number' ? newestPills.ngungThan : (Number(oldestPills.ngungThan) || 0),
   };
 
-  if (scoreCurrent > scoreIncoming) {
-    if (typeof current.pillCount?.tuViDan === 'number') pillCount.tuViDan = current.pillCount.tuViDan;
-    if (typeof current.pillCount?.sieuCapTuViDan === 'number') pillCount.sieuCapTuViDan = current.pillCount.sieuCapTuViDan;
-  } else if (scoreIncoming > scoreCurrent) {
-    if (typeof incoming.pillCount?.tuViDan === 'number') pillCount.tuViDan = incoming.pillCount.tuViDan;
-    if (typeof incoming.pillCount?.sieuCapTuViDan === 'number') pillCount.sieuCapTuViDan = incoming.pillCount.sieuCapTuViDan;
-  }
-
-  // 4. Dược liệu
+  // 6. Dược liệu: Lấy từ trạng thái mới nhất
+  const newestHerbs = newestState.herbs || {};
+  const oldestHerbs = oldestState.herbs || {};
   const herbs = {
-    uLan: Math.max(Number(current.herbs?.uLan) || 0, Number(incoming.herbs?.uLan) || 0),
-    huyetTinh: Math.max(Number(current.herbs?.huyetTinh) || 0, Number(incoming.herbs?.huyetTinh) || 0),
-    hoaAnh: Math.max(Number(current.herbs?.hoaAnh) || 0, Number(incoming.herbs?.hoaAnh) || 0),
-    huyenThiet: Math.max(Number(current.herbs?.huyenThiet) || 0, Number(incoming.herbs?.huyenThiet) || 0),
-    longTu: Math.max(Number(current.herbs?.longTu) || 0, Number(incoming.herbs?.longTu) || 0),
+    uLan: typeof newestHerbs.uLan === 'number' ? newestHerbs.uLan : (Number(oldestHerbs.uLan) || 0),
+    huyetTinh: typeof newestHerbs.huyetTinh === 'number' ? newestHerbs.huyetTinh : (Number(oldestHerbs.huyetTinh) || 0),
+    hoaAnh: typeof newestHerbs.hoaAnh === 'number' ? newestHerbs.hoaAnh : (Number(oldestHerbs.hoaAnh) || 0),
+    huyenThiet: typeof newestHerbs.huyenThiet === 'number' ? newestHerbs.huyenThiet : (Number(oldestHerbs.huyenThiet) || 0),
+    longTu: typeof newestHerbs.longTu === 'number' ? newestHerbs.longTu : (Number(oldestHerbs.longTu) || 0),
   };
 
-  // 5. Trà đạo
+  // 7. Trà đạo: Lấy từ trạng thái mới nhất
   const teaInventory: Record<string, number> = {
-    ...(secondary.teaInventory || {}),
-    ...(primary.teaInventory || {}),
+    ...(oldestState.teaInventory || {}),
+    ...(newestState.teaInventory || {}),
   };
-  for (const k of Object.keys(secondary.teaInventory || {})) {
-    teaInventory[k] = Math.max(Number(primary.teaInventory?.[k]) || 0, Number(secondary.teaInventory?.[k]) || 0);
-  }
 
-  // 6. Linh Thạch
-  const linhThach = Math.max(Number(current.linhThach) || 0, Number(incoming.linhThach) || 0);
-
-  // 7. Thọ Nguyên
+  // 8. Thọ Nguyên
   const thoNguyen = Math.max(Number(current.thoNguyen) || 0, Number(incoming.thoNguyen) || 0);
   const maxThoNguyen = Math.max(Number(current.maxThoNguyen) || 240, Number(incoming.maxThoNguyen) || 240);
 
-  // 8. Lịch sử ký sự tu tiên
-  const combinedLog = Array.from(new Set([...(primary.historyLog || []), ...(secondary.historyLog || [])])).slice(0, 30);
+  // 9. Lịch sử ký sự tu tiên
+  const combinedLog = Array.from(new Set([...(newestState.historyLog || []), ...(oldestState.historyLog || [])])).slice(0, 30);
 
-  // 9. Nhiệm vụ hàng ngày
-  const dailyQuests = Array.isArray(primary.dailyQuests) && primary.dailyQuests.length === 4
-    ? primary.dailyQuests
-    : (Array.isArray(secondary.dailyQuests) && secondary.dailyQuests.length === 4 ? secondary.dailyQuests : primary.dailyQuests);
+  // 10. Nhiệm vụ hàng ngày
+  const dailyQuests = Array.isArray(levelLeader.dailyQuests) && levelLeader.dailyQuests.length === 4
+    ? levelLeader.dailyQuests
+    : (Array.isArray(levelFollower.dailyQuests) && levelFollower.dailyQuests.length === 4 ? levelFollower.dailyQuests : levelLeader.dailyQuests);
+
+  const mergedUpdatedAt = Math.max(currentTs, incomingTs, Date.now());
 
   return {
-    ...secondary,
-    ...primary,
+    ...levelFollower,
+    ...levelLeader,
     thoNguyen,
     maxThoNguyen,
     linhThach,
@@ -233,11 +274,13 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
       totalCheckIns,
     },
     dailyQuests,
-    dailyQuestsDate: primary.dailyQuestsDate || incoming.dailyQuestsDate || todayStr,
+    dailyQuestsDate: levelLeader.dailyQuestsDate || incoming.dailyQuestsDate || todayStr,
     historyLog: combinedLog,
-    sect: primary.sect || secondary.sect,
-    artifacts: primary.artifacts || secondary.artifacts,
-    tamPhap: primary.tamPhap || secondary.tamPhap,
-    activeBuffs: primary.activeBuffs || secondary.activeBuffs,
+    sect: newestState.sect || oldestState.sect,
+    artifacts: newestState.artifacts || oldestState.artifacts,
+    tamPhap: newestState.tamPhap || oldestState.tamPhap,
+    activeBuffs: newestState.activeBuffs || oldestState.activeBuffs,
+    updatedAt: mergedUpdatedAt,
+    cultivationResetVersion: 2,
   };
 }

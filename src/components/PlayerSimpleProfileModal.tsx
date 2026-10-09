@@ -342,9 +342,17 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
   const frameConfig = getFrameConfig(effectiveFrame);
 
   // Outplay / Best WPM record
+  const localMeWpm = (isActuallyMe && typeof window !== 'undefined')
+    ? Math.max(
+        Number(localStorage.getItem('fasttyping_best_wpm')) || 0,
+        Number(localStorage.getItem('fasttyping_outplay_best_wpm')) || 0,
+        Number(currentUser?.bestWpm) || 0
+      )
+    : 0;
+
   const outplayRecord = resolveBestWpmRecord({
-    bestWpm: serverProfile?.bestWpm || player.bestWpm || player.wpm,
-    bestWpmRecord: serverProfile?.bestWpmRecord || player.bestWpmRecord,
+    bestWpm: Math.max(serverProfile?.bestWpm || 0, player.bestWpm || 0, player.wpm || 0, localMeWpm),
+    bestWpmRecord: serverProfile?.bestWpmRecord || player.bestWpmRecord || currentUser?.bestWpmRecord,
     username: player.username,
     isBot: player.isBot,
     isMe: isActuallyMe,

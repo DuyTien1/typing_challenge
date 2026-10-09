@@ -303,13 +303,15 @@ export const MemoizedArenaSection: React.FC<MemoizedArenaSectionProps> = React.m
           username: currentUser?.username || username,
           displayName: currentUser?.displayName || username,
           score: finalScore,
-          errors: 0,
+          errors: me?.errors || 0,
+          accuracy: me?.accuracy ?? 100,
           avatar,
           frame: userFrame,
           isSurrendered: false,
           isCompleted: true,
           roomId: currentRoomId || undefined,
           playerId: currentPlayerId,
+          keyboardSwitch: (currentUser as any)?.keyboardSwitch || 'Cherry MX Blue Clicky',
         }).then((res) => {
           if (res && res.success && res.highScores) {
             setHighScores(res.highScores);
@@ -392,13 +394,15 @@ export const MemoizedArenaSection: React.FC<MemoizedArenaSectionProps> = React.m
           username: currentUser?.username || username,
           displayName: currentUser?.displayName || username,
           score: finalScore,
-          errors: 0,
+          errors: me?.errors || 0,
+          accuracy: me?.accuracy ?? 100,
           avatar,
           frame: userFrame,
           isSurrendered: false,
           isCompleted: true,
           roomId: currentRoomId || undefined,
           playerId: currentPlayerId,
+          keyboardSwitch: (currentUser as any)?.keyboardSwitch || 'Cherry MX Blue Clicky',
         }).then((res) => {
           if (res && res.success && res.highScores) {
             setHighScores(res.highScores);

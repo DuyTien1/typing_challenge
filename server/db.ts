@@ -377,10 +377,78 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
     const usersMap = new Map<string, ServerUserRecord>();
     const DEFAULT_SECT_IDS = new Set(['sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh']);
     for (const row of res.rows) {
+      const uName = String(row.username || '').toLowerCase();
+      const uId = String(row.id || '');
+      // Bỏ qua tài khoản test
+      if (
+        uId !== 'usr_admin_default' &&
+        uName !== 'admin' &&
+        (uId.startsWith('p_') ||
+         uId.startsWith('bot_') ||
+         uId.startsWith('mock_') ||
+         uId.startsWith('dummy_') ||
+         uId.startsWith('test_') ||
+         uId.startsWith('fake_') ||
+         uName.startsWith('bot_') ||
+         uName.startsWith('mock_') ||
+         uName.startsWith('dummy_') ||
+         uName.startsWith('test') ||
+         uName.startsWith('fake_') ||
+         uName.startsWith('user_demo') ||
+         uName.startsWith('guest_') ||
+         uName.startsWith('player') ||
+         uName.startsWith('tán tu ') ||
+         uName.startsWith('usera') ||
+         uName.startsWith('userb'))
+      ) {
+        continue;
+      }
+
       let cult = row.cultivation;
       if (cult?.sect?.sectId && (DEFAULT_SECT_IDS.has(cult.sect.sectId) || String(cult.sect.sectId).startsWith('sect_thuc_son'))) {
         cult = { ...cult };
         delete cult.sect;
+      }
+
+      // Đảm bảo tu vi được reset về 0 (phiên bản v2)
+      if (cult && (Number(cult.cultivationResetVersion) || 1) < 2) {
+        cult = {
+          ...cult,
+          level: 1,
+          realmIndex: 0,
+          tier: 1,
+          realmName: 'Luyện Khí Kỳ',
+          subStage: 'Sơ Kỳ',
+          titleName: 'Luyện Khí Tu Sĩ',
+          exp: 0,
+          maxExp: 207,
+          thoNguyen: 240,
+          maxThoNguyen: 240,
+          dailyExpEarned: 0,
+          cultivationResetVersion: 2,
+          updatedAt: Date.now(),
+        };
+      }
+
+      let resolvedBestWpm = Number(row.bestWpm) || 0;
+      let resolvedRecord = row.bestWpmRecord;
+      if (resolvedRecord && typeof resolvedRecord.wpm === 'number' && resolvedRecord.wpm > resolvedBestWpm) {
+        resolvedBestWpm = Math.round(resolvedRecord.wpm);
+      }
+      if (Array.isArray(row.matchHistory)) {
+        for (const m of row.matchHistory) {
+          if (m && typeof m.wpm === 'number' && m.wpm > resolvedBestWpm && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
+            resolvedBestWpm = Math.round(m.wpm);
+            if (!resolvedRecord || m.wpm >= (resolvedRecord.wpm || 0)) {
+              resolvedRecord = {
+                wpm: Math.round(m.wpm),
+                mode: m.modeId || m.mode || 'vi_dau',
+                modeName: m.mode || 'Thi Đấu Tốc Ký',
+                timestamp: m.timestamp || Date.now(),
+              };
+            }
+          }
+        }
       }
 
       usersMap.set(row.id, {
@@ -396,8 +464,8 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
         isVerified: Boolean(row.isVerified),
         authProvider: (row.authProvider as 'google' | 'email') || 'email',
         sessionTokens: Array.isArray(row.sessionTokens) ? row.sessionTokens : [],
-        bestWpm: Number(row.bestWpm) || 0,
-        bestWpmRecord: row.bestWpmRecord,
+        bestWpm: resolvedBestWpm,
+        bestWpmRecord: resolvedRecord,
         totalGames: Number(row.totalGames) || 0,
         matchHistory: row.matchHistory || [],
         showcaseAchievements: row.showcaseAchievements || [],
@@ -453,8 +521,12 @@ export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
       is_verified = EXCLUDED.is_verified,
       auth_provider = EXCLUDED.auth_provider,
       session_tokens = EXCLUDED.session_tokens,
-      best_wpm = EXCLUDED.best_wpm,
-      best_wpm_record = EXCLUDED.best_wpm_record,
+      best_wpm = GREATEST(COALESCE(app_users.best_wpm, 0), COALESCE(EXCLUDED.best_wpm, 0)),
+      best_wpm_record = CASE
+        WHEN COALESCE(EXCLUDED.best_wpm, 0) >= COALESCE(app_users.best_wpm, 0) AND EXCLUDED.best_wpm_record IS NOT NULL
+        THEN EXCLUDED.best_wpm_record
+        ELSE COALESCE(app_users.best_wpm_record, EXCLUDED.best_wpm_record)
+      END,
       total_games = EXCLUDED.total_games,
       match_history = EXCLUDED.match_history,
       showcase_achievements = EXCLUDED.showcase_achievements,
@@ -537,9 +609,26 @@ export async function dbLoadSects(): Promise<any[] | null> {
         level: Number(row.level) || Number(rawData.level) || Number(rawData.linhMachLevel) || 1,
         linhMachLevel: Number(rawData.linhMachLevel) || Number(row.level) || 1,
         exp: Number(row.exp) || Number(rawData.exp) || 0,
-        members: (Array.isArray(rawData.members) && rawData.members.length > 0)
-          ? rawData.members
-          : (Array.isArray(row.members) ? row.members : []),
+        members: (() => {
+          const list = (Array.isArray(rawData.members) && rawData.members.length > 0)
+            ? rawData.members
+            : (Array.isArray(row.members) ? row.members : []);
+          return list.map((m: any) => ({
+            ...m,
+            level: 1,
+            tier: 1,
+            exp: 0,
+            realmIndex: 0,
+            realmName: 'Luyện Khí Kỳ',
+            realmIcon: '🌿',
+            tuViScore: 0,
+          }));
+        })(),
+        totalTuVi: 0,
+        avgLevel: 1,
+        avgRealmName: 'Luyện Khí Kỳ',
+        leaderLevel: 1,
+        leaderRealmName: 'Luyện Khí Kỳ',
         buffs: row.buffs || rawData.buffs || {},
         createdAt: Number(row.created_at) || rawData.createdAt || Date.now(),
       };
@@ -1033,7 +1122,7 @@ export async function dbCleanAutoGeneratedData(): Promise<{
     `);
     const deletedSectsCount = sectsRes.rowCount || 0;
 
-    // 2. Xóa tất cả các tài khoản bot hoặc tạo tự động (giữ lại tài khoản admin và người chơi thật)
+    // 2. Xóa tất cả các tài khoản bot hoặc tạo để test dữ liệu (giữ lại tài khoản admin và người chơi thật đã đăng ký)
     const usersRes = await client.query(`
       DELETE FROM app_users
       WHERE id != 'usr_admin_default'
@@ -1044,24 +1133,108 @@ export async function dbCleanAutoGeneratedData(): Promise<{
           OR id LIKE 'dummy_%'
           OR id LIKE 'test_%'
           OR id LIKE 'fake_%'
+          OR id LIKE 'p_%'
           OR LOWER(username) LIKE 'bot_%'
           OR LOWER(username) LIKE 'mock_%'
           OR LOWER(username) LIKE 'dummy_%'
           OR LOWER(username) LIKE 'test_%'
+          OR LOWER(username) LIKE 'test%'
           OR LOWER(username) LIKE 'fake_%'
           OR LOWER(username) LIKE 'user_demo%'
           OR LOWER(username) LIKE 'guest_%'
+          OR LOWER(username) LIKE 'player%'
+          OR LOWER(username) LIKE 'tán tu %'
+          OR LOWER(username) LIKE 'usera%'
+          OR LOWER(username) LIKE 'userb%'
         )
     `);
     const deletedUsersCount = usersRes.rowCount || 0;
 
-    // 3. Gỡ bỏ liên kết tông môn mặc định khỏi toàn bộ tài khoản người chơi còn lại
+    // 3. Dọn dẹp bạn bè và lời mời kết bái liên quan tới tài khoản test đã bị xóa
+    await client.query(`
+      DELETE FROM app_friendships
+      WHERE user1_id LIKE 'p_%' OR user2_id LIKE 'p_%'
+         OR user1_id LIKE 'test_%' OR user2_id LIKE 'test_%'
+         OR user1_id LIKE 'bot_%' OR user2_id LIKE 'bot_%';
+      DELETE FROM app_friend_requests
+      WHERE from_user_id LIKE 'p_%' OR to_user_id LIKE 'p_%'
+         OR from_user_id LIKE 'test_%' OR to_user_id LIKE 'test_%';
+    `);
+
+    // 4. Gỡ bỏ liên kết tông môn mặc định khỏi toàn bộ tài khoản người chơi còn lại
     await client.query(`
       UPDATE app_users
       SET cultivation = cultivation - 'sect'
       WHERE cultivation->'sect'->>'sectId' IN ('sect_thuc_son', 'sect_van_hoa', 'sect_tieu_dao', 'sect_u_minh')
          OR cultivation->'sect'->>'sectId' LIKE 'sect_thuc_son%'
          OR (cultivation->'sect'->>'sectId' IS NOT NULL AND cultivation->'sect'->>'sectId' NOT LIKE 'sect_custom_%')
+    `);
+
+    // 5. Reset toàn bộ tu vi của tất cả tài khoản người chơi còn lại về 0 (Luyện Khí Kỳ Tầng 1, 0 EXP)
+    await client.query(`
+      UPDATE app_users
+      SET cultivation = jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(
+              jsonb_set(
+                jsonb_set(
+                  jsonb_set(
+                    COALESCE(cultivation, '{}'::jsonb),
+                    '{level}', '1'::jsonb
+                  ),
+                  '{realmIndex}', '0'::jsonb
+                ),
+                '{tier}', '1'::jsonb
+              ),
+              '{realmName}', '"Luyện Khí Kỳ"'::jsonb
+            ),
+            '{subStage}', '"Sơ Kỳ"'::jsonb
+          ),
+          '{titleName}', '"Luyện Khí Tu Sĩ"'::jsonb
+        ),
+        '{exp}', '0'::jsonb
+      ) || jsonb_build_object(
+        'maxExp', 207,
+        'thoNguyen', 240,
+        'maxThoNguyen', 240,
+        'dailyExpEarned', 0,
+        'cultivationResetVersion', 2,
+        'updatedAt', EXTRACT(EPOCH FROM NOW()) * 1000
+      )
+      WHERE cultivation IS NOT NULL;
+    `);
+
+    // 6. Reset tu vi thành viên trong các tông môn tự lập còn lại về 0
+    await client.query(`
+      UPDATE app_sects
+      SET members = (
+        SELECT jsonb_agg(
+          jsonb_set(
+            jsonb_set(
+              jsonb_set(
+                jsonb_set(
+                  jsonb_set(
+                    jsonb_set(
+                      jsonb_set(m, '{level}', '1'::jsonb),
+                      '{tier}', '1'::jsonb
+                    ),
+                    '{exp}', '0'::jsonb
+                  ),
+                  '{realmIndex}', '0'::jsonb
+                ),
+                '{realmName}', '"Luyện Khí Kỳ"'::jsonb
+              ),
+              '{realmIcon}', '"🌿"'::jsonb
+            ),
+            '{tuViScore}', '0'::jsonb
+          )
+        )
+        FROM jsonb_array_elements(members) AS m
+      ),
+      level = 1,
+      exp = 0
+      WHERE members IS NOT NULL AND jsonb_array_length(members) > 0;
     `);
 
     await client.query('COMMIT');

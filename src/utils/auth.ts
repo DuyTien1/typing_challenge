@@ -89,7 +89,27 @@ export function setStoredCachedUser(user: UserAccount | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (user) {
-      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      const existing = getStoredCachedUser();
+      const localWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
+      const outplayWpm = Number(localStorage.getItem('fasttyping_outplay_best_wpm')) || 0;
+      const effectiveWpm = Math.max(
+        existing?.bestWpm || 0,
+        user.bestWpm || 0,
+        localWpm,
+        outplayWpm
+      );
+
+      let effectiveRecord = user.bestWpmRecord;
+      if (existing?.bestWpmRecord && (existing.bestWpmRecord.wpm || 0) > (effectiveRecord?.wpm || 0)) {
+        effectiveRecord = existing.bestWpmRecord;
+      }
+
+      const mergedUser: UserAccount = {
+        ...user,
+        bestWpm: effectiveWpm,
+        bestWpmRecord: effectiveRecord || user.bestWpmRecord || existing?.bestWpmRecord,
+      };
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(mergedUser));
     } else {
       localStorage.removeItem(AUTH_USER_KEY);
     }
@@ -113,6 +133,39 @@ export async function fetchCurrentUser(): Promise<UserAccount | null> {
     });
     const data = await parseAuthResponse(res, 'Không thể lấy thông tin người dùng');
     if (data.success && data.user) {
+      // Bảo đảm kỷ lục WPM cao nhất không bao giờ bị hạ thấp khi máy chủ trả về số cũ
+      const localGeneralWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
+      const localOutplayWpm = Number(localStorage.getItem('fasttyping_outplay_best_wpm')) || 0;
+      const localMaxWpm = Math.max(localGeneralWpm, localOutplayWpm);
+
+      let localBestRecord: any = null;
+      try {
+        const outplayRecStr = localStorage.getItem('fasttyping_outplay_best_record');
+        if (outplayRecStr) {
+          const parsed = JSON.parse(outplayRecStr);
+          if (parsed && typeof parsed.wpm === 'number' && parsed.wpm > 0) localBestRecord = parsed;
+        }
+        const generalRecStr = localStorage.getItem('fasttyping_best_wpm_record');
+        if (generalRecStr) {
+          const parsed = JSON.parse(generalRecStr);
+          if (parsed && typeof parsed.wpm === 'number' && parsed.wpm > (localBestRecord?.wpm || 0)) {
+            localBestRecord = parsed;
+          }
+        }
+      } catch {}
+
+      if (localMaxWpm > (data.user.bestWpm || 0)) {
+        data.user.bestWpm = localMaxWpm;
+        if (localBestRecord && localBestRecord.wpm >= (data.user.bestWpmRecord?.wpm || 0)) {
+          data.user.bestWpmRecord = localBestRecord;
+        }
+        // Tự động đồng bộ số điểm cao nhất này lên máy chủ để khắc phục triệt để tình trạng lệch điểm
+        updateUserProfile({
+          bestWpm: localMaxWpm,
+          bestWpmRecord: data.user.bestWpmRecord,
+        }).catch(() => {});
+      }
+
       setStoredCachedUser(data.user);
       return data.user;
     } else if (res.status === 401 || res.status === 403) {
@@ -280,16 +333,56 @@ export async function updateUserProfile(updates: {
   }
 
   try {
+    const localGeneralWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
+    const localOutplayWpm = Number(localStorage.getItem('fasttyping_outplay_best_wpm')) || 0;
+    const localMaxWpm = Math.max(localGeneralWpm, localOutplayWpm);
+
+    let localBestRecord: any = null;
+    try {
+      const outplayRecStr = localStorage.getItem('fasttyping_outplay_best_record');
+      if (outplayRecStr) {
+        const parsed = JSON.parse(outplayRecStr);
+        if (parsed && typeof parsed.wpm === 'number' && parsed.wpm > 0) localBestRecord = parsed;
+      }
+      const generalRecStr = localStorage.getItem('fasttyping_best_wpm_record');
+      if (generalRecStr) {
+        const parsed = JSON.parse(generalRecStr);
+        if (parsed && typeof parsed.wpm === 'number' && parsed.wpm > (localBestRecord?.wpm || 0)) {
+          localBestRecord = parsed;
+        }
+      }
+    } catch {}
+
+    const incomingBestWpm = updates.bestWpm !== undefined ? Number(updates.bestWpm) || 0 : 0;
+    const incomingRecordWpm = updates.bestWpmRecord?.wpm ? Number(updates.bestWpmRecord.wpm) || 0 : 0;
+    const effectiveTargetWpm = Math.max(incomingBestWpm, incomingRecordWpm, localMaxWpm, localBestRecord?.wpm || 0);
+
+    const effectiveTargetRecord = (updates.bestWpmRecord && (updates.bestWpmRecord.wpm || 0) >= (localBestRecord?.wpm || 0))
+      ? updates.bestWpmRecord
+      : (localBestRecord || updates.bestWpmRecord);
+
+    const payload = {
+      ...updates,
+      ...(effectiveTargetWpm > 0 ? { bestWpm: effectiveTargetWpm } : {}),
+      ...(effectiveTargetRecord ? { bestWpmRecord: effectiveTargetRecord } : {}),
+    };
+
     const res = await smartAuthFetch('/api/auth/profile', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(updates),
+      body: JSON.stringify(payload),
     });
     const data = await parseAuthResponse(res, 'Lỗi kết nối khi cập nhật hồ sơ');
     if (data.success && data.user) {
+      if (effectiveTargetWpm > (data.user.bestWpm || 0)) {
+        data.user.bestWpm = effectiveTargetWpm;
+        if (effectiveTargetRecord && (!data.user.bestWpmRecord || (effectiveTargetRecord.wpm || 0) > (data.user.bestWpmRecord.wpm || 0))) {
+          data.user.bestWpmRecord = effectiveTargetRecord;
+        }
+      }
       setStoredCachedUser(data.user);
     }
     return data;

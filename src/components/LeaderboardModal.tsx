@@ -71,6 +71,7 @@ interface LeaderboardModalProps {
   onStartGhostChallenge?: (entry: LeaderboardEntry) => void;
   onOpenWhisper?: (username: string, userId?: string) => void;
   onAddFriend?: (userId: string, username?: string) => void;
+  onSelectMode?: (mode: any) => void;
 }
 
 export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
@@ -85,11 +86,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   onStartGhostChallenge,
   onOpenWhisper,
   onAddFriend,
+  onSelectMode,
 }) => {
   // Top-Level Group Tabs: ⚔️ Chiến Trường Tốc Ký & 🪷 Cõi Tu Tiên & Tông Môn
   const [activeGroup, setActiveGroup] = useState<LeaderboardGroup>('battle');
   const [selectedTab, setSelectedTab] = useState<string>('vi_dau');
   const [selectedPeriod, setSelectedPeriod] = useState<LeaderboardTimePeriod>('daily');
+  const [battleSearchQuery, setBattleSearchQuery] = useState<string>('');
 
   // Multi-Period Rankings cache from server
   const [multiRankings, setMultiRankings] = useState<
@@ -172,19 +175,20 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
   // Tabs Definitions grouped by Category
   const speedTabs = [
-    { id: 'vi_dau', name: 'Chính Đạo Vấn Tâm', unit: 'WPM', icon: '🪷' },
-    { id: 'vi_nodau', name: 'Tật Phong Ngự Kiếm', unit: 'WPM', icon: '⚡' },
-    { id: 'en', name: 'Dị Vực Luận Đạo', unit: 'WPM', icon: '🌐' },
-    { id: 'numpad', name: 'Cửu Cung Trận Pháp', unit: 'WPM', icon: '🔢' },
-    { id: 'ngau_hung', name: 'Lôi Đình Nhất Kích', unit: 'Điểm', icon: '🌪️' },
-    { id: 'doan_chu', name: 'Huyền Cơ Mật Cảnh', unit: 'Điểm', icon: '🔮' },
+    { id: 'vi_dau', name: 'Chính Đạo Vấn Tâm', unit: 'WPM', icon: '🪷', desc: 'Tiếng Việt có dấu chuẩn mực' },
+    { id: 'vi_nodau', name: 'Tật Phong Ngự Kiếm', unit: 'WPM', icon: '⚡', desc: 'Tiếng Việt không dấu tốc ký' },
+    { id: 'en', name: 'Dị Vực Luận Đạo', unit: 'WPM', icon: '🌐', desc: 'Từ vựng tiếng Anh Oxford' },
+    { id: 'numpad', name: 'Cửu Cung Trận Pháp', unit: 'WPM', icon: '🔢', desc: 'Bàn phím số Numpad' },
+    { id: 'outplay', name: 'Độc Bộ Thiên Hạ', unit: 'WPM', icon: '👻', desc: 'Luyện phím solo & Tàn ảnh' },
+    { id: 'ngau_hung', name: 'Lôi Đình Nhất Kích', unit: 'Điểm', icon: '🌪️', desc: 'Gõ chữ rơi sinh tồn combo' },
+    { id: 'doan_chu', name: 'Huyền Cơ Mật Cảnh', unit: 'Điểm', icon: '🔮', desc: 'Đoán chữ thần tốc' },
   ];
 
   const cultivationTabs = [
-    { id: 'tu_vi', name: 'Bảng Vàng Tu Vi', unit: 'Tu Vi', isSpecial: true, icon: '📜' },
-    { id: 'tong_mon', name: 'Vạn Phái Tranh Phong', unit: 'Chiến Công', isSpecial: true, icon: '⚔️' },
-    { id: 'san_boss', name: 'Hàng Phục Ma Tôn', unit: 'DMG', isSpecial: true, icon: '🐉' },
-    { id: 'cao_thi', name: 'Cáo Thị Vạn Giới', unit: '', isSpecial: true, icon: '🪶' },
+    { id: 'tu_vi', name: 'Bảng Vàng Tu Vi', unit: 'Tu Vi', isSpecial: true, icon: '📜', desc: 'Top 50 tu sĩ cảnh giới tối cao' },
+    { id: 'tong_mon', name: 'Vạn Phái Tranh Phong', unit: 'Chiến Công', isSpecial: true, icon: '⚔️', desc: 'Bảng xếp hạng đại tông môn' },
+    { id: 'san_boss', name: 'Hàng Phục Ma Tôn', unit: 'DMG', isSpecial: true, icon: '🐉', desc: 'Săn Boss Cổ Ma Hắc Long' },
+    { id: 'cao_thi', name: 'Cáo Thị Vạn Giới', unit: '', isSpecial: true, icon: '🪶', desc: 'Chiếu thư Thiên Đạo ghi danh' },
   ];
 
   const currentTabConfig = useMemo(() => {
@@ -278,6 +282,28 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  // Remaining time to midnight (00:00 GMT+7) for Daily Reset
+  const [dailyResetCountdown, setDailyResetCountdown] = useState<string>('');
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      const now = new Date();
+      // Vietnam is UTC+7
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+      const vnDate = new Date(utcMs + 7 * 3600000);
+      const nextMidnightVn = new Date(vnDate);
+      nextMidnightVn.setHours(24, 0, 0, 0);
+      const diffMs = Math.max(0, nextMidnightVn.getTime() - vnDate.getTime());
+      const hours = Math.floor(diffMs / 3600000);
+      const minutes = Math.floor((diffMs % 3600000) / 60000);
+      const seconds = Math.floor((diffMs % 60000) / 1000);
+      setDailyResetCountdown(`${hours}h ${minutes < 10 ? '0' : ''}${minutes}m ${seconds < 10 ? '0' : ''}${seconds}s`);
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Filtered Tu Vi list
   const filteredCultivationList = useMemo(() => {
     return cultivationList.filter((item) => {
@@ -302,45 +328,64 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     if (modeData && Array.isArray(modeData[selectedPeriod])) {
       return modeData[selectedPeriod];
     }
-    // Fallback: If no server ranking array yet, fallback to single Top 1 if available
-    const fallbackTop1 = highScores[selectedTab];
-    if (fallbackTop1) {
-      return [
-        {
-          rank: 1,
-          userId: fallbackTop1.userId,
-          username: fallbackTop1.username,
-          displayName: fallbackTop1.displayName || fallbackTop1.username,
-          avatar: fallbackTop1.avatar || '⚡',
-          frame: fallbackTop1.frame || 'default',
-          wpm: fallbackTop1.wpm || 0,
-          score: fallbackTop1.score || 0,
-          errors: fallbackTop1.errors || 0,
-          accuracy: fallbackTop1.accuracy || 100,
-          timestamp: fallbackTop1.timestamp || Date.now(),
-          isVerified: fallbackTop1.isVerified ?? true,
-          realmName: fallbackTop1.realmName || 'Luyện Khí Kỳ',
-          realmIcon: fallbackTop1.realmIcon || '🌿',
-          level: fallbackTop1.level || 1,
-          sectName: fallbackTop1.sectName,
-          sectTag: fallbackTop1.sectTag,
-          sectRole: fallbackTop1.sectRole,
-          keyboardSwitch: fallbackTop1.keyboardSwitch || 'Cherry MX Blue Clicky',
-        },
-      ];
+    // Only fall back during initial loading if highScores has an entry for this exact mode
+    if (loadingRankings) {
+      const fallbackTop1 = highScores[selectedTab];
+      if (fallbackTop1 && fallbackTop1.username) {
+        return [
+          {
+            rank: 1,
+            userId: fallbackTop1.userId,
+            username: fallbackTop1.username,
+            displayName: fallbackTop1.displayName || fallbackTop1.username,
+            avatar: fallbackTop1.avatar || '⚡',
+            frame: fallbackTop1.frame || 'default',
+            wpm: fallbackTop1.wpm || 0,
+            score: fallbackTop1.score || 0,
+            errors: fallbackTop1.errors || 0,
+            accuracy: fallbackTop1.accuracy || 100,
+            timestamp: fallbackTop1.timestamp || Date.now(),
+            isVerified: fallbackTop1.isVerified ?? true,
+            realmName: fallbackTop1.realmName || 'Luyện Khí Kỳ',
+            realmIcon: fallbackTop1.realmIcon || '🌿',
+            level: fallbackTop1.level || 1,
+            sectName: fallbackTop1.sectName,
+            sectTag: fallbackTop1.sectTag,
+            sectRole: fallbackTop1.sectRole,
+            keyboardSwitch: fallbackTop1.keyboardSwitch || 'Cherry MX Blue Clicky',
+          },
+        ];
+      }
     }
     return [];
-  }, [multiRankings, selectedTab, selectedPeriod, highScores]);
+  }, [multiRankings, selectedTab, selectedPeriod, highScores, loadingRankings]);
 
-  // Top 3 Podium Extraction
+  // Filtered Battle Rankings based on search query
+  const filteredBattleRankings = useMemo(() => {
+    if (!battleSearchQuery.trim()) return currentModeRankings;
+    const q = battleSearchQuery.trim().toLowerCase();
+    return currentModeRankings.filter((e) =>
+      (e.displayName && e.displayName.toLowerCase().includes(q)) ||
+      (e.username && e.username.toLowerCase().includes(q)) ||
+      (e.sectName && e.sectName.toLowerCase().includes(q)) ||
+      (e.sectTag && e.sectTag.toLowerCase().includes(q)) ||
+      (e.realmName && e.realmName.toLowerCase().includes(q)) ||
+      (e.keyboardSwitch && e.keyboardSwitch.toLowerCase().includes(q))
+    );
+  }, [currentModeRankings, battleSearchQuery]);
+
+  // Top 3 Podium Extraction (strictly from current mode rankings)
   const top1Player = currentModeRankings[0] || null;
   const top2Player = currentModeRankings[1] || null;
   const top3Player = currentModeRankings[2] || null;
 
-  // The rest of the ranking list (Ranks 4..20)
+  // The rest of the ranking list (Ranks 4..20 or filtered by search)
   const restRankings = useMemo(() => {
+    if (battleSearchQuery.trim()) {
+      return filteredBattleRankings.filter((e) => e.rank >= 4);
+    }
     return currentModeRankings.slice(3);
-  }, [currentModeRankings]);
+  }, [currentModeRankings, filteredBattleRankings, battleSearchQuery]);
 
   // My Rank Calculation for Sticky Bar
   const myRankData = useMemo(() => {
@@ -536,12 +581,42 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         {/* Multi-Period Filter (Daily / Weekly / All-Time) - Available on all speed modes & san_boss */}
         {(activeGroup === 'battle' || selectedTab === 'san_boss') && (
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-950/70 border border-slate-800 shrink-0 flex-wrap">
-            <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold">
-              <Calendar className="w-3.5 h-3.5 text-amber-400" />
-              <span>Chu kỳ xếp hạng:</span>
+            <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                <span>Chu kỳ:</span>
+              </div>
+
+              {dailyResetCountdown && selectedPeriod === 'daily' && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-amber-400 animate-spin" />
+                  <span>Reset sau: {dailyResetCountdown}</span>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Quick search in battle mode rankings */}
+              <div className="relative">
+                <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={battleSearchQuery}
+                  onChange={(e) => setBattleSearchQuery(e.target.value)}
+                  placeholder="Lọc cao thủ..."
+                  className="pl-7 pr-6 py-0.5 text-[11px] bg-slate-900 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 w-28 sm:w-36"
+                />
+                {battleSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setBattleSearchQuery('')}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
               <div className="flex items-center gap-1 text-xs">
                 <button
                   type="button"
@@ -549,13 +624,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     soundFx.playKeyClick();
                     setSelectedPeriod('daily');
                   }}
-                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer text-xs ${
                     selectedPeriod === 'daily'
-                      ? 'bg-amber-400 text-black shadow-sm'
+                      ? 'bg-amber-400 text-black shadow-sm font-black'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  ☀️ Hôm Nay (Daily)
+                  ☀️ Hôm Nay
                 </button>
 
                 <button
@@ -564,13 +639,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     soundFx.playKeyClick();
                     setSelectedPeriod('weekly');
                   }}
-                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer text-xs ${
                     selectedPeriod === 'weekly'
-                      ? 'bg-amber-400 text-black shadow-sm'
+                      ? 'bg-amber-400 text-black shadow-sm font-black'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  📅 Tuần Này (Weekly)
+                  📅 Tuần Này
                 </button>
 
                 <button
@@ -579,22 +654,22 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     soundFx.playKeyClick();
                     setSelectedPeriod('all_time');
                   }}
-                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer text-xs ${
                     selectedPeriod === 'all_time'
-                      ? 'bg-amber-400 text-black shadow-sm'
+                      ? 'bg-amber-400 text-black shadow-sm font-black'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  🏛️ Điện Danh Vọng (All-Time)
+                  🏛️ Điện Danh Vọng
                 </button>
               </div>
 
               <span
-                className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/25 text-[10px] font-mono font-medium"
+                className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/25 text-[10px] font-mono font-medium"
                 title="Tự động áp dụng cuộn ảo (Virtual Scrolling) tối ưu 60 FPS cho danh sách dài"
               >
                 <Zap className="w-3 h-3 text-cyan-400 animate-pulse" />
-                Cuộn ảo 60 FPS
+                60 FPS
               </span>
             </div>
           </div>

@@ -95,8 +95,9 @@ export function isOutplayMode(modeIdOrName?: string | null): boolean {
 }
 
 /**
- * Hàm tìm kiếm và suy luận kỷ lục WPM chính xác của chế độ Outplay Yourself
- * (QUY ĐỊNH BẮT BUỘC: CHỈ TÍNH CHẾ ĐỘ OUTPLAY YOURSELF, KHÔNG TÍNH CÁC CHẾ ĐỘ MULTIPLAYER)
+ * Hàm tìm kiếm và suy luận kỷ lục WPM cao nhất lịch sử của người chơi
+ * Hỗ trợ mọi chế độ chơi hợp lệ (Outplay, Tiếng Việt có dấu/không dấu, Tiếng Anh, Numpad...)
+ * TUYỆT ĐỐI BẢO TOÀN KỶ LỤC CAO NHẤT: Không bao giờ làm giảm hoặc thụt lùi kỷ lục WPM đã đạt được.
  */
 export function resolveBestWpmRecord(params: {
   bestWpm?: number;
@@ -117,80 +118,164 @@ export function resolveBestWpmRecord(params: {
     };
   }
 
-  // 2. Tra cứu trong matchHistory: tìm trận đấu chế độ Outplay Yourself có WPM cao nhất
-  if (params.matchHistory && params.matchHistory.length > 0) {
-    const outplayMatches = params.matchHistory.filter(
-      (m) => m && m.wpm > 0 && isOutplayMode(m.modeId || m.mode) && m.result !== 'Đầu hàng'
-    );
-    if (outplayMatches.length > 0) {
-      const highestMatch = [...outplayMatches].sort((a, b) => b.wpm - a.wpm)[0];
-      if (highestMatch && highestMatch.wpm > 0) {
-        return {
-          wpm: highestMatch.wpm,
-          mode: 'outplay',
-          modeName: 'Outplay Yourself (Solo)',
-          timestamp: highestMatch.timestamp,
-        };
-      }
-    }
-  }
-
-  // 3. Bản ghi trực tiếp: CHỈ chấp nhận nếu bản ghi thuộc chế độ Outplay Yourself
-  if (params.bestWpmRecord && params.bestWpmRecord.wpm > 0) {
-    if (isOutplayMode(params.bestWpmRecord.mode)) {
-      return {
-        ...params.bestWpmRecord,
-        mode: 'outplay',
-        modeName: 'Outplay Yourself (Solo)',
+  let highestCandidate: BestWpmRecord | null = null;
+  const updateCandidate = (rec: BestWpmRecord | null | undefined) => {
+    if (!rec || typeof rec.wpm !== 'number' || isNaN(rec.wpm) || rec.wpm <= 0) return;
+    if (!highestCandidate || rec.wpm > highestCandidate.wpm) {
+      highestCandidate = {
+        ...rec,
+        modeName: rec.modeName || getFriendlyModeTitle(rec.mode),
       };
     }
-    // Nếu bản ghi cũ từ multiplayer (vi_dau, san_boss, ngau_hung...) -> BỎ QUA HOÀN TOÀN!
+  };
+
+  // A. Bản ghi trực tiếp đã có
+  if (params.bestWpmRecord && params.bestWpmRecord.wpm > 0) {
+    updateCandidate(params.bestWpmRecord);
   }
 
-  // 4. Nếu là người chơi hiện tại, kiểm tra bộ nhớ riêng của Outplay
+  // B. Giá trị bestWpm trực tiếp
+  if (typeof params.bestWpm === 'number' && params.bestWpm > 0) {
+    if (!highestCandidate || params.bestWpm > highestCandidate.wpm) {
+      highestCandidate = {
+        wpm: params.bestWpm,
+        mode: params.bestWpmRecord?.mode || 'outplay',
+        modeName: params.bestWpmRecord?.modeName || getFriendlyModeTitle(params.bestWpmRecord?.mode || 'outplay'),
+        timestamp: params.bestWpmRecord?.timestamp || Date.now(),
+      };
+    }
+  }
+
+  // C. Tra cứu trong matchHistory: tìm trận đấu có WPM cao nhất (mọi chế độ chơi hợp lệ, không đầu hàng)
+  if (params.matchHistory && params.matchHistory.length > 0) {
+    for (const m of params.matchHistory) {
+      if (m && typeof m.wpm === 'number' && m.wpm > 0 && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
+        const modeKey = m.modeId || m.mode || 'vi_dau';
+        updateCandidate({
+          wpm: m.wpm,
+          mode: modeKey,
+          modeName: m.mode || getFriendlyModeTitle(modeKey),
+          timestamp: m.timestamp || Date.now(),
+        });
+      }
+    }
+  }
+
+  // D. Tra cứu trong Bảng Vàng (highScores) nếu có thông tin người dùng
+  if (params.highScores && params.username) {
+    const cleanU = params.username.toLowerCase().trim().replace(/^@/, '');
+    for (const [modeKey, hs] of Object.entries(params.highScores)) {
+      if (hs && hs.wpm > 0) {
+        const hsUser = (hs.username || '').toLowerCase().trim().replace(/^@/, '');
+        const hsDisp = ((hs as any).displayName || '').toLowerCase().trim().replace(/^@/, '');
+        const hsUid = ((hs as any).userId || '').toLowerCase().trim();
+        if (hsUser === cleanU || hsDisp === cleanU || (params.isMe && hsUid === cleanU)) {
+          updateCandidate({
+            wpm: hs.wpm,
+            mode: modeKey,
+            modeName: getFriendlyModeTitle(modeKey),
+            timestamp: hs.timestamp || Date.now(),
+          });
+        }
+      }
+    }
+  }
+
+  // E. Nếu là người chơi hiện tại, kiểm tra toàn diện trong localStorage & cached user
   if (params.isMe && typeof window !== 'undefined') {
     try {
-      const outplayStored = localStorage.getItem('fasttyping_outplay_best_record');
-      if (outplayStored) {
-        const parsed = JSON.parse(outplayStored);
-        if (parsed && parsed.wpm > 0 && isOutplayMode(parsed.mode)) {
-          return {
-            ...parsed,
-            mode: 'outplay',
-            modeName: 'Outplay Yourself (Solo)',
-          };
+      // 1. Kiểm tra fasttyping_best_wpm_record
+      const storedRec = localStorage.getItem('fasttyping_best_wpm_record');
+      if (storedRec) {
+        const parsed = JSON.parse(storedRec);
+        if (parsed && typeof parsed.wpm === 'number') updateCandidate(parsed);
+      }
+      // 2. Kiểm tra fasttyping_best_wpm
+      const localWpm = Number(localStorage.getItem('fasttyping_best_wpm')) || 0;
+      if (localWpm > 0 && (!highestCandidate || localWpm > highestCandidate.wpm)) {
+        highestCandidate = {
+          wpm: localWpm,
+          mode: highestCandidate?.mode || 'outplay',
+          modeName: highestCandidate?.modeName || 'Kỷ Lục Đỉnh Cao',
+          timestamp: Date.now(),
+        };
+      }
+      // 3. Kiểm tra fasttyping_outplay_best_record
+      const outplayRec = localStorage.getItem('fasttyping_outplay_best_record');
+      if (outplayRec) {
+        const parsed = JSON.parse(outplayRec);
+        if (parsed && typeof parsed.wpm === 'number') updateCandidate(parsed);
+      }
+      // 4. Kiểm tra fasttyping_outplay_best_wpm
+      const outplayWpm = Number(localStorage.getItem('fasttyping_outplay_best_wpm')) || 0;
+      if (outplayWpm > 0 && (!highestCandidate || outplayWpm > highestCandidate.wpm)) {
+        highestCandidate = {
+          wpm: outplayWpm,
+          mode: 'outplay',
+          modeName: 'Outplay Yourself (Solo)',
+          timestamp: Date.now(),
+        };
+      }
+      // 5. Kiểm tra fasttyping_cached_user
+      const cachedUserStr = localStorage.getItem('fasttyping_cached_user');
+      if (cachedUserStr) {
+        const parsedUser = JSON.parse(cachedUserStr);
+        if (parsedUser) {
+          if (parsedUser.bestWpmRecord && typeof parsedUser.bestWpmRecord.wpm === 'number') {
+            updateCandidate(parsedUser.bestWpmRecord);
+          }
+          const cachedWpm = Number(parsedUser.bestWpm) || 0;
+          if (cachedWpm > 0 && (!highestCandidate || cachedWpm > highestCandidate.wpm)) {
+            highestCandidate = {
+              wpm: cachedWpm,
+              mode: highestCandidate?.mode || 'outplay',
+              modeName: highestCandidate?.modeName || 'Kỷ Lục Đỉnh Cao',
+              timestamp: Date.now(),
+            };
+          }
         }
       }
-
-      const stored = localStorage.getItem('fasttyping_best_wpm_record');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.wpm > 0 && isOutplayMode(parsed.mode)) {
-          return {
-            ...parsed,
-            mode: 'outplay',
-            modeName: 'Outplay Yourself (Solo)',
-          };
+      // 6. Kiểm tra fasttyping_user
+      const fastUserStr = localStorage.getItem('fasttyping_user');
+      if (fastUserStr) {
+        const parsedUser = JSON.parse(fastUserStr);
+        if (parsedUser) {
+          if (parsedUser.bestWpmRecord && typeof parsedUser.bestWpmRecord.wpm === 'number') {
+            updateCandidate(parsedUser.bestWpmRecord);
+          }
+          const fWpm = Number(parsedUser.bestWpm) || 0;
+          if (fWpm > 0 && (!highestCandidate || fWpm > highestCandidate.wpm)) {
+            highestCandidate = {
+              wpm: fWpm,
+              mode: highestCandidate?.mode || 'outplay',
+              modeName: highestCandidate?.modeName || 'Kỷ Lục Đỉnh Cao',
+              timestamp: Date.now(),
+            };
+          }
         }
       }
-
-      const outplayWpmStr = localStorage.getItem('fasttyping_outplay_best_wpm');
-      if (outplayWpmStr) {
-        const wpm = Number(outplayWpmStr);
-        if (wpm > 0) {
-          return {
-            wpm,
-            mode: 'outplay',
-            modeName: 'Outplay Yourself (Solo)',
-            timestamp: Date.now(),
-          };
+      // 7. Kiểm tra toàn bộ fasttyping_match_history trong localStorage
+      const localHistoryStr = localStorage.getItem('fasttyping_match_history');
+      if (localHistoryStr) {
+        const parsedHist = JSON.parse(localHistoryStr);
+        if (Array.isArray(parsedHist)) {
+          for (const m of parsedHist) {
+            if (m && typeof m.wpm === 'number' && m.wpm > 0 && m.result !== 'Đầu hàng' && m.result !== 'AFK') {
+              const modeKey = m.modeId || m.mode || 'vi_dau';
+              updateCandidate({
+                wpm: m.wpm,
+                mode: modeKey,
+                modeName: m.mode || getFriendlyModeTitle(modeKey),
+                timestamp: m.timestamp || Date.now(),
+              });
+            }
+          }
         }
       }
     } catch {}
   }
 
-  // Tuyệt đối không fallback sang highScores (multiplayer) hoặc gán mặc định vi_dau
-  return null;
+  return highestCandidate;
 }
 
 export const WpmRecordBadge: React.FC<WpmRecordBadgeProps> = ({

@@ -27,6 +27,7 @@ import {
   updatePlayerRoomStatus,
 } from '../utils/roomManager';
 import { soundFx } from '../utils/audio';
+import { checkClientBanStatus } from '../utils/banManager';
 
 export const BOT_NAMES = [
   { name: 'PhímThần_VN', icon: '⚡', wpm: 75 },
@@ -276,7 +277,10 @@ export function useRoomEngine({
             soundFx.playError();
             setCurrentRoomId(null);
             onGameStateChange('lobby');
-            setKickedNotice('Bạn đã bị chủ phòng mời ra khỏi phòng.');
+            const banCheck = checkClientBanStatus();
+            if (!banCheck.isBanned) {
+              setKickedNotice('Bạn đã bị chủ phòng mời ra khỏi phòng.');
+            }
             return;
           }
 
@@ -505,7 +509,10 @@ export function useRoomEngine({
           soundFx.playError();
           setCurrentRoomId(null);
           onGameStateChange('lobby');
-          setKickedNotice('Bạn đã bị chủ phòng mời ra khỏi phòng.');
+          const banCheck = checkClientBanStatus();
+          if (!banCheck.isBanned) {
+            setKickedNotice('Bạn đã bị chủ phòng mời ra khỏi phòng.');
+          }
         } else {
           setKickedNotice(
             `${kickedUsername || 'Một người chơi'} đã bị chủ phòng mời rời khỏi phòng.`

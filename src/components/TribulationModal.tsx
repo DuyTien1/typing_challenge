@@ -277,17 +277,10 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
   useEffect(() => {
     if (isOpen && phase === 'active') {
       setTypedInput('');
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
-      const focusTimeout = setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.value = '';
-          inputRef.current.focus();
-        }
-        setTypedInput('');
-      }, 50);
-      return () => clearTimeout(focusTimeout);
+      const raf = requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(raf);
     }
   }, [isOpen, phase, currentWaveIndex]);
 
@@ -299,9 +292,6 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
       setPassedWaves([]);
       setFailedWaves([]);
       setTypedInput('');
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
       setShieldHp(100);
       setIsScreenFlashing(false);
       setSwordSlashActive(false);
@@ -315,9 +305,6 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
       soundFx.playThunderStrike();
       const t = setTimeout(() => {
         setTypedInput('');
-        if (inputRef.current) {
-          inputRef.current.value = '';
-        }
         setPhase('active');
         setTimeLeft(tribulationConfig.waves[0].time);
       }, 2400);
@@ -348,7 +335,6 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
   // Handle typing input (Chỉ chấp nhận chữ số, loại bỏ hoàn toàn ký tự lạ)
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (phase !== 'active') {
-      e.target.value = '';
       setTypedInput('');
       return;
     }
@@ -356,17 +342,19 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     const rawValue = e.target.value;
     // Lọc duy nhất chữ số 0-9
     const numericValue = rawValue.replace(/\D/g, '');
-    setTypedInput(numericValue);
-    if (e.target.value !== numericValue) {
-      e.target.value = numericValue;
-    }
     soundFx.playKeyClickSound();
 
     const targetMantra = currentWave.mantra;
     // So sánh chuẩn xác dãy số thiên lôi
     if (numericValue === targetMantra) {
+      setTypedInput('');
       handleWaveSuccess();
+      return;
     }
+
+    // Giới hạn không cho gõ vượt quá độ dài chuỗi mục tiêu
+    const limitedValue = numericValue.slice(0, targetMantra.length);
+    setTypedInput(limitedValue);
   };
 
   // Wave Succeeded: Slashed through lightning
@@ -377,12 +365,8 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
     setSwordSlashActive(true);
     triggerLightningParticles(false);
 
-    // Xóa NGAY LẬP TỨC toàn bộ giá trị ô input và blur để chống dính ký tự sang đợt tiếp theo
+    // Xóa ngay trạng thái input khi hoàn thành đợt
     setTypedInput('');
-    if (inputRef.current) {
-      inputRef.current.value = '';
-      inputRef.current.blur();
-    }
 
     const nextPassed = [...passedWaves, currentWaveIndex];
     setPassedWaves(nextPassed);
@@ -390,15 +374,12 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
 
     setTimeout(() => {
       setSwordSlashActive(false);
-      // Xóa triệt để lại một lần nữa trước khi chuyển đợt
       setTypedInput('');
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
 
-      if (currentWaveIndex + 1 < totalWaves) {
-        setCurrentWaveIndex((prev) => prev + 1);
-        setTimeLeft(tribulationConfig.waves[currentWaveIndex + 1].time);
+      const nextWaveIdx = currentWaveIndex + 1;
+      if (nextWaveIdx < totalWaves) {
+        setCurrentWaveIndex(nextWaveIdx);
+        setTimeLeft(tribulationConfig.waves[nextWaveIdx].time);
         setPhase('active');
       } else {
         // All waves finished!
@@ -417,10 +398,6 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
 
     // Xóa ngay giá trị input khi hết giờ
     setTypedInput('');
-    if (inputRef.current) {
-      inputRef.current.value = '';
-      inputRef.current.blur();
-    }
 
     const damagePerWave = Math.round(100 / totalWaves);
     setShieldHp((prev) => Math.max(0, prev - damagePerWave));
@@ -431,12 +408,10 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
 
     setTimeout(() => {
       setTypedInput('');
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
-      if (currentWaveIndex + 1 < totalWaves) {
-        setCurrentWaveIndex((prev) => prev + 1);
-        setTimeLeft(tribulationConfig.waves[currentWaveIndex + 1].time);
+      const nextWaveIdx = currentWaveIndex + 1;
+      if (nextWaveIdx < totalWaves) {
+        setCurrentWaveIndex(nextWaveIdx);
+        setTimeLeft(tribulationConfig.waves[nextWaveIdx].time);
         setPhase('active');
       } else {
         // All waves finished!
@@ -649,7 +624,14 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
 
           {/* Phase 2: Active Typing or Wave Result */}
           {(phase === 'active' || phase === 'wave_result') && (
-            <div className="w-full space-y-4 animate-fadeIn">
+            <div 
+              className="w-full space-y-4 animate-fadeIn cursor-default"
+              onClick={() => {
+                if (phase === 'active') {
+                  inputRef.current?.focus();
+                }
+              }}
+            >
               {/* Inner Demon Alert Banner */}
               {currentWave.isInnerDemon && (
                 <div className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-950/80 via-rose-950/80 to-purple-950/80 border border-purple-500/60 shadow-[0_0_20px_rgba(168,85,247,0.4)] animate-pulse flex items-center justify-center gap-2 text-xs sm:text-sm font-black text-purple-200">
@@ -673,7 +655,7 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                     const typedChar = typedInput[cIdx];
                     const isMatched = typedChar === char;
                     const isCurrentCaret = typedInput.length === cIdx;
-                    const isError = typedChar && typedChar !== char;
+                    const isError = Boolean(typedChar && typedChar !== char);
 
                     return (
                       <span
@@ -726,12 +708,14 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
               {/* Input Box */}
               <div className="w-full max-w-md mx-auto pt-2">
                 <input
+                  key={`tribulation-wave-input-${currentWaveIndex}`}
                   ref={inputRef}
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={typedInput}
                   onChange={handleInputChange}
+                  autoFocus
                   onKeyDown={(e) => {
                     if (phase !== 'active') {
                       e.preventDefault();
@@ -743,7 +727,8 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                     if (e.ctrlKey || e.metaKey) {
                       return;
                     }
-                    if (!/^[0-9]$/.test(e.key)) {
+                    // Hỗ trợ cả phím số thường (0-9) và bàn phím phụ (Numpad)
+                    if (!/^[0-9]$/.test(e.key) && !e.code.startsWith('Numpad')) {
                       e.preventDefault();
                     }
                   }}
@@ -754,13 +739,15 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                     }
                     const paste = e.clipboardData.getData('text');
                     const filtered = paste.replace(/\D/g, '');
-                    if (filtered !== paste) {
+                    if (filtered) {
                       e.preventDefault();
                       const current = typedInput;
                       const next = (current + filtered).slice(0, currentWave.mantra.length);
-                      setTypedInput(next);
                       if (next === currentWave.mantra) {
+                        setTypedInput('');
                         handleWaveSuccess();
+                      } else {
+                        setTypedInput(next);
                       }
                     }
                   }}
@@ -771,7 +758,7 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck="false"
-                  className="w-full px-4 py-3 rounded-xl bg-slate-900/90 border-2 border-amber-500/60 focus:border-amber-400 text-amber-300 font-mono text-center text-xl sm:text-2xl tracking-widest placeholder:text-slate-500 placeholder:text-sm placeholder:tracking-normal outline-none shadow-lg shadow-amber-950/50 transition-all disabled:opacity-60"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-900/90 border-2 border-amber-500/60 focus:border-amber-400 text-amber-300 font-mono text-center text-xl sm:text-2xl tracking-widest placeholder:text-slate-500 placeholder:text-sm placeholder:tracking-normal outline-none shadow-lg shadow-amber-950/50 transition-all disabled:opacity-60 cursor-text"
                 />
               </div>
 

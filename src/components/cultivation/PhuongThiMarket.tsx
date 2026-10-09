@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CultivationState, mergeCultivationStates } from '../../utils/cultivation';
 import { soundFx } from '../../utils/audio';
 import { getStoredAuthToken } from '../../utils/auth';
@@ -64,6 +64,8 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
 
   // Modal Mua Hàng
   const [selectedListing, setSelectedListing] = useState<MarketListing | null>(null);
+  const [buyQuantity, setBuyQuantity] = useState(1);
+  const isSubmittingBuyRef = useRef(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -187,20 +189,24 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
     }
   }, [subTab, categoryFilter, sortBy, username]);
 
-  // Xử lý Mua hàng
+  // Xử lý Mua hàng (Hỗ trợ mua đúng số lượng lựa chọn, khấu trừ Linh Thạch dứt khoát)
   const handleConfirmBuy = async () => {
-    if (!selectedListing || isProcessing) return;
+    if (!selectedListing || isProcessing || isSubmittingBuyRef.current) return;
 
-    if (userLinhThach < selectedListing.totalPrice) {
+    const targetQty = Math.max(1, Math.min(selectedListing.quantity, buyQuantity));
+    const totalCost = selectedListing.pricePerUnit * targetQty;
+
+    if (userLinhThach < totalCost) {
       soundFx.playError();
       setNotice({
         type: 'error',
-        message: `Linh Thạch không đủ! Cần ${selectedListing.totalPrice.toLocaleString()} LT, hiện có ${userLinhThach.toLocaleString()} LT.`,
+        message: `Linh Thạch không đủ! Cần ${totalCost.toLocaleString()} LT để mua ${targetQty}x ${selectedListing.itemName}, hiện có ${userLinhThach.toLocaleString()} LT.`,
       });
       return;
     }
 
     try {
+      isSubmittingBuyRef.current = true;
       setIsProcessing(true);
       const token = getStoredAuthToken();
       const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
@@ -216,76 +222,98 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
           headers,
           body: JSON.stringify({
             listingId: selectedListing.id,
+            quantity: targetQty,
             username,
             clientCultivation: state,
           }),
         });
 
-        if (res && res.ok) {
+        if (res) {
           const text = await res.text();
+          let data: any = null;
           try {
-            const data = JSON.parse(text);
-            if (data.success) {
-              purchaseSucceeded = true;
-              responseMessage = data.message || `Đã mua thành công ${selectedListing.quantity}x ${selectedListing.itemName}!`;
-              if (data.updatedCultivation) {
-                const merged = mergeCultivationStates(state, data.updatedCultivation);
-                onUpdateState(merged);
-              }
-            } else {
-              soundFx.playError();
-              setNotice({ type: 'error', message: data.error || 'Giao dịch thất bại!' });
-              setIsProcessing(false);
-              return;
+            data = JSON.parse(text);
+          } catch {}
+
+          if (res.ok && data?.success) {
+            purchaseSucceeded = true;
+            responseMessage = data.message || `Đã mua thành công ${targetQty}x ${selectedListing.itemName}!`;
+            if (data.updatedCultivation) {
+              onUpdateState(data.updatedCultivation);
             }
-          } catch {
-            // Phản hồi không phải JSON từ proxy
+            if (data.listingStatus === 'sold') {
+              setListings((prev) => prev.filter((l) => l.id !== selectedListing.id));
+            } else {
+              setListings((prev) =>
+                prev.map((l) =>
+                  l.id === selectedListing.id
+                    ? { ...l, quantity: data.remainingQuantity, totalPrice: l.pricePerUnit * data.remainingQuantity }
+                    : l
+                )
+              );
+            }
+          } else {
+            soundFx.playError();
+            setNotice({ type: 'error', message: data?.error || 'Giao dịch thất bại!' });
+            return;
           }
         }
       } catch {
-        // Môi trường Citrix proxy chặn POST
+        // Lỗi mất kết nối mạng hoàn toàn
       }
 
-      // Xử lý cục bộ nếu máy chủ không phản hồi (chế độ khách / Citrix proxy)
+      // Xử lý cục bộ chỉ khi ngoại tuyến hoàn toàn (offline client)
       if (!purchaseSucceeded) {
         const currentHerbs = { ...(state.herbs || { uLan: 0, huyetTinh: 0, hoaAnh: 0, huyenThiet: 0, longTu: 0 }) };
         const currentPills = { ...(state.pillCount || { thoNguyen: 2, hoTam: 1, phaCanh: 1, tuViDan: 0, sieuCapTuViDan: 0, dinhTam: 1, ngungThan: 1 }) };
         const currentTea = { ...(state.teaInventory || {}) };
 
         if (selectedListing.itemType === 'herb') {
-          currentHerbs[selectedListing.itemId as any] = (currentHerbs[selectedListing.itemId as any] || 0) + selectedListing.quantity;
+          currentHerbs[selectedListing.itemId as any] = (currentHerbs[selectedListing.itemId as any] || 0) + targetQty;
         } else if (selectedListing.itemType === 'pill') {
-          currentPills[selectedListing.itemId as any] = (currentPills[selectedListing.itemId as any] || 0) + selectedListing.quantity;
+          currentPills[selectedListing.itemId as any] = (currentPills[selectedListing.itemId as any] || 0) + targetQty;
         } else if (selectedListing.itemType === 'tea') {
-          currentTea[selectedListing.itemId] = (currentTea[selectedListing.itemId] || 0) + selectedListing.quantity;
+          currentTea[selectedListing.itemId] = (currentTea[selectedListing.itemId] || 0) + targetQty;
         }
 
-        const logEntry = `[Phường Thị] Mua ${selectedListing.quantity}x ${selectedListing.itemName} từ @${selectedListing.sellerUsername} giá ${selectedListing.totalPrice.toLocaleString()} LT`;
+        const logEntry = `[Phường Thị] Mua ${targetQty}x ${selectedListing.itemName} từ @${selectedListing.sellerUsername} giá ${totalCost.toLocaleString()} LT`;
         const nextHistory = [logEntry, ...(state.historyLog || [])].slice(0, 30);
 
         const updatedState: CultivationState = {
           ...state,
-          linhThach: Math.max(0, userLinhThach - selectedListing.totalPrice),
+          linhThach: Math.max(0, userLinhThach - totalCost),
           herbs: currentHerbs,
           pillCount: currentPills,
           teaInventory: currentTea,
           historyLog: nextHistory,
+          updatedAt: Date.now(),
         };
 
         onUpdateState(updatedState);
-        responseMessage = `Đã mua thành công ${selectedListing.quantity}x ${selectedListing.itemName}!`;
+        responseMessage = `Đã mua thành công ${targetQty}x ${selectedListing.itemName}!`;
+        if (targetQty >= selectedListing.quantity) {
+          setListings((prev) => prev.filter((l) => l.id !== selectedListing.id));
+        } else {
+          setListings((prev) =>
+            prev.map((l) =>
+              l.id === selectedListing.id
+                ? { ...l, quantity: l.quantity - targetQty, totalPrice: l.pricePerUnit * (l.quantity - targetQty) }
+                : l
+            )
+          );
+        }
       }
 
       soundFx.playVictory();
       setNotice({ type: 'success', message: responseMessage });
-      setListings((prev) => prev.filter((l) => l.id !== selectedListing.id));
       setTimeout(() => {
         setSelectedListing(null);
-      }, 1000);
+      }, 900);
     } catch {
       soundFx.playError();
       setNotice({ type: 'error', message: 'Lỗi thực thi giao dịch Phường Thị!' });
     } finally {
+      isSubmittingBuyRef.current = false;
       setIsProcessing(false);
     }
   };
@@ -722,6 +750,7 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
                         onClick={() => {
                           soundFx.playKeyClick();
                           setSelectedListing(item);
+                          setBuyQuantity(1);
                           setNotice(null);
                         }}
                         disabled={isMyOwn}
@@ -1000,44 +1029,87 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
               </div>
             )}
 
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-400">
-                <span>Số lượng món hàng:</span>
-                <span className="font-mono text-white font-bold">x{selectedListing.quantity}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Đơn giá:</span>
-                <span className="font-mono text-white font-bold">{selectedListing.pricePerUnit} LT</span>
-              </div>
-              <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800">
-                <span>Tổng chi phí cần thanh toán:</span>
-                <span className="font-mono font-black text-emerald-300 text-sm">
-                  {selectedListing.totalPrice.toLocaleString()} LT
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Linh Thạch sau giao dịch:</span>
-                <span className={`font-mono font-bold ${userLinhThach >= selectedListing.totalPrice ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {(userLinhThach - selectedListing.totalPrice).toLocaleString()} LT
-                </span>
-              </div>
-            </div>
+            {(() => {
+              const currentBuyQty = Math.max(1, Math.min(selectedListing.quantity, buyQuantity));
+              const currentTotalCost = selectedListing.pricePerUnit * currentBuyQty;
+              const hasEnoughLinhThach = userLinhThach >= currentTotalCost;
 
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                onClick={() => setSelectedListing(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleConfirmBuy}
-                disabled={isProcessing || userLinhThach < selectedListing.totalPrice}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-black transition-all shadow-md shadow-emerald-500/30 cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? 'Đang Chuyển Linh Thạch...' : 'Xác Nhận Mua'}
-              </button>
-            </div>
+              return (
+                <>
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5 text-xs">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Đơn giá niêm yết:</span>
+                      <span className="font-mono text-emerald-400 font-bold">{selectedListing.pricePerUnit} LT / món</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800/60">
+                      <span>Số lượng muốn mua:</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setBuyQuantity((q) => Math.max(1, q - 1))}
+                          disabled={currentBuyQty <= 1 || isProcessing}
+                          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold flex items-center justify-center disabled:opacity-40 cursor-pointer transition-transform"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={selectedListing.quantity}
+                          value={currentBuyQty}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val)) {
+                              setBuyQuantity(Math.max(1, Math.min(selectedListing.quantity, val)));
+                            }
+                          }}
+                          className="w-14 text-center py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono font-bold text-emerald-300 focus:outline-none focus:border-emerald-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setBuyQuantity((q) => Math.min(selectedListing.quantity, q + 1))}
+                          disabled={currentBuyQty >= selectedListing.quantity || isProcessing}
+                          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold flex items-center justify-center disabled:opacity-40 cursor-pointer transition-transform"
+                        >
+                          +
+                        </button>
+                        <span className="text-[11px] text-slate-500 font-mono">/ x{selectedListing.quantity}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-slate-300 pt-1.5 border-t border-slate-800 font-bold">
+                      <span>Tổng chi phí cần thanh toán:</span>
+                      <span className="font-mono font-black text-emerald-300 text-sm">
+                        {currentTotalCost.toLocaleString()} LT
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-400 text-[11px]">
+                      <span>Linh Thạch sau giao dịch:</span>
+                      <span className={`font-mono font-bold ${hasEnoughLinhThach ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {(userLinhThach - currentTotalCost).toLocaleString()} LT
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      onClick={() => setSelectedListing(null)}
+                      className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={handleConfirmBuy}
+                      disabled={isProcessing || !hasEnoughLinhThach}
+                      className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-black transition-all shadow-md shadow-emerald-500/30 cursor-pointer disabled:opacity-50"
+                    >
+                      {isProcessing ? 'Đang Chuyển Linh Thạch...' : `Xác Nhận Mua (${currentBuyQty} món)`}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

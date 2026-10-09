@@ -139,39 +139,68 @@ export function checkClientBanStatus(): {
  */
 export async function syncServerBanStatus(
   username?: string,
-  userId?: string
+  userId?: string,
+  displayName?: string
 ): Promise<{
   isBanned: boolean;
   remainingMs: number;
   remainingMinutes: number;
   reason: string;
 }> {
+  const local = checkClientBanStatus();
+
   try {
     const q = new URLSearchParams();
-    if (username) q.set('username', username);
-    if (userId) q.set('userId', userId);
+    if (username) q.set('username', username.replace(/^@/, '').trim());
+    if (userId) q.set('userId', userId.trim());
+    if (displayName) q.set('displayName', displayName.replace(/^@/, '').trim());
 
-    const res = await fetch(`/api/user/ban-status?${q.toString()}`);
+    const headers: Record<string, string> = {};
+    if (typeof window !== 'undefined') {
+      try {
+        const token = localStorage.getItem('fasttyping_token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+      } catch {}
+    }
+
+    const res = await fetch(`/api/user/ban-status?${q.toString()}`, { headers });
     if (res.ok) {
       const data = await res.json();
-      if (data && data.isBanned && data.record) {
-        saveStoredBanInfo(data.record.bannedUntil, data.record.reason);
+      if (data && data.isBanned) {
+        const bannedUntil =
+          data.record?.bannedUntil ||
+          (data.remainingMs ? Date.now() + data.remainingMs : local.isBanned ? local.remainingMs + Date.now() : Date.now() + BAN_DURATION_MS);
+        const reason =
+          data.record?.reason ||
+          data.reason ||
+          local.reason ||
+          'Quyết định từ Ban Quản Trị';
+        saveStoredBanInfo(bannedUntil, reason);
+        const remMs = Math.max(0, bannedUntil - Date.now());
         return {
           isBanned: true,
-          remainingMs: data.remainingMs,
-          remainingMinutes: data.remainingMinutes,
-          reason: data.record.reason,
+          remainingMs: data.remainingMs || remMs,
+          remainingMinutes: data.remainingMinutes || Math.max(1, Math.ceil(remMs / 60000)),
+          reason,
         };
       } else if (data && !data.isBanned) {
-        // Nếu server đã gỡ ban -> đồng bộ xóa ngay lập tức trên client
-        clearStoredBanInfo();
+        // Chỉ xóa án phạt khi Server xác nhận Quản trị viên đã giải trừ rõ ràng (clearedByAdmin)
+        // hoặc thời gian án phạt cục bộ đã thực sự hết hạn
+        if (data.clearedByAdmin) {
+          clearStoredBanInfo();
+          return {
+            isBanned: false,
+            remainingMs: 0,
+            remainingMinutes: 0,
+            reason: '',
+          };
+        }
       }
     }
   } catch {
-    // Ignore network error, rely on local
+    // Bỏ qua lỗi kết nối mạng, duy trì dữ liệu án phạt lưu trữ cục bộ
   }
 
-  const local = checkClientBanStatus();
   return {
     isBanned: local.isBanned,
     remainingMs: local.remainingMs,
