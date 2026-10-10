@@ -92,21 +92,21 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
     }
   };
 
-  const fetchDbHealth = async () => {
+  const fetchDbHealth = async (isManual = false) => {
     try {
-      setDbLoading(true);
+      if (isManual || dbHealth === null) setDbLoading(true);
       const res = await checkDatabaseHealth();
       setDbHealth(res);
     } catch (err) {
       console.error('Failed to fetch DB health:', err);
     } finally {
-      setDbLoading(false);
+      if (isManual || dbHealth === null) setDbLoading(false);
     }
   };
 
-  const fetchStats = async () => {
+  const fetchStats = async (isManual = false) => {
     try {
-      setLoading(true);
+      if (isManual || stats === null) setLoading(true);
       const res = await fetch('/api/admin/system-stats');
       if (res.ok) {
         const data = await res.json();
@@ -117,17 +117,17 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({
     } catch (err) {
       console.error('Failed to fetch system stats:', err);
     } finally {
-      setLoading(false);
+      if (isManual || stats === null) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchStats();
-    fetchDbHealth();
+    fetchStats(true);
+    fetchDbHealth(true);
     if (!autoRefresh) return;
     const interval = setInterval(() => {
-      fetchStats();
-      fetchDbHealth();
+      fetchStats(false);
+      fetchDbHealth(false);
     }, 10000);
     return () => clearInterval(interval);
   }, [autoRefresh]);

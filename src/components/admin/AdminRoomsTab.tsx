@@ -54,27 +54,38 @@ export const AdminRoomsTab: React.FC<AdminRoomsTabProps> = ({ showToast }) => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'in-game'>('all');
 
-  const fetchRooms = async () => {
+  const fetchRooms = async (isManual = false) => {
     try {
-      setLoading(true);
+      if (isManual || rooms.length === 0) setLoading(true);
       const res = await fetch('/api/admin/rooms');
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.rooms)) {
-          setRooms(data.rooms);
+          setRooms((prev) => {
+            if (
+              prev.length === data.rooms.length &&
+              prev.every((r, idx) => {
+                const nr = data.rooms[idx];
+                return nr && r.id === nr.id && r.status === nr.status && r.players.length === nr.players.length;
+              })
+            ) {
+              return prev;
+            }
+            return data.rooms;
+          });
         }
       }
     } catch (err) {
       console.error('Failed to fetch rooms:', err);
     } finally {
-      setLoading(false);
+      if (isManual || rooms.length === 0) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchRooms();
+    fetchRooms(true);
     if (!autoRefresh) return;
-    const interval = setInterval(fetchRooms, 3500);
+    const interval = setInterval(() => fetchRooms(false), 3500);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 

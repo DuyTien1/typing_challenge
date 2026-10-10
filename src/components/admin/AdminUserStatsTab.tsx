@@ -112,9 +112,11 @@ export const AdminUserStatsTab: React.FC<AdminUserStatsTabProps> = ({
   const [searchPlayer, setSearchPlayer] = useState('');
   const [activeSubView, setActiveSubView] = useState<'realtime' | 'rankings' | 'bans'>('realtime');
 
-  const fetchStats = async () => {
+  const fetchStats = async (isManual = false) => {
     try {
-      setLoading(true);
+      if (isManual || data === null) {
+        setLoading(true);
+      }
       const res = await fetch(`/api/admin/user-stats?_t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
@@ -125,20 +127,48 @@ export const AdminUserStatsTab: React.FC<AdminUserStatsTabProps> = ({
       if (res.ok) {
         const json = await res.json();
         if (json.success) {
-          setData(json);
+          setData((prev) => {
+            // Tránh trigger re-render và giật reset giao diện nếu số liệu không đổi
+            if (
+              prev &&
+              prev.realtimeActivePlayers.count === json.realtimeActivePlayers.count &&
+              prev.realtimeActivePlayers.inMatch === json.realtimeActivePlayers.inMatch &&
+              prev.realtimeActivePlayers.inRoomWaiting === json.realtimeActivePlayers.inRoomWaiting &&
+              prev.realtimeActivePlayers.inLobby === json.realtimeActivePlayers.inLobby &&
+              prev.totalMatches.count === json.totalMatches.count &&
+              prev.bannedAccounts.count === json.bannedAccounts.count &&
+              prev.realtimeActivePlayers.players.length === json.realtimeActivePlayers.players.length &&
+              prev.realtimeActivePlayers.players.every((p, idx) => {
+                const np = json.realtimeActivePlayers.players[idx];
+                return (
+                  np &&
+                  p.userId === np.userId &&
+                  p.userState === np.userState &&
+                  p.currentRoomId === np.currentRoomId &&
+                  p.bestWpm === np.bestWpm &&
+                  p.totalGames === np.totalGames
+                );
+              })
+            ) {
+              return prev;
+            }
+            return json;
+          });
         }
       }
     } catch (err) {
       console.error('Failed to fetch user stats:', err);
     } finally {
-      setLoading(false);
+      if (isManual || data === null) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchStats();
+    fetchStats(true);
     if (!autoRefresh) return;
-    const timer = setInterval(fetchStats, 4000);
+    const timer = setInterval(() => fetchStats(false), 4000);
     return () => clearInterval(timer);
   }, [autoRefresh]);
 
@@ -250,7 +280,7 @@ export const AdminUserStatsTab: React.FC<AdminUserStatsTabProps> = ({
             type="button"
             onClick={() => {
               soundFx.playKeyClick();
-              fetchStats();
+              fetchStats(true);
             }}
             disabled={loading}
             className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 border border-slate-700 hover:border-slate-600"

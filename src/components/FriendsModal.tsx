@@ -29,6 +29,7 @@ import {
 import { FriendRecord, FriendRequest, UserAccount } from '../types';
 import { AvatarWithFrame } from '../utils/frames';
 import { soundFx } from '../utils/audio';
+import { loadStoredCultivationState } from '../utils/cultivation';
 import { PlayerSimpleProfileModal } from './PlayerSimpleProfileModal';
 import { 
   fetchFriendsList, 
@@ -103,6 +104,8 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   // Chỉ người chơi đã đăng nhập tài khoản thực thụ mới có Mã UID
   const isLoggedInUser = Boolean(currentUser && currentUser.authProvider !== 'guest' && currentUser.id);
   const myUid = isLoggedInUser ? currentUser!.id : null;
+  const myCultState = loadStoredCultivationState();
+  const myLevel = myCultState?.level || 1;
 
   // Esc key listener to quickly close modal
   useEffect(() => {
@@ -118,8 +121,18 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, onClose]);
 
+  const lastFetchTimeRef = useRef(0);
+  const isFetchingRef = useRef(false);
+
   const loadData = async (silent = false) => {
     if (!effectiveUserId && !effectiveUsername) return;
+    const now = Date.now();
+    // Throttle silent background fetches to prevent rapid-fire redundant calls
+    if (silent && (isFetchingRef.current || now - lastFetchTimeRef.current < 2500)) {
+      return;
+    }
+    lastFetchTimeRef.current = now;
+    isFetchingRef.current = true;
     if (!silent) setIsLoading(true);
     try {
       const data = await fetchFriendsList(effectiveUserId, effectiveUsername);
@@ -141,6 +154,25 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             if (!exists) {
               merged.push(p);
             }
+          }
+          // So sánh theo định danh thực tế từng đạo hữu (thay vì so sánh index ngẫu nhiên) để chống giật chớp layout
+          if (
+            prev.length === merged.length &&
+            prev.every((p) => {
+              const m = merged.find((f) => (p.userId && f.userId === p.userId) || (p.friendshipId && f.friendshipId === p.friendshipId));
+              return (
+                m &&
+                p.status === m.status &&
+                p.intimacy === m.intimacy &&
+                p.level === m.level &&
+                p.canGiftTeaToday === m.canGiftTeaToday &&
+                p.canGuideToday === m.canGuideToday &&
+                p.bestWpm === m.bestWpm &&
+                p.isDaoLu === m.isDaoLu
+              );
+            })
+          ) {
+            return prev;
           }
           return merged;
         });
@@ -169,6 +201,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     } catch {
       // ignore
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -182,7 +215,24 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     try {
       const res = await searchFriends('', effectiveUserId, effectiveUsername);
       if (res && res.success) {
-        setSuggestions(res.results || []);
+        setSuggestions((prev) => {
+          const next = res.results || [];
+          if (
+            prev.length === next.length &&
+            prev.every(
+              (p, i) =>
+                p.id === next[i]?.id &&
+                p.status === next[i]?.status &&
+                p.isFriend === next[i]?.isFriend &&
+                p.isPendingSent === next[i]?.isPendingSent &&
+                p.isPendingReceived === next[i]?.isPendingReceived &&
+                p.level === next[i]?.level
+            )
+          ) {
+            return prev;
+          }
+          return next;
+        });
       }
     } catch {
       // ignore
@@ -205,6 +255,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     if (!isOpen) return;
 
     const handleFriendsUpdated = (e?: any) => {
+      if (e?.detail?.type === 'friend_requests_count') {
+        handleCountUpdated(e);
+        return;
+      }
       if (e?.detail?.friend) {
         const nf = e.detail.friend;
         setFriends((prev) => {
@@ -218,8 +272,20 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       }
     };
 
-    const handleCountUpdated = () => {
-      loadDataRef.current(true);
+    const handleCountUpdated = (e?: any) => {
+      const newCount = typeof e?.detail?.count === 'number' ? e.detail.count : undefined;
+      if (typeof newCount === 'number') {
+        onPendingRequestsCountChange?.(newCount);
+        setPendingRequests((prev) => {
+          if (prev.length !== newCount) {
+            // Count changed, fetch latest requests
+            loadDataRef.current(true);
+          }
+          return prev;
+        });
+      } else {
+        loadDataRef.current(true);
+      }
     };
 
     const handleFriendRequestReceived = (e: any) => {
@@ -274,10 +340,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     window.addEventListener('friend_request_responded', handleFriendsUpdated);
     window.addEventListener('friend_requests_count', handleCountUpdated);
 
-    // Heartbeat fallback polling every 1.5s while modal is actively open for zero-delay synchronization
+    // Heartbeat fallback polling every 8s while modal is actively open for zero-delay synchronization
     const pollTimer = setInterval(() => {
       loadDataRef.current(true);
-    }, 1500);
+    }, 8000);
 
     return () => {
       window.removeEventListener('friends_data_updated', handleFriendsUpdated);
@@ -501,27 +567,45 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const handleGiftTea = async (friend: FriendRecord) => {
     soundFx.playKeyClick();
+    // Optimistic update so button changes to 'Đã Tặng' immediately with no flicker
+    setFriends((prev) =>
+      prev.map((f) =>
+        f.userId === friend.userId || f.friendshipId === friend.friendshipId
+          ? { ...f, canGiftTeaToday: false, intimacy: f.intimacy + 10 }
+          : f
+      )
+    );
     const res = await giftNgocDaoTea(friend.userId);
     if (res.success) {
       soundFx.playVictory();
       showToast(res.message || 'Đã tặng một chén Ngộ Đạo Trà!', 'success');
-      loadData();
+      loadData(true);
     } else {
       soundFx.playError();
       showToast(res.error || 'Chưa thể tặng trà', 'error');
+      loadData(true);
     }
   };
 
   const handleMentorGuidance = async (friend: FriendRecord) => {
     soundFx.playKeyClick();
+    // Optimistic update so button changes to 'Đã Chỉ Điểm' immediately with no flicker
+    setFriends((prev) =>
+      prev.map((f) =>
+        f.userId === friend.userId || f.friendshipId === friend.friendshipId
+          ? { ...f, canGuideToday: false, intimacy: f.intimacy + 20 }
+          : f
+      )
+    );
     const res = await mentorGuidance(friend.userId);
     if (res.success) {
       soundFx.playVictory();
       showToast(res.message || 'Đã truyền thụ công lực cho đạo hữu!', 'success');
-      loadData();
+      loadData(true);
     } else {
       soundFx.playError();
       showToast(res.error || 'Chưa thể chỉ điểm', 'error');
+      loadData(true);
     }
   };
 
@@ -966,7 +1050,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               }
                             }}
                             title="Truyền Âm Nhập Mật (Mật Đàm 1-1)"
-                            className="flex-1 py-1.5 px-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                            className="py-1.5 px-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                             <span>Mật Đàm</span>
@@ -977,7 +1061,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             type="button"
                             onClick={() => handleInviteToRoom(friend)}
                             title={currentRoomId ? 'Mời vào phòng thi đấu' : 'Thách đấu 1v1'}
-                            className="flex-1 py-1.5 px-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                            className="py-1.5 px-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
                           >
                             <Swords className="w-3.5 h-3.5" />
                             <span>{currentRoomId ? 'Mời Phòng' : 'Tỷ Võ'}</span>
@@ -989,22 +1073,23 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             onClick={() => handleGiftTea(friend)}
                             disabled={!friend.canGiftTeaToday}
                             title={friend.canGiftTeaToday ? 'Mời Ngộ Đạo Trà (+50 Tu Vi, +10 Hảo Cảm)' : 'Hôm nay đã tặng trà rồi'}
-                            className="p-1.5 px-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-40 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                            className="py-1.5 px-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-40 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
                           >
                             <Coffee className="w-3.5 h-3.5" />
                             <span>{friend.canGiftTeaToday ? 'Tặng Trà' : 'Đã Tặng'}</span>
                           </button>
 
-                          {/* Mentorship Guide */}
-                          {friend.canGuideToday && (
+                          {/* Mentorship Guide: Cố định vị trí nút, không bị giật xuất hiện/biến mất */}
+                          {(myLevel > (friend.level || 1) || friend.canGuideToday || friend.hasGuidedToday) && (
                             <button
                               type="button"
                               onClick={() => handleMentorGuidance(friend)}
-                              title="Chỉ điểm bí kíp gõ phím cho hậu bối (+30 Tu Vi, +20 Hảo Cảm)"
-                              className="p-1.5 px-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                              disabled={!friend.canGuideToday}
+                              title={friend.canGuideToday ? 'Chỉ điểm bí kíp gõ phím cho hậu bối (+30 Tu Vi, +20 Hảo Cảm)' : 'Hôm nay đã truyền thụ chỉ điểm rồi'}
+                              className="py-1.5 px-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 disabled:opacity-40 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
                             >
                               <GraduationCap className="w-3.5 h-3.5" />
-                              <span>Chỉ Điểm</span>
+                              <span>{friend.canGuideToday ? 'Chỉ Điểm' : 'Đã Chỉ Điểm'}</span>
                             </button>
                           )}
 
@@ -1014,7 +1099,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               type="button"
                               onClick={() => handleProposeDaoLu(friend)}
                               title="Kết Duyên Đạo Lữ (Cần Hảo Cảm >= 2000)"
-                              className="p-1.5 px-2 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                              className="py-1.5 px-2.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/40 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
                             >
                               <Heart className="w-3.5 h-3.5 fill-pink-400" />
                               <span>Cầu Hôn</span>
@@ -1026,7 +1111,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             type="button"
                             onClick={() => handleRemoveFriend(friend)}
                             title="Hủy kết bái"
-                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700/60 hover:border-rose-500/30 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700/60 hover:border-rose-500/30 transition-colors cursor-pointer flex items-center justify-center"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

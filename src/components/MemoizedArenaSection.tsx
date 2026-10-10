@@ -477,6 +477,7 @@ export const MemoizedArenaSection: React.FC<MemoizedArenaSectionProps> = React.m
           isOutplay={gameMode === 'outplay'}
           isMultiplayer={playType === 'multiplayer'}
           isSectTrial={sectMatchContext?.type === 'sect_tournament'}
+          isSectTrialPractice={sectMatchContext?.isPractice ?? false}
           conditionStats={conditionStats}
           onUpdateConditionStats={onUpdateConditionStats}
           lastGameWpm={lastGameWpm}

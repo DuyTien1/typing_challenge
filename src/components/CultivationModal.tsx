@@ -66,7 +66,7 @@ interface CultivationModalProps {
   isLoggedIn?: boolean;
   onOpenAuthModal?: () => void;
   onStartSectBoss?: (sectId: string, sectName: string) => void;
-  onStartSectTournament?: (sectId: string, sectName: string) => void;
+  onStartSectTournament?: (sectId: string, sectName: string, options?: { isPractice?: boolean; preflightToken?: string }) => void;
   initialTab?: 'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history';
 }
 

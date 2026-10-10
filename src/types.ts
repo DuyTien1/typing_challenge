@@ -768,6 +768,61 @@ export interface SectWarStatus {
   };
 }
 
+export interface SectTrialStageStats {
+  stage1Wpm: number;
+  stage1Accuracy: number;
+  stage1TimeMs: number;
+  stage2Wpm: number;
+  stage2Accuracy: number;
+  stage2TimeMs: number;
+  stage3Wpm: number;
+  stage3Accuracy: number;
+  stage3TimeMs: number;
+  totalTimeSeconds: number;
+  maxCombo: number;
+}
+
+export interface SectWarPreflightResult {
+  success: boolean;
+  canEnter: boolean;
+  mode: 'official' | 'practice';
+  isOfficial: boolean;
+  isEventActive: boolean;
+  timeRemainingMs?: number;
+  dailyAttemptsUsed: number;
+  dailyAttemptsLeft: number;
+  dailyAttemptsMax: number;
+  sectId: string;
+  sectName: string;
+  sectTag?: string;
+  sectRank?: number;
+  weeklyWarPoints?: number;
+  preflightToken?: string;
+  topContributors?: SectWarContributor[];
+  error?: string;
+}
+
+export interface SectWarReportData {
+  isPractice: boolean;
+  sectId: string;
+  sectName: string;
+  wpm: number;
+  accuracy: number;
+  completedAllStages: boolean;
+  basePoints: number;
+  stageBonus: number;
+  totalAddedPoints: number;
+  previousSectPoints: number;
+  newSectPoints: number;
+  currentRank: number;
+  dailyAttemptsUsed: number;
+  dailyAttemptsLeft: number;
+  dailyAttemptsMax: number;
+  topContributors: SectWarContributor[];
+  stageStats: SectTrialStageStats;
+  message?: string;
+}
+
 export interface SectLeaderboardEntry {
   rank: number;
   id: string;

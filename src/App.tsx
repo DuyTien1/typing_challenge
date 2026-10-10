@@ -21,12 +21,15 @@ import {
   ChatCardType,
   ChatCardData,
   FriendRecord,
+  SectWarReportData,
+  SectTrialStageStats,
 } from './types';
 import { Header } from './components/Header';
 import { LobbyView } from './components/LobbyView';
 import { WaitingRoomView } from './components/WaitingRoomView';
 import { MemoizedArenaSection } from './components/MemoizedArenaSection';
 import { GameOverModal } from './components/GameOverModal';
+import { SectWarReportModal } from './components/SectWarReportModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
 import { ChatDrawer } from './components/ChatDrawer';
 import { FriendsModal } from './components/FriendsModal';
@@ -90,6 +93,7 @@ import {
   respondFriendRequest,
   serverContributeSectWarScore,
   serverPenalizeSectSurrender,
+  retryPendingSectContributions,
 } from './utils/roomManager';
 import {
   getLeaderboardSync,
@@ -522,12 +526,17 @@ export default function App() {
     type: 'sect_boss' | 'sect_tournament';
     sectId: string;
     sectName: string;
+    isPractice?: boolean;
+    preflightToken?: string;
   } | null>(null);
   const sectMatchContextRef = useRef<{
     type: 'sect_boss' | 'sect_tournament';
     sectId: string;
     sectName: string;
+    isPractice?: boolean;
+    preflightToken?: string;
   } | null>(null);
+  const [sectWarReportData, setSectWarReportData] = useState<SectWarReportData | null>(null);
 
   // Ban & Penalty Enforcement State (Bàn Cổ Thần Thức)
   const [clientBanStatus, setClientBanStatus] = useState(() => checkClientBanStatus());
@@ -572,6 +581,16 @@ export default function App() {
   // Hỗ trợ cuộn chuột lăn để cuộn ngang tự động cho toàn bộ tab, thanh điều hướng và vùng cuộn ngang trên website
   useEffect(() => {
     return initGlobalHorizontalWheelScroll();
+  }, []);
+
+  // Tự động kiểm tra và nộp bù chiến công ngoại tuyến khi khởi động hoặc khi có mạng lại
+  useEffect(() => {
+    retryPendingSectContributions().catch(() => {});
+    const handleOnline = () => {
+      retryPendingSectContributions().catch(() => {});
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   // Match History state & tracking
@@ -1849,13 +1868,12 @@ export default function App() {
   };
 
   // Khởi động Xuất Chiến Đại Hội Tỷ Võ Tông Môn (Vạn Phái Tranh Phong - Thử Thách 3 Ải Chơi Đơn)
-  const handleStartSectTournament = (sectId: string, sectName: string) => {
-    // Kiểm tra nghiêm ngặt khung giờ mở sự kiện Vạn Phái Tranh Phong (T7 & CN đến 20:00)
-    if (!isSectWarEventActive()) {
-      soundFx.playError();
-      setSectMatchNotice('⚠️ Hiện tại không phải là giờ sự kiện Vạn Phái Tranh Phong! Sự kiện chỉ mở từ 00:00 Thứ Bảy đến 20:00 Chủ Nhật hàng tuần.');
-      return;
-    }
+  const handleStartSectTournament = (
+    sectId: string,
+    sectName: string,
+    options?: { isPractice?: boolean; preflightToken?: string }
+  ) => {
+    const isPractice = options?.isPractice ?? !isSectWarEventActive();
 
     const ban = checkClientBanStatus();
     if (ban.isBanned) {
@@ -1865,11 +1883,18 @@ export default function App() {
       return;
     }
     setIsCultivationOpen(false);
-    sectMatchContextRef.current = { type: 'sect_tournament', sectId, sectName };
+    sectMatchContextRef.current = {
+      type: 'sect_tournament',
+      sectId,
+      sectName,
+      isPractice,
+      preflightToken: options?.preflightToken,
+    };
     setSectMatchContext(sectMatchContextRef.current);
+    setSectWarReportData(null);
     
     const currentSurr = getConsecutiveSectSurrenders(currentUser?.username);
-    if (currentSurr > 0) {
+    if (!isPractice && currentSurr > 0) {
       setSectMatchNotice(
         `⚠️ Cảnh báo: Đạo hữu đang có ${currentSurr}/3 lần đầu hàng liên tiếp. Nếu đầu hàng thêm ${3 - currentSurr} lần sẽ bị khấu trừ 1 lượt bài thi hôm nay (sẽ reset khi hoàn thành bài mới)!`
       );
@@ -2037,6 +2062,7 @@ export default function App() {
       outplaySubMode?: any;
       maxCombo?: number;
       score?: number;
+      sectTrialStageStats?: SectTrialStageStats;
     }
   ) => {
     // Validate anti-cheat with true elapsed duration
@@ -2293,60 +2319,112 @@ export default function App() {
       maxCombo: extraStats?.maxCombo,
     });
 
-    // Đóng góp điểm Đại Hội Tỷ Võ Tông Môn & Vạn Phái Tranh Phong
-    // QUY TẮC NGHIÊM NGẶT: CHỈ KHI XUẤT CHIẾN ĐƠN 3 ẢI (sect_tournament) MỚI TÍNH ĐIỂM SỰ KIỆN TÔNG MÔN!
+    // Đóng góp điểm Đại Hội Tỷ Võ Tông Môn & Vạn Phái Tranh Phong (Vượt 3 Ải Liên Hoàn)
     if (!isPlayerSurrendered && verifiedWpm > 0 && sectMatchContextRef.current?.type === 'sect_tournament') {
-      // Hoàn thành bài thi thành công / qua bài mới -> Reset chuỗi đầu hàng liên tiếp
       resetConsecutiveSectSurrenders(currentUser?.username);
 
-      if (!isSectWarEventActive()) {
-        setSectMatchNotice('⚠️ Ván đấu kết thúc ngoài khung giờ sự kiện Vạn Phái Tranh Phong. Điểm không được ghi nhận.');
-        sectMatchContextRef.current = null;
-        setSectMatchContext(null);
-        return;
-      }
-
+      const isPractice = Boolean(sectMatchContextRef.current?.isPractice);
       const sectId = sectMatchContextRef.current?.sectId || cultivationState?.sect?.sectId;
       const sectName = sectMatchContextRef.current?.sectName || cultivationState?.sect?.sectName || 'Tông Môn';
+      const stageStats: SectTrialStageStats = extraStats?.sectTrialStageStats || {
+        stage1Wpm: verifiedWpm,
+        stage1Accuracy: accuracy || 100,
+        stage1TimeMs: Math.round((effectiveDuration * 1000) / 3),
+        stage2Wpm: verifiedWpm,
+        stage2Accuracy: accuracy || 100,
+        stage2TimeMs: Math.round((effectiveDuration * 1000) / 3),
+        stage3Wpm: verifiedWpm,
+        stage3Accuracy: accuracy || 100,
+        stage3TimeMs: Math.round((effectiveDuration * 1000) / 3),
+        totalTimeSeconds: Math.round(effectiveDuration),
+        maxCombo: extraStats?.maxCombo || 0,
+      };
 
       if (sectId) {
-        const tourneyRes = contributeTournamentScore(cultivationState, sectId, verifiedWpm);
-        setCultivationState(tourneyRes.updatedState);
-        saveStoredCultivationState(tourneyRes.updatedState);
-
-        // Gửi điểm cống hiến Vạn Phái Tranh Phong lên máy chủ (được trừ 1 lượt trong 3 lượt/ngày)
+        // Gửi điểm cống hiến hoặc báo tiệp thao diễn lên máy chủ (Hỗ trợ Atomic Transaction & Offline Checksum)
         serverContributeSectWarScore({
           wpm: verifiedWpm,
           accuracy: accuracy || 100,
+          completedAllStages: true,
+          isPractice,
+          sectId,
+          stageStats,
+          preflightToken: sectMatchContextRef.current?.preflightToken,
           mode: 'sect_trial',
           isMultiplayer: false,
         }).then((warRes) => {
-          if (warRes && warRes.success && warRes.addedPoints) {
-            setSectMatchNotice(
-              `⚔️ [VẠN PHÁI TRANH PHONG] Vượt 3 Ải xuất sắc (${verifiedWpm} WPM)! Đã cống hiến +${warRes.addedPoints} Điểm Chiến cho ${warRes.sectName || sectName} (Hạng #${warRes.currentRank || 1} • Hôm nay còn ${warRes.dailyAttemptsLeft ?? 0}/3 lượt)!`
-            );
-          } else if (warRes && warRes.error) {
-            setSectMatchNotice(`⚠️ [VẠN PHÁI TRANH PHONG] ${warRes.error}`);
-          }
-        }).catch(() => {});
+          const basePts = warRes.basePoints ?? Math.max(1, Math.round(((verifiedWpm * ((accuracy || 100) / 100)) / 10)));
+          const stageBonus = warRes.stageBonus ?? 25;
+          const addedPts = isPractice ? 0 : (warRes.addedPoints ?? (basePts + stageBonus));
 
-        if (currentUser) {
-          setCurrentUser((prev) => (prev ? { ...prev, cultivation: tourneyRes.updatedState } : prev));
-          const token = getStoredAuthToken();
-          if (token || currentUser.username) {
-            fetch('/api/cultivation', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                'x-username': currentUser.username,
-              },
-              body: JSON.stringify({
-                cultivation: tourneyRes.updatedState,
-                username: currentUser.username,
-                userId: currentUser.id,
-              }),
-            }).catch(() => {});
+          setSectWarReportData({
+            isPractice,
+            sectId,
+            sectName: warRes.sectName || sectName,
+            wpm: verifiedWpm,
+            accuracy: accuracy || 100,
+            completedAllStages: true,
+            basePoints: basePts,
+            stageBonus,
+            totalAddedPoints: addedPts,
+            previousSectPoints: warRes.previousSectPoints ?? 0,
+            newSectPoints: warRes.totalWeeklyPoints ?? warRes.previousSectPoints ?? 0,
+            currentRank: warRes.currentRank ?? 1,
+            dailyAttemptsUsed: warRes.dailyAttemptsUsed ?? (isPractice ? 0 : 1),
+            dailyAttemptsLeft: warRes.dailyAttemptsLeft ?? (3 - (warRes.dailyAttemptsUsed ?? 1)),
+            dailyAttemptsMax: warRes.dailyAttemptsMax ?? 3,
+            topContributors: warRes.topContributors || [],
+            stageStats,
+            message: warRes.message,
+          });
+        }).catch(() => {
+          // Fallback an toàn bảo lưu lượt
+          const basePts = Math.max(1, Math.round(((verifiedWpm * ((accuracy || 100) / 100)) / 10)));
+          setSectWarReportData({
+            isPractice,
+            sectId,
+            sectName,
+            wpm: verifiedWpm,
+            accuracy: accuracy || 100,
+            completedAllStages: true,
+            basePoints: basePts,
+            stageBonus: 25,
+            totalAddedPoints: isPractice ? 0 : basePts + 25,
+            previousSectPoints: 0,
+            newSectPoints: 0,
+            currentRank: 1,
+            dailyAttemptsUsed: 1,
+            dailyAttemptsLeft: 2,
+            dailyAttemptsMax: 3,
+            topContributors: [],
+            stageStats,
+            message: 'Đã phát hiện sự cố kết nối máy chủ! Thiên Đạo bảo lưu nguyên vẹn 1 lượt xuất chiến cho đạo hữu.',
+          });
+        });
+
+        if (!isPractice && isSectWarEventActive()) {
+          const tourneyRes = contributeTournamentScore(cultivationState, sectId, verifiedWpm);
+          setCultivationState(tourneyRes.updatedState);
+          saveStoredCultivationState(tourneyRes.updatedState);
+
+          if (currentUser) {
+            setCurrentUser((prev) => (prev ? { ...prev, cultivation: tourneyRes.updatedState } : prev));
+            const token = getStoredAuthToken();
+            if (token || currentUser.username) {
+              fetch('/api/cultivation', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                  'x-username': currentUser.username,
+                },
+                body: JSON.stringify({
+                  cultivation: tourneyRes.updatedState,
+                  username: currentUser.username,
+                  userId: currentUser.id,
+                }),
+              }).catch(() => {});
+            }
           }
         }
       }
@@ -3744,8 +3822,30 @@ export default function App() {
           />
         )}
 
-        {/* 4. GAME OVER MODAL */}
-        {gameState === 'gameover' && (
+        {/* 4. SECT WAR IMPERIAL DECREE REPORT MODAL (Chiếu Thư Báo Tiệp Tông Môn) */}
+        {gameState === 'gameover' && sectWarReportData && (
+          <SectWarReportModal
+            data={sectWarReportData}
+            onPlayAgain={(isPractice) => {
+              const sid = sectWarReportData.sectId;
+              const sname = sectWarReportData.sectName;
+              setSectWarReportData(null);
+              handleStartSectTournament(sid, sname, { isPractice });
+            }}
+            onBackToSect={() => {
+              setSectWarReportData(null);
+              setGameState('lobby');
+              setIsCultivationOpen(true);
+            }}
+            onBackToLobby={() => {
+              setSectWarReportData(null);
+              setGameState('lobby');
+            }}
+          />
+        )}
+
+        {/* 4. STANDARD GAME OVER MODAL (Khi không có báo tiệp tông môn) */}
+        {gameState === 'gameover' && !sectWarReportData && (
           <GameOverModal
             players={players}
             currentPlayerId={currentUserId}

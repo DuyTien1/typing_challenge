@@ -1,6 +1,6 @@
 {
   "name": "Fasttyping Challenge",
-  "description": "Đấu trường tốc ký Tiên Hiệp thời gian thực. Thi đấu gõ phím Tiếng Việt, bứt phá WPM, săn Boss Cổ Ma, gia nhập Tông Môn và đắc đạo phi thăng.",
+  "description": "giữ nguyên toàn bộ mã nguồn, cấu hình và tính năng của ứng dụng",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

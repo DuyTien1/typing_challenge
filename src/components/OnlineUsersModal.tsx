@@ -62,19 +62,42 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  // Reset scroll to top when changing filter tab or switching between detail/list view
+  // Reset scroll to top only when user explicitly switches filter tab
   useEffect(() => {
-    if (bodyRef.current) {
+    if (bodyRef.current && !selectedUserId) {
       bodyRef.current.scrollTo({ top: 0, behavior: 'auto' });
     }
-  }, [filterTab, selectedUserId]);
+  }, [filterTab]);
 
   // Load online users from server
   const loadUsers = useCallback(async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
     try {
       const data = await fetchOnlineUsers();
-      setUsers(data);
+      setUsers((prev) => {
+        // Deep comparison to avoid re-rendering and DOM resetting if data is identical
+        if (
+          prev.length === data.length &&
+          prev.every((u, i) => {
+            const n = data[i];
+            return (
+              n &&
+              u.userId === n.userId &&
+              u.tabId === n.tabId &&
+              u.status === n.status &&
+              u.currentRoomId === n.currentRoomId &&
+              u.bestWpm === n.bestWpm &&
+              u.totalGames === n.totalGames &&
+              u.device === n.device &&
+              u.browser === n.browser &&
+              u.tabCount === n.tabCount
+            );
+          })
+        ) {
+          return prev;
+        }
+        return data;
+      });
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Failed to load online users:', err);
@@ -795,7 +818,7 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
                     const isMe = user.userId === currentUserId;
                     return (
                       <div
-                        key={user.userId}
+                        key={user.tabId ? `${user.userId}-${user.tabId}` : user.userId}
                         onClick={() => {
                           soundFx.playKeyClick();
                           setSelectedUserId(user.userId);

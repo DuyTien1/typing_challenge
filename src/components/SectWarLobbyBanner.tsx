@@ -80,9 +80,54 @@ export const SectWarLobbyBanner: React.FC<SectWarLobbyBannerProps> = ({
     return () => clearInterval(timer);
   }, [warStatus?.nextSettlementTimestamp, warStatus?.isActive]);
 
-  // ĐẢM BẢO CHỈ HIỂN THỊ KHI BẮT ĐẦU SỰ KIỆN VÀ BIẾN MẤT KHI SỰ KIỆN KẾT THÚC HOÀN TOÀN
-  if (!warStatus || !warStatus.isActive || isEnded) {
+  if (!warStatus) {
     return null;
+  }
+
+  const isWeekendActive = warStatus.isActive && !isEnded;
+
+  if (!isWeekendActive) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          soundFx.playKeyClick();
+          if (onOpenSectModal) onOpenSectModal();
+        }}
+        className="w-full relative overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-slate-950/90 hover:border-cyan-400/60 transition-all duration-200 px-3.5 py-2.5 shadow-md shadow-cyan-950/20 cursor-pointer select-none group"
+      >
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 shrink-0">
+              <Swords className="w-4 h-4 text-cyan-400" />
+            </div>
+
+            <div className="flex items-center flex-wrap gap-1.5 min-w-0">
+              <span className="text-xs sm:text-sm font-black text-cyan-300 uppercase tracking-wide">
+                Bế Quan Tu Luyện • Thao Diễn Võ Trường
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                Ngày Thường (T2 - T6)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2 text-xs min-w-0">
+            <span className="text-[11px] text-slate-300">
+              Mở tự do <strong className="text-cyan-300">Thao Diễn 3 Ải Luyện Tập</strong> • Đại Chiến mở vào 00:00 Thứ 7!
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+            <span className="text-xs font-bold text-cyan-400 group-hover:text-cyan-300 flex items-center gap-0.5">
+              <span>Vào Thao Diễn</span>
+              <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const topSect = warStatus.topSects?.[0];

@@ -94,6 +94,7 @@ interface TypingArenaProps {
   daoLuPartnerName?: string;
   daoLuPartnerId?: string;
   isSectTrial?: boolean;
+  isSectTrialPractice?: boolean;
 }
 
 const VOCAB_OPTIONS: { id: OutplaySubMode; label: string; flag: string }[] = [
@@ -508,6 +509,7 @@ const TypingArenaComponent: React.FC<TypingArenaProps> = ({
   daoLuPartnerName,
   daoLuPartnerId,
   isSectTrial = false,
+  isSectTrialPractice = false,
 }) => {
   // Outplay Mode Persistent Settings (Monkeytype Architecture)
   const [outplaySubMode, setOutplaySubMode] = useState<OutplaySubMode>(() => {
@@ -743,6 +745,44 @@ const TypingArenaComponent: React.FC<TypingArenaProps> = ({
   const [maxCombo, setMaxCombo] = useState(0);
   const maxComboRef = useRef(0);
   const firstErrorAutoCorrectedRef = useRef(false);
+
+  // Ghi nhận chính xác thời gian và độ chuẩn xác từng Ải trong Vạn Phái Tranh Phong (3 Ải Liên Hoàn)
+  const stageTimingsRef = useRef<{
+    stage1Start: number;
+    stage1End: number;
+    stage1Chars: number;
+    stage1Errors: number;
+    stage2Start: number;
+    stage2End: number;
+    stage2Chars: number;
+    stage2Errors: number;
+    stage3Start: number;
+    stage3End: number;
+    stage3Chars: number;
+    stage3Errors: number;
+  }>({
+    stage1Start: 0,
+    stage1End: 0,
+    stage1Chars: 0,
+    stage1Errors: 0,
+    stage2Start: 0,
+    stage2End: 0,
+    stage2Chars: 0,
+    stage2Errors: 0,
+    stage3Start: 0,
+    stage3End: 0,
+    stage3Chars: 0,
+    stage3Errors: 0,
+  });
+
+  // Hiệu ứng Combo Tiên Hiệp theo chuỗi gõ chuẩn xác
+  const sectComboTitle = useMemo(() => {
+    if (combo >= 70) return '🌟 Thiên Nhân Hợp Nhất';
+    if (combo >= 50) return '⚡ Thần Thông Quảng Đại';
+    if (combo >= 30) return '⚔️ Vạn Kiếm Quy Tông';
+    if (combo >= 15) return '🗡️ Kiếm Khí Tung Hoành';
+    return null;
+  }, [combo]);
 
   // VFX State for footer indicator
   const [vfxEnabled, setVfxEnabled] = useState<boolean>(() => {
@@ -1745,6 +1785,38 @@ const TypingArenaComponent: React.FC<TypingArenaProps> = ({
     setTotalErrors(newErrors);
     setCombo(newCombo);
 
+    // Sect Trial (3 Ải Liên Hoàn) stage tracking & dynamic milestone sounds
+    if (isSectTrial) {
+      if (!stageTimingsRef.current.stage1Start) {
+        stageTimingsRef.current.stage1Start = startTimePerfRef.current || now;
+      }
+      if (currentWordIndex < 30) {
+        stageTimingsRef.current.stage1Chars += addedChars;
+        if (!isCorrect) stageTimingsRef.current.stage1Errors += 1;
+        if (currentWordIndex + 1 === 30) {
+          stageTimingsRef.current.stage1End = now;
+          stageTimingsRef.current.stage2Start = now;
+          soundFx.playGuzhengNote(4);
+          soundFx.playVictory();
+        }
+      } else if (currentWordIndex < 60) {
+        stageTimingsRef.current.stage2Chars += addedChars;
+        if (!isCorrect) stageTimingsRef.current.stage2Errors += 1;
+        if (currentWordIndex + 1 === 60) {
+          stageTimingsRef.current.stage2End = now;
+          stageTimingsRef.current.stage3Start = now;
+          soundFx.playGuzhengNote(5);
+          soundFx.playVictory();
+        }
+      } else {
+        stageTimingsRef.current.stage3Chars += addedChars;
+        if (!isCorrect) stageTimingsRef.current.stage3Errors += 1;
+        if (currentWordIndex + 1 >= 85) {
+          stageTimingsRef.current.stage3End = now;
+        }
+      }
+    }
+
     // Live consistency
     const currentConsistency = calculateConsistency(keystrokesRef.current);
     setLiveConsistency(currentConsistency);
@@ -1823,6 +1895,41 @@ const TypingArenaComponent: React.FC<TypingArenaProps> = ({
         timeMs: wordHistoryRef.current[idx]?.timeMs ?? Math.round((idx / Math.max(1, nextIndex)) * elapsedSeconds * 1000),
       }));
 
+      let sectTrialStageStats = undefined;
+      if (isSectTrial) {
+        const s1Ms = Math.max(1000, (stageTimingsRef.current.stage1End || now) - (stageTimingsRef.current.stage1Start || startTimePerfRef.current || now));
+        const s1Mins = s1Ms / 60000;
+        const s1Wpm = Math.max(1, Math.round((stageTimingsRef.current.stage1Chars / 5) / s1Mins)) || liveWpm;
+        const s1Total = stageTimingsRef.current.stage1Chars + stageTimingsRef.current.stage1Errors * 5;
+        const s1Acc = Math.max(0, Math.min(100, Math.round((stageTimingsRef.current.stage1Chars / Math.max(1, s1Total)) * 100))) || finalAcc;
+
+        const s2Ms = Math.max(1000, (stageTimingsRef.current.stage2End || now) - (stageTimingsRef.current.stage2Start || stageTimingsRef.current.stage1End || now));
+        const s2Mins = s2Ms / 60000;
+        const s2Wpm = Math.max(1, Math.round((stageTimingsRef.current.stage2Chars / 5) / s2Mins)) || liveWpm;
+        const s2Total = stageTimingsRef.current.stage2Chars + stageTimingsRef.current.stage2Errors * 5;
+        const s2Acc = Math.max(0, Math.min(100, Math.round((stageTimingsRef.current.stage2Chars / Math.max(1, s2Total)) * 100))) || finalAcc;
+
+        const s3Ms = Math.max(1000, (stageTimingsRef.current.stage3End || now) - (stageTimingsRef.current.stage3Start || stageTimingsRef.current.stage2End || now));
+        const s3Mins = s3Ms / 60000;
+        const s3Wpm = Math.max(1, Math.round((stageTimingsRef.current.stage3Chars / 5) / s3Mins)) || liveWpm;
+        const s3Total = stageTimingsRef.current.stage3Chars + stageTimingsRef.current.stage3Errors * 5;
+        const s3Acc = Math.max(0, Math.min(100, Math.round((stageTimingsRef.current.stage3Chars / Math.max(1, s3Total)) * 100))) || finalAcc;
+
+        sectTrialStageStats = {
+          stage1Wpm: s1Wpm,
+          stage1Accuracy: s1Acc,
+          stage1TimeMs: s1Ms,
+          stage2Wpm: s2Wpm,
+          stage2Accuracy: s2Acc,
+          stage2TimeMs: s2Ms,
+          stage3Wpm: s3Wpm,
+          stage3Accuracy: s3Acc,
+          stage3TimeMs: s3Ms,
+          totalTimeSeconds: Math.round(elapsedSeconds),
+          maxCombo: Math.max(maxComboRef.current, newCombo),
+        };
+      }
+
       onFinish(newCorrectChars, newErrors, keystrokesRef.current, finalConsistency, {
         lastWpm: (lastGameWpm && lastGameWpm > 0) ? lastGameWpm : undefined,
         sessionBestWpm: isOutplay ? nextSessionBest : undefined,
@@ -1833,6 +1940,7 @@ const TypingArenaComponent: React.FC<TypingArenaProps> = ({
         promptWords: effectiveWords.slice(0, Math.max(10, nextIndex)),
         outplaySubMode: isOutplay ? outplaySubMode : undefined,
         maxCombo: Math.max(maxComboRef.current, newCombo),
+        sectTrialStageStats,
         ghostDiff: isOutplay && outplayPaceMode !== 'off' && ghostWpm > 0 ? {
           ghostWpm,
           wpmDiff: liveWpm - ghostWpm,
@@ -2562,89 +2670,126 @@ const TypingArenaComponent: React.FC<TypingArenaProps> = ({
         </div>
       )}
 
-      {/* Ải Vạn Phái Tranh Phong Solo Trial (3 Ải Liên Hoàn: Tiếng Việt -> Tiếng Anh -> Number) */}
+      {/* Ải Vạn Phái Tranh Phong Solo Trial (3 Ải Phá Trận Linh Mạch) */}
       {isSectTrial && sectTrialCurrentStage && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-amber-500/50 shadow-2xl space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black text-[11px] tracking-wider uppercase flex items-center gap-1.5 shadow-sm">
-                <span>⚔️</span>
-                <span>Vạn Phái Tranh Phong • Thử Thách 3 Ải Đơn</span>
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.2)] space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center flex-wrap gap-2">
+              <span className={`px-2.5 py-1 rounded-lg font-black text-[11px] tracking-wider uppercase flex items-center gap-1.5 shadow-sm border ${
+                isSectTrialPractice
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+              }`}>
+                <span>{isSectTrialPractice ? '🥋' : '⚔️'}</span>
+                <span>{isSectTrialPractice ? 'Thao Diễn Võ Trường (Luyện Tập)' : 'Vạn Phái Tranh Phong • Xuất Chiến'}</span>
               </span>
+
               <span className="font-bold text-white flex items-center gap-1.5 text-xs sm:text-sm">
                 <span>{sectTrialCurrentStage.flag}</span>
                 <span className={sectTrialCurrentStage.textColor}>{sectTrialCurrentStage.title}</span>
               </span>
+
+              {/* Combo Banner Tiên Hiệp */}
+              {sectComboTitle && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-400 font-black text-[11px] animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+                  {sectComboTitle}
+                </span>
+              )}
             </div>
-            <div className="font-mono text-xs text-slate-300">
-              Tiến độ ải hiện tại: <strong className={sectTrialCurrentStage.textColor}>{sectTrialCurrentStage.progress}/{sectTrialCurrentStage.max} từ</strong>
-              <span className="text-slate-500 ml-2 font-normal">| Tổng bài thi: {Math.min(85, currentWordIndex + 1)}/85 từ</span>
+
+            {/* Real-time Contribution Meter */}
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <div className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+                {isSectTrialPractice ? (
+                  <span className="text-cyan-300 font-bold">Thao Diễn (Tích lũy kinh nghiệm)</span>
+                ) : (
+                  <span>
+                    Dự kiến cống hiến:{' '}
+                    <strong className="text-amber-300 font-bold">
+                      ~{Math.max(1, Math.round(((liveWpm * (Math.round((correctChars / Math.max(1, correctChars + totalErrors * 5)) * 100) / 100)) / 10))) + (currentWordIndex >= 84 ? 25 : 10)}đ
+                    </strong>{' '}
+                    <span className="text-slate-500 text-[10px]">({currentWordIndex >= 84 ? '+25đ trọn 3 ải' : '+10đ'})</span>
+                  </span>
+                )}
+              </div>
+              <div className="text-slate-400 text-right hidden sm:block">
+                Tổng: <strong className="text-white">{Math.min(85, currentWordIndex + 1)}/85 từ</strong>
+              </div>
             </div>
           </div>
 
-          {/* 3-Stage Stepper Cards */}
+          {/* 3-Stage Stepper Cards (Trifold Dynamic Progress Bar) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className={`p-2.5 rounded-xl border transition-all ${
+            {/* Cổng 1: Tiếng Việt - Ngọc Lục Bảo 🟢 */}
+            <div className={`p-3 rounded-xl border transition-all ${
               sectTrialCurrentStage.stageNum === 1
-                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/50'
+                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.35)] ring-2 ring-emerald-400/50'
                 : currentWordIndex >= 30
-                ? 'bg-emerald-950/40 border-emerald-600/40 text-emerald-400/70'
+                ? 'bg-emerald-950/40 border-emerald-600/50 text-emerald-400'
                 : 'bg-slate-950/50 border-slate-800 text-slate-500'
             }`}>
               <div className="flex items-center justify-between text-xs font-bold">
-                <span className="flex items-center gap-1">
-                  <span>🇻🇳</span>
-                  <span>1. Tiếng Việt (Có Dấu)</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-base">🇻🇳</span>
+                  <span>1. Cổng Tiếng Việt (Có Dấu)</span>
                 </span>
-                <span className="font-mono">{currentWordIndex >= 30 ? '✓ Đạt' : `${Math.min(30, currentWordIndex + 1)}/30`}</span>
+                <span className="font-mono text-[11px] font-black">
+                  {currentWordIndex >= 30 ? '✓ Phá Trận (30/30)' : `${Math.min(30, currentWordIndex + 1)}/30`}
+                </span>
               </div>
-              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+              <div className="w-full bg-slate-900 rounded-full h-2 mt-2.5 overflow-hidden">
                 <div 
-                  className="bg-emerald-400 h-full rounded-full transition-all duration-300"
+                  className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
                   style={{ width: `${Math.min(100, ((currentWordIndex + 1) / 30) * 100)}%` }}
                 />
               </div>
             </div>
 
-            <div className={`p-2.5 rounded-xl border transition-all ${
+            {/* Cổng 2: Tiếng Anh - Lam Băng 🔵 */}
+            <div className={`p-3 rounded-xl border transition-all ${
               sectTrialCurrentStage.stageNum === 2
-                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.3)] ring-1 ring-cyan-400/50'
+                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_20px_rgba(6,182,212,0.35)] ring-2 ring-cyan-400/50'
                 : currentWordIndex >= 60
-                ? 'bg-cyan-950/40 border-cyan-600/40 text-cyan-400/70'
+                ? 'bg-cyan-950/40 border-cyan-600/50 text-cyan-400'
                 : 'bg-slate-950/50 border-slate-800 text-slate-500'
             }`}>
               <div className="flex items-center justify-between text-xs font-bold">
-                <span className="flex items-center gap-1">
-                  <span>🇬🇧</span>
-                  <span>2. Tiếng Anh Quốc Tế</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-base">🇬🇧</span>
+                  <span>2. Cổng Tiếng Anh Quốc Tế</span>
                 </span>
-                <span className="font-mono">{currentWordIndex >= 60 ? '✓ Đạt' : currentWordIndex < 30 ? '0/30' : `${Math.min(30, currentWordIndex - 29)}/30`}</span>
+                <span className="font-mono text-[11px] font-black">
+                  {currentWordIndex >= 60 ? '✓ Phá Trận (30/30)' : currentWordIndex < 30 ? 'Chờ kích hoạt' : `${Math.min(30, currentWordIndex - 29)}/30`}
+                </span>
               </div>
-              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+              <div className="w-full bg-slate-900 rounded-full h-2 mt-2.5 overflow-hidden">
                 <div 
-                  className="bg-cyan-400 h-full rounded-full transition-all duration-300"
+                  className="bg-gradient-to-r from-cyan-500 to-blue-400 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.8)]"
                   style={{ width: `${currentWordIndex < 30 ? 0 : Math.min(100, ((currentWordIndex - 29) / 30) * 100)}%` }}
                 />
               </div>
             </div>
 
-            <div className={`p-2.5 rounded-xl border transition-all ${
+            {/* Cổng 3: Phím Số - Hoàng Kim Hỏa 🟠 */}
+            <div className={`p-3 rounded-xl border transition-all ${
               sectTrialCurrentStage.stageNum === 3
-                ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.3)] ring-1 ring-amber-400/50'
+                ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.4)] ring-2 ring-amber-400/50'
                 : currentWordIndex >= 85
-                ? 'bg-amber-950/40 border-amber-600/40 text-amber-400/70'
+                ? 'bg-amber-950/40 border-amber-600/50 text-amber-400'
                 : 'bg-slate-950/50 border-slate-800 text-slate-500'
             }`}>
               <div className="flex items-center justify-between text-xs font-bold">
-                <span className="flex items-center gap-1">
-                  <span>🔢</span>
-                  <span>3. Phím Số (Number)</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-base">🔢</span>
+                  <span>3. Cổng Phím Số Thần Tốc</span>
                 </span>
-                <span className="font-mono">{currentWordIndex >= 85 ? '✓ Đạt' : currentWordIndex < 60 ? '0/25' : `${Math.min(25, currentWordIndex - 59)}/25`}</span>
+                <span className="font-mono text-[11px] font-black">
+                  {currentWordIndex >= 85 ? '✓ Cán Đích (25/25)' : currentWordIndex < 60 ? 'Chờ kích hoạt' : `${Math.min(25, currentWordIndex - 59)}/25`}
+                </span>
               </div>
-              <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+              <div className="w-full bg-slate-900 rounded-full h-2 mt-2.5 overflow-hidden">
                 <div 
-                  className="bg-amber-400 h-full rounded-full transition-all duration-300"
+                  className="bg-gradient-to-r from-amber-500 to-orange-400 h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(251,191,36,0.8)]"
                   style={{ width: `${currentWordIndex < 60 ? 0 : Math.min(100, ((currentWordIndex - 59) / 25) * 100)}%` }}
                 />
               </div>

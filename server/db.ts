@@ -1261,7 +1261,8 @@ export async function dbLoadFriendships(): Promise<ServerFriendshipRecord[]> {
 
   try {
     const res = await safeDbQuery(`
-      SELECT id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at
+      SELECT id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at,
+             last_guided_date, last_gift_tea_date, user1_username, user2_username
       FROM app_friendships
       ORDER BY updated_at DESC
     `);
@@ -1272,9 +1273,13 @@ export async function dbLoadFriendships(): Promise<ServerFriendshipRecord[]> {
       id: r.id,
       user1Id: r.user1_id,
       user2Id: r.user2_id,
+      user1Username: r.user1_username || undefined,
+      user2Username: r.user2_username || undefined,
       intimacy: Number(r.intimacy) || 60,
       isDaoLu: Boolean(r.is_daolu),
       daoLuTitle: r.is_daolu ? 'Đạo Lữ Song Tu' : undefined,
+      lastGuidedDate: (r.last_guided_date && typeof r.last_guided_date === 'object') ? r.last_guided_date : {},
+      lastGiftTeaDate: (r.last_gift_tea_date && typeof r.last_gift_tea_date === 'object') ? r.last_gift_tea_date : {},
       createdAt: Number(r.created_at) || Date.now(),
       updatedAt: Number(r.updated_at) || Date.now(),
     }));
@@ -1290,8 +1295,8 @@ export async function dbSaveFriendship(fsRecord: ServerFriendshipRecord): Promis
   try {
     const res = await safeDbQuery(
       `
-      INSERT INTO app_friendships (id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO app_friendships (id, user1_id, user2_id, intimacy, is_daolu, daolu_sworn_at, last_interact_at, created_at, updated_at, last_guided_date, last_gift_tea_date, user1_username, user2_username)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (id) DO UPDATE SET
         user1_id = EXCLUDED.user1_id,
         user2_id = EXCLUDED.user2_id,
@@ -1299,7 +1304,11 @@ export async function dbSaveFriendship(fsRecord: ServerFriendshipRecord): Promis
         is_daolu = EXCLUDED.is_daolu,
         daolu_sworn_at = EXCLUDED.daolu_sworn_at,
         last_interact_at = EXCLUDED.last_interact_at,
-        updated_at = EXCLUDED.updated_at
+        updated_at = EXCLUDED.updated_at,
+        last_guided_date = EXCLUDED.last_guided_date,
+        last_gift_tea_date = EXCLUDED.last_gift_tea_date,
+        user1_username = COALESCE(EXCLUDED.user1_username, app_friendships.user1_username),
+        user2_username = COALESCE(EXCLUDED.user2_username, app_friendships.user2_username)
     `,
       [
         fsRecord.id,
@@ -1311,6 +1320,10 @@ export async function dbSaveFriendship(fsRecord: ServerFriendshipRecord): Promis
         fsRecord.updatedAt || Date.now(),
         fsRecord.createdAt || Date.now(),
         fsRecord.updatedAt || Date.now(),
+        JSON.stringify(fsRecord.lastGuidedDate || {}),
+        JSON.stringify(fsRecord.lastGiftTeaDate || {}),
+        fsRecord.user1Username || null,
+        fsRecord.user2Username || null,
       ]
     );
     return Boolean(res);

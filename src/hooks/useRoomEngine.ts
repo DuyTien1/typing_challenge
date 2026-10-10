@@ -28,6 +28,7 @@ import {
 } from '../utils/roomManager';
 import { soundFx } from '../utils/audio';
 import { checkClientBanStatus } from '../utils/banManager';
+import { loadStoredCultivationState } from '../utils/cultivation';
 
 export const BOT_NAMES = [
   { name: 'PhímThần_VN', icon: '⚡', wpm: 75 },
@@ -210,6 +211,7 @@ export function useRoomEngine({
       ? 'outplay'
       : 'playing') as 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
 
+    const currentCult = loadStoredCultivationState();
     metaRef.current = {
       userId: currentUser?.id || currentUserId,
       username,
@@ -223,6 +225,9 @@ export function useRoomEngine({
       status: newStatus,
       isAdmin,
       deviceId,
+      cultivationLevel: currentCult?.level || 1,
+      realmIndex: currentCult?.realmIndex || 0,
+      realmName: currentCult?.realmName || 'Luyện Khí Kỳ',
     };
     sendPresencePing(currentTabId, currentUser?.id || currentUserId, metaRef.current);
   }, [

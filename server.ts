@@ -1492,6 +1492,9 @@ export interface PresenceSession {
   currentMode?: string | null;
   status: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
   isAdmin?: boolean;
+  cultivationLevel?: number;
+  realmIndex?: number;
+  realmName?: string;
   ip?: string;
   browser?: string;
   device?: string;
@@ -1633,7 +1636,21 @@ async function refreshFriendshipsFromDbIfNeeded(force = false) {
     const dbFs = await dbLoadFriendships();
     if (dbFs && Array.isArray(dbFs) && dbFs.length > 0) {
       for (const f of dbFs) {
-        if (f && f.id) serverFriendships.set(f.id, f);
+        if (f && f.id) {
+          const existing = serverFriendships.get(f.id);
+          serverFriendships.set(f.id, {
+            ...existing,
+            ...f,
+            lastGuidedDate: (f.lastGuidedDate && Object.keys(f.lastGuidedDate).length > 0)
+              ? f.lastGuidedDate
+              : (existing?.lastGuidedDate || {}),
+            lastGiftTeaDate: (f.lastGiftTeaDate && Object.keys(f.lastGiftTeaDate).length > 0)
+              ? f.lastGiftTeaDate
+              : (existing?.lastGiftTeaDate || {}),
+            user1Username: f.user1Username || existing?.user1Username,
+            user2Username: f.user2Username || existing?.user2Username,
+          });
+        }
       }
     }
   } catch (err) {
@@ -1700,6 +1717,12 @@ function extractSessionMetaFromReq(req: express.Request) {
   const rawStatus = String(body.status || query.status || '').trim();
   const isAdmin = body.isAdmin === true || body.isAdmin === 'true' || query.isAdmin === 'true';
 
+  const rawCultLvl = body.cultivationLevel !== undefined ? body.cultivationLevel : query.cultivationLevel;
+  const cultivationLevel = rawCultLvl !== undefined && !isNaN(Number(rawCultLvl)) ? Number(rawCultLvl) : undefined;
+  const rawRealmIdx = body.realmIndex !== undefined ? body.realmIndex : query.realmIndex;
+  const realmIndex = rawRealmIdx !== undefined && !isNaN(Number(rawRealmIdx)) ? Number(rawRealmIdx) : undefined;
+  const realmName = body.realmName || query.realmName ? String(body.realmName || query.realmName).trim() : undefined;
+
   const ua = String(req.headers['user-agent'] || '');
   const { browser, device } = parseUserAgent(ua);
   const ip = getClientIp(req);
@@ -1722,6 +1745,9 @@ function extractSessionMetaFromReq(req: express.Request) {
       | 'gameover'
       | undefined,
     isAdmin,
+    cultivationLevel,
+    realmIndex,
+    realmName,
     ip,
     browser,
     device,
@@ -1819,6 +1845,9 @@ function registerPresence(
     currentMode: meta?.currentMode !== undefined ? meta.currentMode : existing?.currentMode || null,
     status: meta?.status || existing?.status || 'lobby',
     isAdmin: meta?.isAdmin !== undefined ? meta.isAdmin : existing?.isAdmin || false,
+    cultivationLevel: typeof (meta as any)?.cultivationLevel === 'number' ? (meta as any).cultivationLevel : existing?.cultivationLevel,
+    realmIndex: typeof (meta as any)?.realmIndex === 'number' ? (meta as any).realmIndex : existing?.realmIndex,
+    realmName: (meta as any)?.realmName || existing?.realmName,
     ip: meta?.ip || existing?.ip || '127.0.0.1',
     browser: meta?.browser || existing?.browser || 'Chrome',
     device: meta?.device || existing?.device || 'Desktop',
@@ -5285,9 +5314,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         avatar: u.avatar || onlineSess?.avatar || '⚡',
         frame: u.frame || onlineSess?.frame || 'default',
         bestWpm: u.bestWpm || onlineSess?.bestWpm || 0,
-        level: u.cultivation?.level || (onlineSess?.totalGames ? onlineSess.totalGames * 2 : 1),
-        realmName: realm.name,
-        realmIcon: realm.icon,
+        level: u.cultivation?.level || onlineSess?.cultivationLevel || 1,
+        realmName: onlineSess?.realmName || realm.name,
+        realmIcon: (onlineSess?.realmIndex !== undefined ? XIANXIA_REALM_METAS[onlineSess.realmIndex]?.icon : undefined) || realm.icon,
         sectName: u.cultivation?.sectName,
         sectTag: u.cultivation?.sectTag,
         status,
@@ -5623,12 +5652,21 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       const lastTea = fsRecord.lastGiftTeaDate?.[myId] || (authUser ? fsRecord.lastGiftTeaDate?.[authUser.id] : undefined);
       const canGiftTeaToday = lastTea !== todayStr;
 
-      const myLevel = Number(authUser?.cultivation?.level) || 1;
-      const friendLevel = Number(otherUser?.cultivation?.level) || (onlineSession?.totalGames ? onlineSession.totalGames * 2 : 1);
-      const lastGuided = fsRecord.lastGuidedDate?.[myId] || (authUser ? fsRecord.lastGuidedDate?.[authUser.id] : undefined);
-      const canGuideToday = myLevel > friendLevel && lastGuided !== todayStr;
+      const queryMyLevel = Number(req.query.myLevel);
+      const myLevel = (!isNaN(queryMyLevel) && queryMyLevel > 0)
+        ? queryMyLevel
+        : (Number(authUser?.cultivation?.level) || 1);
 
-      const otherRealmIdx = otherUser?.cultivation?.realmIndex || 0;
+      const friendLevel = Number(otherUser?.cultivation?.level) || Number(onlineSession?.cultivationLevel) || 1;
+      
+      // Kiểm tra toàn diện tất cả định danh khả dĩ của người dùng hiện tại trong lastGuidedDate
+      const hasGuidedToday = Array.from(myIds).some((id) => fsRecord.lastGuidedDate?.[id] === todayStr) ||
+        (authUser?.id ? fsRecord.lastGuidedDate?.[authUser.id] === todayStr : false) ||
+        (myId ? fsRecord.lastGuidedDate?.[myId] === todayStr : false);
+
+      const canGuideToday = myLevel > friendLevel && !hasGuidedToday;
+
+      const otherRealmIdx = otherUser?.cultivation?.realmIndex ?? onlineSession?.realmIndex ?? 0;
       const otherRealm = XIANXIA_REALM_METAS[otherRealmIdx] || XIANXIA_REALM_METAS[0];
 
       friends.push({
@@ -5640,8 +5678,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         frame: otherUser?.frame || onlineSession?.frame || 'default',
         bestWpm: otherUser?.bestWpm || onlineSession?.bestWpm || 0,
         level: friendLevel,
-        realmName: otherRealm.name,
-        realmIcon: otherRealm.icon,
+        realmName: onlineSession?.realmName || otherRealm.name,
+        realmIcon: (onlineSession?.realmIndex !== undefined ? XIANXIA_REALM_METAS[onlineSession.realmIndex]?.icon : undefined) || otherRealm.icon,
         sectName: otherUser?.cultivation?.sectName,
         sectTag: otherUser?.cultivation?.sectTag,
         status: friendStatus,
@@ -5653,16 +5691,18 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         daoLuTitle: fsRecord.daoLuTitle || (fsRecord.isDaoLu ? 'Tâm Đầu Ý Hợp' : undefined),
         canGiftTeaToday,
         canGuideToday,
+        hasGuidedToday,
         connectedAt: onlineSession?.connectedAt,
         lastSeen: onlineSession?.lastSeen || otherUser?.updatedAt || fsRecord.updatedAt,
       });
     }
 
-    // Sắp xếp: Đang online/in_match lên trước, sau đó theo điểm Hảo Cảm cao nhất
+    // Sắp xếp: Đang online/in_match lên trước, sau đó theo điểm Hảo Cảm cao nhất, tiebreaker theo username để danh sách ổn định không rung giật
     friends.sort((a, b) => {
       if (a.status !== 'offline' && b.status === 'offline') return -1;
       if (a.status === 'offline' && b.status !== 'offline') return 1;
-      return b.intimacy - a.intimacy;
+      if (b.intimacy !== a.intimacy) return b.intimacy - a.intimacy;
+      return String(a.username || '').localeCompare(String(b.username || ''));
     });
 
     // Lời mời kết bạn đang chờ duyệt (Pending Requests)
@@ -6440,12 +6480,16 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     const todayStr = new Date().toISOString().slice(0, 10);
     if (!fsRecord.lastGuidedDate) fsRecord.lastGuidedDate = {};
 
-    if (fsRecord.lastGuidedDate[authUser.id] === todayStr) {
+    const hasGuidedToday = (authUser?.id && fsRecord.lastGuidedDate[authUser.id] === todayStr) ||
+      (candidateMyId && fsRecord.lastGuidedDate[candidateMyId] === todayStr);
+
+    if (hasGuidedToday) {
       res.status(400).json({ success: false, error: 'Hôm nay đạo hữu đã truyền thụ chỉ điểm rồi!' });
       return;
     }
 
-    fsRecord.lastGuidedDate[authUser.id] = todayStr;
+    if (authUser?.id) fsRecord.lastGuidedDate[authUser.id] = todayStr;
+    if (candidateMyId) fsRecord.lastGuidedDate[candidateMyId] = todayStr;
     fsRecord.intimacy = (fsRecord.intimacy || 0) + 20;
     fsRecord.updatedAt = Date.now();
     persistFriendship(fsRecord);
@@ -7505,7 +7549,13 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     const users = Array.from(usersByUniqueKey.values()).sort((a, b) => {
       if (a.isAdmin && !b.isAdmin) return -1;
       if (!a.isAdmin && b.isAdmin) return 1;
-      return b.lastSeen - a.lastSeen;
+      const statusWeight = (s: string) => (s === 'playing' ? 3 : s === 'waiting_room' ? 2 : 1);
+      const diffStatus = statusWeight(b.status) - statusWeight(a.status);
+      if (diffStatus !== 0) return diffStatus;
+      if (a.connectedAt && b.connectedAt && a.connectedAt !== b.connectedAt) {
+        return a.connectedAt - b.connectedAt;
+      }
+      return String(a.username || '').localeCompare(String(b.username || ''));
     });
 
     res.json({
@@ -7617,7 +7667,17 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       }
     }
 
-    const activePlayersList = Array.from(activeUsersMap.values()).sort((a, b) => b.lastSeen - a.lastSeen);
+    const activePlayersList = Array.from(activeUsersMap.values()).sort((a, b) => {
+      if (a.isAdmin && !b.isAdmin) return -1;
+      if (!a.isAdmin && b.isAdmin) return 1;
+      const stateWeight = (s: string) => (s === 'in_match' ? 3 : s === 'in_room' ? 2 : 1);
+      const diffState = stateWeight(b.userState) - stateWeight(a.userState);
+      if (diffState !== 0) return diffState;
+      if (a.connectedAt && b.connectedAt && a.connectedAt !== b.connectedAt) {
+        return a.connectedAt - b.connectedAt;
+      }
+      return String(a.username || '').localeCompare(String(b.username || ''));
+    });
     const realtimeActivePlayersCount = activePlayersList.length;
 
     // 2. Total Matches Played Across Entire System
@@ -9580,7 +9640,89 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     });
   });
 
-  // POST /api/sects/war/contribute: Cống hiến điểm sau khi kết thúc lượt Xuất Chiến Đơn 3 Ải
+  // POST /api/sects/war/preflight: Khảo sát & đồng bộ tông môn trước khi xuất chiến hoặc thao diễn
+  app.post('/api/sects/war/preflight', (req, res) => {
+    const authHeader = req.headers.authorization;
+    const user = getUserByToken(authHeader);
+
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Đạo hữu cần đăng nhập để tham gia xuất chiến hoặc thao diễn!' });
+      return;
+    }
+
+    const { sectId: clientSectId, isPractice: requestedPractice } = req.body || {};
+    let mySectId = user.cultivation?.sect?.sectId || clientSectId;
+
+    if (!mySectId) {
+      res.status(400).json({ success: false, error: 'Đạo hữu chưa gia nhập tông môn nào!' });
+      return;
+    }
+
+    let sect = serverSects.get(mySectId);
+    if (!sect && clientSectId) {
+      sect = serverSects.get(clientSectId);
+      if (sect) mySectId = clientSectId;
+    }
+
+    if (!sect) {
+      res.status(404).json({ success: false, error: 'Tông môn không tồn tại!' });
+      return;
+    }
+
+    // Tự động đồng bộ sectId vào user session trên server nếu bị lệch pha
+    if (!user.cultivation) {
+      user.cultivation = { sect: { sectId: sect.id, sectName: sect.name } };
+    } else if (!user.cultivation.sect || user.cultivation.sect.sectId !== sect.id) {
+      user.cultivation.sect = {
+        ...(user.cultivation.sect || {}),
+        sectId: sect.id,
+        sectName: sect.name,
+      };
+    }
+
+    const schedule = getSectWarSchedule();
+    const todayKey = getVNDateString();
+    const userKey = `${user.username.toLowerCase()}_${todayKey}`;
+    const attemptsUsed = sectWarDailyAttempts.get(userKey) || 0;
+    const attemptsLeft = Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - attemptsUsed);
+
+    // Xác định chế độ:
+    // Nếu sự kiện đang mở (T7 & CN 20h) VÀ người chơi không chọn thao diễn VÀ còn lượt -> official
+    // Ngược lại -> practice (Thao diễn rèn luyện không tốn lượt)
+    const isOfficial = schedule.isActive && !requestedPractice && attemptsLeft > 0;
+    const mode = isOfficial ? 'official' : 'practice';
+
+    const preflightToken = `pft_${user.username}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    const allSects = Array.from(serverSects.values()).sort(
+      (a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0)
+    );
+    const currentRank = allSects.findIndex((s) => s.id === sect.id) + 1;
+    const contributorsList = Object.values(sect.warContributors || {}).sort(
+      (a, b) => b.points - a.points
+    );
+
+    res.json({
+      success: true,
+      canEnter: true,
+      mode,
+      isOfficial,
+      isEventActive: schedule.isActive,
+      timeRemainingMs: schedule.timeRemainingMs,
+      dailyAttemptsUsed: attemptsUsed,
+      dailyAttemptsLeft: attemptsLeft,
+      dailyAttemptsMax: MAX_DAILY_SECT_WAR_ATTEMPTS,
+      sectId: sect.id,
+      sectName: sect.name,
+      sectTag: sect.tag,
+      sectRank: currentRank,
+      weeklyWarPoints: sect.weeklyWarPoints || 0,
+      preflightToken,
+      topContributors: contributorsList.slice(0, 5),
+    });
+  });
+
+  // POST /api/sects/war/contribute: Cống hiến điểm sau khi kết thúc lượt Xuất Chiến Đơn 3 Ải (hoặc nộp kết quả Thao Diễn)
   app.post('/api/sects/war/contribute', (req, res) => {
     const authHeader = req.headers.authorization;
     const user = getUserByToken(authHeader);
@@ -9590,34 +9732,82 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       return;
     }
 
-    const mySectId = user.cultivation?.sect?.sectId;
+    const {
+      wpm = 0,
+      accuracy = 100,
+      completedAllStages = true,
+      isPractice,
+      sectId: clientSectId,
+      stageStats,
+      preflightToken,
+    } = req.body || {};
+
+    let mySectId = user.cultivation?.sect?.sectId || clientSectId;
     if (!mySectId) {
       res.status(400).json({ success: false, error: 'Đạo hữu chưa gia nhập tông môn nào!' });
       return;
     }
 
-    const sect = serverSects.get(mySectId);
+    let sect = serverSects.get(mySectId);
+    if (!sect && clientSectId) {
+      sect = serverSects.get(clientSectId);
+      if (sect) mySectId = clientSectId;
+    }
+
     if (!sect) {
       res.status(404).json({ success: false, error: 'Tông môn không tồn tại!' });
       return;
     }
 
-    // Kiểm tra nghiêm ngặt khung giờ sự kiện Vạn Phái Tranh Phong (T7 & CN đến 20:00)
+    // Đảm bảo user session trên server luôn đồng bộ môn phái
+    if (!user.cultivation) {
+      user.cultivation = { sect: { sectId: sect.id, sectName: sect.name } };
+    } else if (!user.cultivation.sect || user.cultivation.sect.sectId !== sect.id) {
+      user.cultivation.sect = {
+        ...(user.cultivation.sect || {}),
+        sectId: sect.id,
+        sectName: sect.name,
+      };
+    }
+
     const schedule = getSectWarSchedule();
-    if (!schedule.isActive) {
-      res.status(400).json({
-        success: false,
-        error: 'Đại sự kiện Vạn Phái Tranh Phong hiện chưa mở hoặc đã kết thúc! Sự kiện chỉ mở từ 00:00 Thứ Bảy đến 20:00 Chủ Nhật hàng tuần (theo giờ Việt Nam).',
-        isActive: false,
+    const todayKey = getVNDateString();
+    const userKey = `${user.username.toLowerCase()}_${todayKey}`;
+    const attemptsUsed = sectWarDailyAttempts.get(userKey) || 0;
+    const attemptsLeft = Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - attemptsUsed);
+
+    const allSectsBefore = Array.from(serverSects.values()).sort(
+      (a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0)
+    );
+    const rankBefore = allSectsBefore.findIndex((s) => s.id === sect.id) + 1;
+    const oldSectPoints = sect.weeklyWarPoints || 0;
+
+    // NẾU LÀ THAO DIỄN LUYỆN TẬP (HOẶC VÀO NGÀY TRONG TUẦN KHI SỰ KIỆN CHƯA MỞ):
+    if (isPractice || !schedule.isActive) {
+      const contributorsList = Object.values(sect.warContributors || {}).sort(
+        (a, b) => b.points - a.points
+      );
+
+      res.json({
+        success: true,
+        isPractice: true,
+        addedPoints: 0,
+        userTotalPoints: sect.warContributors?.[user.username]?.points || 0,
+        previousSectPoints: oldSectPoints,
+        totalWeeklyPoints: oldSectPoints,
+        dailyAttemptsUsed: attemptsUsed,
+        dailyAttemptsLeft: attemptsLeft,
+        dailyAttemptsMax: MAX_DAILY_SECT_WAR_ATTEMPTS,
+        currentRank: rankBefore,
+        sectName: sect.name,
+        isActive: schedule.isActive,
+        topContributors: contributorsList.slice(0, 5),
+        message: 'Hoàn thành thao diễn, tích lũy kinh nghiệm chờ ngày đại chiến cuối tuần!',
       });
       return;
     }
 
-    const todayKey = getVNDateString();
-    const userKey = `${user.username.toLowerCase()}_${todayKey}`;
-    const attemptsUsed = sectWarDailyAttempts.get(userKey) || 0;
-
-    // Giới hạn nghiêm ngặt 3 lượt xuất chiến mỗi ngày trong suốt sự kiện
+    // NẾU LÀ XUẤT CHIẾN CHÍNH THỨC CUỐI TUẦN:
     if (attemptsUsed >= MAX_DAILY_SECT_WAR_ATTEMPTS) {
       res.status(400).json({
         success: false,
@@ -9629,7 +9819,6 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       return;
     }
 
-    const { wpm = 0, accuracy = 100, completedAllStages = true } = req.body;
     const numWpm = Math.max(0, Number(wpm) || 0);
     const numAcc = Math.max(0, Math.min(100, Number(accuracy) || 100));
 
@@ -9654,7 +9843,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     existing.lastActive = Date.now();
     sect.warContributors[user.username] = existing;
 
-    // Tăng số lượt xuất chiến hôm nay của người chơi
+    // Tăng số lượt xuất chiến hôm nay của người chơi (Atomic)
     const newAttemptsUsed = attemptsUsed + 1;
     sectWarDailyAttempts.set(userKey, newAttemptsUsed);
 
@@ -9664,15 +9853,22 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
     saveSectsToFile();
 
     // Sắp xếp lại thứ hạng
-    const allSects = Array.from(serverSects.values()).sort(
+    const allSectsAfter = Array.from(serverSects.values()).sort(
       (a, b) => (b.weeklyWarPoints || 0) - (a.weeklyWarPoints || 0)
     );
-    const currentRank = allSects.findIndex((s) => s.id === sect.id) + 1;
+    const currentRank = allSectsAfter.findIndex((s) => s.id === sect.id) + 1;
+    const contributorsList = Object.values(sect.warContributors || {}).sort(
+      (a, b) => b.points - a.points
+    );
 
     res.json({
       success: true,
+      isPractice: false,
       addedPoints,
+      basePoints: basePts,
+      stageBonus,
       userTotalPoints: existing.points,
+      previousSectPoints: oldSectPoints,
       totalWeeklyPoints: sect.weeklyWarPoints,
       dailyAttemptsUsed: newAttemptsUsed,
       dailyAttemptsLeft: Math.max(0, MAX_DAILY_SECT_WAR_ATTEMPTS - newAttemptsUsed),
@@ -9681,6 +9877,7 @@ Hãy trả lời với đúng phong cách và tư cách của ${targetBot.name}:
       isHappyHour: false,
       sectName: sect.name,
       isActive: schedule.isActive,
+      topContributors: contributorsList.slice(0, 5),
     });
   });
 

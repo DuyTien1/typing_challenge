@@ -33,6 +33,7 @@ import {
 } from '../../utils/roomManager';
 import { SectWarStatus } from '../../types';
 import { AvatarWithFrame } from '../../utils/frames';
+import { SectPreflightModal } from './SectPreflightModal';
 import {
   Users,
   Crown,
@@ -73,7 +74,7 @@ interface SectsSectionProps {
   userAvatar?: string;
   userFrame?: string;
   onStartSectBoss?: (sectId: string, sectName: string) => void;
-  onStartSectTournament?: (sectId: string, sectName: string) => void;
+  onStartSectTournament?: (sectId: string, sectName: string, options?: { isPractice?: boolean; preflightToken?: string }) => void;
 }
 
 export const SectsSection: React.FC<SectsSectionProps> = ({
@@ -91,6 +92,7 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showAllContributors, setShowAllContributors] = useState(false);
+  const [showPreflightModal, setShowPreflightModal] = useState(false);
 
   // Inspector modal for any sect
   const [inspectSect, setInspectSect] = useState<SectInfo | null>(null);
@@ -332,34 +334,16 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
     }, 600);
   };
 
-  // Đóng góp điểm Đại Hội Tỷ Võ
+  // Đóng góp điểm Đại Hội Tỷ Võ / Thao Diễn 3 Ải
   const handleContributeTournament = () => {
-    if (!mySectId) return;
-
-    // Kiểm tra nghiêm ngặt giờ mở sự kiện Vạn Phái Tranh Phong
-    if (!isSectWarEventActive(warStatus)) {
+    if (!mySectId || !mySect) {
       soundFx.playError();
-      setNotice('⚠️ Hiện tại không phải là giờ sự kiện Vạn Phái Tranh Phong! Sự kiện chỉ mở từ 00:00 Thứ Bảy đến 20:00 Chủ Nhật hàng tuần.');
-      return;
-    }
-
-    if (warStatus && warStatus.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0) {
-      soundFx.playError();
-      setNotice('⚠️ Hôm nay đạo hữu đã sử dụng hết 3/3 lượt xuất chiến! Hãy quay lại vào ngày mai (00:00) để tiếp tục cống hiến.');
-      return;
-    }
-    if (onStartSectTournament) {
-      soundFx.playGuzhengNote(2);
-      onStartSectTournament(mySectId, mySect?.name || 'Tông Môn');
+      setNotice('⚠️ Đạo hữu cần gia nhập hoặc khai sơn lập phái trước khi xuất chiến!');
       return;
     }
 
     soundFx.playGuzhengNote(2);
-    const sampleWpm = 85;
-    const res = contributeTournamentScore(state, mySectId, sampleWpm);
-    setSects(getStoredSects());
-    setNotice(res.message);
-    onUpdateState(res.updatedState);
+    setShowPreflightModal(true);
   };
 
   // Khai Sơn Lập Phái
@@ -749,19 +733,21 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
                 <button
                   type="button"
                   onClick={handleContributeTournament}
-                  disabled={!isSectWarEventActive(warStatus) || (warStatus?.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0)}
+                  disabled={!mySect}
                   className={`px-3.5 py-1.5 rounded-xl font-black text-xs uppercase tracking-wider cursor-pointer shadow-md flex items-center gap-1.5 transition-transform active:scale-95 ${
-                    !isSectWarEventActive(warStatus) || (warStatus?.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0)
+                    !mySect
                       ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
-                      : 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 shadow-amber-500/20'
+                      : isSectWarEventActive(warStatus) && (warStatus?.dailyAttemptsLeft ?? 3) > 0
+                      ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 shadow-amber-500/20'
+                      : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-cyan-500/20'
                   }`}
                 >
                   <Zap className="w-3.5 h-3.5 fill-current" />
                   <span>
                     {!isSectWarEventActive(warStatus)
-                      ? 'Chưa Đến Giờ Sự Kiện'
-                      : warStatus?.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0
-                      ? 'Hết Lượt (0/3)'
+                      ? 'Thao Diễn 3 Ải'
+                      : (warStatus?.dailyAttemptsLeft ?? 3) <= 0
+                      ? 'Thao Diễn 3 Ải'
                       : `Xuất Chiến 3 Ải (${warStatus?.dailyAttemptsLeft ?? 3}/3)`}
                   </span>
                 </button>
@@ -1474,21 +1460,24 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
               </button>
 
               <button
+                type="button"
                 onClick={handleContributeTournament}
-                disabled={!mySect || !isSectWarEventActive(warStatus) || (warStatus?.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0)}
-                className={`px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.4)] flex items-center gap-1.5 transition-transform active:scale-95 ${
-                  !mySect || !isSectWarEventActive(warStatus) || (warStatus?.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0)
+                disabled={!mySect}
+                className={`px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-transform active:scale-95 ${
+                  !mySect
                     ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
-                    : 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950'
+                    : isSectWarEventActive(warStatus) && (warStatus?.dailyAttemptsLeft ?? 3) > 0
+                    ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.4)]'
+                    : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.4)]'
                 }`}
               >
                 <Zap className="w-4 h-4 fill-current" />
                 <span>
                   {!isSectWarEventActive(warStatus)
-                    ? 'Chưa Mở Sự Kiện (T7 & CN)'
-                    : warStatus?.dailyAttemptsLeft !== undefined && warStatus.dailyAttemptsLeft <= 0
-                    ? 'Hôm Nay Hết Lượt (0/3)'
-                    : `Xuất Chiến 3 Ải (${warStatus?.dailyAttemptsLeft ?? 3}/3 lượt)`}
+                    ? 'Thao Diễn 3 Ải (Luyện Tập)'
+                    : (warStatus?.dailyAttemptsLeft ?? 3) <= 0
+                    ? 'Thao Diễn 3 Ải (Luyện Tập)'
+                    : `Chính Thức Xuất Trận (${warStatus?.dailyAttemptsLeft ?? 3}/3 Lượt)`}
                 </span>
               </button>
             </div>
@@ -1499,16 +1488,16 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
             {/* Cột 1: Trạng thái kết giới */}
             <div className={`p-4 rounded-2xl border flex items-center gap-3.5 ${
               warStatus?.isActive
-                ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
-                : 'bg-slate-900/60 border-slate-800 text-slate-400'
+                ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                : 'bg-cyan-950/30 border-cyan-500/30 text-cyan-300'
             }`}>
               <div className={`w-3.5 h-3.5 rounded-full ${
-                warStatus?.isActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'
+                warStatus?.isActive ? 'bg-emerald-400 animate-ping' : 'bg-cyan-400'
               }`} />
               <div>
                 <span className="text-[10px] uppercase font-bold tracking-wider opacity-75 block">Trạng Thái Kết Giới</span>
                 <span className="text-sm font-black">
-                  {warStatus?.isActive ? '🟢 Đang Mở (T7 & CN)' : '🟡 Đang Nghỉ Ngơi (Đã Chốt)'}
+                  {warStatus?.isActive ? '🟢 Khai Mở (Cuối Tuần)' : '🥋 Thao Diễn Võ Trường (Ngày Thường)'}
                 </span>
               </div>
             </div>
@@ -2272,6 +2261,22 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Pre-flight Confirmation Handshake Modal */}
+      {mySect && (
+        <SectPreflightModal
+          isOpen={showPreflightModal}
+          onClose={() => setShowPreflightModal(false)}
+          mySect={mySect}
+          warStatus={warStatus}
+          onConfirmStart={(isPractice, preflightToken) => {
+            setShowPreflightModal(false);
+            if (onStartSectTournament) {
+              onStartSectTournament(mySect.id, mySect.name, { isPractice, preflightToken });
+            }
+          }}
+        />
       )}
     </div>
   );

@@ -18,6 +18,9 @@ import {
   SectInfo, 
   SectRole,
   SectWarStatus,
+  SectWarPreflightResult,
+  SectTrialStageStats,
+  SectWarContributor,
   LeaderboardEntry,
   LeaderboardMultiData,
   PlayerProfileDetail,
@@ -25,7 +28,7 @@ import {
 import { getLeaderboardSync, saveLeaderboardToIndexedDB } from './leaderboardStorage';
 import { getStoredAuthToken, getStoredCachedUser } from './auth';
 import { saveDaoDecree } from './heavenlyDaoBot';
-import { getStoredSects } from './cultivation';
+import { getStoredSects, loadStoredCultivationState } from './cultivation';
 import { broadcastAdminEvent } from './adminEventSync';
 
 export interface PresenceUserMeta {
@@ -42,6 +45,9 @@ export interface PresenceUserMeta {
   currentMode?: string | null;
   status?: 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
   isAdmin?: boolean;
+  cultivationLevel?: number;
+  realmIndex?: number;
+  realmName?: string;
 }
 
 const ROOMS_STORAGE_KEY = 'fasttyping_game_rooms_v4';
@@ -962,9 +968,11 @@ export async function fetchFriendsList(userId?: string, username?: string): Prom
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(userId, username);
+    const cultState = loadStoredCultivationState();
     const params = new URLSearchParams();
     if (effectiveId) params.append('userId', effectiveId);
     if (effectiveUsername) params.append('username', effectiveUsername);
+    if (cultState?.level) params.append('myLevel', cultState.level.toString());
     params.append('_t', Date.now().toString());
 
     const url = `/api/friends/list?${params.toString()}`;
@@ -1014,10 +1022,12 @@ export async function searchFriends(query?: string, userId?: string, username?: 
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const { id: effectiveId, username: effectiveUsername } = getEffectiveClientUser(userId, username);
+    const cultState = loadStoredCultivationState();
     const params = new URLSearchParams();
     if (query !== undefined && query !== null) params.append('q', query);
     if (effectiveId) params.append('userId', effectiveId);
     if (effectiveUsername) params.append('username', effectiveUsername);
+    if (cultState?.level) params.append('myLevel', cultState.level.toString());
 
     const res = await fetch(`/api/friends/search?${params.toString()}`, { headers, cache: 'no-store' });
     if (res.ok) {
@@ -1789,17 +1799,81 @@ export async function fetchSectWarStatus(): Promise<SectWarStatus | null> {
 }
 
 /**
- * Đóng góp điểm Chiến Công cho Tông Môn sau khi hoàn thành bài gõ
+ * Khảo sát & bắt tay tiền trạm (Pre-flight Handshake) trước khi xuất chiến hoặc thao diễn
+ */
+export async function serverSectWarPreflight(params?: {
+  sectId?: string;
+  isPractice?: boolean;
+}): Promise<SectWarPreflightResult> {
+  const token = getStoredAuthToken();
+  if (!token) {
+    return {
+      success: false,
+      canEnter: false,
+      mode: 'practice',
+      isOfficial: false,
+      isEventActive: false,
+      dailyAttemptsUsed: 0,
+      dailyAttemptsLeft: 3,
+      dailyAttemptsMax: 3,
+      sectId: params?.sectId || '',
+      sectName: 'Tông Môn',
+      error: 'Chưa đăng nhập! Vui lòng đăng nhập để tham gia xuất chiến hoặc thao diễn.',
+    };
+  }
+
+  try {
+    const res = await fetch('/api/sects/war/preflight', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(params || {}),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    // Dự phòng khi máy chủ chậm: fallback local
+    const localWar = getLocalSectWarStatus();
+    return {
+      success: true,
+      canEnter: true,
+      mode: localWar.isActive && !params?.isPractice ? 'official' : 'practice',
+      isOfficial: localWar.isActive && !params?.isPractice,
+      isEventActive: localWar.isActive,
+      timeRemainingMs: localWar.timeRemainingMs,
+      dailyAttemptsUsed: 0,
+      dailyAttemptsLeft: 3,
+      dailyAttemptsMax: 3,
+      sectId: params?.sectId || '',
+      sectName: 'Tông Môn',
+    };
+  }
+}
+
+/**
+ * Đóng góp điểm Chiến Công cho Tông Môn sau khi hoàn thành bài gõ 3 Ải
+ * Hỗ trợ giao dịch nguyên tử, chế độ Thao Diễn, và lưu cache ngoại tuyến (offline fail-safe)
  */
 export async function serverContributeSectWarScore(payload: {
   wpm: number;
   accuracy: number;
+  completedAllStages?: boolean;
+  isPractice?: boolean;
+  sectId?: string;
+  stageStats?: SectTrialStageStats;
+  preflightToken?: string;
   mode?: string;
   isMultiplayer?: boolean;
 }): Promise<{
   success: boolean;
+  isPractice?: boolean;
   addedPoints?: number;
+  basePoints?: number;
+  stageBonus?: number;
   userTotalPoints?: number;
+  previousSectPoints?: number;
   totalWeeklyPoints?: number;
   dailyAttemptsUsed?: number;
   dailyAttemptsLeft?: number;
@@ -1808,10 +1882,13 @@ export async function serverContributeSectWarScore(payload: {
   isHappyHour?: boolean;
   sectName?: string;
   isActive?: boolean;
+  topContributors?: SectWarContributor[];
+  message?: string;
   error?: string;
 }> {
   const token = getStoredAuthToken();
   if (!token) return { success: false, error: 'Chưa đăng nhập!' };
+
   try {
     const res = await fetch('/api/sects/war/contribute', {
       method: 'POST',
@@ -1821,9 +1898,68 @@ export async function serverContributeSectWarScore(payload: {
       },
       body: JSON.stringify(payload),
     });
-    return await res.json();
+    const data = await res.json();
+    return data;
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Lỗi mạng khi cống hiến điểm chiến công' };
+    // Lỗi mạng: Lưu lại bản ghi chiến công ngoại tuyến kèm checksum thời gian để nộp bù
+    try {
+      const pendingKey = 'FT_PENDING_SECT_CONTRIBUTIONS';
+      const existingRaw = localStorage.getItem(pendingKey);
+      const queue = existingRaw ? JSON.parse(existingRaw) : [];
+      queue.push({
+        payload,
+        timestamp: Date.now(),
+        token,
+      });
+      localStorage.setItem(pendingKey, JSON.stringify(queue.slice(-10)));
+    } catch {
+      // ignore storage error
+    }
+
+    // Dự kiến điểm cục bộ để người chơi không bị hụt hẫng
+    const basePts = Math.max(1, Math.round(((payload.wpm * (payload.accuracy / 100)) / 10)));
+    const stageBonus = payload.completedAllStages !== false ? 25 : 10;
+    const addedPoints = payload.isPractice ? 0 : basePts + stageBonus;
+
+    return {
+      success: true,
+      isPractice: payload.isPractice,
+      addedPoints,
+      basePoints: basePts,
+      stageBonus,
+      message: payload.isPractice 
+        ? 'Hoàn thành thao diễn, tích lũy kinh nghiệm chờ ngày đại chiến cuối tuần!'
+        : 'Chiến công đã được lưu ngoại tuyến an toàn và sẽ tự động đồng bộ khi kết nối mạng ổn định!',
+    };
+  }
+}
+
+/**
+ * Tự động nộp bù các bản ghi chiến công ngoại tuyến chưa kịp gửi do rớt mạng
+ */
+export async function retryPendingSectContributions(): Promise<void> {
+  const pendingKey = 'FT_PENDING_SECT_CONTRIBUTIONS';
+  try {
+    const raw = localStorage.getItem(pendingKey);
+    if (!raw) return;
+    const queue: any[] = JSON.parse(raw);
+    if (!Array.isArray(queue) || queue.length === 0) return;
+
+    localStorage.removeItem(pendingKey);
+    for (const item of queue) {
+      if (item?.payload && item?.token) {
+        await fetch('/api/sects/war/contribute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${item.token}`,
+          },
+          body: JSON.stringify(item.payload),
+        }).catch(() => {});
+      }
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -2187,6 +2323,7 @@ export function subscribeToGlobalChat(
 
   // 3. Periodic Presence Ping & Heartbeat (every 2500ms)
   // Keeps session alive on server, delivers friend events and fetches up-to-date presence count
+  let lastDispatchedPendingCount: number | null = null;
   const pingTimer = setInterval(() => {
     if (!isSubscribed) return;
     const currentMeta = getUserMeta ? getUserMeta() : undefined;
@@ -2194,15 +2331,17 @@ export function subscribeToGlobalChat(
       if (!isSubscribed || !res) return;
       if (typeof res.count === 'number') updatePresence(res.count);
       if (typeof res.pendingFriendRequestsCount === 'number') {
-        if (onFriendEvent) onFriendEvent({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('friend_requests_count', { detail: { count: res.pendingFriendRequestsCount } }));
-          window.dispatchEvent(new CustomEvent('friends_data_updated', { detail: { type: 'friend_requests_count', count: res.pendingFriendRequestsCount } }));
-        }
-        if (friendsBroadcastChannel) {
-          try {
-            friendsBroadcastChannel.postMessage({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
-          } catch {}
+        if (lastDispatchedPendingCount !== res.pendingFriendRequestsCount) {
+          lastDispatchedPendingCount = res.pendingFriendRequestsCount;
+          if (onFriendEvent) onFriendEvent({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('friend_requests_count', { detail: { count: res.pendingFriendRequestsCount } }));
+          }
+          if (friendsBroadcastChannel) {
+            try {
+              friendsBroadcastChannel.postMessage({ type: 'friend_requests_count', count: res.pendingFriendRequestsCount });
+            } catch {}
+          }
         }
       }
       if (Array.isArray(res.friendEvents) && res.friendEvents.length > 0) {
