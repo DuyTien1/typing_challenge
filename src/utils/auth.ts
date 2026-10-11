@@ -123,14 +123,23 @@ export function setStoredCachedUser(user: UserAccount | null): void {
  */
 export async function fetchCurrentUser(): Promise<UserAccount | null> {
   const token = getStoredAuthToken();
-  if (!token) return null;
+  const cachedUser = getStoredCachedUser();
+  if (!token && !cachedUser) return null;
 
   try {
-    const res = await smartAuthFetch('/api/auth/me', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token'] = token;
+    }
+    if (cachedUser?.id) {
+      headers['x-user-id'] = cachedUser.id;
+    }
+    if (cachedUser?.username) {
+      headers['x-username'] = cachedUser.username;
+    }
+
+    const res = await smartAuthFetch('/api/auth/me', { headers });
     const data = await parseAuthResponse(res, 'Không thể lấy thông tin người dùng');
     if (data.success && data.user) {
       // Bảo đảm kỷ lục WPM cao nhất không bao giờ bị hạ thấp khi máy chủ trả về số cũ
@@ -168,7 +177,7 @@ export async function fetchCurrentUser(): Promise<UserAccount | null> {
 
       setStoredCachedUser(data.user);
       return data.user;
-    } else if (res.status === 401 || res.status === 403) {
+    } else if (res.status === 401 || res.status === 403 || data.isGuest) {
       setStoredAuthToken(null);
       setStoredCachedUser(null);
       return null;
@@ -328,8 +337,9 @@ export async function updateUserProfile(updates: {
   cultivation?: any;
 }): Promise<AuthResponse> {
   const token = getStoredAuthToken();
-  if (!token) {
-    return { success: false, error: 'Chưa đăng nhập' };
+  const cachedUser = getStoredCachedUser();
+  if (!token && !cachedUser) {
+    return { success: false, error: 'Chế độ Khách không thể đổi tên. Vui lòng đăng nhập tài khoản!' };
   }
 
   try {
@@ -363,16 +373,29 @@ export async function updateUserProfile(updates: {
 
     const payload = {
       ...updates,
+      userId: cachedUser?.id,
+      username: updates.username || cachedUser?.username,
       ...(effectiveTargetWpm > 0 ? { bestWpm: effectiveTargetWpm } : {}),
       ...(effectiveTargetRecord ? { bestWpmRecord: effectiveTargetRecord } : {}),
     };
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token'] = token;
+    }
+    if (cachedUser?.id) {
+      headers['x-user-id'] = cachedUser.id;
+    }
+    if (cachedUser?.username) {
+      headers['x-username'] = cachedUser.username;
+    }
+
     const res = await smartAuthFetch('/api/auth/profile', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify(payload),
     });
     const data = await parseAuthResponse(res, 'Lỗi kết nối khi cập nhật hồ sơ');

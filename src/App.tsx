@@ -3338,10 +3338,11 @@ export default function App() {
 
   // Name & Avatar & Frame Change (Restricted to logged-in users)
   const handleChangeUsername = (newName: string) => {
-    if (!currentUser) return;
+    const activeUser = currentUser || getStoredCachedUser();
+    if (!activeUser) return;
     setUsername(newName);
     usernameRef.current = newName;
-    const updatedUser: UserAccount = { ...currentUser, displayName: newName };
+    const updatedUser: UserAccount = { ...activeUser, displayName: newName };
     setCurrentUser(updatedUser);
     currentUserRef.current = updatedUser;
     setStoredCachedUser(updatedUser);
@@ -3359,7 +3360,8 @@ export default function App() {
   };
 
   const handleChangeAvatar = (newAvatar: string) => {
-    if (!currentUser) return;
+    const activeUser = currentUser || getStoredCachedUser();
+    if (!activeUser) return;
     setAvatar(newAvatar);
     updateUserProfile({ avatar: newAvatar });
     localStorage.setItem('fasttyping_avatar', newAvatar);
@@ -3374,7 +3376,8 @@ export default function App() {
   };
 
   const handleChangeFrame = (newFrame: string) => {
-    if (!currentUser) return;
+    const activeUser = currentUser || getStoredCachedUser();
+    if (!activeUser) return;
     setUserFrame(newFrame);
     setStoredFrame(newFrame);
     updateUserProfile({ frame: newFrame });
@@ -3583,7 +3586,7 @@ export default function App() {
         onlineCount={onlineCount}
         isMuted={isMuted}
         isAdmin={isAdmin}
-        isLoggedIn={!!currentUser}
+        isLoggedIn={Boolean(currentUser || getStoredAuthToken())}
         onToggleMute={() => setIsMuted(soundFx.toggleMute())}
         onOpenLeaderboard={() => setIsLeaderboardOpen(true)}
         onOpenMatchHistory={() => setIsMatchHistoryOpen(true)}

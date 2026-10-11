@@ -364,7 +364,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
           isAdmin={isAdmin}
           highScores={highScores}
           matchHistory={matchHistory}
-          isLoggedIn={!!currentUser}
+          isLoggedIn={Boolean(currentUser || getStoredAuthToken())}
           currentUser={currentUser}
           cultivationLevel={cultivationState?.level}
           cultivationRealmIndex={cultivationState?.realmIndex}
@@ -447,6 +447,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onSuccess={onAuthSuccess}
+        onAuthSuccess={onAuthSuccess}
         currentUser={currentUser}
         onLogout={onLogout}
         initialTab={authModalInitialTab}

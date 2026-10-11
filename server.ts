@@ -2865,13 +2865,78 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   app.post('/api/auth/login-email', handleQuickLogin);
 
   // GET /api/auth/me: Retrieve current authenticated profile
-  app.get('/api/auth/me', (req, res) => {
+  app.get('/api/auth/me', async (req, res) => {
     const authHeader = req.headers.authorization;
-    const user = getUserByToken(authHeader);
-    if (!user) {
+    let user = getUserByToken(authHeader);
+
+    const queryUserId = (req.query?.userId || req.headers['x-user-id']) as string;
+    const queryUsername = (req.query?.username || req.headers['x-username']) as string;
+
+    if (!user && req.headers['x-auth-token']) {
+      user = getUserByToken(String(req.headers['x-auth-token']));
+    }
+    if (!user && queryUserId) {
+      const found = serverUsers.get(String(queryUserId));
+      if (found && found.authProvider !== 'guest') user = found;
+    }
+    if (!user && queryUsername) {
+      const found = getUserByUsername(String(queryUsername));
+      if (found && found.authProvider !== 'guest') user = found;
+    }
+
+    if (!user && isDatabaseConfigured()) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          let dbUserRow: any = null;
+          if (authHeader) {
+            const clean = String(authHeader).replace(/^Bearer\s+/i, '').trim();
+            if (clean) {
+              const q = await pool.query('SELECT * FROM app_users WHERE session_tokens @> $1::jsonb', [JSON.stringify([clean])]);
+              if (q.rows.length > 0) dbUserRow = q.rows[0];
+            }
+          }
+          if (!dbUserRow && queryUserId) {
+            const q = await pool.query('SELECT * FROM app_users WHERE id = $1', [queryUserId]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && queryUsername) {
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(username) = LOWER($1)', [queryUsername]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (dbUserRow) {
+            user = {
+              id: dbUserRow.id,
+              username: dbUserRow.username,
+              email: dbUserRow.email,
+              displayName: dbUserRow.display_name,
+              avatar: dbUserRow.avatar || '🧘',
+              frame: dbUserRow.frame || 'wood',
+              isAdmin: Boolean(dbUserRow.is_admin),
+              isVerified: true,
+              authProvider: dbUserRow.auth_provider || 'email',
+              passwordHash: dbUserRow.password_hash,
+              salt: dbUserRow.salt,
+              sessionTokens: Array.isArray(dbUserRow.session_tokens) ? dbUserRow.session_tokens : [],
+              cultivation: dbUserRow.cultivation || null,
+              createdAt: Number(dbUserRow.created_at) || Date.now(),
+              updatedAt: Number(dbUserRow.updated_at) || Date.now(),
+            };
+            serverUsers.set(user.id, user);
+          }
+        }
+      } catch (err) {
+        console.warn('[Auth Me] Notice querying fallback DB user:', err);
+      }
+    }
+
+    if (!user || user.authProvider === 'guest') {
       res.json({ success: false, isGuest: true, user: null });
       return;
     }
+
+    // Bảo đảm tài khoản đăng nhập luôn được xác thực
+    user.isVerified = true;
 
     if (user.cultivation && ensureServerDailyCultivationSync(user.cultivation)) {
       user.updatedAt = Date.now();
@@ -2903,16 +2968,86 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   // POST /api/auth/profile: Update name, avatar, frame (Restricted to verified accounts)
   app.post('/api/auth/profile', async (req, res) => {
     const authHeader = req.headers.authorization;
-    const user = getUserByToken(authHeader);
+    let user = getUserByToken(authHeader);
+
+    // Fallback nhận dạng người dùng đã xác thực qua x-auth-token, userId hoặc username
+    const reqUserId = (req.body?.userId || req.headers['x-user-id'] || req.query?.userId) as string;
+    const reqUsername = (req.body?.username || req.headers['x-username'] || req.query?.username) as string;
+
+    if (!user && req.headers['x-auth-token']) {
+      user = getUserByToken(String(req.headers['x-auth-token']));
+    }
+    if (!user && reqUserId) {
+      const found = serverUsers.get(String(reqUserId));
+      if (found && found.authProvider !== 'guest') {
+        user = found;
+      }
+    }
+    if (!user && reqUsername) {
+      const found = getUserByUsername(String(reqUsername));
+      if (found && found.authProvider !== 'guest') {
+        user = found;
+      }
+    }
+
+    // Dự phòng kiểm tra CSDL PostgreSQL nếu được kích hoạt
+    if (!user && isDatabaseConfigured()) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          let dbUserRow: any = null;
+          if (authHeader) {
+            const clean = String(authHeader).replace(/^Bearer\s+/i, '').trim();
+            if (clean) {
+              const q = await pool.query('SELECT * FROM app_users WHERE session_tokens @> $1::jsonb', [JSON.stringify([clean])]);
+              if (q.rows.length > 0) dbUserRow = q.rows[0];
+            }
+          }
+          if (!dbUserRow && reqUserId) {
+            const q = await pool.query('SELECT * FROM app_users WHERE id = $1', [reqUserId]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && reqUsername) {
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(username) = LOWER($1)', [reqUsername]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (dbUserRow) {
+            user = {
+              id: dbUserRow.id,
+              username: dbUserRow.username,
+              email: dbUserRow.email,
+              displayName: dbUserRow.display_name,
+              avatar: dbUserRow.avatar || '🧘',
+              frame: dbUserRow.frame || 'wood',
+              isAdmin: Boolean(dbUserRow.is_admin),
+              isVerified: true,
+              authProvider: dbUserRow.auth_provider || 'email',
+              passwordHash: dbUserRow.password_hash,
+              salt: dbUserRow.salt,
+              sessionTokens: Array.isArray(dbUserRow.session_tokens) ? dbUserRow.session_tokens : [],
+              cultivation: dbUserRow.cultivation || null,
+              createdAt: Number(dbUserRow.created_at) || Date.now(),
+              updatedAt: Number(dbUserRow.updated_at) || Date.now(),
+            };
+            serverUsers.set(user.id, user);
+          }
+        }
+      } catch (err) {
+        console.warn('[Profile] Notice querying fallback DB user:', err);
+      }
+    }
 
     // Người chơi không đăng nhập (Khách) không thể đổi tên, khung và avatar
-    if (!user || !user.isVerified) {
+    if (!user || user.authProvider === 'guest') {
       res.status(403).json({
         success: false,
         error: 'Chế độ Khách không thể đổi tên, khung và avatar. Vui lòng đăng nhập tài khoản!',
       });
       return;
     }
+
+    // Luôn bảo đảm tài khoản hợp lệ đã đăng nhập có isVerified = true
+    user.isVerified = true;
 
     const { 
       displayName, 

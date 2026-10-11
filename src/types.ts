@@ -655,6 +655,7 @@ export interface AuthResponse {
   needVerify?: boolean;
   devCode?: string;
   message?: string;
+  isGuest?: boolean;
 }
 
 export interface CultivationLeaderboardEntry {

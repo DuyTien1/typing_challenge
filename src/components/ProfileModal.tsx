@@ -47,7 +47,7 @@ import {
 } from '../utils/frames';
 import { MatchRecord, getStoredMatchHistory } from '../utils/matchHistory';
 import { HighScoreRecord, UserAccount, BestWpmRecord } from '../types';
-import { updateUserProfile } from '../utils/auth';
+import { updateUserProfile, getStoredAuthToken, getStoredCachedUser } from '../utils/auth';
 import { AchievementsSection } from './AchievementsSection';
 import { getShowcaseAchievements, getAchievementById, setShowcaseAchievements, formatOnlineDuration, XIANXIA_ACHIEVEMENTS } from '../utils/achievements';
 import { WpmRecordBadge, getFriendlyModeTitle, formatRecordTime, isOutplayMode } from './WpmRecordBadge';
@@ -138,8 +138,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     return Array.from(new Set(list.filter((id) => Boolean(getAchievementById(id))))).slice(0, 4);
   };
 
+  const effectiveIsLoggedIn = Boolean(
+    isLoggedIn ||
+    (currentUser && currentUser.authProvider !== 'guest') ||
+    getStoredCachedUser() ||
+    getStoredAuthToken()
+  );
+
   const [currentShowcase, setCurrentShowcase] = useState<string[]>(() => {
-    if (!isLoggedIn) return [];
+    if (!effectiveIsLoggedIn) return [];
     if (propShowcase && propShowcase.length > 0) return sanitizeShowcase(propShowcase);
     if (currentUser?.showcaseAchievements && currentUser.showcaseAchievements.length > 0) {
       return sanitizeShowcase(currentUser.showcaseAchievements);
@@ -149,7 +156,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   // Đồng bộ showcase khi đăng nhập/đăng xuất
   React.useEffect(() => {
-    if (!isLoggedIn) {
+    if (!effectiveIsLoggedIn) {
       setCurrentShowcase([]);
     } else {
       const showcase = propShowcase && propShowcase.length > 0
@@ -159,18 +166,31 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           : sanitizeShowcase(getShowcaseAchievements(currentUser?.id)));
       setCurrentShowcase(showcase);
     }
-  }, [isLoggedIn, propShowcase, currentUser?.id, currentUser?.showcaseAchievements]);
+  }, [effectiveIsLoggedIn, propShowcase, currentUser?.id, currentUser?.showcaseAchievements]);
 
-  const [nameInput, setNameInput] = useState(username);
+  const resolvedInitialName = currentUser?.displayName || currentUser?.username || username;
+  const [nameInput, setNameInput] = useState(resolvedInitialName);
   const [selectedAvatar, setSelectedAvatar] = useState(avatar);
   const [selectedFrame, setSelectedFrame] = useState<string>(() => frame || getStoredFrame());
   const [history, setHistory] = useState<MatchRecord[]>(() => matchHistory || getStoredMatchHistory());
   const [guestNotice, setGuestNotice] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  // Tự động xóa cảnh báo Chế độ Khách ngay khi người chơi đã đăng nhập thành công
   React.useEffect(() => {
-    setNameInput(username);
-  }, [username]);
+    if (effectiveIsLoggedIn) {
+      setGuestNotice(null);
+    }
+  }, [effectiveIsLoggedIn]);
+
+  // Luôn cập nhật tên hiển thị khi tài khoản hoặc dữ liệu người chơi thay đổi
+  React.useEffect(() => {
+    const activeName = currentUser?.displayName || currentUser?.username || username;
+    if (activeName) {
+      setNameInput(activeName);
+      setTempName(activeName);
+    }
+  }, [username, currentUser?.displayName, currentUser?.username]);
 
   React.useEffect(() => {
     setSelectedAvatar(avatar);
@@ -342,7 +362,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const recentMatches = history.slice(0, 5);
 
   const handleShowcaseChange = (newShowcase: string[]) => {
-    if (!isLoggedIn) return;
+    if (!effectiveIsLoggedIn) return;
     setCurrentShowcase(newShowcase);
     setShowcaseAchievements(newShowcase, currentUser?.id);
     if (onUpdateShowcaseAchievements) {
@@ -373,7 +393,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   // Confirm Name Change from Popup
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoggedIn) {
+    if (!effectiveIsLoggedIn) {
       setNameError('Chế độ Khách không thể đổi tên. Vui lòng đăng nhập!');
       return;
     }
@@ -390,7 +410,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       setNameError('Biệt danh tối đa 24 ký tự!');
       return;
     }
-    if (trimmed.toLowerCase() === username.trim().toLowerCase()) {
+    const currentActiveName = (currentUser?.displayName || currentUser?.username || username || '').trim().toLowerCase();
+    if (trimmed.toLowerCase() === currentActiveName) {
       setIsEditNameOpen(false);
       return;
     }
@@ -412,7 +433,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   // Confirm Avatar & Frame from Popup
   const handleSaveAvatarFrame = () => {
-    if (!isLoggedIn) {
+    if (!effectiveIsLoggedIn) {
       setGuestNotice('Chế độ Khách không thể đổi avatar và khung. Vui lòng đăng nhập tài khoản!');
       setIsAvatarFrameModalOpen(false);
       return;
@@ -541,12 +562,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             totalGames={totalGames}
             username={username}
             frame={selectedFrame}
-            isLoggedIn={isLoggedIn}
+            isLoggedIn={effectiveIsLoggedIn}
             isAdmin={isAdmin}
             userId={currentUser?.id}
             matchHistory={history}
             highScores={highScores}
-            showcaseAchievements={(isLoggedIn || isAdmin) ? currentShowcase : []}
+            showcaseAchievements={(effectiveIsLoggedIn || isAdmin) ? currentShowcase : []}
             cultivationLevel={cultivationLevel}
             cultivationRealmIndex={cultivationRealmIndex}
             cultivationState={cultivationState}
@@ -558,7 +579,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         ) : (
           <div className="space-y-4">
             {/* GUEST BANNER / ACCOUNT BAR */}
-            {!isLoggedIn ? (
+            {!effectiveIsLoggedIn ? (
               <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left animate-fadeIn">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
@@ -640,7 +661,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </div>
             )}
 
-            {guestNotice && (
+            {guestNotice && !effectiveIsLoggedIn && (
               <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2 animate-fadeIn">
                 <div className="flex items-center gap-2">
                   <Lock className="w-4 h-4 text-rose-400 shrink-0" />
@@ -669,7 +690,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     type="button"
                     onClick={() => {
                       soundFx.playKeyClick();
-                      if (!isLoggedIn) {
+                      if (!effectiveIsLoggedIn) {
                         setGuestNotice('Chế độ Khách không thể đổi avatar và khung. Vui lòng đăng nhập để mở khóa!');
                         return;
                       }
@@ -680,14 +701,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       setIsAvatarFrameModalOpen(true);
                     }}
                     className="relative group p-1 rounded-2xl cursor-pointer transition-transform hover:scale-105 active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
-                    title={isLoggedIn ? "Nhấn vào avatar để tùy chỉnh Avatar và Khung đại diện" : "Đăng nhập để đổi avatar"}
+                    title={effectiveIsLoggedIn ? "Nhấn vào avatar để tùy chỉnh Avatar và Khung đại diện" : "Đăng nhập để đổi avatar"}
                   >
                     <AvatarWithFrame
                       icon={selectedAvatar}
                       frameId={selectedFrame}
                       size="xl"
                     />
-                    {isLoggedIn ? (
+                    {effectiveIsLoggedIn ? (
                       <div className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md bg-amber-400 text-black text-[9px] font-black uppercase tracking-wider shadow-md opacity-90 group-hover:opacity-100 flex items-center gap-0.5">
                         <Edit3 className="w-2.5 h-2.5" />
                         <span>Đổi</span>
@@ -705,7 +726,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate max-w-[200px] sm:max-w-[280px]">
                         {nameInput}
                       </span>
-                      {isLoggedIn ? (
+                      {effectiveIsLoggedIn ? (
                         <button
                           id="btn-open-edit-name"
                           type="button"
@@ -805,7 +826,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <span className="text-[10px] uppercase font-bold text-slate-400 font-mono flex items-center gap-1 shrink-0">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Danh Hiệu Tiên Giới:
                   </span>
-                  {!isLoggedIn ? (
+                  {!effectiveIsLoggedIn ? (
                     <span className="text-[11px] text-amber-400/80 italic flex items-center gap-1">
                       <Lock className="w-3 h-3 text-amber-400" /> Khóa ở chế độ Khách (Đăng nhập để mở)
                     </span>
@@ -836,7 +857,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   }}
                   className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1 shrink-0 self-end sm:self-auto"
                 >
-                  <span>{isLoggedIn ? `Đổi Danh Hiệu (${currentShowcase.length}/4)` : 'Xem Thành Tựu'}</span>
+                  <span>{effectiveIsLoggedIn ? `Đổi Danh Hiệu (${currentShowcase.length}/4)` : 'Xem Thành Tựu'}</span>
                   <Sparkles className="w-3 h-3" />
                 </button>
               </div>
