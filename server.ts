@@ -451,8 +451,8 @@ function isTestAccountRecord(id: string, username?: string): boolean {
     id.startsWith('fake_') ||
     lower.startsWith('bot_') ||
     lower.startsWith('mock_') ||
-    lower.startsWith('dummy_') ||
-    lower.startsWith('test') ||
+    lower === 'test' ||
+    lower.startsWith('test_') ||
     lower.startsWith('fake_') ||
     lower.startsWith('user_demo') ||
     lower.startsWith('guest_') ||
@@ -1001,6 +1001,12 @@ export async function ensureDatabaseHydrated(): Promise<boolean> {
               u.passwordHash = existing.passwordHash;
               u.salt = existing.salt;
             }
+            // Bảo toàn Tên hiển thị (displayName) nếu bộ nhớ có tên đã đổi mà DB chưa kịp cập nhật hoặc DB trả về tên mặc định
+            if (existing.displayName && existing.displayName !== existing.username) {
+              if (!u.displayName || u.displayName === u.username) {
+                u.displayName = existing.displayName;
+              }
+            }
           }
           if (u.id === 'usr_admin_default' || String(u.username || '').toLowerCase() === 'admin') {
             u.isAdmin = true;
@@ -1011,6 +1017,13 @@ export async function ensureDatabaseHydrated(): Promise<boolean> {
           }
           syncUserAllTimeBestWpm(u);
           serverUsers.set(id, u);
+        }
+
+        // Đồng bộ ngược các tài khoản có trong bộ nhớ / users.json nhưng chưa kịp ghi vào PostgreSQL
+        for (const [id, memoryUser] of serverUsers.entries()) {
+          if (!dbUsers.has(id)) {
+            await dbSaveUser(memoryUser).catch(() => {});
+          }
         }
         console.log(`[Database] ✅ Đã nạp thành công ${serverUsers.size} tài khoản từ Supabase.`);
       } else {
@@ -2752,11 +2765,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     let changed = false;
 
     if (!cult.checkIn) {
-      cult.checkIn = { lastCheckInDate: '', streak: 0, totalCheckIns: 0 };
+      cult.checkIn = { lastCheckInDate: '', streak: 0, totalCheckIns: 0, checkedDates: [] };
       changed = true;
     } else {
       cult.checkIn.streak = Number(cult.checkIn.streak) || 0;
       cult.checkIn.totalCheckIns = Number(cult.checkIn.totalCheckIns) || 0;
+      if (!Array.isArray(cult.checkIn.checkedDates)) {
+        cult.checkIn.checkedDates = [];
+      }
     }
 
     const hasInvalidQuests = !Array.isArray(cult.dailyQuests) || cult.dailyQuests.length !== 4;
@@ -2912,9 +2928,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       cultivation
     } = req.body || {};
     
-    // Đổi tên người chơi (displayName): Tên đăng nhập (user.username) CỐ ĐỊNH, KHÔNG THAY ĐỔI
-    const newPlayerName = String(displayName || username || '').trim();
-    if (newPlayerName && newPlayerName.length >= 2) {
+    // Đổi tên người chơi (displayName): Chỉ cập nhật khi client gửi displayName rõ ràng!
+    // TUYỆT ĐỐI KHÔNG dùng username hay fallback để ghi đè displayName!
+    const hasDisplayNameUpdate = displayName !== undefined && typeof displayName === 'string';
+    const newPlayerName = hasDisplayNameUpdate ? displayName.trim() : '';
+    if (hasDisplayNameUpdate && newPlayerName.length >= 2) {
       const slicedName = newPlayerName.slice(0, 24);
       const cleanNew = slicedName.toLowerCase();
       const currentDisplayName = (user.displayName || user.username).trim().toLowerCase();

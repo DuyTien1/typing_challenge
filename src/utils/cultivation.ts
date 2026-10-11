@@ -339,6 +339,8 @@ export interface CultivationState {
     lastCheckInDate: string; // YYYY-MM-DD
     streak: number; // số ngày điểm danh liên tiếp
     totalCheckIns: number;
+    checkedDates?: string[]; // Danh sách các ngày YYYY-MM-DD đã điểm danh
+    currentWeekKey?: string; // Khóa tuần hiện tại (YYYY-MM-DD của ngày Thứ Hai)
   };
   tamPhap?: CultivationTamPhap;
   herbs?: CultivationHerbs;
@@ -666,6 +668,153 @@ export function getVietnamDayOfWeek(d: Date = new Date()): number {
 }
 
 /**
+ * Lấy ngày Thứ Hai của tuần hiện tại theo giờ Việt Nam (UTC+7)
+ * Chu kỳ tuần tính từ Thứ Hai (00:00:00) đến Chủ Nhật (23:59:59)
+ */
+export function getVietnamMondayDate(d: Date = getVietnamDate()): Date {
+  const vnDate = new Date(d);
+  const dayOfWeek = getVietnamDayOfWeek(vnDate); // 0 (CN), 1 (T2), ..., 6 (T7)
+  const diffDays = (dayOfWeek + 6) % 7; // Mon -> 0, Tue -> 1, ..., Sun -> 6
+  return new Date(vnDate.getFullYear(), vnDate.getMonth(), vnDate.getDate() - diffDays, 0, 0, 0, 0);
+}
+
+export function formatDateYYYYMMDD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function getCurrentWeekKey(refDate: Date = getVietnamDate()): string {
+  return formatDateYYYYMMDD(getVietnamMondayDate(refDate));
+}
+
+export interface WeeklyCheckInDayInfo {
+  dayIndex: number; // 1 (Thứ Hai) .. 6 (Thứ Bảy), 0 (Chủ Nhật)
+  name: string; // 'Thứ Hai', 'Thứ Ba', ... 'Chủ Nhật'
+  shortName: string; // 'T2', 'T3', ..., 'CN'
+  dateStr: string; // 'YYYY-MM-DD'
+  displayDate: string; // 'DD/MM'
+  fullDisplayDate: string; // 'DD/MM/YYYY'
+  isToday: boolean;
+  isPast: boolean;
+  isFuture: boolean;
+  isCheckedIn: boolean;
+  rewardName: string;
+  rewardSub: string;
+  rewardIcon: string;
+}
+
+export interface WeeklyCheckInOverview {
+  weekKey: string; // YYYY-MM-DD của ngày Thứ Hai
+  weekMondayDisplay: string; // 'DD/MM'
+  weekSundayDisplay: string; // 'DD/MM/YYYY'
+  days: WeeklyCheckInDayInfo[];
+  checkedCount: number; // 0..7
+  isFullWeekCompleted: boolean;
+  hasCheckedInToday: boolean;
+  currentDayIndex: number;
+}
+
+/**
+ * Tính toán trạng thái 7 ngày trong tuần hiện tại (Thứ Hai ➔ Chủ Nhật)
+ * Tự động chuyển tuần và reset giao diện tích lũy vào 00:00 Thứ Hai hàng tuần
+ */
+export function getWeeklyCheckInOverview(state: CultivationState, refDate: Date = getVietnamDate()): WeeklyCheckInOverview {
+  const todayStr = getTodayDateString();
+  const monday = getVietnamMondayDate(refDate);
+  const weekKey = formatDateYYYYMMDD(monday);
+  const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+  const shortNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+  // Tập hợp các ngày đã điểm danh
+  const checkedSet = new Set<string>();
+  if (Array.isArray(state?.checkIn?.checkedDates)) {
+    state.checkIn.checkedDates.forEach((d) => {
+      if (typeof d === 'string') checkedSet.add(d);
+    });
+  }
+  if (state?.checkIn?.lastCheckInDate) {
+    checkedSet.add(state.checkIn.lastCheckInDate);
+  }
+
+  // Tương thích ngược: Nếu người chơi đã có chuỗi (streak) và ngày điểm danh gần nhất nằm trong tuần này,
+  // tự động suy luận các ngày trước đó trong tuần tương ứng với chuỗi để người chơi không bị mất dấu tích tuần này
+  const lastCheckIn = state?.checkIn?.lastCheckInDate;
+  const streak = Number(state?.checkIn?.streak) || 0;
+  if (lastCheckIn && streak > 0) {
+    const sundayDate = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+    const sundayStr = formatDateYYYYMMDD(sundayDate);
+    if (lastCheckIn >= weekKey && lastCheckIn <= sundayStr) {
+      const [ly, lm, ld] = lastCheckIn.split('-').map(Number);
+      if (ly && lm && ld) {
+        const lastCheckInDateObj = new Date(ly, lm - 1, ld);
+        for (let s = 0; s < Math.min(streak, 7); s++) {
+          const pastD = new Date(lastCheckInDateObj.getFullYear(), lastCheckInDateObj.getMonth(), lastCheckInDateObj.getDate() - s);
+          const pastDStr = formatDateYYYYMMDD(pastD);
+          if (pastDStr >= weekKey && pastDStr <= sundayStr) {
+            checkedSet.add(pastDStr);
+          }
+        }
+      }
+    }
+  }
+
+  const days: WeeklyCheckInDayInfo[] = [];
+  let checkedCount = 0;
+
+  for (let i = 0; i < 7; i++) {
+    const dayDate = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    const dateStr = formatDateYYYYMMDD(dayDate);
+    const displayDate = `${String(dayDate.getDate()).padStart(2, '0')}/${String(dayDate.getMonth() + 1).padStart(2, '0')}`;
+    const fullDisplayDate = `${displayDate}/${dayDate.getFullYear()}`;
+    const dayIndex = i === 6 ? 0 : i + 1; // 0..5 -> 1..6 (Mon..Sat), 6 -> 0 (Sun)
+    const isToday = dateStr === todayStr;
+    const isPast = dateStr < todayStr;
+    const isFuture = dateStr > todayStr;
+    const isCheckedIn = checkedSet.has(dateStr);
+    const isSunday = dayIndex === 0;
+
+    if (isCheckedIn) {
+      checkedCount++;
+    }
+
+    days.push({
+      dayIndex,
+      name: dayNames[dayIndex],
+      shortName: shortNames[dayIndex],
+      dateStr,
+      displayDate,
+      fullDisplayDate,
+      isToday,
+      isPast,
+      isFuture,
+      isCheckedIn,
+      rewardName: isSunday ? '+1 Hộ Tâm Đan' : '+1 Tu Vi Đan',
+      rewardSub: isSunday ? 'Chống rớt tầng khi đột phá' : '+1.000 Tu Vi tinh thuần',
+      rewardIcon: isSunday ? '🛡️' : '🧪',
+    });
+  }
+
+  const sundayObj = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+  const weekMondayDisplay = `${String(monday.getDate()).padStart(2, '0')}/${String(monday.getMonth() + 1).padStart(2, '0')}`;
+  const weekSundayDisplay = `${String(sundayObj.getDate()).padStart(2, '0')}/${String(sundayObj.getMonth() + 1).padStart(2, '0')}/${sundayObj.getFullYear()}`;
+  const hasCheckedInToday = checkedSet.has(todayStr);
+  const currentDayIndex = getVietnamDayOfWeek(refDate);
+
+  return {
+    weekKey,
+    weekMondayDisplay,
+    weekSundayDisplay,
+    days,
+    checkedCount,
+    isFullWeekCompleted: checkedCount === 7,
+    hasCheckedInToday,
+    currentDayIndex,
+  };
+}
+
+/**
  * Đảm bảo đồng bộ Nhiệm Vụ Hàng Ngày và Điểm Danh Hàng Ngày khi bước sang ngày mới (00:00 GMT+7)
  * Tự động làm mới 100% nhiệm vụ hàng ngày về ban đầu đồng bộ với chu kỳ điểm danh ngày mới (00:00).
  * TUYỆT ĐỐI BẢO LƯU CHUỖI ĐIỂM DANH (streak), không bao giờ reset chuỗi điểm danh của người chơi.
@@ -681,6 +830,8 @@ export function ensureDailySync(state: CultivationState): { updatedState: Cultiv
       lastCheckInDate: '',
       streak: 0,
       totalCheckIns: 0,
+      checkedDates: [],
+      currentWeekKey: getCurrentWeekKey(),
     };
   } else {
     // Bảo lưu trọn vẹn chuỗi điểm danh và tổng số ngày đã điểm danh
@@ -688,6 +839,8 @@ export function ensureDailySync(state: CultivationState): { updatedState: Cultiv
       lastCheckInDate: updated.checkIn.lastCheckInDate || '',
       streak: Number(updated.checkIn.streak) || 0,
       totalCheckIns: Number(updated.checkIn.totalCheckIns) || 0,
+      checkedDates: Array.isArray(updated.checkIn.checkedDates) ? updated.checkIn.checkedDates : [],
+      currentWeekKey: updated.checkIn.currentWeekKey || getCurrentWeekKey(),
     };
   }
 
@@ -968,11 +1121,15 @@ export function loadStoredCultivationState(): CultivationState {
             lastCheckInDate: parsed.checkIn.lastCheckInDate || '',
             streak: Number(parsed.checkIn.streak) || 0,
             totalCheckIns: Number(parsed.checkIn.totalCheckIns) || 0,
+            checkedDates: Array.isArray(parsed.checkIn.checkedDates) ? parsed.checkIn.checkedDates : [],
+            currentWeekKey: parsed.checkIn.currentWeekKey || '',
           }
         : {
             lastCheckInDate: '',
             streak: 0,
             totalCheckIns: 0,
+            checkedDates: [],
+            currentWeekKey: '',
           },
       tamPhap: {
         equipped: parsed.tamPhap?.equipped !== undefined ? parsed.tamPhap.equipped : 'than_hanh',
@@ -1112,6 +1269,13 @@ export function mergeCultivationStates(
     : (current.checkIn?.lastCheckInDate || incoming.checkIn?.lastCheckInDate || '');
   const streak = Math.max(current.checkIn?.streak || 0, incoming.checkIn?.streak || 0);
   const totalCheckIns = Math.max(current.checkIn?.totalCheckIns || 0, incoming.checkIn?.totalCheckIns || 0);
+  const checkedDates = Array.from(new Set([
+    ...(Array.isArray(current.checkIn?.checkedDates) ? current.checkIn.checkedDates : []),
+    ...(Array.isArray(incoming.checkIn?.checkedDates) ? incoming.checkIn.checkedDates : []),
+  ]));
+  if (checkedToday && !checkedDates.includes(todayStr)) {
+    checkedDates.push(todayStr);
+  }
 
   // 4. Linh Thạch: Lấy từ trạng thái mới nhất (không dùng Math.max để tránh hồi sinh Linh Thạch đã tiêu)
   const linhThach = typeof newestState.linhThach === 'number'
@@ -1175,6 +1339,8 @@ export function mergeCultivationStates(
       lastCheckInDate,
       streak,
       totalCheckIns,
+      checkedDates,
+      currentWeekKey: current.checkIn?.currentWeekKey || incoming.checkIn?.currentWeekKey || getCurrentWeekKey(),
     },
     dailyQuests,
     dailyQuestsDate: levelLeader.dailyQuestsDate || incoming.dailyQuestsDate || todayStr,
@@ -2177,10 +2343,16 @@ export function claimDailyCheckIn(state: CultivationState): {
     rewardsGranted.push('🌟 THƯỞNG 7 NGÀY LIÊN TIẾP: 1 Siêu Cấp Tu Vi Đan (+7.000 Tu Vi) & 1 Phá Cảnh Đan');
   }
 
+  const prevCheckedDates = Array.isArray(currentCheckIn.checkedDates) ? currentCheckIn.checkedDates : [];
+  const nextCheckedDates = prevCheckedDates.includes(today) ? prevCheckedDates : [...prevCheckedDates, today];
+  const trimmedCheckedDates = nextCheckedDates.slice(-60);
+
   updated.checkIn = {
     lastCheckInDate: today,
     streak: nextStreak,
     totalCheckIns: (currentCheckIn.totalCheckIns || 0) + 1,
+    checkedDates: trimmedCheckedDates,
+    currentWeekKey: getCurrentWeekKey(),
   };
 
   // Đảm bảo tuyệt đối: Khi điểm danh ngày mới thành công, nhiệm vụ hàng ngày được làm mới đồng bộ 100%

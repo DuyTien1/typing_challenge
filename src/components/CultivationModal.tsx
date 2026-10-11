@@ -14,6 +14,7 @@ import {
   getTodayDateString,
   getVietnamDate,
   getVietnamDayOfWeek,
+  getWeeklyCheckInOverview,
   ensureDailySync,
   TWO_HOURS_MS,
   DAILY_MATCH_EXP_CAP,
@@ -45,6 +46,9 @@ import {
   Gift,
   Crown,
   Check,
+  CheckCheck,
+  RotateCcw,
+  Calendar,
   Lock,
   Swords,
   Compass,
@@ -945,8 +949,16 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
           {activeTab === 'checkin' && (() => {
             const rawStreak = state.checkIn?.streak || 0;
             const currentCycleStep = rawStreak > 0 ? (rawStreak % 7 === 0 ? 7 : rawStreak % 7) : 0;
-            const currentDayOfWeek = getVietnamDayOfWeek();
-            const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+            const weeklyOverview = getWeeklyCheckInOverview(state);
+            const {
+              days,
+              weekMondayDisplay,
+              weekSundayDisplay,
+              checkedCount,
+              isFullWeekCompleted,
+              hasCheckedInToday,
+            } = weeklyOverview;
+            const todayItem = days.find((d) => d.isToday) || days[0];
 
             return (
               <div className="space-y-5">
@@ -960,143 +972,262 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setCheckInNotice(null)}
-                      className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/60 transition-colors"
+                      className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/60 transition-colors cursor-pointer"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 )}
 
-                {/* 7 Days of the Week Schedule - Direct Click to Check-in */}
-                <div className="space-y-2.5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-400 px-1 gap-1">
-                    <span className="font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-amber-400" />
-                      Lịch Thưởng Trong Tuần
-                      <span className="text-[11px] font-normal normal-case text-slate-400">
-                        (Nhấn trực tiếp vào ngày hôm nay để điểm danh)
-                      </span>
-                    </span>
-                    <span className="text-right">
-                      Hôm nay: <strong className="text-amber-300 font-bold">{dayNames[currentDayOfWeek]}</strong>
-                      {!hasCheckedInToday ? (
-                        <span className="ml-1.5 px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[10px] font-bold border border-amber-400/40 animate-pulse">
-                          Chưa Điểm Danh
-                        </span>
-                      ) : (
-                        <span className="ml-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40">
-                          Đã Hoàn Thành
-                        </span>
-                      )}
-                    </span>
+                {/* Header: 7 Days of the Week Schedule & Weekly Reset Info */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-950/95 via-slate-900/90 to-slate-950/95 border border-amber-500/30 shadow-[0_0_25px_rgba(245,158,11,0.08)] space-y-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-yellow-500/10 text-amber-300 border border-amber-500/40 shrink-0 shadow-inner">
+                        <Calendar className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-black text-slate-100 flex items-center gap-2 flex-wrap">
+                          <span>Lịch Điểm Danh 7 Ngày Trong Tuần</span>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold">
+                            T2 ({weekMondayDisplay}) ➔ CN ({weekSundayDisplay})
+                          </span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <span>Hôm nay: <strong className="text-amber-300 font-bold">{todayItem.name} ({todayItem.displayDate})</strong></span>
+                          <span className="text-slate-600">·</span>
+                          <span className="text-cyan-300 font-medium flex items-center gap-1">
+                            <RotateCcw className="w-3 h-3 text-cyan-400" />
+                            Reset giao diện tích tuần vào 00:00 Thứ Hai hàng tuần
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Weekly Progress Tracker Badge */}
+                    <div className="flex items-center gap-2.5 bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800 self-start sm:self-auto shadow-inner">
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Tiến độ tuần này</div>
+                        <div className={`text-xs sm:text-sm font-mono font-black ${isFullWeekCompleted ? 'text-amber-300' : 'text-emerald-300'}`}>
+                          {checkedCount}/7 Ngày {isFullWeekCompleted && '🌟'}
+                        </div>
+                      </div>
+                      {/* 7 Mini Day Dots */}
+                      <div className="flex items-center gap-1 pl-2 border-l border-slate-800/80">
+                        {days.map((d) => (
+                          <div
+                            key={d.dayIndex}
+                            className={`w-2.5 h-2.5 rounded-full transition-all ${
+                              d.isCheckedIn
+                                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] ring-1 ring-emerald-300'
+                                : d.isToday
+                                ? 'bg-amber-400/90 animate-pulse ring-1 ring-amber-300 scale-110'
+                                : 'bg-slate-800/90'
+                            }`}
+                            title={`${d.name} (${d.displayDate}): ${d.isCheckedIn ? 'Đã điểm danh' : 'Chưa điểm danh'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-                    {[
-                      { day: 1, name: 'Thứ Hai', reward: '+1 Tu Vi Đan', sub: '+1.000 Tu Vi', icon: '🧪', color: 'border-slate-800' },
-                      { day: 2, name: 'Thứ Ba', reward: '+1 Tu Vi Đan', sub: '+1.000 Tu Vi', icon: '🧪', color: 'border-slate-800' },
-                      { day: 3, name: 'Thứ Tư', reward: '+1 Tu Vi Đan', sub: '+1.000 Tu Vi', icon: '🧪', color: 'border-slate-800' },
-                      { day: 4, name: 'Thứ Năm', reward: '+1 Tu Vi Đan', sub: '+1.000 Tu Vi', icon: '🧪', color: 'border-slate-800' },
-                      { day: 5, name: 'Thứ Sáu', reward: '+1 Tu Vi Đan', sub: '+1.000 Tu Vi', icon: '🧪', color: 'border-slate-800' },
-                      { day: 6, name: 'Thứ Bảy', reward: '+1 Tu Vi Đan', sub: '+1.000 Tu Vi', icon: '🧪', color: 'border-slate-800' },
-                      { day: 0, name: 'Chủ Nhật', reward: '+1 Hộ Tâm Đan', sub: 'Chống rớt tầng', icon: '🛡️', color: 'border-sky-500/40 bg-sky-950/20' },
-                    ].map((item) => {
-                      const isToday = currentDayOfWeek === item.day;
+                  {/* 7 Days of the Week Cards Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 sm:gap-3">
+                    {days.map((item) => {
+                      const isToday = item.isToday;
+                      const isCheckedIn = item.isCheckedIn;
 
                       return (
                         <button
-                          key={item.day}
+                          key={item.dayIndex}
                           type="button"
-                          id={`checkin-day-${item.day}`}
+                          id={`checkin-day-${item.dayIndex}`}
                           onClick={() => {
                             if (isToday) {
-                              if (!hasCheckedInToday) {
+                              if (!isCheckedIn) {
                                 handleCheckIn();
                               } else {
                                 soundFx.playKeyClick();
-                                setCheckInNotice('Hôm nay đạo hữu đã điểm danh rồi, ngày mai hãy quay lại nhé!');
+                                setCheckInNotice(`Hôm nay (${item.name} - ${item.displayDate}) đạo hữu đã điểm danh rồi! Hãy quay lại vào ngày mai nhé.`);
                               }
+                            } else if (item.isFuture) {
+                              soundFx.playKeyClick();
+                              setCheckInNotice(`Thẻ [${item.name} - Ngày ${item.displayDate}] chưa mở. Hãy quay lại đúng ngày để nhận thưởng nhé!`);
+                            } else if (item.isPast && !isCheckedIn) {
+                              soundFx.playKeyClick();
+                              setCheckInNotice(`Thẻ [${item.name} - Ngày ${item.displayDate}] đã trôi qua. Hãy điểm danh hôm nay (${todayItem.name}) để bảo toàn tu vi!`);
                             } else {
                               soundFx.playKeyClick();
-                              setCheckInNotice(`Hôm nay là ${dayNames[currentDayOfWeek]}. Đạo hữu hãy nhấn vào thẻ [${dayNames[currentDayOfWeek]}] để điểm danh!`);
+                              setCheckInNotice(`Đạo hữu đã hoàn thành điểm danh cho [${item.name} - Ngày ${item.displayDate}].`);
                             }
                           }}
-                          className={`p-3 rounded-2xl border flex flex-col justify-between text-left transition-all relative select-none cursor-pointer group ${
-                            isToday
-                              ? hasCheckedInToday
-                                ? 'bg-emerald-950/30 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/40'
-                                : 'bg-gradient-to-b from-amber-500/25 via-slate-950/90 to-amber-500/15 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)] ring-2 ring-amber-400/50 scale-[1.03] hover:scale-[1.05] active:scale-95'
-                              : 'bg-slate-950/70 hover:bg-slate-900/80 hover:border-slate-700 ' + item.color
+                          className={`p-3 rounded-2xl border flex flex-col justify-between text-left transition-all relative select-none cursor-pointer group overflow-hidden ${
+                            isCheckedIn
+                              ? 'bg-gradient-to-b from-emerald-950/40 via-slate-950/90 to-emerald-950/20 border-emerald-500/60 shadow-[0_0_18px_rgba(16,185,129,0.18)] ring-1 ring-emerald-500/40'
+                              : isToday
+                              ? 'bg-gradient-to-b from-amber-500/25 via-slate-950/95 to-amber-500/15 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.4)] ring-2 ring-amber-400/60 scale-[1.02] hover:scale-[1.04] active:scale-95'
+                              : item.isFuture
+                              ? 'bg-slate-950/70 hover:bg-slate-900/80 border-slate-800/80 hover:border-slate-700'
+                              : 'bg-slate-950/50 border-slate-800/60 opacity-80'
                           }`}
                         >
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span
-                                className={`text-[11px] font-bold ${
-                                  isToday
-                                    ? hasCheckedInToday
-                                      ? 'text-emerald-300 font-black'
-                                      : 'text-amber-300 font-black'
-                                    : 'text-slate-400 group-hover:text-slate-200'
-                                }`}
-                              >
-                                {item.name}
-                              </span>
+                          {/* Watermark Checkmark for completed days */}
+                          {isCheckedIn && (
+                            <div className="absolute -right-2 -bottom-2 opacity-10 pointer-events-none">
+                              <CheckCheck className="w-16 h-16 text-emerald-400" />
+                            </div>
+                          )}
 
-                              {isToday && (
+                          <div>
+                            {/* Card Top: Day Name + Exact Calendar Date & Status Badge */}
+                            <div className="flex items-center justify-between mb-1 gap-1">
+                              <div>
                                 <span
-                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${
-                                    hasCheckedInToday
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                      : 'bg-amber-400 text-slate-950 shadow-xs animate-bounce'
+                                  className={`text-[11px] font-bold block ${
+                                    isCheckedIn
+                                      ? 'text-emerald-300 font-black'
+                                      : isToday
+                                      ? 'text-amber-300 font-black'
+                                      : 'text-slate-300 group-hover:text-white'
                                   }`}
                                 >
-                                  {hasCheckedInToday ? (
-                                    <>
-                                      <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                      ĐÃ NHẬN
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Sparkles className="w-2.5 h-2.5 fill-slate-950" />
-                                      ĐIỂM DANH
-                                    </>
-                                  )}
+                                  {item.name}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400 font-semibold">
+                                  {item.displayDate}
+                                </span>
+                              </div>
+
+                              {/* Status Badge */}
+                              {isCheckedIn ? (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 flex items-center gap-0.5 shadow-[0_0_8px_rgba(16,185,129,0.3)] shrink-0">
+                                  <CheckCheck className="w-2.5 h-2.5 text-emerald-400 stroke-[3]" />
+                                  XONG
+                                </span>
+                              ) : isToday ? (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-xs animate-bounce flex items-center gap-0.5 shrink-0">
+                                  <Sparkles className="w-2.5 h-2.5 fill-slate-950" />
+                                  NHẬN
+                                </span>
+                              ) : item.isFuture ? (
+                                <span className="text-[9px] text-slate-500 font-medium flex items-center gap-0.5 shrink-0">
+                                  <Lock className="w-2.5 h-2.5 text-slate-600" />
+                                  Khóa
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-slate-500 font-medium shrink-0">
+                                  Đã qua
                                 </span>
                               )}
                             </div>
 
-                            <div className="text-xl my-1 flex items-center justify-between">
-                              <span className="transition-transform group-hover:scale-110">{item.icon}</span>
-                              {isToday && !hasCheckedInToday && (
-                                <span className="text-[10px] text-amber-300 font-black px-1.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-400/50">
+                            {/* Middle: Big Reward Icon & Seal */}
+                            <div className="text-xl my-1 flex items-center justify-between relative">
+                              <span className="transition-transform group-hover:scale-110 drop-shadow-sm">
+                                {item.rewardIcon}
+                              </span>
+
+                              {isCheckedIn ? (
+                                <span className="text-[9px] font-black text-emerald-300 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/40">
+                                  ✓ Đã Nhận
+                                </span>
+                              ) : isToday ? (
+                                <span className="text-[9px] text-amber-300 font-black px-1.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-400/50 animate-pulse">
                                   Bấm Nhận
                                 </span>
-                              )}
+                              ) : null}
                             </div>
 
+                            {/* Reward Name */}
                             <div
                               className={`text-xs font-bold mt-1 ${
-                                isToday
-                                  ? hasCheckedInToday
-                                    ? 'text-emerald-200'
-                                    : 'text-amber-200'
+                                isCheckedIn
+                                  ? 'text-emerald-200'
+                                  : isToday
+                                  ? 'text-amber-200'
                                   : 'text-slate-200'
                               }`}
                             >
-                              {item.reward}
+                              {item.rewardName}
                             </div>
                           </div>
 
-                          <div className="text-[10px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center justify-between">
-                            <span>{item.sub}</span>
-                            {isToday && hasCheckedInToday && (
-                              <span className="text-[9px] text-emerald-400 font-bold">✓ Xong</span>
-                            )}
+                          {/* Card Footer: Sub-detail & Status Label */}
+                          <div className="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-1">
+                            <span className="truncate">{item.rewardSub}</span>
+                            {isCheckedIn ? (
+                              <span className="text-[9px] text-emerald-400 font-bold shrink-0">✓ Xong</span>
+                            ) : isToday ? (
+                              <span className="text-[9px] text-amber-300 font-bold shrink-0">Hôm nay</span>
+                            ) : null}
                           </div>
                         </button>
                       );
                     })}
+                  </div>
+
+                  {/* Primary CTA Action Banner */}
+                  {!hasCheckedInToday ? (
+                    <button
+                      type="button"
+                      id="quick-checkin-action-btn"
+                      onClick={handleCheckIn}
+                      className="w-full p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm sm:text-base shadow-[0_0_25px_rgba(245,158,11,0.4)] transition-all transform hover:scale-[1.01] active:scale-[0.99] flex flex-col sm:flex-row items-center justify-between gap-2.5 cursor-pointer group select-none border border-amber-300/80"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-slate-950/20 flex items-center justify-center text-slate-950 shadow-inner group-hover:rotate-12 transition-transform shrink-0">
+                          <Sparkles className="w-5 h-5 fill-slate-950" />
+                        </div>
+                        <div className="text-left">
+                          <div className="text-xs text-slate-900/80 font-bold uppercase tracking-wider">
+                            Chưa Điểm Danh Hôm Nay!
+                          </div>
+                          <div className="text-sm sm:text-base font-black text-slate-950">
+                            {todayItem.name} (Ngày {todayItem.displayDate}): Nhận {todayItem.rewardName} ({todayItem.rewardSub})
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-3.5 py-1.5 rounded-xl bg-slate-950 text-amber-300 text-xs font-black shadow-md flex items-center gap-1.5 shrink-0">
+                        <span>ĐIỂM DANH NGAY</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/50 via-slate-950/80 to-emerald-950/40 border border-emerald-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-[0_0_20px_rgba(16,185,129,0.12)]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 shrink-0">
+                          <CheckCheck className="w-4 h-4 stroke-[2.5]" />
+                        </div>
+                        <div>
+                          <div className="text-xs sm:text-sm font-black text-emerald-200 flex items-center gap-2">
+                            <span>Đã Hoàn Thành Điểm Danh Hôm Nay ({todayItem.name} - Ngày {todayItem.displayDate})!</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              ✓ ĐÃ NHẬN
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Phần thưởng đã được chuyển vào túi đồ. Ngày mai hãy quay lại để tiếp tục nhận đan dược và bồi dưỡng tu vi!
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 hidden sm:block">
+                        <span className="text-[10px] text-slate-400">Chu kỳ tuần mới:</span>
+                        <div className="text-xs font-mono font-bold text-cyan-300">
+                          00:00 Thứ Hai hàng tuần
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Clarification on Monday Reset & Streak Retention */}
+                  <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="flex items-center gap-1.5 text-cyan-300/90 font-medium">
+                      <RotateCcw className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      Giao diện 7 ngày trong tuần sẽ tự động reset tích lũy sang tuần mới vào <strong>00:00 Thứ Hai</strong>.
+                    </span>
+                    <span className="text-amber-300/90 font-medium">
+                      🔥 Chuỗi điểm danh liên tục (Streak) toàn thời gian luôn được bảo lưu và tích lũy không ngừng!
+                    </span>
                   </div>
                 </div>
 

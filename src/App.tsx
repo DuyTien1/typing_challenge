@@ -61,7 +61,7 @@ import {
 import { initGlobalHorizontalWheelScroll } from './utils/horizontalScroll';
 import { NewAchievementBannerToast } from './components/gameover/NewAchievementBannerToast';
 import { resolveBestWpmRecord, isOutplayMode } from './components/WpmRecordBadge';
-import { fetchCurrentUser, logoutUser, updateUserProfile, getStoredAuthToken, loginWithEmail, getStoredCachedUser } from './utils/auth';
+import { fetchCurrentUser, logoutUser, updateUserProfile, getStoredAuthToken, loginWithEmail, getStoredCachedUser, setStoredCachedUser } from './utils/auth';
 import {
   createNewRoom,
   joinExistingRoom,
@@ -3072,7 +3072,8 @@ export default function App() {
           if (!prev) return prev;
           const updated = { ...prev, cultivation: syncRes.updatedState };
           try {
-            localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+            setStoredCachedUser(updated);
+            localStorage.setItem('fasttyping_user', updated.displayName || updated.username);
           } catch {}
           return updated;
         });
@@ -3105,7 +3106,8 @@ export default function App() {
           if (!prev) return prev;
           const updated = { ...prev, cultivation: syncRes.updatedState };
           try {
-            localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+            setStoredCachedUser(updated);
+            localStorage.setItem('fasttyping_user', updated.displayName || updated.username);
           } catch {}
           return updated;
         });
@@ -3136,7 +3138,8 @@ export default function App() {
         if (!prev) return prev;
         const updated = { ...prev, frame: detail.frame };
         try {
-          localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+          setStoredCachedUser(updated);
+          localStorage.setItem('fasttyping_user', updated.displayName || updated.username);
           localStorage.setItem('fasttyping_user_frame', detail.frame);
         } catch {}
         return updated;
@@ -3192,7 +3195,8 @@ export default function App() {
         if (!prev) return prev;
         const updated = { ...prev, isAdmin: isAdm };
         try {
-          localStorage.setItem('fasttyping_user', JSON.stringify(updated));
+          setStoredCachedUser(updated);
+          localStorage.setItem('fasttyping_user', updated.displayName || updated.username);
           localStorage.setItem('fasttyping_is_admin', isAdm ? 'true' : 'false');
         } catch {}
         return updated;
@@ -3336,8 +3340,12 @@ export default function App() {
   const handleChangeUsername = (newName: string) => {
     if (!currentUser) return;
     setUsername(newName);
-    setCurrentUser((prev) => (prev ? { ...prev, displayName: newName } : null));
-    updateUserProfile({ displayName: newName, username: newName });
+    usernameRef.current = newName;
+    const updatedUser: UserAccount = { ...currentUser, displayName: newName };
+    setCurrentUser(updatedUser);
+    currentUserRef.current = updatedUser;
+    setStoredCachedUser(updatedUser);
+    updateUserProfile({ displayName: newName });
     localStorage.setItem('fasttyping_user', newName);
     localStorage.setItem('fasttyping_username', newName);
     sessionStorage.setItem('fasttyping_user_session', newName);

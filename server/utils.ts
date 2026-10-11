@@ -209,6 +209,13 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
     : (current.checkIn?.lastCheckInDate || incoming.checkIn?.lastCheckInDate || '');
   const streak = Math.max(Number(current.checkIn?.streak) || 0, Number(incoming.checkIn?.streak) || 0);
   const totalCheckIns = Math.max(Number(current.checkIn?.totalCheckIns) || 0, Number(incoming.checkIn?.totalCheckIns) || 0);
+  const checkedDates = Array.from(new Set([
+    ...(Array.isArray(current.checkIn?.checkedDates) ? current.checkIn.checkedDates : []),
+    ...(Array.isArray(incoming.checkIn?.checkedDates) ? incoming.checkIn.checkedDates : []),
+  ]));
+  if (checkedToday && !checkedDates.includes(todayStr)) {
+    checkedDates.push(todayStr);
+  }
 
   // 4. Linh Thạch: Lấy theo trạng thái mới nhất (không dùng Math.max để tránh hồi sinh Linh Thạch đã tiêu)
   const linhThach = typeof newestState.linhThach === 'number'
@@ -272,6 +279,8 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
       lastCheckInDate,
       streak,
       totalCheckIns,
+      checkedDates,
+      currentWeekKey: current.checkIn?.currentWeekKey || incoming.checkIn?.currentWeekKey || '',
     },
     dailyQuests,
     dailyQuestsDate: levelLeader.dailyQuestsDate || incoming.dailyQuestsDate || todayStr,
