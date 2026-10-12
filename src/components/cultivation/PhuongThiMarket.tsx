@@ -44,12 +44,14 @@ interface PhuongThiMarketProps {
   state: CultivationState;
   onUpdateState: (newState: CultivationState) => void;
   username?: string;
+  displayName?: string;
 }
 
 export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
   state,
   onUpdateState,
   username,
+  displayName,
 }) => {
   const [subTab, setSubTab] = useState<'browse' | 'my_listings' | 'create_listing'>('browse');
   const [listings, setListings] = useState<MarketListing[]>(DEFAULT_MARKET_LISTINGS);
@@ -471,7 +473,7 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
         const newListing: MarketListing = {
           id: 'lst_local_' + Date.now(),
           sellerId: username || 'dao_huu',
-          sellerUsername: username || 'Đạo Hữu',
+          sellerUsername: displayName || username || 'Đạo Hữu',
           sellerAvatar: '🧘',
           sellerFrame: 'wood',
           itemType: sellItemType,
@@ -705,7 +707,7 @@ export const PhuongThiMarket: React.FC<PhuongThiMarketProps> = ({
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="text-sm">{item.sellerAvatar || '⚡'}</span>
                         <span className="font-bold text-slate-300 truncate max-w-[120px]">
-                          @{item.sellerUsername}
+                          {item.sellerUsername}
                         </span>
                       </div>
                       {isMyOwn ? (

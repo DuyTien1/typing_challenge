@@ -344,6 +344,10 @@ export default function App() {
   // User Profile: Persistent across tabs with fallback
   const [username, setUsername] = useState<string>(() => {
     if (typeof window === 'undefined') return 'Tán Tu 100';
+    const cachedUser = getStoredCachedUser();
+    if (cachedUser && (cachedUser.displayName || cachedUser.username)) {
+      return cachedUser.displayName || cachedUser.username;
+    }
     let localUser = localStorage.getItem('fasttyping_user');
     // Tự động chuyển đổi các tiền tố cũ như TayGõ_xxx, NgườiChơi_xxx, Khách_xxx sang Tán Tu xxx
     if (localUser && (localUser.startsWith('TayGõ') || localUser.startsWith('NgườiChơi') || localUser.startsWith('Khách_'))) {
@@ -983,9 +987,11 @@ export default function App() {
   // Me player factory for room & multiplayer synchronization
   const createMePlayer = useCallback((): Player => {
     const realm = XIANXIA_REALMS[cultivationState.realmIndex] || XIANXIA_REALMS[0];
+    const effectiveDisplayName = currentUser?.displayName || currentUser?.username || username;
     return {
       id: currentUserId,
-      username: username,
+      username: effectiveDisplayName,
+      displayName: effectiveDisplayName,
       icon: avatar,
       frame: userFrame,
       showcaseAchievements: currentUser ? (currentUser.showcaseAchievements || getShowcaseAchievements()) : [],
@@ -1454,6 +1460,7 @@ export default function App() {
         return;
       }
       if (isCultivationOpen) {
+        if (activeDaoDecreePopup) return;
         e.preventDefault();
         soundFx.playKeyClick();
         setIsCultivationOpen(false);
@@ -2845,6 +2852,10 @@ export default function App() {
     const activeName = user.displayName || user.username;
     setUsername(activeName);
     usernameRef.current = activeName;
+    try {
+      localStorage.setItem('fasttyping_user', activeName);
+      sessionStorage.setItem('fasttyping_user_session', activeName);
+    } catch {}
     const userAvatarChoice = user.avatar || '🤖';
     setAvatar(userAvatarChoice);
     const userFrameChoice = user.frame || 'default';
@@ -2976,13 +2987,33 @@ export default function App() {
       } catch {}
     }
 
-    // Tiến độ tu vi tiên hiệp: Hợp nhất bảo toàn tiến độ đã đạt được, không bao giờ bị ghi đè mất Tu Vi hay Điểm Danh
-    const localCult = loadStoredCultivationState();
-    const mergedCult = mergeCultivationStates(localCult, user.cultivation);
-    const syncRes = ensureDailySync(mergedCult);
-    setCultivationState(syncRes.updatedState);
-    saveStoredCultivationState(syncRes.updatedState);
-    user.cultivation = syncRes.updatedState;
+    // Tiến độ tu vi tiên hiệp: Bảo toàn 100% tu vi chính thức từ tài khoản máy chủ
+    try {
+      const localCult = loadStoredCultivationState();
+      let finalCult: CultivationState;
+      if (user.cultivation && (Number(user.cultivation.realmIndex) > 0 || Number(user.cultivation.level) > 1 || Number(user.cultivation.tier) > 1 || Number(user.cultivation.exp) > 0)) {
+        // Tài khoản đã có tiến độ tu vi chính thức trên máy chủ: Dữ liệu đám mây của tài khoản là chân lý tuyệt đối!
+        // Bảo toàn trọn vẹn cảnh giới, tầng, thọ nguyên, đan dược và linh thạch của tài khoản
+        finalCult = mergeCultivationStates(user.cultivation, localCult);
+      } else if (user.cultivation) {
+        finalCult = mergeCultivationStates(user.cultivation, localCult);
+      } else {
+        finalCult = localCult;
+      }
+
+      const syncRes = ensureDailySync(finalCult);
+      setCultivationState(syncRes.updatedState);
+      saveStoredCultivationState(syncRes.updatedState);
+      user.cultivation = syncRes.updatedState;
+    } catch (cultErr) {
+      console.error('[Cultivation Sync Notice]', cultErr);
+      if (user.cultivation) {
+        const syncRes = ensureDailySync(user.cultivation);
+        setCultivationState(syncRes.updatedState);
+        saveStoredCultivationState(syncRes.updatedState);
+        user.cultivation = syncRes.updatedState;
+      }
+    }
 
     // Danh hiệu & thành tựu
     if (Array.isArray(user.showcaseAchievements)) {
@@ -3656,7 +3687,7 @@ export default function App() {
                   CHIẾU THƯ PHONG THẦN • XÔ ĐỔ KỶ LỤC TOÀN SERVER
                 </div>
                 <div className="text-xs sm:text-sm font-bold text-white truncate">
-                  Đạo hữu <span className="text-yellow-300 font-black">@{breakingRecordNotice.displayName || breakingRecordNotice.username}</span> vừa lập kỷ lục mới chế độ <span className="text-amber-400 font-black">{breakingRecordNotice.modeName}</span> với <span className="text-yellow-300 font-mono font-black">{breakingRecordNotice.score > 0 ? `${breakingRecordNotice.score.toLocaleString()} Điểm` : `${breakingRecordNotice.wpm} WPM`}</span>! 🏆
+                  Đạo hữu <span className="text-yellow-300 font-black">{breakingRecordNotice.displayName || breakingRecordNotice.username}</span> vừa lập kỷ lục mới chế độ <span className="text-amber-400 font-black">{breakingRecordNotice.modeName}</span> với <span className="text-yellow-300 font-mono font-black">{breakingRecordNotice.score > 0 ? `${breakingRecordNotice.score.toLocaleString()} Điểm` : `${breakingRecordNotice.wpm} WPM`}</span>! 🏆
                 </div>
               </div>
             </div>
@@ -3948,7 +3979,7 @@ export default function App() {
         onClose={() => setIsFriendsOpen(false)}
         currentUser={currentUser}
         currentUserId={currentUser?.id || currentUserId}
-        currentUsername={currentUser?.username || username}
+        currentUsername={currentUser?.displayName || currentUser?.username || username}
         currentRoomId={currentRoomId}
         currentMode={gameMode}
         initialTab={friendsInitialTab}
@@ -4198,6 +4229,8 @@ export default function App() {
         onStartSectTournament={handleStartSectTournament}
         onOpenWhisper={openWhisperWith}
         onAddFriend={handleAddFriend}
+        onOpenDaoDecree={(dec) => setActiveDaoDecreePopup(dec)}
+        isDaoDecreeOpen={Boolean(activeDaoDecreePopup)}
       />
 
       {/* Dedicated Match History, Replay & Skill Diagnostics Modal */}

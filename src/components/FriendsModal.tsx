@@ -1581,7 +1581,7 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
           </div>
 
           <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono truncate">
-            <span>@{candidate.username}</span>
+            <span className="font-sans text-amber-200/90 font-medium">{candidate.displayName || candidate.username}</span>
             <span>•</span>
             {candidate.hasUid ? (
               <span className="text-amber-400/90 font-semibold truncate" title={candidate.id}>

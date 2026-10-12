@@ -333,7 +333,7 @@ const CompetitorLane = React.memo<CompetitorLaneProps>(
           {isFinished && <span title="Đã về đích" className="text-emerald-400 font-bold">🏁</span>}
           {isDaoLuCouple && <span title="Song Tu Đạo Lữ [Tâm Đầu Ý Hợp]">💖</span>}
           <span className={isAFK ? 'line-through text-amber-500/80' : isSurrendered ? 'line-through text-slate-500' : isFinished ? 'text-emerald-400 font-bold' : isDaoLuCouple ? 'text-pink-300 font-bold' : 'text-slate-300'}>
-            {p.username}
+            {p.displayName || p.username}
           </span>
           {isMe && <span className="text-amber-400 font-bold">*</span>}
         </div>
@@ -425,7 +425,7 @@ const CompetitorLane = React.memo<CompetitorLaneProps>(
       prev.player.isFinished === next.player.isFinished &&
       prev.player.isSurrendered === next.player.isSurrendered &&
       prev.player.isAFK === next.player.isAFK &&
-      prev.player.username === next.player.username &&
+      (prev.player.displayName || prev.player.username) === (next.player.displayName || next.player.username) &&
       prev.player.icon === next.player.icon
     );
   }

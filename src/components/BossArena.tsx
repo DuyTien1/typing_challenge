@@ -683,7 +683,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
         if (shieldBroken) {
           soundFx.playShieldBreak();
           setCombatLogs((l) => [
-            `⚡ [${bot.username}] ĐÃ PHÁ VỠ KHIÊN BOSS! Boss bị Choáng!`,
+            `⚡ [${bot.displayName || bot.username}] ĐÃ PHÁ VỠ KHIÊN BOSS! Boss bị Choáng!`,
             ...l.slice(0, 7),
           ]);
           setTimeout(() => {
@@ -694,7 +694,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
         const dmgId = Date.now() + Math.random();
         setFloatingDamages((f) => [
           ...f,
-          { id: dmgId, text: `-${baseDmg} (${bot.username})`, isCrit },
+          { id: dmgId, text: `-${baseDmg} (${bot.displayName || bot.username})`, isCrit },
         ]);
         setTimeout(() => {
           setFloatingDamages((f) => f.filter((d) => d.id !== dmgId));
@@ -1729,7 +1729,7 @@ export const BossArena: React.FC<BossArenaProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className={`text-xs font-bold truncate ${isMe ? 'text-amber-300' : 'text-slate-200'}`}>
-                        {p.username}
+                        {p.displayName || p.username}
                       </span>
                       {p.isBot && (
                         <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 font-mono shrink-0">

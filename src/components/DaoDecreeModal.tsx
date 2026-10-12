@@ -241,7 +241,7 @@ export const DaoDecreeModal: React.FC<DaoDecreeModalProps> = ({
               className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/30 transition-all cursor-pointer active:scale-95"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Khấu Tạ Thiên Đạo (Lĩnh Chiếu)</span>
+              <span>{isBreakthrough ? 'Khấu Tạ Thiên Đạo • Lĩnh Nhận Đạo Quả' : 'Khấu Tạ Thiên Đạo (Lĩnh Chiếu)'}</span>
               <kbd className="hidden sm:inline-block ml-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-950/20 text-slate-900 border border-amber-900/20">Esc</kbd>
             </button>
 

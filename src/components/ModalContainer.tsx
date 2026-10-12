@@ -5,6 +5,7 @@ import {
   BestWpmRecord,
   GameConfig,
   GameMode,
+  HeavenlyDaoDecree,
 } from '../types';
 import { CultivationState, saveStoredCultivationState } from '../utils/cultivation';
 import { XIANXIA_ACHIEVEMENTS } from '../utils/achievements';
@@ -95,6 +96,8 @@ export interface ModalContainerProps {
   onStartSectTournament?: (sectId: string, sectName: string) => void;
   onOpenWhisper?: (username: string, userId?: string) => void;
   onAddFriend?: (userId: string, username?: string) => void;
+  onOpenDaoDecree?: (decree: HeavenlyDaoDecree) => void;
+  isDaoDecreeOpen?: boolean;
 }
 
 export const ModalContainer: React.FC<ModalContainerProps> = ({
@@ -167,6 +170,8 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
   onStartSectTournament,
   onOpenWhisper,
   onAddFriend,
+  onOpenDaoDecree,
+  isDaoDecreeOpen,
 }) => {
   // Toast thông báo dành riêng cho Admin Dashboard khi thực thi ban thưởng
   const [adminRewardToast, setAdminRewardToast] = useState<{
@@ -231,6 +236,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         soundFx.playKeyClick();
         setIsAppearanceOpen(false);
       } else if (isCultivationOpen) {
+        if (isDaoDecreeOpen) return;
         e.preventDefault();
         soundFx.playKeyClick();
         setIsCultivationOpen(false);
@@ -399,8 +405,8 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         onClose={() => setIsCultivationOpen(false)}
         initialTab={cultivationInitialTab}
         state={cultivationState}
-        username={currentUser?.username || username}
-        displayName={currentUser?.displayName}
+        username={currentUser?.displayName || currentUser?.username || username}
+        displayName={currentUser?.displayName || currentUser?.username || username}
         userAvatar={avatar}
         userFrame={userFrame}
         onSelectFrame={onChangeFrame}
@@ -412,6 +418,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         }}
         onStartSectBoss={onStartSectBoss}
         onStartSectTournament={onStartSectTournament}
+        onOpenDaoDecree={onOpenDaoDecree}
         onUpdateState={(next) => {
           const stampedState = {
             ...next,

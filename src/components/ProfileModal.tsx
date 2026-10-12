@@ -760,8 +760,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     {/* Metadata line: System username + UID + Frame */}
                     <div className="flex items-center gap-2 text-xs flex-wrap text-slate-400">
                       {currentUser?.username && (
-                        <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/70 text-amber-300">
-                          @{currentUser.username}
+                        <span className="flex items-center gap-1 font-mono text-[11px] bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/70 text-slate-300" title="Tên đăng nhập chỉ dùng để đăng nhập vào tài khoản">
+                          <span className="text-slate-500 font-sans text-[10px]">Tên đăng nhập:</span> @{currentUser.username}
                         </span>
                       )}
 

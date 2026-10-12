@@ -9,6 +9,7 @@ interface BanPenaltyModalProps {
   bannedUntil: number;
   reason: string;
   username: string;
+  displayName?: string;
 }
 
 export const BanPenaltyModal: React.FC<BanPenaltyModalProps> = ({
@@ -17,6 +18,7 @@ export const BanPenaltyModal: React.FC<BanPenaltyModalProps> = ({
   bannedUntil,
   reason,
   username,
+  displayName,
 }) => {
   const [remainingMs, setRemainingMs] = useState<number>(() => Math.max(0, bannedUntil - Date.now()));
 
@@ -118,7 +120,7 @@ export const BanPenaltyModal: React.FC<BanPenaltyModalProps> = ({
           <div className="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/40 space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-slate-300 font-bold">Đạo hữu thụ án:</span>
-              <span className="font-mono font-black text-amber-300 text-sm">@{username}</span>
+              <span className="font-bold text-amber-300 text-sm">{displayName || username}</span>
             </div>
             <div className="flex items-start gap-2 pt-1 border-t border-red-900/40">
               <AlertOctagon className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />

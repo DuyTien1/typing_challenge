@@ -351,7 +351,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
         finishersRef.current.push(bot.id);
         const rank = finishersRef.current.length;
         const pts = rank === 1 ? 3 : rank === 2 ? 2 : rank === 3 ? 1 : 0;
-        setRoundFinishers((prev) => [...prev, { id: bot.id, rank, pts, name: bot.username }]);
+        setRoundFinishers((prev) => [...prev, { id: bot.id, rank, pts, name: bot.displayName || bot.username }]);
         if (pts > 0) {
           onUpdateScore(pts, bot.id);
         }
@@ -389,7 +389,8 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
       const pts = place === 1 ? 3 : place === 2 ? 2 : place === 3 ? 1 : 0;
       setRoundPlacement(place);
       const myPlayer = players.find((p) => p.id === currentPlayerId);
-      setRoundFinishers((prev) => [...prev, { id: currentPlayerId, rank: place, pts, name: myPlayer?.username || 'Bạn' }]);
+      const myDisplayName = myPlayer?.displayName || myPlayer?.username || 'Bạn';
+      setRoundFinishers((prev) => [...prev, { id: currentPlayerId, rank: place, pts, name: myDisplayName }]);
       if (pts > 0) {
         onUpdateScore(pts, currentPlayerId);
       }
@@ -762,7 +763,7 @@ export const NgauHungArena: React.FC<NgauHungArenaProps> = ({
                 <div className="flex items-center gap-2 truncate">
                   <span>{p.icon}</span>
                   <span className="text-xs font-semibold text-white truncate flex items-center gap-1">
-                    {p.username}
+                    {p.displayName || p.username}
                     {p.isBot && <span className="text-[9px] px-1 rounded bg-slate-800 text-slate-400 font-mono">BOT</span>}
                   </span>
                 </div>

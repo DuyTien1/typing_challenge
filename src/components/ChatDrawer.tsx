@@ -531,7 +531,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-pink-400 font-bold">Mật đàm với:</span>
             <span className="font-black text-white px-2 py-0.5 rounded bg-pink-500/20 border border-pink-500/40 truncate">
-              @{whisperTargetUser ? whisperTargetUser.username : 'Chưa chọn đạo hữu'}
+              {whisperTargetUser ? (whisperTargetUser.displayName || whisperTargetUser.username) : 'Chưa chọn đạo hữu'}
             </span>
           </div>
           {onOpenFriends && (
@@ -676,7 +676,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold mb-0.5">
-                        <span>{msg.username}</span>
+                        <span>{msg.displayName || msg.username}</span>
                         <span>{new Date(msg.timestamp).toLocaleTimeString('vi-VN')}</span>
                       </div>
                       <p className="text-slate-200 text-[11px]">{msg.message}</p>
@@ -691,6 +691,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                         soundFx.playKeyClick();
                         setInspectedChatUser({
                           username: msg.username,
+                          displayName: msg.displayName || msg.username,
                           userId: msg.userId,
                           avatar: msg.avatar,
                           frame: msg.frame,
@@ -699,7 +700,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                           sectTag: msg.senderSectTag,
                         });
                       }}
-                      title={`Nhấp để xem hồ sơ xem trước của ${msg.username}`}
+                      title={`Nhấp để xem hồ sơ xem trước của ${msg.displayName || msg.username}`}
                     >
                       <AvatarWithFrame
                         icon={msg.avatar || '⚡'}
@@ -717,6 +718,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                             soundFx.playKeyClick();
                             setInspectedChatUser({
                               username: msg.username,
+                              displayName: msg.displayName || msg.username,
                               userId: msg.userId,
                               avatar: msg.avatar,
                               frame: msg.frame,
@@ -728,10 +730,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                           className={`text-xs font-black truncate flex items-center gap-1 cursor-pointer hover:underline hover:text-amber-300 transition-colors ${
                             isMsgAdmin ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-white'
                           }`}
-                          title={`Nhấp để xem hồ sơ xem trước của ${msg.username}`}
+                          title={`Nhấp để xem hồ sơ xem trước của ${msg.displayName || msg.username}`}
                         >
                           {isMsgAdmin && <Crown className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />}
-                          {msg.username}
+                          {msg.displayName || msg.username}
                         </span>
 
                         {/* Cảnh giới & Tông môn tags */}
@@ -1138,7 +1140,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         <div className="px-3 py-1.5 bg-slate-950/90 border-t border-slate-800/80 text-[11px] text-pink-400/90 italic flex items-center justify-between animate-fadeIn">
           <div className="flex items-center gap-1.5">
             <span>✨</span>
-            <span>Mật đàm an toàn cùng @{whisperTargetUser.username}</span>
+            <span>Mật đàm an toàn cùng {whisperTargetUser.displayName || whisperTargetUser.username}</span>
           </div>
           {inputText.trim().length > 0 ? (
             <span className="flex items-center gap-1 text-[10px] not-italic font-medium text-pink-300">

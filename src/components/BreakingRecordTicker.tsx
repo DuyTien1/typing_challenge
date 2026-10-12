@@ -77,7 +77,7 @@ export const BreakingRecordTicker: React.FC<BreakingRecordTickerProps> = ({ even
           <div className="text-xs sm:text-sm font-extrabold text-white mt-1 leading-snug">
             Đạo hữu{' '}
             <span className="text-amber-300 font-black underline decoration-amber-400 decoration-2">
-              @{event.displayName || event.username}
+              {event.displayName || event.username}
             </span>{' '}
             vừa xô đổ kỷ lục hôm nay với{' '}
             <span className="text-yellow-300 font-mono font-black text-sm sm:text-base animate-pulse">

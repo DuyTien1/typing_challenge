@@ -369,7 +369,7 @@ export const BossResultView: React.FC<BossResultViewProps> = ({
                 <div
                   key={p.id}
                   style={{ width: `${share}%` }}
-                  title={`${p.username}: ${p.score || 0} DMG (${Math.round(share)}%)`}
+                  title={`${p.displayName || p.username}: ${p.score || 0} DMG (${Math.round(share)}%)`}
                   className={`h-full rounded-full transition-all ${
                     isMe
                       ? 'bg-gradient-to-r from-rose-500 to-amber-400'
@@ -397,7 +397,7 @@ export const BossResultView: React.FC<BossResultViewProps> = ({
                   }`}
                 >
                   <span className="truncate max-w-[80px]">
-                    {p.username} {isMe && '(Bạn)'}
+                    {p.displayName || p.username} {isMe && '(Bạn)'}
                   </span>
                   <span className="font-mono text-white">
                     {p.score || 0} ({share}%)
@@ -439,7 +439,7 @@ export const BossResultView: React.FC<BossResultViewProps> = ({
                     <span className="font-bold text-slate-400 w-5">#{idx + 1}</span>
                     <span className="text-lg">{p.icon}</span>
                     <span className="truncate max-w-[140px] text-white">
-                      {p.username} {isMe && '(Bạn)'}
+                      {p.displayName || p.username} {isMe && '(Bạn)'}
                     </span>
                     {p.isAFK ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">

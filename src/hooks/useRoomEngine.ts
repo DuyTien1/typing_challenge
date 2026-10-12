@@ -163,12 +163,14 @@ export function useRoomEngine({
 
   // Keep player's own profile updated in the players list
   useEffect(() => {
+    const effectiveDisplayName = currentUser?.displayName || currentUser?.username || username;
     setPlayers((prev) =>
       prev.map((p) =>
         p.id === currentUserId
           ? {
               ...p,
-              username,
+              username: effectiveDisplayName,
+              displayName: effectiveDisplayName,
               icon: avatar,
               frame: userFrame,
               bestWpm,
@@ -178,7 +180,7 @@ export function useRoomEngine({
           : p
       )
     );
-  }, [username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUserId]);
+  }, [username, currentUser?.displayName, currentUser?.username, avatar, userFrame, bestWpm, bestWpmRecord, totalGames, currentUserId]);
 
   // Presence metadata synchronization
   const metaRef = useRef({
@@ -212,9 +214,11 @@ export function useRoomEngine({
       : 'playing') as 'lobby' | 'waiting_room' | 'playing' | 'outplay' | 'gameover';
 
     const currentCult = loadStoredCultivationState();
+    const effectiveDisplayName = currentUser?.displayName || currentUser?.username || username;
     metaRef.current = {
       userId: currentUser?.id || currentUserId,
-      username,
+      username: effectiveDisplayName,
+      displayName: effectiveDisplayName,
       avatar,
       frame: userFrame,
       bestWpm,

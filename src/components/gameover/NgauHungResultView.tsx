@@ -415,7 +415,7 @@ export const NgauHungResultView: React.FC<NgauHungResultViewProps> = ({
                     <span className="font-bold text-slate-400 w-5">#{idx + 1}</span>
                     <span className="text-lg">{p.icon}</span>
                     <span className="truncate max-w-[140px] text-white">
-                      {p.username} {isMe && '(Bạn)'}
+                      {p.displayName || p.username} {isMe && '(Bạn)'}
                     </span>
                     {p.isAFK ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">

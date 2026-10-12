@@ -22,6 +22,7 @@ import {
 import { soundFx } from '../utils/audio';
 import { AvatarWithFrame, setStoredFrame } from '../utils/frames';
 import { announceBreakthrough } from '../utils/heavenlyDaoBot';
+import { HeavenlyDaoDecree } from '../types';
 import { TribulationModal } from './TribulationModal';
 import { MeditationDais } from './cultivation/MeditationDais';
 import { AlchemySection } from './cultivation/AlchemySection';
@@ -72,6 +73,7 @@ interface CultivationModalProps {
   onStartSectBoss?: (sectId: string, sectName: string) => void;
   onStartSectTournament?: (sectId: string, sectName: string, options?: { isPractice?: boolean; preflightToken?: string }) => void;
   initialTab?: 'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history';
+  onOpenDaoDecree?: (decree: HeavenlyDaoDecree) => void;
 }
 
 export const CultivationModal: React.FC<CultivationModalProps> = ({
@@ -89,6 +91,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
   onStartSectBoss,
   onStartSectTournament,
   initialTab,
+  onOpenDaoDecree,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'alchemy' | 'artifacts' | 'sects' | 'van_bao_cac' | 'phuong_thi' | 'checkin' | 'quests' | 'realms' | 'history'>('overview');
 
@@ -138,11 +141,22 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     }
   }, [activeTab]);
 
+  // Luôn dọn dẹp và đóng modal độ kiếp khi Linh Đài đóng lại
+  useEffect(() => {
+    if (!isOpen) {
+      setIsTribulationModalOpen(false);
+    }
+  }, [isOpen]);
+
   // Esc key listener to quickly close modal
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Nếu modal độ kiếp đang mở thì để modal độ kiếp tự xử lý đóng, không đóng Linh Đài
+        if (isTribulationModalOpen) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         soundFx.playKeyClick();
@@ -151,7 +165,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, onClose]);
+  }, [isOpen, isTribulationModalOpen, onClose]);
 
   // Âm hưởng tiên đạo: Tiếng chuông cổ ngân vang khi mở Động Phủ
   useEffect(() => {
@@ -253,7 +267,11 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         getSubStage(result.updatedState.tier),
         result.updatedState.tier,
         true
-      ).catch(() => {});
+      )
+        .then((dec) => {
+          onOpenDaoDecree?.(dec);
+        })
+        .catch(() => {});
       if (result.unlockedFrameId) {
         onSelectFrame?.(result.unlockedFrameId);
         setStoredFrame(result.unlockedFrameId);
@@ -484,7 +502,8 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
               {/* Bàn Tọa Thiền Trung Tâm (Immersive Central Meditation Dais) */}
               <MeditationDais
                 state={state}
-                username={username}
+                username={displayName || username || 'Đạo Hữu'}
+                displayName={displayName || username || 'Đạo Hữu'}
                 userAvatar={userAvatar}
                 userFrame={userFrame}
                 onOpenTribulation={() => setIsTribulationModalOpen(true)}
@@ -907,7 +926,8 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
               onUpdateState={onUpdateState}
               userFrame={userFrame}
               onSelectFrame={onSelectFrame}
-              username={username}
+              username={displayName || username || 'Đạo Hữu'}
+              displayName={displayName || username || 'Đạo Hữu'}
               isLoggedIn={isLoggedIn}
               onOpenAuthModal={onOpenAuthModal}
             />
@@ -919,6 +939,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
               state={state}
               onUpdateState={onUpdateState}
               username={username}
+              displayName={displayName || username || 'Đạo Hữu'}
             />
           )}
 
@@ -937,7 +958,8 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
             <SectsSection
               state={state}
               onUpdateState={onUpdateState}
-              username={username}
+              username={displayName || username || 'Đạo Hữu'}
+              displayName={displayName || username || 'Đạo Hữu'}
               userAvatar={userAvatar}
               userFrame={userFrame}
               onStartSectBoss={onStartSectBoss}
@@ -1638,6 +1660,7 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         usePhaCanh={usePhaCanh}
         useHoTam={useHoTam}
         onBreakthroughComplete={(result) => {
+          setIsTribulationModalOpen(false);
           onUpdateState(result.updatedState);
           setBreakthroughNotice({ success: result.success, message: result.message });
           if (result.success) {
@@ -1651,9 +1674,10 @@ export const CultivationModal: React.FC<CultivationModalProps> = ({
         }}
         userAvatar={userAvatar}
         userFrame={userFrame}
-        username={username || 'Đạo Hữu'}
-        displayName={displayName}
+        username={displayName || username || 'Đạo Hữu'}
+        displayName={displayName || username || 'Đạo Hữu'}
         onSelectFrame={onSelectFrame}
+        onOpenDaoDecree={onOpenDaoDecree}
       />
     </div>
   );

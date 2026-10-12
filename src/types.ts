@@ -34,6 +34,7 @@ export interface PlayerCultivationInfo {
 export interface Player {
   id: string;
   username: string;
+  displayName?: string;
   icon: string;
   frame?: string;
   showcaseAchievements?: string[];
@@ -337,6 +338,7 @@ export interface ChatCardData {
 export interface ChatMessage {
   id: string;
   username: string;
+  displayName?: string;
   avatar?: string;
   frame?: string;
   message: string;
@@ -529,6 +531,7 @@ export interface OnlineUserDetail {
   userId: string;
   tabId: string;
   username: string;
+  displayName?: string;
   avatar: string;
   frame?: string;
   bestWpm?: number;

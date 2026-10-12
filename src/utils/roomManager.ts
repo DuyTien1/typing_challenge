@@ -34,6 +34,7 @@ import { broadcastAdminEvent } from './adminEventSync';
 export interface PresenceUserMeta {
   userId?: string;
   username?: string;
+  displayName?: string;
   avatar?: string;
   frame?: string;
   deviceId?: string;
@@ -1289,6 +1290,7 @@ export async function fetchOnlineCount(tabId?: string, userId?: string, meta?: P
     if (userId) params.append('userId', userId);
     if (meta?.deviceId) params.append('deviceId', meta.deviceId);
     if (meta?.username) params.append('username', meta.username);
+    if (meta?.displayName) params.append('displayName', meta.displayName);
     if (meta?.avatar) params.append('avatar', meta.avatar);
     if (meta?.frame) params.append('frame', meta.frame);
     if (typeof meta?.bestWpm === 'number') params.append('bestWpm', meta.bestWpm.toString());

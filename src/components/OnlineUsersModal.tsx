@@ -163,7 +163,8 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
     return users.filter((user) => {
       // Search text match
       if (q) {
-        const matchName = user.username ? user.username.toLowerCase().includes(q) : false;
+        const displayNameOrUser = user.displayName || user.username || '';
+        const matchName = displayNameOrUser.toLowerCase().includes(q);
         const matchId = user.userId ? user.userId.toLowerCase().includes(q) : false;
         const matchRoom = user.currentRoomId ? user.currentRoomId.toLowerCase().includes(q) : false;
         const matchIp = user.ip ? user.ip.toLowerCase().includes(q) : false;
@@ -847,7 +848,7 @@ export const OnlineUsersModal: React.FC<OnlineUsersModalProps> = ({
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-bold text-white text-sm truncate max-w-[130px] sm:max-w-[160px] group-hover:text-emerald-300 transition-colors">
-                                  {user.username}
+                                  {user.displayName || user.username}
                                 </span>
                                 {user.isAdmin && (
                                   <span className="p-0.5 rounded bg-amber-500/20 text-amber-300" title="Quản trị viên">

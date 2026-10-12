@@ -158,7 +158,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   const handle1ClickInvite = async (friend: FriendRecord) => {
     soundFx.playWhisperPing();
     setInvitedFriendIds((prev) => ({ ...prev, [friend.userId]: true }));
-    setInviteToast(`Đã gửi thư mời @${friend.username} vào phòng!`);
+    setInviteToast(`Đã gửi thư mời ${friend.displayName || friend.username} vào phòng!`);
     setTimeout(() => setInviteToast(null), 3500);
 
     try {
@@ -589,7 +589,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-pink-200/80 mt-0.5">
-                Đạo Lữ <strong className="text-pink-300">@{daoLuPartner?.username}</strong> cùng chung chiến tuyến! Thưởng <strong>+15% Tu Vi</strong> sau trận & <strong>+10% Tốc độ hồi phục Linh Lực</strong>.
+                Đạo Lữ <strong className="text-pink-300">{daoLuPartner?.displayName || daoLuPartner?.username}</strong> cùng chung chiến tuyến! Thưởng <strong>+15% Tu Vi</strong> sau trận & <strong>+10% Tốc độ hồi phục Linh Lực</strong>.
               </p>
             </div>
           </div>
@@ -829,10 +829,10 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                         }}
                         title={
                           isPlayerInMatch
-                            ? `${p.username} đang trong ván đấu`
+                            ? `${p.displayName || p.username} đang trong ván đấu`
                             : userIsHost && !isMe
-                            ? `Tùy chọn quản lý cho ${p.username}`
-                            : `Nhấp để xem hồ sơ của ${p.username}`
+                            ? `Tùy chọn quản lý cho ${p.displayName || p.username}`
+                            : `Nhấp để xem hồ sơ của ${p.displayName || p.username}`
                         }
                       >
                         {/* Avatar with Dynamic Title Frame & Hover Popover */}
@@ -872,9 +872,9 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                               handlePlayerAvatarClick(p);
                             }}
                             className="text-[19px] font-black text-white hover:text-amber-400 cursor-pointer transition-colors truncate max-w-[150px] xs:max-w-[190px] sm:max-w-[250px] md:max-w-[300px] leading-tight tracking-tight"
-                            title={userIsHost && !isMe ? `Tùy chọn cho ${p.username}` : `Xem hồ sơ ${p.username}`}
+                            title={userIsHost && !isMe ? `Tùy chọn cho ${p.displayName || p.username}` : `Xem hồ sơ ${p.displayName || p.username}`}
                           >
-                            {p.username}
+                            {p.displayName || p.username}
                           </span>
                         </div>
 
@@ -968,7 +968,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                           handlePlayerAvatarClick(p);
                         }}
                         className="opacity-0 group-hover:opacity-100 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-300 border border-slate-700 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
-                        title={userIsHost && !isMe ? `Tùy chọn quản lý cho ${p.username}` : `Xem hồ sơ của ${p.username}`}
+                        title={userIsHost && !isMe ? `Tùy chọn quản lý cho ${p.displayName || p.username}` : `Xem hồ sơ của ${p.displayName || p.username}`}
                       >
                         <User className="w-3 h-3 text-cyan-400" />
                         <span className="hidden sm:inline">Hồ sơ</span>

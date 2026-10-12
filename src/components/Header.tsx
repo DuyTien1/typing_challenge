@@ -46,6 +46,7 @@ const getInitialHeaderUIStyle = (): UIStyleId => {
 
 interface HeaderProps {
   username: string;
+  displayName?: string;
   avatar: string;
   onlineCount: number;
   isMuted: boolean;
@@ -82,6 +83,7 @@ interface HeaderProps {
 
 const HeaderComponent: React.FC<HeaderProps> = ({
   username,
+  displayName,
   avatar,
   onlineCount,
   isMuted,
@@ -449,7 +451,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
             >
               <Settings className={`w-4 h-4 text-amber-400 transition-transform duration-300 ${isMoreMenuOpen ? 'rotate-90 text-slate-950' : 'group-hover:rotate-45'}`} />
               <span className="text-xs font-bold tracking-tight max-w-[80px] sm:max-w-[110px] truncate">
-                {username || (isLoggedIn ? 'Thành viên' : 'Khách')}
+                {displayName || username || (isLoggedIn ? 'Thành viên' : 'Khách')}
               </span>
               <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMoreMenuOpen ? 'rotate-180 text-slate-950' : 'text-amber-400'}`} />
             </button>
@@ -473,7 +475,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
                     </span>
                     <div className="min-w-0">
                       <div className="font-bold text-white text-xs truncate flex items-center gap-1.5">
-                        <span className="truncate">{username || (isLoggedIn ? 'Thành viên' : 'Tán Tu')}</span>
+                        <span className="truncate">{displayName || username || (isLoggedIn ? 'Thành viên' : 'Tán Tu')}</span>
                         {isAdmin && (
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono font-bold shrink-0">
                             ADMIN

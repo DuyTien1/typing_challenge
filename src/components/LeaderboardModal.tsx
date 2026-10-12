@@ -1321,7 +1321,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                                 )}
                               </div>
                               <span className="text-[10px] text-slate-400 font-mono block truncate">
-                                @{entry.username} • {entry.keyboardSwitch || 'Cherry MX Blue'}
+                                {entry.sectName ? `[${entry.sectTag || 'Tông'}] ${entry.sectName} • ` : ''}{entry.keyboardSwitch || 'Bàn Phím Cơ'}
                               </span>
                             </div>
                           </div>

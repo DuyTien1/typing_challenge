@@ -1067,17 +1067,14 @@ export function loadStoredCultivationState(): CultivationState {
     }
     const today = getTodayDateString();
 
-    // Kiểm tra phiên bản reset tu vi toàn cục (v2: reset toàn bộ tu vi người chơi về 0)
-    const isResetRequired = (parsed.cultivationResetVersion ?? 1) < 2;
-
-    const realmIndex = isResetRequired ? 0 : Math.max(0, Math.min(11, parsed.realmIndex ?? 0));
+    const realmIndex = Math.max(0, Math.min(11, parsed.realmIndex ?? 0));
     const currentRealm = XIANXIA_REALMS[realmIndex];
-    const level = isResetRequired ? 1 : Math.max(1, Math.min(1000, parsed.level ?? 1));
-    const tier = isResetRequired ? 1 : Math.max(1, Math.min(10, parsed.tier ?? 1));
+    const level = Math.max(1, Math.min(1000, parsed.level ?? 1));
+    const tier = Math.max(1, Math.min(10, parsed.tier ?? 1));
     const maxExp = getRequiredExpForTier(level, realmIndex);
-    const rawExp = isResetRequired ? 0 : Math.max(0, parsed.exp ?? 0);
+    const rawExp = Math.max(0, parsed.exp ?? 0);
     // Nếu ở Tầng 10 và tu vi đã đạt hoặc xấp xỉ mức tối đa (từ 98% trở lên hoặc đã đầy từ phiên trước), giữ vững 100% để sẵn sàng độ kiếp
-    const exp = (!isResetRequired && tier === 10 && (rawExp >= maxExp * 0.98 || (parsed.maxExp && rawExp >= parsed.maxExp)))
+    const exp = (tier === 10 && (rawExp >= maxExp * 0.98 || (parsed.maxExp && rawExp >= parsed.maxExp)))
       ? maxExp
       : rawExp;
 
@@ -1183,14 +1180,8 @@ export function loadStoredCultivationState(): CultivationState {
         : undefined,
       linhThach: parsed.linhThach ?? 150,
       cultivationResetVersion: 2,
-      historyLog: isResetRequired
-        ? ['[Thiên Đạo Luân Hồi] Toàn bộ tu vi đã được tái lập khởi nguyên về Luyện Khí Kỳ sơ kỳ.', ...(Array.isArray(parsed.historyLog) ? parsed.historyLog.slice(-15) : [])]
-        : (Array.isArray(parsed.historyLog) ? parsed.historyLog.slice(-20) : []),
+      historyLog: Array.isArray(parsed.historyLog) ? parsed.historyLog.slice(-20) : [],
     };
-
-    if (isResetRequired) {
-      saveStoredCultivationState(state);
-    }
 
     return ensureDailySync(state).updatedState;
   } catch {
@@ -1210,41 +1201,8 @@ export function mergeCultivationStates(
   if (!current) return { ...incoming!, updatedAt: incoming!.updatedAt || Date.now(), cultivationResetVersion: 2 };
   if (!incoming) return { ...current, updatedAt: current.updatedAt || Date.now(), cultivationResetVersion: 2 };
 
-  // 0. Xử lý phiên bản reset tu vi toàn cục (v2: reset toàn bộ người chơi về 0)
-  const currentResetVer = Number(current.cultivationResetVersion) || 1;
-  const incomingResetVer = Number(incoming.cultivationResetVersion) || 1;
-  let activeCurrent = current;
-  let activeIncoming = incoming;
-
-  if (currentResetVer >= 2 && incomingResetVer < 2) {
-    // current đã reset về v2, incoming vẫn mang tu vi cũ v1 -> loại bỏ tu vi cũ của incoming
-    activeIncoming = {
-      ...incoming,
-      level: 1,
-      realmIndex: 0,
-      tier: 1,
-      exp: 0,
-      maxExp: getRequiredExpForTier(1, 0),
-      realmName: 'Luyện Khí Kỳ',
-      subStage: 'Sơ Kỳ',
-      titleName: 'Luyện Khí Tu Sĩ',
-      cultivationResetVersion: 2,
-    };
-  } else if (incomingResetVer >= 2 && currentResetVer < 2) {
-    // incoming đã reset về v2, current vẫn mang tu vi cũ v1 -> loại bỏ tu vi cũ của current
-    activeCurrent = {
-      ...current,
-      level: 1,
-      realmIndex: 0,
-      tier: 1,
-      exp: 0,
-      maxExp: getRequiredExpForTier(1, 0),
-      realmName: 'Luyện Khí Kỳ',
-      subStage: 'Sơ Kỳ',
-      titleName: 'Luyện Khí Tu Sĩ',
-      cultivationResetVersion: 2,
-    };
-  }
+  const activeCurrent = current;
+  const activeIncoming = incoming;
 
   // 1. So sánh tổng điểm tiến độ để TUYỆT ĐỐI không bao giờ bị thụt lùi Tu Vi / Cảnh giới
   const scoreCurrent = (activeCurrent.realmIndex ?? 0) * 100_000_000 + (activeCurrent.tier ?? 1) * 1_000_000 + (activeCurrent.exp ?? 0);
@@ -1253,13 +1211,25 @@ export function mergeCultivationStates(
   const levelLeader = scoreCurrent >= scoreIncoming ? activeCurrent : activeIncoming;
   const levelFollower = scoreCurrent >= scoreIncoming ? activeIncoming : activeCurrent;
 
-  // 2. Xác định trạng thái mới nhất theo timestamp updatedAt (để Linh Thạch, kho đồ phản ánh chính xác các giao dịch mua/bán)
+  // 2. Xác định trạng thái mới nhất:
+  // QUAN TRỌNG: Nếu một bên có cảnh giới/cấp độ vượt trội (ví dụ Hóa Thần vs Luyện Khí trên máy mới),
+  // bên có tiến độ cao hơn (levelLeader) chắc chắn là tài khoản tu tiên chính thức,
+  // TUYỆT ĐỐI không để tài khoản cấp 1 mới mở trên máy lạ đè mất Linh Thạch, đan dược hay pháp bảo của đại năng!
+  let newestState = levelLeader;
+  let oldestState = levelFollower;
+
   const currentTs = Number(activeCurrent.updatedAt) || 0;
   const incomingTs = Number(activeIncoming.updatedAt) || 0;
-  // Mặc định incoming là mới hơn nếu không có timestamp hoặc timestamp bằng nhau
-  const isIncomingNewer = incomingTs >= currentTs;
-  const newestState = isIncomingNewer ? activeIncoming : activeCurrent;
-  const oldestState = isIncomingNewer ? activeCurrent : activeIncoming;
+
+  // Chỉ xét updatedAt nếu cả 2 bên ở cùng cảnh giới và cấp độ tương đương (cùng một nhân vật đang chơi tiếp)
+  if (
+    levelLeader.realmIndex === levelFollower.realmIndex &&
+    Math.abs((levelLeader.level || 1) - (levelFollower.level || 1)) <= 1
+  ) {
+    const isIncomingNewer = incomingTs >= currentTs;
+    newestState = isIncomingNewer ? activeIncoming : activeCurrent;
+    oldestState = isIncomingNewer ? activeCurrent : activeIncoming;
+  }
 
   // 3. Điểm danh: TUYỆT ĐỐI BẢO LƯU điểm danh hôm nay và chuỗi điểm danh
   const todayStr = getTodayDateString();
@@ -2849,7 +2819,8 @@ export function joinSect(
   sectId: string,
   username: string = 'Đạo Hữu',
   userAvatar: string = '⚡',
-  userFrame: string = 'default'
+  userFrame: string = 'default',
+  displayName?: string
 ): CultivationState {
   const sects = getStoredSects();
   const targetSect = sects.find((s) => s.id === sectId);
@@ -2858,6 +2829,8 @@ export function joinSect(
   const oldSectId = state.sect?.sectId;
   const realmMeta = XIANXIA_REALMS[state.realmIndex] || XIANXIA_REALMS[0];
   const userTuVi = (state.realmIndex * 1_000_000) + (state.level * 10_000) + (state.tier * 1_000) + (state.exp || 0);
+
+  const effectiveDisplayName = displayName || username;
 
   const updatedSects = sects.map((s) => {
     let currentMembers = s.members ? [...s.members] : [];
@@ -2881,7 +2854,7 @@ export function joinSect(
         currentMembers.push({
           userId: `usr_${username}_${Date.now()}`,
           username,
-          displayName: username,
+          displayName: effectiveDisplayName,
           avatar: userAvatar,
           frame: userFrame,
           role: 'ngoai_mon', // Tân đệ tử luôn khởi đầu từ Ngoại Môn
@@ -2895,6 +2868,9 @@ export function joinSect(
           tuViScore: userTuVi,
           joinedAt: Date.now(),
         });
+      } else {
+        // Cập nhật tên hiển thị nếu đã là thành viên
+        existingMember.displayName = effectiveDisplayName;
       }
       const newTuVi = currentMembers.reduce((acc, m) => acc + (m.tuViScore || 0), 0);
       return {

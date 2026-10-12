@@ -463,25 +463,6 @@ function isTestAccountRecord(id: string, username?: string): boolean {
   );
 }
 
-function resetServerUserCultivation(cult: any): any {
-  return {
-    ...(cult || {}),
-    level: 1,
-    realmIndex: 0,
-    tier: 1,
-    realmName: 'Luyện Khí Kỳ',
-    subStage: 'Sơ Kỳ',
-    titleName: 'Luyện Khí Tu Sĩ',
-    exp: 0,
-    maxExp: 207,
-    thoNguyen: 240,
-    maxThoNguyen: 240,
-    dailyExpEarned: 0,
-    cultivationResetVersion: 2,
-    updatedAt: Date.now(),
-  };
-}
-
 function loadUsersFromFile(): Map<string, ServerUserRecord> {
   const map = new Map<string, ServerUserRecord>();
   let needsSave = false;
@@ -505,10 +486,6 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
               delete u.cultivation.sect;
               needsSave = true;
             }
-            if ((Number(u.cultivation?.cultivationResetVersion) || 1) < 2) {
-              u.cultivation = resetServerUserCultivation(u.cultivation);
-              needsSave = true;
-            }
             map.set(u.id, u);
           }
         }
@@ -526,10 +503,6 @@ function loadUsersFromFile(): Map<string, ServerUserRecord> {
             }
             if (rec.cultivation?.sect?.sectId && (DEFAULT_SECT_IDS.has(rec.cultivation.sect.sectId) || rec.cultivation.sect.sectId.startsWith('sect_thuc_son'))) {
               delete rec.cultivation.sect;
-              needsSave = true;
-            }
-            if ((Number(rec.cultivation?.cultivationResetVersion) || 1) < 2) {
-              rec.cultivation = resetServerUserCultivation(rec.cultivation);
               needsSave = true;
             }
             // Bảo toàn kỷ lục WPM cao nhất từ matchHistory và bestWpmRecord
@@ -779,19 +752,6 @@ function loadSectsFromFile(): Map<string, ServerSectRecord> {
       if (Array.isArray(data)) {
         for (const s of data) {
           if (s && s.id && !DEFAULT_SECT_IDS.has(s.id) && !s.id.startsWith('sect_thuc_son')) {
-            if (Array.isArray(s.members)) {
-              for (const m of s.members) {
-                m.level = 1;
-                m.tier = 1;
-                m.exp = 0;
-                m.realmIndex = 0;
-                m.realmName = 'Luyện Khí Kỳ';
-                m.realmIcon = '🌿';
-                m.tuViScore = 0;
-              }
-            }
-            if (s.leaderLevel) s.leaderLevel = 1;
-            if (s.leaderRealmName) s.leaderRealmName = 'Luyện Khí Kỳ';
             recalculateSectStats(s);
             map.set(s.id, s);
           }

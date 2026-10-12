@@ -151,41 +151,8 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
   if (!current) return { ...incoming, updatedAt: incoming?.updatedAt || Date.now(), cultivationResetVersion: 2 };
   if (!incoming) return { ...current, updatedAt: current?.updatedAt || Date.now(), cultivationResetVersion: 2 };
 
-  // 0. Xử lý phiên bản reset tu vi toàn cục (v2: reset toàn bộ tu vi người chơi về 0)
-  const currentResetVer = Number(current.cultivationResetVersion) || 1;
-  const incomingResetVer = Number(incoming.cultivationResetVersion) || 1;
-  let activeCurrent = current;
-  let activeIncoming = incoming;
-
-  if (currentResetVer >= 2 && incomingResetVer < 2) {
-    // current đã reset, incoming mang tu vi cũ -> loại bỏ tu vi cũ của incoming
-    activeIncoming = {
-      ...incoming,
-      level: 1,
-      realmIndex: 0,
-      tier: 1,
-      exp: 0,
-      maxExp: 207,
-      realmName: 'Luyện Khí Kỳ',
-      subStage: 'Sơ Kỳ',
-      titleName: 'Luyện Khí Tu Sĩ',
-      cultivationResetVersion: 2,
-    };
-  } else if (incomingResetVer >= 2 && currentResetVer < 2) {
-    // incoming đã reset, current mang tu vi cũ -> loại bỏ tu vi cũ của current
-    activeCurrent = {
-      ...current,
-      level: 1,
-      realmIndex: 0,
-      tier: 1,
-      exp: 0,
-      maxExp: 207,
-      realmName: 'Luyện Khí Kỳ',
-      subStage: 'Sơ Kỳ',
-      titleName: 'Luyện Khí Tu Sĩ',
-      cultivationResetVersion: 2,
-    };
-  }
+  const activeCurrent = current;
+  const activeIncoming = incoming;
 
   // 1. So sánh tổng điểm tiến độ tu vi để không bao giờ bị thụt lùi cảnh giới hay tu vi
   const scoreCurrent = (Number(activeCurrent.realmIndex) || 0) * 100_000_000 + (Number(activeCurrent.tier) || 1) * 1_000_000 + (Number(activeCurrent.exp) || 0);
@@ -194,12 +161,25 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
   const levelLeader = scoreCurrent >= scoreIncoming ? activeCurrent : activeIncoming;
   const levelFollower = scoreCurrent >= scoreIncoming ? activeIncoming : activeCurrent;
 
-  // 2. Xác định trạng thái mới nhất theo timestamp updatedAt (để Linh Thạch, kho đồ phản ánh chính xác)
+  // 2. Xác định trạng thái mới nhất:
+  // QUAN TRỌNG: Nếu một bên có cảnh giới/cấp độ vượt trội (ví dụ Hóa Thần vs Luyện Khí trên máy mới),
+  // bên có tiến độ cao hơn (levelLeader) chắc chắn là tài khoản tu tiên chính thức,
+  // TUYỆT ĐỐI không để tài khoản cấp 1 mới mở trên máy lạ đè mất Linh Thạch, đan dược hay pháp bảo của đại năng!
+  let newestState = levelLeader;
+  let oldestState = levelFollower;
+
   const currentTs = Number(activeCurrent.updatedAt) || 0;
   const incomingTs = Number(activeIncoming.updatedAt) || 0;
-  const isIncomingNewer = incomingTs >= currentTs;
-  const newestState = isIncomingNewer ? activeIncoming : activeCurrent;
-  const oldestState = isIncomingNewer ? activeCurrent : activeIncoming;
+
+  // Chỉ xét updatedAt nếu cả 2 bên ở cùng cảnh giới và cấp độ tương đương (cùng một nhân vật đang chơi tiếp)
+  if (
+    Number(levelLeader.realmIndex || 0) === Number(levelFollower.realmIndex || 0) &&
+    Math.abs(Number(levelLeader.level || 1) - Number(levelFollower.level || 1)) <= 1
+  ) {
+    const isIncomingNewer = incomingTs >= currentTs;
+    newestState = isIncomingNewer ? activeIncoming : activeCurrent;
+    oldestState = isIncomingNewer ? activeCurrent : activeIncoming;
+  }
 
   // 3. Điểm danh: TUYỆT ĐỐI BẢO LƯU điểm danh hôm nay và chuỗi điểm danh
   const todayStr = getVietnamDateStr();

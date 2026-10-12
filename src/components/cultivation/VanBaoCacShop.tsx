@@ -29,6 +29,7 @@ interface VanBaoCacShopProps {
   userFrame?: string;
   onSelectFrame?: (frameId: string) => void;
   username?: string;
+  displayName?: string;
   isLoggedIn?: boolean;
   onOpenAuthModal?: () => void;
 }
@@ -39,6 +40,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
   userFrame,
   onSelectFrame,
   username,
+  displayName,
   isLoggedIn = true,
   onOpenAuthModal,
 }) => {

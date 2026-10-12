@@ -6,6 +6,7 @@ import { Sparkles, Shield, Zap, Flame, Compass, Coins, Swords } from 'lucide-rea
 interface MeditationDaisProps {
   state: CultivationState;
   username?: string;
+  displayName?: string;
   userAvatar?: string;
   userFrame?: string;
   onOpenTribulation?: () => void;
@@ -15,6 +16,7 @@ interface MeditationDaisProps {
 export const MeditationDais: React.FC<MeditationDaisProps> = ({
   state,
   username = 'Đạo Hữu',
+  displayName,
   userAvatar = '⚡',
   userFrame = 'default',
   onOpenTribulation,
@@ -110,7 +112,7 @@ export const MeditationDais: React.FC<MeditationDaisProps> = ({
 
         {/* Name & Title */}
         <h3 className="mt-5 text-xl sm:text-2xl font-black text-amber-200 tracking-wide flex items-center gap-2">
-          <span>{username}</span>
+          <span>{displayName || username || 'Đạo Hữu'}</span>
           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
             {currentRealm.titleName}
           </span>

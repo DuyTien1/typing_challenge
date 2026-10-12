@@ -71,6 +71,7 @@ interface SectsSectionProps {
   state: CultivationState;
   onUpdateState: (newState: CultivationState) => void;
   username?: string;
+  displayName?: string;
   userAvatar?: string;
   userFrame?: string;
   onStartSectBoss?: (sectId: string, sectName: string) => void;
@@ -81,6 +82,7 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   state,
   onUpdateState,
   username = 'Đạo Hữu',
+  displayName,
   userAvatar = '⚡',
   userFrame = 'default',
   onStartSectBoss,
@@ -201,7 +203,7 @@ export const SectsSection: React.FC<SectsSectionProps> = ({
   // Bái nhập môn phái
   const handleJoin = async (sectId: string) => {
     soundFx.playKeyClick();
-    const updated = joinSect(state, sectId, username, userAvatar, userFrame);
+    const updated = joinSect(state, sectId, username, userAvatar, userFrame, displayName);
     onUpdateState(updated);
 
     // Call server API

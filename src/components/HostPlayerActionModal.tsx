@@ -118,7 +118,7 @@ export const HostPlayerActionModal: React.FC<HostPlayerActionModalProps> = ({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-sm font-black text-white truncate max-w-[140px]">
-                {player.username}
+                {player.displayName || player.username}
               </span>
               {playerTitle && (
                 <span className="text-[9px] font-black px-1.5 py-0.2 rounded border uppercase tracking-wider bg-amber-500/20 border-amber-400/60 text-amber-300">

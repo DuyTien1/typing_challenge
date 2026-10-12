@@ -8,6 +8,7 @@ import {
 import { soundFx } from '../utils/audio';
 import { AvatarWithFrame, setStoredFrame } from '../utils/frames';
 import { announceBreakthrough } from '../utils/heavenlyDaoBot';
+import { HeavenlyDaoDecree } from '../types';
 import { Shield, Zap, Sparkles, AlertTriangle, CheckCircle2, Flame, Award, Swords, ArrowRight, RotateCcw } from 'lucide-react';
 
 interface TribulationModalProps {
@@ -28,6 +29,7 @@ interface TribulationModalProps {
   username: string;
   displayName?: string;
   onSelectFrame?: (frameId: string) => void;
+  onOpenDaoDecree?: (decree: HeavenlyDaoDecree) => void;
 }
 
 interface TribulationWave {
@@ -148,13 +150,18 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
   username,
   displayName,
   onSelectFrame,
+  onOpenDaoDecree,
 }) => {
-  const currentRealm = XIANXIA_REALMS[cultivationState.realmIndex] || XIANXIA_REALMS[0];
-  const nextRealm = XIANXIA_REALMS[cultivationState.realmIndex + 1];
+  // Cố định cảnh giới xuất phát khi người chơi mở phiên độ kiếp để giao diện không bị nhảy vọt sang cảnh giới kế tiếp
+  const [sourceRealmIndex, setSourceRealmIndex] = useState<number>(cultivationState.realmIndex);
+  const [createdDecree, setCreatedDecree] = useState<HeavenlyDaoDecree | null>(null);
+
+  const currentRealm = XIANXIA_REALMS[sourceRealmIndex] || XIANXIA_REALMS[0];
+  const nextRealm = XIANXIA_REALMS[sourceRealmIndex + 1];
 
   // Lấy dữ liệu đợt sấm kiếp
   const tribulationConfig = useMemo(() => {
-    const config = MANTRA_DATABASE[cultivationState.realmIndex] || {
+    const config = MANTRA_DATABASE[sourceRealmIndex] || {
       title: 'Cửu Cửu Thiên Kiếp',
       waves: [
         { mantra: '98401928374615', meaning: 'Bàn Cổ khai thiên', time: 3.3 },
@@ -166,7 +173,7 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
       ],
     };
     return config;
-  }, [cultivationState.realmIndex]);
+  }, [sourceRealmIndex]);
 
   const [phase, setPhase] = useState<'intro' | 'active' | 'wave_result' | 'victory' | 'defeat'>('intro');
   const [currentWaveIndex, setCurrentWaveIndex] = useState(0);
@@ -287,6 +294,8 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
   // Reset state when opening modal
   useEffect(() => {
     if (isOpen) {
+      setSourceRealmIndex(cultivationState.realmIndex);
+      setCreatedDecree(null);
       setPhase('intro');
       setCurrentWaveIndex(0);
       setPassedWaves([]);
@@ -298,6 +307,22 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
       setResultNotice(null);
     }
   }, [isOpen]);
+
+  // Cô lập hoàn toàn phím Escape: Chỉ đóng modal độ kiếp, không làm tắt Linh Đài bên dưới
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        soundFx.playKeyClick();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, onClose]);
 
   // Intro countdown 2.5s then start first wave
   useEffect(() => {
@@ -444,7 +469,11 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
             'Sơ Kỳ',
             1,
             true
-          ).catch(() => {});
+          )
+            .then((dec) => {
+              setCreatedDecree(dec);
+            })
+            .catch(() => {});
           if (res.unlockedFrameId && onSelectFrame) {
             onSelectFrame(res.unlockedFrameId);
             setStoredFrame(res.unlockedFrameId);
@@ -792,23 +821,40 @@ export const TribulationModal: React.FC<TribulationModalProps> = ({
                 Độ Kiếp Đại Thành Công!
               </h3>
               <p className="text-xs sm:text-sm text-emerald-200 max-w-md mx-auto leading-relaxed">
-                Đạo hữu đã dũng mãnh trảm phá toàn bộ lôi kiếp! Thần hồn thoát thai hoán cốt, đăng tiên nhập cảnh thành công lên <strong>{nextRealm?.name || 'Tiên Cảnh'}</strong>!
+                Đạo hữu đã dũng mãnh trảm phá toàn bộ lôi kiếp! Thần hồn thoát thai hoán cốt, đăng tiên nhập cảnh thành công lên <strong>{nextRealm?.name || 'Tiên Cảnh'} (Tầng 1 Sơ Kỳ)</strong>!
               </p>
               {resultNotice && (
                 <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-xs text-emerald-300 font-medium">
                   {resultNotice}
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  soundFx.playKeyClick();
-                  onClose();
-                }}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/30 transition-all cursor-pointer"
-              >
-                Nhận Lãnh Đạo Quả & Đóng
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    soundFx.playVictory();
+                    onClose();
+                    if (createdDecree && onOpenDaoDecree) {
+                      onOpenDaoDecree(createdDecree);
+                    } else if (nextRealm && onOpenDaoDecree) {
+                      try {
+                        const dec = await announceBreakthrough(
+                          displayName || username || 'Đạo Hữu',
+                          nextRealm.name,
+                          'Sơ Kỳ',
+                          1,
+                          true
+                        );
+                        onOpenDaoDecree(dec);
+                      } catch {}
+                    }
+                  }}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 hover:from-amber-400 hover:to-yellow-200 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-[0_0_25px_rgba(251,191,36,0.5)] hover:shadow-[0_0_35px_rgba(251,191,36,0.8)] transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Award className="w-5 h-5 text-slate-950" />
+                  <span>🪷 Lĩnh Nhận Đạo Quả & Khấu Tạ Thiên Đạo 🪷</span>
+                </button>
+              </div>
             </div>
           )}
 

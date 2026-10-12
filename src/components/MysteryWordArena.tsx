@@ -378,9 +378,10 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         // Calculate points based on remaining hidden characters
         const hiddenCount = revealedCharsRef.current.filter((c) => c === null).length;
         const points = Math.max(3, 5 + hiddenCount);
+        const botName = bot.displayName || bot.username;
 
-        setRoundSolvers([{ id: bot.id, rank: 1, pts: points, name: bot.username }]);
-        setSolvedMessage(`🤖 ${bot.username} đã đoán đúng từ bí mật: "${targetWord}" (+${points} điểm)!`);
+        setRoundSolvers([{ id: bot.id, rank: 1, pts: points, name: botName }]);
+        setSolvedMessage(`🤖 ${botName} đã đoán đúng từ bí mật: "${targetWord}" (+${points} điểm)!`);
         onFinishRound(currentRound, points, false, bot.id);
 
         historyRef.current.push({
@@ -388,7 +389,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
           word: targetWord,
           category: currentItem.hint,
           isCorrect: false,
-          solverName: bot.username,
+          solverName: botName,
           pts: 0,
           hiddenCount: 0,
         });
@@ -467,7 +468,8 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
       setRoundScore((s) => s + points);
 
       const myPlayer = players.find((p) => p.id === currentPlayerId);
-      setRoundSolvers([{ id: currentPlayerId, rank: 1, pts: points, name: myPlayer?.username || 'Bạn' }]);
+      const myDisplayName = myPlayer?.displayName || myPlayer?.username || 'Bạn';
+      setRoundSolvers([{ id: currentPlayerId, rank: 1, pts: points, name: myDisplayName }]);
       setSolvedMessage(`🎉 CHÍNH XÁC! Bạn nhận được +${points} điểm (${hiddenCount} chữ chưa mở)!`);
       onFinishRound(currentRound, points, true, currentPlayerId);
 
@@ -477,7 +479,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
         word: targetWord,
         category: currentItem.hint,
         isCorrect: true,
-        solverName: myPlayer?.username || 'Bạn',
+        solverName: myDisplayName,
         pts: points,
         hiddenCount,
         solveTimeSec,
@@ -843,7 +845,7 @@ export const MysteryWordArena: React.FC<MysteryWordArenaProps> = ({
                   <div className="flex items-center gap-2 truncate">
                     <span className="text-base">{p.icon}</span>
                     <span className="text-xs font-semibold text-white truncate flex items-center gap-1">
-                      {p.username}
+                      {p.displayName || p.username}
                       {p.isBot && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                           BOT

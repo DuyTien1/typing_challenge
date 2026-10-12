@@ -423,7 +423,8 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
     soundFx.playKeyClick();
     const realmStr = resolvedRealm ? `${resolvedRealm.name} (Cấp ${resolvedRealm.level})` : 'Tu Tiên Giả';
     const sectStr = resolvedSectInfo ? `${resolvedSectInfo.name} [${resolvedSectInfo.tag}]` : 'Tiêu Dao Tán Tu';
-    const cardText = `📜 [FastTyping] Đạo Hữu: ${player.displayName || player.username} (@${player.username})\n⚡ Kỷ Lục: ${bestWpmDisplay} | Độ chuẩn xác: ${accuracyDisplay}\n🔮 Cảnh Giới: ${realmStr}\n🏰 Tông Môn: ${sectStr}\n⌨️ Switch: ${keyboardSwitchDisplay}`;
+    const cardPlayerName = serverProfile?.displayName || player.displayName || player.username;
+    const cardText = `📜 [FastTyping] Đạo Hữu: ${cardPlayerName}\n⚡ Kỷ Lục: ${bestWpmDisplay} | Độ chuẩn xác: ${accuracyDisplay}\n🔮 Cảnh Giới: ${realmStr}\n🏰 Tông Môn: ${sectStr}\n⌨️ Switch: ${keyboardSwitchDisplay}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(cardText);
       setCopiedField('card');
@@ -623,21 +624,11 @@ export const PlayerSimpleProfileModal: React.FC<PlayerSimpleProfileModalProps> =
                 )}
               </div>
 
-              {/* Username + Copy */}
+              {/* Display Name subtitle & UID */}
               <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-slate-400 font-mono flex-wrap">
-                <span>@{player.username}</span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(player.username, 'username')}
-                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
-                  title="Sao chép tên đăng nhập"
-                >
-                  {copiedField === 'username' ? (
-                    <Check className="w-3 h-3 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                </button>
+                <span className="font-bold text-amber-300">
+                  {serverProfile?.displayName || player.displayName || player.username}
+                </span>
 
                 {(serverProfile?.userId || player.userId || player.id) && (
                   <span className="text-slate-500 text-[11px]">
