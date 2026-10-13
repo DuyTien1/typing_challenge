@@ -1057,12 +1057,23 @@ export function loadStoredCultivationState(): CultivationState {
     if (!parsed) {
       const raw = localStorage.getItem(CULTIVATION_STORAGE_KEY);
       if (raw) {
-        parsed = JSON.parse(raw);
+        try {
+          parsed = JSON.parse(raw);
+        } catch {}
+      }
+    }
+    // Nếu chưa có trong local storage, thử lấy từ thông tin tài khoản đã đăng nhập
+    if (!parsed) {
+      const cached = getStoredCachedUser();
+      if (cached?.cultivation) {
+        parsed = cached.cultivation;
       }
     }
     if (!parsed) {
       const fresh = createInitialCultivationState();
-      saveStoredCultivationState(fresh);
+      try {
+        localStorage.setItem(CULTIVATION_STORAGE_KEY, JSON.stringify(fresh));
+      } catch {}
       return fresh;
     }
     const today = getTodayDateString();
@@ -1205,8 +1216,11 @@ export function mergeCultivationStates(
   const activeIncoming = incoming;
 
   // 1. So sánh tổng điểm tiến độ để TUYỆT ĐỐI không bao giờ bị thụt lùi Tu Vi / Cảnh giới
-  const scoreCurrent = (activeCurrent.realmIndex ?? 0) * 100_000_000 + (activeCurrent.tier ?? 1) * 1_000_000 + (activeCurrent.exp ?? 0);
-  const scoreIncoming = (activeIncoming.realmIndex ?? 0) * 100_000_000 + (activeIncoming.tier ?? 1) * 1_000_000 + (activeIncoming.exp ?? 0);
+  const realmIdxCurrent = typeof activeCurrent.realmIndex === 'number' ? activeCurrent.realmIndex : Math.max(0, Math.floor(((activeCurrent.level || 1) - 1) / 50));
+  const realmIdxIncoming = typeof activeIncoming.realmIndex === 'number' ? activeIncoming.realmIndex : Math.max(0, Math.floor(((activeIncoming.level || 1) - 1) / 50));
+
+  const scoreCurrent = (realmIdxCurrent * 100_000_000) + ((activeCurrent.level || 1) * 10_000) + ((activeCurrent.tier || 1) * 1_000) + (activeCurrent.exp || 0);
+  const scoreIncoming = (realmIdxIncoming * 100_000_000) + ((activeIncoming.level || 1) * 10_000) + ((activeIncoming.tier || 1) * 1_000) + (activeIncoming.exp || 0);
 
   const levelLeader = scoreCurrent >= scoreIncoming ? activeCurrent : activeIncoming;
   const levelFollower = scoreCurrent >= scoreIncoming ? activeIncoming : activeCurrent;

@@ -2,6 +2,7 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { ServerUserRecord, ServerMultiLeaderboard, MarketListing, MarketLog, ServerFriendshipRecord, ServerFriendRequestRecord } from './types';
+import { mergeServerCultivationStates } from './utils';
 
 const { Pool } = pg;
 
@@ -464,6 +465,60 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
 }
 
 /**
+ * Tra cứu trực tiếp một tài khoản từ PostgreSQL bằng ID, Username hoặc Email
+ */
+export async function dbGetUserByIdOrUsername(idOrUsername: string): Promise<ServerUserRecord | null> {
+  const p = getDbPool();
+  if (!p || !idOrUsername) return null;
+  try {
+    const clean = String(idOrUsername).trim().toLowerCase();
+    const res = await safeDbQuery(
+      `SELECT id, username, email, display_name as "displayName", avatar, frame,
+              password_hash as "passwordHash", salt, is_admin as "isAdmin",
+              is_verified as "isVerified", auth_provider as "authProvider",
+              session_tokens as "sessionTokens",
+              best_wpm as "bestWpm", best_wpm_record as "bestWpmRecord",
+              total_games as "totalGames", match_history as "matchHistory",
+              showcase_achievements as "showcaseAchievements",
+              unlocked_achievements as "unlockedAchievements",
+              cultivation, created_at as "createdAt", updated_at as "updatedAt"
+       FROM app_users
+       WHERE LOWER(username) = $1 OR LOWER(email) = $1 OR id = $2
+       LIMIT 1`,
+      [clean, idOrUsername]
+    );
+    if (!res || !res.rows || res.rows.length === 0) return null;
+    const row = res.rows[0];
+    return {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatar: row.avatar || '🧘',
+      frame: row.frame || 'wood',
+      passwordHash: row.passwordHash,
+      salt: row.salt,
+      isAdmin: Boolean(row.isAdmin),
+      isVerified: Boolean(row.isVerified),
+      authProvider: (row.authProvider as 'google' | 'email') || 'email',
+      sessionTokens: Array.isArray(row.sessionTokens) ? row.sessionTokens : [],
+      bestWpm: Number(row.bestWpm) || 0,
+      bestWpmRecord: row.bestWpmRecord || null,
+      totalGames: Number(row.totalGames) || 0,
+      matchHistory: Array.isArray(row.matchHistory) ? row.matchHistory : [],
+      showcaseAchievements: Array.isArray(row.showcaseAchievements) ? row.showcaseAchievements : [],
+      unlockedAchievements: Array.isArray(row.unlockedAchievements) ? row.unlockedAchievements : [],
+      cultivation: row.cultivation || null,
+      createdAt: Number(row.createdAt) || Date.now(),
+      updatedAt: Number(row.updatedAt) || Date.now(),
+    };
+  } catch (err) {
+    console.error('[Database] Error in dbGetUserByIdOrUsername:', err);
+    return null;
+  }
+}
+
+/**
  * Lưu hoặc cập nhật một tài khoản người chơi vào PostgreSQL
  */
 export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
@@ -473,6 +528,21 @@ export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
   // Bỏ qua tài khoản khách tạm thời (p_...) để tránh làm tràn quota pooler của PostgreSQL
   if (!user || !user.id || user.id.startsWith('p_') || user.authProvider === 'guest') {
     return;
+  }
+
+  // BẢO VỆ TUYỆT ĐỐI TU VI TRONG CƠ SỞ DỮ LIỆU:
+  // Luôn kiểm tra xem CSDL hiện tại có dữ liệu tu vi của tài khoản này không.
+  // Nếu có, HỢP NHẤT bằng mergeServerCultivationStates để TUYỆT ĐỐI KHÔNG BAO GIỜ bị đè mất cảnh giới cao hơn!
+  try {
+    const existingRow = await safeDbQuery('SELECT cultivation FROM app_users WHERE id = $1', [user.id]);
+    if (existingRow && existingRow.rows && existingRow.rows.length > 0) {
+      const dbCult = existingRow.rows[0].cultivation;
+      if (dbCult) {
+        user.cultivation = mergeServerCultivationStates(dbCult, user.cultivation);
+      }
+    }
+  } catch (checkErr) {
+    console.warn('[Database] Cảnh báo kiểm tra tu vi trước khi lưu:', checkErr);
   }
 
   const query = `

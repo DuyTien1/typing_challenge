@@ -155,8 +155,11 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
   const activeIncoming = incoming;
 
   // 1. So sánh tổng điểm tiến độ tu vi để không bao giờ bị thụt lùi cảnh giới hay tu vi
-  const scoreCurrent = (Number(activeCurrent.realmIndex) || 0) * 100_000_000 + (Number(activeCurrent.tier) || 1) * 1_000_000 + (Number(activeCurrent.exp) || 0);
-  const scoreIncoming = (Number(activeIncoming.realmIndex) || 0) * 100_000_000 + (Number(activeIncoming.tier) || 1) * 1_000_000 + (Number(activeIncoming.exp) || 0);
+  const realmIdxCurrent = typeof activeCurrent.realmIndex === 'number' ? Number(activeCurrent.realmIndex) : Math.max(0, Math.floor(((Number(activeCurrent.level) || 1) - 1) / 50));
+  const realmIdxIncoming = typeof activeIncoming.realmIndex === 'number' ? Number(activeIncoming.realmIndex) : Math.max(0, Math.floor(((Number(activeIncoming.level) || 1) - 1) / 50));
+
+  const scoreCurrent = (realmIdxCurrent * 100_000_000) + ((Number(activeCurrent.level) || 1) * 10_000) + ((Number(activeCurrent.tier) || 1) * 1_000) + (Number(activeCurrent.exp) || 0);
+  const scoreIncoming = (realmIdxIncoming * 100_000_000) + ((Number(activeIncoming.level) || 1) * 10_000) + ((Number(activeIncoming.tier) || 1) * 1_000) + (Number(activeIncoming.exp) || 0);
 
   const levelLeader = scoreCurrent >= scoreIncoming ? activeCurrent : activeIncoming;
   const levelFollower = scoreCurrent >= scoreIncoming ? activeIncoming : activeCurrent;

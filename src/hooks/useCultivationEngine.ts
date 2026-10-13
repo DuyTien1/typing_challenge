@@ -3,6 +3,7 @@ import {
   CultivationState,
   loadStoredCultivationState,
   saveStoredCultivationState,
+  mergeCultivationStates,
   processCultivationDecay,
   addTuViFromMatch,
   getSubStage,
@@ -57,37 +58,40 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
     }
 
     const checkAndSyncDayTurnover = () => {
-      // Luôn đọc trạng thái lưu trữ mới nhất từ storage để không bị ghi đè bởi state cũ từ tab khác
-      const stored = loadStoredCultivationState();
-      const currentRef = cultivationStateRef.current;
-      const baseState = (Number(stored.updatedAt) || 0) >= (Number(currentRef?.updatedAt) || 0)
-        ? stored
-        : (currentRef || stored);
+      try {
+        // Luôn kết hợp trạng thái lưu trữ mới nhất từ storage và bộ nhớ để không bao giờ bị thụt lùi tu vi
+        const stored = loadStoredCultivationState();
+        const currentRef = cultivationStateRef.current;
+        const baseState = mergeCultivationStates(stored, currentRef);
 
-      const intervalSync = ensureDailySync(baseState);
-      const checkRes = processCultivationDecay(intervalSync.updatedState);
+        const intervalSync = ensureDailySync(baseState);
+        const checkRes = processCultivationDecay(intervalSync.updatedState);
 
-      setCultivationState(checkRes.updatedState);
-      cultivationStateRef.current = checkRes.updatedState;
+        setCultivationState(checkRes.updatedState);
+        cultivationStateRef.current = checkRes.updatedState;
 
-      if (
-        intervalSync.didResetQuests ||
-        checkRes.updatedState.thoNguyen !== baseState.thoNguyen ||
-        checkRes.updatedState.exp !== baseState.exp ||
-        checkRes.updatedState.dailyQuestsDate !== baseState.dailyQuestsDate
-      ) {
-        saveStoredCultivationState(checkRes.updatedState);
+        if (
+          intervalSync.didResetQuests ||
+          checkRes.updatedState.thoNguyen !== baseState.thoNguyen ||
+          checkRes.updatedState.exp !== baseState.exp ||
+          checkRes.updatedState.dailyQuestsDate !== baseState.dailyQuestsDate
+        ) {
+          saveStoredCultivationState(checkRes.updatedState);
+        }
+      } catch (err) {
+        console.warn('[Cultivation Engine] Error in checkAndSyncDayTurnover:', err);
       }
     };
 
-    // Lắng nghe sự kiện đồng bộ giữa các tab trình duyệt
+    // Lắng nghe sự kiện đồng bộ giữa các tab trình duyệt (luôn merge an toàn, không bao giờ thụt lùi)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'fasttyping_cultivation_state_v1' && e.newValue) {
         try {
           const incoming = JSON.parse(e.newValue);
           if (incoming && typeof incoming === 'object') {
-            setCultivationState(incoming);
-            cultivationStateRef.current = incoming;
+            const merged = mergeCultivationStates(cultivationStateRef.current, incoming);
+            setCultivationState(merged);
+            cultivationStateRef.current = merged;
           }
         } catch {}
       }
@@ -95,8 +99,11 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
 
     const handleCustomSync = (e: any) => {
       if (e?.detail) {
-        setCultivationState(e.detail);
-        cultivationStateRef.current = e.detail;
+        try {
+          const merged = mergeCultivationStates(cultivationStateRef.current, e.detail);
+          setCultivationState(merged);
+          cultivationStateRef.current = merged;
+        } catch {}
       }
     };
 
@@ -106,8 +113,11 @@ export function useCultivationEngine(props?: UseCultivationEngineProps) {
         bc = new BroadcastChannel('fasttyping_cultivation_sync');
         bc.onmessage = (event) => {
           if (event.data?.type === 'CULTIVATION_UPDATED' && event.data?.state) {
-            setCultivationState(event.data.state);
-            cultivationStateRef.current = event.data.state;
+            try {
+              const merged = mergeCultivationStates(cultivationStateRef.current, event.data.state);
+              setCultivationState(merged);
+              cultivationStateRef.current = merged;
+            } catch {}
           }
         };
       }

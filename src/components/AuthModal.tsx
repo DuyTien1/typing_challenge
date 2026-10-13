@@ -94,8 +94,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const triggerSuccess = (user: UserAccount) => {
-    if (onAuthSuccess) onAuthSuccess(user);
-    if (onSuccess) onSuccess(user);
+    if (onAuthSuccess) {
+      onAuthSuccess(user);
+    } else if (onSuccess) {
+      onSuccess(user);
+    }
   };
 
   useEffect(() => {

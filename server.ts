@@ -40,6 +40,7 @@ import {
   getDbPool,
   checkDatabaseHealth,
   dbLoadUsers,
+  dbGetUserByIdOrUsername,
   dbSaveUser,
   dbLoadSects,
   dbSaveSects,
@@ -951,6 +952,9 @@ export async function ensureDatabaseHydrated(): Promise<boolean> {
         for (const [id, u] of dbUsers.entries()) {
           const existing = serverUsers.get(id);
           if (existing) {
+            // HỢP NHẤT TU VI TIÊN HIỆP: Giữ trọn vẹn cảnh giới cao nhất giữa DB và users.json
+            u.cultivation = mergeServerCultivationStates(u.cultivation, existing.cultivation);
+
             // Bảo toàn kỷ lục WPM cao nhất giữa DB và bộ nhớ/users.json
             const maxWpm = Math.max(u.bestWpm || 0, existing.bestWpm || 0);
             u.bestWpm = maxWpm;
@@ -978,6 +982,7 @@ export async function ensureDatabaseHydrated(): Promise<boolean> {
           syncUserAllTimeBestWpm(u);
           serverUsers.set(id, u);
         }
+        saveUsersToFile();
 
         // Đồng bộ ngược các tài khoản có trong bộ nhớ / users.json nhưng chưa kịp ghi vào PostgreSQL
         for (const [id, memoryUser] of serverUsers.entries()) {
@@ -2762,6 +2767,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // POST /api/auth/login and /api/auth/login-email: Quick login by username OR email
   const handleQuickLogin = async (req: express.Request, res: express.Response) => {
+    if (isDatabaseConfigured() && !isDbHydrated) {
+      await ensureDatabaseHydrated().catch(() => {});
+    }
+
     const { email, username, account, identifier: reqIdentifier, password } = req.body || {};
     const identifier = String(reqIdentifier || account || username || email || '').trim();
 
@@ -2774,7 +2783,40 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
       return;
     }
 
-    const user = getUserByUsernameOrEmail(identifier);
+    let user = getUserByUsernameOrEmail(identifier);
+
+    // Đồng bộ tức thì với PostgreSQL nếu có: Bảo toàn 100% tu vi và cảnh giới cao nhất từ Database
+    if (isDatabaseConfigured()) {
+      try {
+        const dbUser = await dbGetUserByIdOrUsername(identifier);
+        if (dbUser) {
+          if (user) {
+            user.cultivation = mergeServerCultivationStates(dbUser.cultivation, user.cultivation);
+            user.bestWpm = Math.max(dbUser.bestWpm || 0, user.bestWpm || 0);
+            if (dbUser.bestWpmRecord && (dbUser.bestWpmRecord.wpm || 0) >= (user.bestWpmRecord?.wpm || 0)) {
+              user.bestWpmRecord = dbUser.bestWpmRecord;
+            }
+            user.totalGames = Math.max(dbUser.totalGames || 0, user.totalGames || 0);
+            user.unlockedAchievements = Array.from(new Set([...(dbUser.unlockedAchievements || []), ...(user.unlockedAchievements || [])]));
+            user.showcaseAchievements = dbUser.showcaseAchievements || user.showcaseAchievements;
+            if (dbUser.frame) user.frame = dbUser.frame;
+            if (dbUser.avatar) user.avatar = dbUser.avatar;
+            if (dbUser.displayName) user.displayName = dbUser.displayName;
+            if (dbUser.passwordHash && dbUser.salt) {
+              user.passwordHash = dbUser.passwordHash;
+              user.salt = dbUser.salt;
+            }
+          } else {
+            user = dbUser;
+          }
+          serverUsers.set(user.id, user);
+          saveUsersToFile();
+        }
+      } catch (dbErr) {
+        console.warn('[Login DB Sync] Notice:', dbErr);
+      }
+    }
+
     if (!user) {
       res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản với tên đăng nhập này.' });
       return;
@@ -2897,6 +2939,17 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // Bảo đảm tài khoản đăng nhập luôn được xác thực
     user.isVerified = true;
+
+    // Đồng bộ tu vi với PostgreSQL nếu có để luôn phản ánh cảnh giới mới nhất
+    if (user && isDatabaseConfigured()) {
+      try {
+        const dbUser = await dbGetUserByIdOrUsername(user.id);
+        if (dbUser?.cultivation) {
+          user.cultivation = mergeServerCultivationStates(dbUser.cultivation, user.cultivation);
+          serverUsers.set(user.id, user);
+        }
+      } catch {}
+    }
 
     if (user.cultivation && ensureServerDailyCultivationSync(user.cultivation)) {
       user.updatedAt = Date.now();
@@ -3279,6 +3332,16 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     if (!user) {
       res.json({ success: true, isGuest: true, cultivation: null });
       return;
+    }
+
+    if (isDatabaseConfigured()) {
+      try {
+        const dbUser = await dbGetUserByIdOrUsername(user.id);
+        if (dbUser?.cultivation) {
+          user.cultivation = mergeServerCultivationStates(dbUser.cultivation, user.cultivation);
+          serverUsers.set(user.id, user);
+        }
+      } catch {}
     }
 
     if (user.cultivation) {
@@ -3795,7 +3858,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     if (req.body.cultivation && typeof req.body.cultivation === 'object') {
       ensureServerDailyCultivationSync(req.body.cultivation);
-      const merged = mergeServerCultivationStates(user.cultivation, req.body.cultivation);
+      let merged = mergeServerCultivationStates(user.cultivation, req.body.cultivation);
+      if (isDatabaseConfigured()) {
+        try {
+          const dbUser = await dbGetUserByIdOrUsername(user.id);
+          if (dbUser?.cultivation) {
+            merged = mergeServerCultivationStates(dbUser.cultivation, merged);
+          }
+        } catch {}
+      }
       user.cultivation = merged;
       user.updatedAt = Date.now();
       serverUsers.set(user.id, user);
