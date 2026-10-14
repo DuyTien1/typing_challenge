@@ -1,27 +1,6 @@
 {
   "listings": [
     {
-      "id": "lst_npc_ulan",
-      "sellerId": "npc_bachhac",
-      "sellerUsername": "Bạch Hạc Chân Nhân",
-      "sellerAvatar": "🕊️",
-      "sellerFrame": "admin_gold",
-      "itemType": "herb",
-      "itemId": "uLan",
-      "itemName": "U Lan Thảo",
-      "itemIcon": "🌱",
-      "quality": "trung_pham",
-      "quantity": 5,
-      "pricePerUnit": 25,
-      "totalPrice": 125,
-      "listedAt": "1728200000000",
-      "expiresAt": "1928200000000",
-      "status": "active",
-      "buyerId": null,
-      "buyerUsername": null,
-      "soldAt": null
-    },
-    {
       "id": "lst_npc_huyettinh",
       "sellerId": "npc_thanhphong",
       "sellerUsername": "Thanh Phong Đạo Trưởng",
@@ -35,27 +14,6 @@
       "quantity": 3,
       "pricePerUnit": 40,
       "totalPrice": 120,
-      "listedAt": "1728200000000",
-      "expiresAt": "1928200000000",
-      "status": "active",
-      "buyerId": null,
-      "buyerUsername": null,
-      "soldAt": null
-    },
-    {
-      "id": "lst_npc_dinhtam",
-      "sellerId": "npc_huyenco",
-      "sellerUsername": "Huyền Cơ Tử",
-      "sellerAvatar": "🔮",
-      "sellerFrame": "ruby_fire",
-      "itemType": "pill",
-      "itemId": "dinhTam",
-      "itemName": "Định Tâm Đan",
-      "itemIcon": "🧘",
-      "quality": "thuong_pham",
-      "quantity": 1,
-      "pricePerUnit": 95,
-      "totalPrice": 95,
       "listedAt": "1728200000000",
       "expiresAt": "1928200000000",
       "status": "active",
@@ -106,6 +64,27 @@
       "soldAt": null
     },
     {
+      "id": "lst_npc_ulan",
+      "sellerId": "npc_bachhac",
+      "sellerUsername": "Bạch Hạc Chân Nhân",
+      "sellerAvatar": "🕊️",
+      "sellerFrame": "admin_gold",
+      "itemType": "herb",
+      "itemId": "uLan",
+      "itemName": "U Lan Thảo",
+      "itemIcon": "🌱",
+      "quality": "trung_pham",
+      "quantity": 5,
+      "pricePerUnit": 25,
+      "totalPrice": 125,
+      "listedAt": "1728200000000",
+      "expiresAt": "1928200000000",
+      "status": "active",
+      "buyerId": null,
+      "buyerUsername": null,
+      "soldAt": null
+    },
+    {
       "id": "lst_npc_hotam",
       "sellerId": "npc_danha",
       "sellerUsername": "Đan Hà Trưởng Lão",
@@ -127,19 +106,19 @@
       "soldAt": null
     },
     {
-      "id": "lst_npc_longtu",
-      "sellerId": "npc_bacminh",
-      "sellerUsername": "Bắc Minh Dị Nhân",
-      "sellerAvatar": "🐉",
-      "sellerFrame": "admin_gold",
-      "itemType": "herb",
-      "itemId": "longTu",
-      "itemName": "Long Tu Thảo",
-      "itemIcon": "🐉",
-      "quality": "cuc_pham",
+      "id": "lst_npc_dinhtam",
+      "sellerId": "npc_huyenco",
+      "sellerUsername": "Huyền Cơ Tử",
+      "sellerAvatar": "🔮",
+      "sellerFrame": "ruby_fire",
+      "itemType": "pill",
+      "itemId": "dinhTam",
+      "itemName": "Định Tâm Đan",
+      "itemIcon": "🧘",
+      "quality": "thuong_pham",
       "quantity": 1,
-      "pricePerUnit": 250,
-      "totalPrice": 250,
+      "pricePerUnit": 95,
+      "totalPrice": 95,
       "listedAt": "1728200000000",
       "expiresAt": "1928200000000",
       "status": "active",
@@ -155,6 +134,515 @@
     "totalTradesCount": 0
   },
   "logs": [
+    {
+      "type": "buy",
+      "actorUsername": "braveuser_1791989012915",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "amount": 30,
+      "id": "log_1791989013555_v5ly",
+      "timestamp": 1791989013555
+    },
+    {
+      "type": "buy",
+      "actorUsername": "braveuser_1791989012915",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "amount": 30,
+      "id": "log_1791989013541_e422",
+      "timestamp": 1791989013541
+    },
+    {
+      "type": "buy",
+      "actorUsername": "admin",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "amount": 30,
+      "id": "log_1791988987827_31lv",
+      "timestamp": 1791988987827
+    },
+    {
+      "type": "buy",
+      "actorUsername": "admin",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "amount": 30,
+      "id": "log_1791988986363_0cpe",
+      "timestamp": 1791988986363
+    },
+    {
+      "id": "log_1791985461684_b90g",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791985461684",
+      "actorUsername": "testincog_1791985461390",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791985461596_o4r9",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791985461596",
+      "actorUsername": "testincog_1791985461390",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791984330592_zp7i",
+      "type": "buy",
+      "details": "Mua 1x Long Tu Thảo tại Vạn Bảo Các giá 280 LT.",
+      "timestamp": "1791984330592",
+      "actorUsername": "user_1791984330281",
+      "targetUsername": null,
+      "amount": 280
+    },
+    {
+      "id": "log_1791984330433_3qy3",
+      "type": "buy",
+      "details": "Mua 1x Long Tu Thảo tại Vạn Bảo Các giá 280 LT.",
+      "timestamp": "1791984330433",
+      "actorUsername": "user_1791984330281",
+      "targetUsername": null,
+      "amount": 280
+    },
+    {
+      "id": "log_1791983713708_cya5",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791983713708",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791983707810_3unx",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791983707810",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791983202363_nadh",
+      "type": "buy",
+      "details": "Mua 1x Long Tu Thảo tại Vạn Bảo Các giá 280 LT.",
+      "timestamp": "1791983202363",
+      "actorUsername": "bravetest_1791983202073",
+      "targetUsername": null,
+      "amount": 280
+    },
+    {
+      "id": "log_1791983202281_b75f",
+      "type": "buy",
+      "details": "Mua 1x Long Tu Thảo tại Vạn Bảo Các giá 280 LT.",
+      "timestamp": "1791983202281",
+      "actorUsername": "bravetest_1791983202073",
+      "targetUsername": null,
+      "amount": 280
+    },
+    {
+      "id": "log_1791982144508_a68i",
+      "type": "buy",
+      "details": "Mua 4x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 600 LT.",
+      "timestamp": "1791982144508",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 600
+    },
+    {
+      "id": "log_1791982141070_x6t0",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791982141070",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791982139053_w3be",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791982139053",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791982137018_27rb",
+      "type": "buy",
+      "details": "Mua 4x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 600 LT.",
+      "timestamp": "1791982137018",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 600
+    },
+    {
+      "id": "log_1791982133366_ojdb",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791982133366",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791982125708_mv3e",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791982125708",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791982123517_cs1u",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791982123517",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791982120838_ca0w",
+      "type": "buy",
+      "details": "Mua 1x Huyết Tinh Thảo tại Vạn Bảo Các giá 45 LT.",
+      "timestamp": "1791982120838",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 45
+    },
+    {
+      "id": "log_1791982117819_gbeu",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791982117819",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791982114218_qh2f",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791982114218",
+      "actorUsername": "nite",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791972415904_ld0h",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791972415904",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791801626624_zp2y",
+      "type": "buy",
+      "details": "Mua 3x Long Tu Thảo tại Vạn Bảo Các giá 840 LT.",
+      "timestamp": "1791801626624",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 840
+    },
+    {
+      "id": "log_1791801604143_2exr",
+      "type": "buy",
+      "details": "@admin đã mua 1x Long Tu Thảo từ @Bắc Minh Dị Nhân giá 250 LT (Thuế sàn thiêu hủy: 13 LT).",
+      "timestamp": "1791801604143",
+      "actorUsername": "admin",
+      "targetUsername": "Bắc Minh Dị Nhân",
+      "amount": 250
+    },
+    {
+      "id": "log_1791798738900_9liv",
+      "type": "buy",
+      "details": "Mua 1x Khung Cực Phẩm Linh Tiên tại Vạn Bảo Các giá 4000 LT.",
+      "timestamp": "1791798738900",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 4000
+    },
+    {
+      "id": "log_1791778361032_6v3i",
+      "type": "buy",
+      "details": "Mua 4x Hỏa Anh Thảo tại Vạn Bảo Các giá 300 LT.",
+      "timestamp": "1791778361032",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 300
+    },
+    {
+      "id": "log_1791778355416_3wng",
+      "type": "buy",
+      "details": "Mua 3x Long Tu Thảo tại Vạn Bảo Các giá 840 LT.",
+      "timestamp": "1791778355416",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 840
+    },
+    {
+      "id": "log_1791777271433_ujl9",
+      "type": "buy",
+      "details": "Mua 5x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 750 LT.",
+      "timestamp": "1791777271433",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 750
+    },
+    {
+      "id": "log_1791777262624_4tgt",
+      "type": "buy",
+      "details": "Mua 2x Siêu Cấp Tu Vi Đan tại Vạn Bảo Các giá 1100 LT.",
+      "timestamp": "1791777262624",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 1100
+    },
+    {
+      "id": "log_1791560049236_ixwk",
+      "type": "buy",
+      "details": "Mua 1x Đồng Tâm Tỏa tại Vạn Bảo Các giá 500 LT.",
+      "timestamp": "1791560049236",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 500
+    },
+    {
+      "id": "log_1791527871032_wg8w",
+      "type": "buy",
+      "details": "Mua 13x Huyết Tinh Thảo tại Vạn Bảo Các giá 585 LT.",
+      "timestamp": "1791527871032",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 585
+    },
+    {
+      "id": "log_1791527826539_fqo7",
+      "type": "buy",
+      "details": "Mua 15x U Lan Thảo tại Vạn Bảo Các giá 450 LT.",
+      "timestamp": "1791527826539",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 450
+    },
+    {
+      "id": "log_1791527818421_ynpb",
+      "type": "buy",
+      "details": "Mua 15x Huyết Tinh Thảo tại Vạn Bảo Các giá 675 LT.",
+      "timestamp": "1791527818421",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 675
+    },
+    {
+      "id": "log_1791527809576_sc85",
+      "type": "buy",
+      "details": "Mua 8x Hỏa Anh Thảo tại Vạn Bảo Các giá 600 LT.",
+      "timestamp": "1791527809576",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 600
+    },
+    {
+      "id": "log_1791527703681_4zr1",
+      "type": "buy",
+      "details": "Mua 4x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 600 LT.",
+      "timestamp": "1791527703681",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 600
+    },
+    {
+      "id": "log_1791527693677_76jo",
+      "type": "buy",
+      "details": "Mua 1x Siêu Cấp Tu Vi Đan tại Vạn Bảo Các giá 550 LT.",
+      "timestamp": "1791527693677",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 550
+    },
+    {
+      "id": "log_1791527687094_sqtp",
+      "type": "buy",
+      "details": "Mua 1x Siêu Cấp Tu Vi Đan tại Vạn Bảo Các giá 550 LT.",
+      "timestamp": "1791527687094",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 550
+    },
+    {
+      "id": "log_1791527680876_flqg",
+      "type": "buy",
+      "details": "Mua 4x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 600 LT.",
+      "timestamp": "1791527680876",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 600
+    },
+    {
+      "id": "log_1791527670852_laj3",
+      "type": "buy",
+      "details": "Mua 1x Siêu Cấp Tu Vi Đan tại Vạn Bảo Các giá 550 LT.",
+      "timestamp": "1791527670852",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 550
+    },
+    {
+      "id": "log_1791527646071_ywk6",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791527646071",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791527625495_2itu",
+      "type": "buy",
+      "details": "Mua 1x Tu Vi Đan (+1.000 Tu Vi) tại Vạn Bảo Các giá 150 LT.",
+      "timestamp": "1791527625495",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 150
+    },
+    {
+      "id": "log_1791527492373_doql",
+      "type": "buy",
+      "details": "Mua 2x Long Tu Thảo tại Vạn Bảo Các giá 560 LT.",
+      "timestamp": "1791527492373",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 560
+    },
+    {
+      "id": "log_1791527264692_64hj",
+      "type": "buy",
+      "details": "Mua 1x Hỏa Anh Thảo tại Vạn Bảo Các giá 75 LT.",
+      "timestamp": "1791527264692",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 75
+    },
+    {
+      "id": "log_1791527154071_2hqz",
+      "type": "buy",
+      "details": "@solth đã mua 1x Long Tu Thảo từ @Bắc Minh Dị Nhân giá 250 LT (Thuế sàn thiêu hủy: 13 LT).",
+      "timestamp": "1791527154072",
+      "actorUsername": "solth",
+      "targetUsername": "Bắc Minh Dị Nhân",
+      "amount": 250
+    },
+    {
+      "id": "log_1791526460744_8wjp",
+      "type": "buy",
+      "details": "Mua 1x Long Tu Thảo tại Vạn Bảo Các giá 280 LT.",
+      "timestamp": "1791526460744",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 280
+    },
+    {
+      "id": "log_1791519254306_pu13",
+      "type": "buy",
+      "details": "Mua 1x Hỏa Anh Thảo tại Vạn Bảo Các giá 75 LT.",
+      "timestamp": "1791519254306",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 75
+    },
+    {
+      "id": "log_1791519187138_4qt2",
+      "type": "buy",
+      "details": "@admin đã mua 1x Long Tu Thảo từ @Bắc Minh Dị Nhân giá 250 LT (Thuế sàn thiêu hủy: 13 LT).",
+      "timestamp": "1791519187138",
+      "actorUsername": "admin",
+      "targetUsername": "Bắc Minh Dị Nhân",
+      "amount": 250
+    },
+    {
+      "id": "log_1791469752272_c0td",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791469752272",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791469732899_o5ft",
+      "type": "buy",
+      "details": "Mua 1x Định Tâm Đan tại Vạn Bảo Các giá 110 LT.",
+      "timestamp": "1791469732899",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 110
+    },
+    {
+      "id": "log_1791468137430_zqhs",
+      "type": "buy",
+      "details": "Mua 1x Thọ Nguyên Đan tại Vạn Bảo Các giá 90 LT.",
+      "timestamp": "1791468137430",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 90
+    },
+    {
+      "id": "log_1791468052390_u7v2",
+      "type": "buy",
+      "details": "Mua 1x U Lan Thảo tại Vạn Bảo Các giá 30 LT.",
+      "timestamp": "1791468052390",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 30
+    },
+    {
+      "id": "log_1791468027269_9fqd",
+      "type": "buy",
+      "details": "Mua 1x Định Tâm Đan tại Vạn Bảo Các giá 110 LT.",
+      "timestamp": "1791468027269",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 110
+    },
+    {
+      "id": "log_1791468009597_wifp",
+      "type": "buy",
+      "details": "Mua 1x Ngưng Thần Đan tại Vạn Bảo Các giá 110 LT.",
+      "timestamp": "1791468009597",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 110
+    },
+    {
+      "id": "log_1791442894636_s1sn",
+      "type": "buy",
+      "details": "@solth đã mua 1x Long Tu Thảo từ @Bắc Minh Dị Nhân giá 250 LT (Thuế sàn thiêu hủy: 13 LT).",
+      "timestamp": "1791442894636",
+      "actorUsername": "solth",
+      "targetUsername": "Bắc Minh Dị Nhân",
+      "amount": 250
+    },
+    {
+      "id": "log_1791442787776_v878",
+      "type": "list",
+      "details": "Ký gửi 1x Hỏa Anh Thảo với giá 120 LT/món (Tổng: 120 LT).",
+      "timestamp": "1791442787776",
+      "actorUsername": "admin",
+      "targetUsername": null,
+      "amount": 120
+    },
+    {
+      "id": "log_1791442566606_df9j",
+      "type": "buy",
+      "details": "Mua 2x Long Tu Thảo tại Vạn Bảo Các giá 560 LT.",
+      "timestamp": "1791442566606",
+      "actorUsername": "solth",
+      "targetUsername": null,
+      "amount": 560
+    },
     {
       "id": "log_1790608201043_whe3",
       "type": "buy",

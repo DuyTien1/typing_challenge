@@ -444,7 +444,11 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
         isAdmin: Boolean(row.isAdmin),
         isVerified: Boolean(row.isVerified),
         authProvider: (row.authProvider as 'google' | 'email') || 'email',
-        sessionTokens: Array.isArray(row.sessionTokens) ? row.sessionTokens : [],
+        sessionTokens: Array.isArray(row.sessionTokens)
+          ? row.sessionTokens
+          : (typeof row.sessionTokens === 'string'
+              ? (() => { try { const p = JSON.parse(row.sessionTokens); return Array.isArray(p) ? p : []; } catch { return []; } })()
+              : []),
         bestWpm: resolvedBestWpm,
         bestWpmRecord: resolvedRecord,
         totalGames: Number(row.totalGames) || 0,
@@ -501,7 +505,11 @@ export async function dbGetUserByIdOrUsername(idOrUsername: string): Promise<Ser
       isAdmin: Boolean(row.isAdmin),
       isVerified: Boolean(row.isVerified),
       authProvider: (row.authProvider as 'google' | 'email') || 'email',
-      sessionTokens: Array.isArray(row.sessionTokens) ? row.sessionTokens : [],
+      sessionTokens: Array.isArray(row.sessionTokens)
+        ? row.sessionTokens
+        : (typeof row.sessionTokens === 'string'
+            ? (() => { try { const p = JSON.parse(row.sessionTokens); return Array.isArray(p) ? p : []; } catch { return []; } })()
+            : []),
       bestWpm: Number(row.bestWpm) || 0,
       bestWpmRecord: row.bestWpmRecord || null,
       totalGames: Number(row.totalGames) || 0,
@@ -570,7 +578,11 @@ export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
       is_admin = EXCLUDED.is_admin,
       is_verified = EXCLUDED.is_verified,
       auth_provider = EXCLUDED.auth_provider,
-      session_tokens = EXCLUDED.session_tokens,
+      session_tokens = CASE 
+        WHEN EXCLUDED.session_tokens IS NOT NULL AND jsonb_array_length(EXCLUDED.session_tokens) > 0 
+        THEN EXCLUDED.session_tokens 
+        ELSE COALESCE(app_users.session_tokens, '[]'::jsonb) 
+      END,
       best_wpm = GREATEST(COALESCE(app_users.best_wpm, 0), COALESCE(EXCLUDED.best_wpm, 0)),
       best_wpm_record = CASE
         WHEN COALESCE(EXCLUDED.best_wpm, 0) >= COALESCE(app_users.best_wpm, 0) AND EXCLUDED.best_wpm_record IS NOT NULL

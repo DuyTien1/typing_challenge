@@ -405,7 +405,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
         onClose={() => setIsCultivationOpen(false)}
         initialTab={cultivationInitialTab}
         state={cultivationState}
-        username={currentUser?.displayName || currentUser?.username || username}
+        username={currentUser?.username || username || currentUser?.displayName}
         displayName={currentUser?.displayName || currentUser?.username || username}
         userAvatar={avatar}
         userFrame={userFrame}

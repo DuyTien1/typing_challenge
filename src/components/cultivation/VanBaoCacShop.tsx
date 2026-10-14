@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CultivationState, mergeCultivationStates } from '../../utils/cultivation';
 import { soundFx } from '../../utils/audio';
-import { getStoredAuthToken } from '../../utils/auth';
+import { getStoredAuthToken, getStoredCachedUser } from '../../utils/auth';
 import { setStoredFrame } from '../../utils/frames';
 import { DEFAULT_SHOP_CATALOG, ShopItem } from '../../data/shopCatalog';
 import {
@@ -58,14 +58,24 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
 
   const userLinhThach = Number(state.linhThach) || 0;
   const currentToken = getStoredAuthToken();
-  const userIsAuthenticated = Boolean(isLoggedIn || currentToken);
+  const cachedUser = getStoredCachedUser();
+  const userIsAuthenticated = Boolean(isLoggedIn || currentToken || cachedUser);
 
   const fetchCatalog = async () => {
     try {
       const token = getStoredAuthToken();
+      const userObj = getStoredCachedUser();
+      const actualUsername = userObj?.username || (username && !username.includes(' ') ? username : '') || localStorage.getItem('fasttyping_user') || username;
+      const userId = userObj?.id || localStorage.getItem('fasttyping_player_id') || '';
+
       const headers: Record<string, string> = { 'Accept': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (username) headers['x-username'] = username;
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['x-auth-token'] = token;
+      }
+      if (actualUsername) headers['x-username'] = actualUsername;
+      if (displayName) headers['x-display-name'] = displayName;
+      if (userId) headers['x-user-id'] = userId;
 
       let res: Response | null = null;
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -171,9 +181,18 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
     try {
       setIsSubmitting(true);
       const token = getStoredAuthToken();
+      const userObj = getStoredCachedUser();
+      const actualUsername = userObj?.username || (username && !username.includes(' ') ? username : '') || localStorage.getItem('fasttyping_user') || username;
+      const userId = userObj?.id || localStorage.getItem('fasttyping_player_id') || '';
+
       const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (username) headers['x-username'] = username;
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['x-auth-token'] = token;
+      }
+      if (actualUsername) headers['x-username'] = actualUsername;
+      if (displayName) headers['x-display-name'] = displayName;
+      if (userId) headers['x-user-id'] = userId;
 
       let purchaseSucceeded = false;
       let responseMessage = '';
@@ -185,7 +204,10 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
           body: JSON.stringify({
             itemId: buyingItem.id,
             quantity: buyQuantity,
-            username,
+            token,
+            userId,
+            username: actualUsername,
+            displayName: displayName || actualUsername,
             clientCultivation: state,
           }),
         });

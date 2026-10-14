@@ -3,7 +3,7 @@ import path from 'path';
 import express from 'express';
 import { ShopItem, MarketListing, MarketLog, ServerUserRecord } from './types';
 import { getSafeStoragePath, safeWriteJsonFile, mergeServerCultivationStates } from './utils';
-import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog, dbSaveUser } from './db';
+import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog, dbSaveUser, getDbPool } from './db';
 
 const SHOP_CONFIG_FILE = getSafeStoragePath('shop_config.json');
 const MARKET_FILE = getSafeStoragePath('market.json');
@@ -216,7 +216,7 @@ export function registerEconomyRoutes(
 ) {
   loadEconomyData();
 
-  function resolveUserFromReq(req: express.Request): ServerUserRecord | null {
+  async function resolveUserFromReq(req: express.Request): Promise<ServerUserRecord | null> {
     // 1. Authorization header (Bearer token)
     const authHeader = req.headers.authorization;
     let user = getUserByToken(authHeader);
@@ -236,21 +236,114 @@ export function registerEconomyRoutes(
       if (user) return user;
     }
 
-    // 4. Fallback by username
-    const usernameHeader = (req.headers['x-username'] || req.body?.username || req.query?.username) as string;
-    if (usernameHeader && typeof usernameHeader === 'string') {
-      const clean = usernameHeader.trim().toLowerCase();
+    // 4. Fallback by userId
+    const userIdHeader = (req.headers['x-user-id'] || req.body?.userId || req.query?.userId) as string;
+    if (userIdHeader && typeof userIdHeader === 'string') {
+      const cleanId = userIdHeader.trim();
+      if (serverUsers.has(cleanId)) {
+        return serverUsers.get(cleanId) || null;
+      }
+    }
+
+    // 5. Fallback by username
+    const rawUsername = (req.headers['x-username'] || req.body?.username || req.query?.username) as string;
+    if (rawUsername && typeof rawUsername === 'string') {
+      let clean = rawUsername.trim().toLowerCase();
+      try {
+        clean = decodeURIComponent(clean).trim().toLowerCase();
+      } catch {}
       for (const u of serverUsers.values()) {
-        if (u.username && u.username.trim().toLowerCase() === clean) {
+        if (
+          (u.username && u.username.trim().toLowerCase() === clean) ||
+          (u.displayName && u.displayName.trim().toLowerCase() === clean)
+        ) {
           return u;
         }
       }
     }
 
-    // 5. Fallback by userId
-    const userIdHeader = (req.headers['x-user-id'] || req.body?.userId || req.query?.userId) as string;
-    if (userIdHeader && typeof userIdHeader === 'string' && serverUsers.has(userIdHeader)) {
-      return serverUsers.get(userIdHeader) || null;
+    // 6. Fallback by displayName
+    const rawDisplayName = (req.headers['x-display-name'] || req.body?.displayName || req.query?.displayName) as string;
+    if (rawDisplayName && typeof rawDisplayName === 'string') {
+      let clean = rawDisplayName.trim().toLowerCase();
+      try {
+        clean = decodeURIComponent(clean).trim().toLowerCase();
+      } catch {}
+      for (const u of serverUsers.values()) {
+        if (
+          (u.displayName && u.displayName.trim().toLowerCase() === clean) ||
+          (u.username && u.username.trim().toLowerCase() === clean)
+        ) {
+          return u;
+        }
+      }
+    }
+
+    // 7. Fallback to PostgreSQL database query if configured
+    if (isDatabaseConfigured()) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          let dbUserRow: any = null;
+          const cleanToken = authHeader ? String(authHeader).replace(/^Bearer\s+/i, '').trim() : (customToken || payloadToken || '');
+          if (cleanToken) {
+            const q = await pool.query('SELECT * FROM app_users WHERE session_tokens @> $1::jsonb LIMIT 1', [JSON.stringify([cleanToken])]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && userIdHeader) {
+            const q = await pool.query('SELECT * FROM app_users WHERE id = $1 LIMIT 1', [userIdHeader.trim()]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && rawUsername) {
+            let clean = rawUsername.trim();
+            try { clean = decodeURIComponent(clean).trim(); } catch {}
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(username) = LOWER($1) OR LOWER(display_name) = LOWER($1) LIMIT 1', [clean]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (!dbUserRow && rawDisplayName) {
+            let clean = rawDisplayName.trim();
+            try { clean = decodeURIComponent(clean).trim(); } catch {}
+            const q = await pool.query('SELECT * FROM app_users WHERE LOWER(display_name) = LOWER($1) OR LOWER(username) = LOWER($1) LIMIT 1', [clean]);
+            if (q.rows.length > 0) dbUserRow = q.rows[0];
+          }
+          if (dbUserRow) {
+            const existingMemoryUser = serverUsers.get(dbUserRow.id);
+            const memoryTokens = existingMemoryUser?.sessionTokens || [];
+            let parsedDbTokens: string[] = [];
+            if (Array.isArray(dbUserRow.session_tokens)) {
+              parsedDbTokens = dbUserRow.session_tokens;
+            } else if (typeof dbUserRow.session_tokens === 'string') {
+              try {
+                const parsed = JSON.parse(dbUserRow.session_tokens);
+                if (Array.isArray(parsed)) parsedDbTokens = parsed;
+              } catch {}
+            }
+            const mergedTokens = Array.from(new Set([...memoryTokens, ...parsedDbTokens, ...(cleanToken ? [cleanToken] : [])]));
+
+            const loadedUser: ServerUserRecord = {
+              id: dbUserRow.id,
+              username: dbUserRow.username,
+              email: dbUserRow.email,
+              displayName: dbUserRow.display_name,
+              avatar: dbUserRow.avatar || '🧘',
+              frame: dbUserRow.frame || 'wood',
+              isAdmin: Boolean(dbUserRow.is_admin),
+              isVerified: Boolean(dbUserRow.is_verified),
+              authProvider: dbUserRow.auth_provider || 'email',
+              passwordHash: dbUserRow.password_hash,
+              salt: dbUserRow.salt,
+              sessionTokens: mergedTokens,
+              cultivation: dbUserRow.cultivation || existingMemoryUser?.cultivation || null,
+              createdAt: Number(dbUserRow.created_at) || Date.now(),
+              updatedAt: Number(dbUserRow.updated_at) || Date.now(),
+            };
+            serverUsers.set(loadedUser.id, loadedUser);
+            return loadedUser;
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Economy] Fallback DB user query error:', dbErr);
+      }
     }
 
     return null;
@@ -265,18 +358,21 @@ export function registerEconomyRoutes(
   function ensureUserShopPurchases(user: ServerUserRecord): Record<string, number> {
     if (!user.cultivation) user.cultivation = {};
     const today = new Date().toISOString().slice(0, 10);
+    if (!user.cultivation.shopPurchasesToday || typeof user.cultivation.shopPurchasesToday !== 'object') {
+      user.cultivation.shopPurchasesToday = {};
+    }
     if (user.cultivation.shopPurchasesDate !== today) {
       user.cultivation.shopPurchasesDate = today;
       user.cultivation.shopPurchasesToday = {};
       saveUsersToFile();
     }
-    return user.cultivation.shopPurchasesToday || {};
+    return user.cultivation.shopPurchasesToday;
   }
 
   // 1. GET /api/shop/catalog: Danh mục hàng hóa Vạn Bảo Các
-  app.get('/api/shop/catalog', (req, res) => {
+  app.get('/api/shop/catalog', async (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    const user = resolveUserFromReq(req);
+    const user = await resolveUserFromReq(req);
     const purchasesToday = user ? ensureUserShopPurchases(user) : {};
 
     res.json({
@@ -288,8 +384,8 @@ export function registerEconomyRoutes(
   });
 
   // 2. POST /api/shop/buy: Mua vật phẩm tại Vạn Bảo Các
-  app.post('/api/shop/buy', (req, res) => {
-    const user = resolveUserFromReq(req);
+  app.post('/api/shop/buy', async (req, res) => {
+    const user = await resolveUserFromReq(req);
     if (!user) {
       res.status(401).json({ success: false, error: 'Vui lòng đăng nhập để vào Vạn Bảo Các!' });
       return;
@@ -360,6 +456,7 @@ export function registerEconomyRoutes(
     // Cập nhật số lần mua hôm nay
     purchasesToday[itemId] = currentBought + qty;
     user.cultivation.shopPurchasesToday = purchasesToday;
+    user.cultivation.shopPurchasesDate = new Date().toISOString().slice(0, 10);
 
     // Lịch sử ký sự tu tiên
     if (!Array.isArray(user.cultivation.historyLog)) {
@@ -455,9 +552,9 @@ export function registerEconomyRoutes(
   });
 
   // 4. GET /api/market/my-listings: Danh sách hàng ký gửi của bản thân
-  app.get('/api/market/my-listings', (req, res) => {
+  app.get('/api/market/my-listings', async (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    const user = resolveUserFromReq(req);
+    const user = await resolveUserFromReq(req);
     if (!user) {
       res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
       return;
@@ -474,8 +571,8 @@ export function registerEconomyRoutes(
   });
 
   // 5. POST /api/market/list: Ký gửi vật phẩm lên Phường Thị
-  app.post('/api/market/list', (req, res) => {
-    const user = resolveUserFromReq(req);
+  app.post('/api/market/list', async (req, res) => {
+    const user = await resolveUserFromReq(req);
     if (!user) {
       res.status(401).json({ success: false, error: 'Vui lòng đăng nhập để mở sạp hàng!' });
       return;
@@ -581,8 +678,8 @@ export function registerEconomyRoutes(
   });
 
   // 6. POST /api/market/buy: Mua vật phẩm từ sạp của Đạo Hữu khác (Hỗ trợ mua lẻ hoặc mua cả lô)
-  app.post('/api/market/buy', (req, res) => {
-    const buyer = resolveUserFromReq(req);
+  app.post('/api/market/buy', async (req, res) => {
+    const buyer = await resolveUserFromReq(req);
     if (!buyer) {
       res.status(401).json({ success: false, error: 'Vui lòng đăng nhập để mua sắm trên Phường Thị!' });
       return;
@@ -701,8 +798,8 @@ export function registerEconomyRoutes(
   });
 
   // 7. POST /api/market/cancel: Thu hồi sạp hàng
-  app.post('/api/market/cancel', (req, res) => {
-    const user = resolveUserFromReq(req);
+  app.post('/api/market/cancel', async (req, res) => {
+    const user = await resolveUserFromReq(req);
     if (!user) {
       res.status(401).json({ success: false, error: 'Chưa đăng nhập!' });
       return;
@@ -750,8 +847,8 @@ export function registerEconomyRoutes(
   // ==========================================
 
   // 8. GET /api/admin/economy/overview: Bảng điều hành kinh tế vĩ mô
-  app.get('/api/admin/economy/overview', (req, res) => {
-    const adminUser = resolveUserFromReq(req);
+  app.get('/api/admin/economy/overview', async (req, res) => {
+    const adminUser = await resolveUserFromReq(req);
     if (!isUserAdmin(adminUser)) {
       res.status(403).json({ success: false, error: 'Chỉ Quản Trị Viên mới có quyền xem!' });
       return;
@@ -798,8 +895,8 @@ export function registerEconomyRoutes(
   });
 
   // 9. POST /api/admin/economy/adjust-linh-thach: Cấp phát (+) hoặc Thu hồi (-) Linh Thạch
-  app.post('/api/admin/economy/adjust-linh-thach', (req, res) => {
-    const adminUser = resolveUserFromReq(req);
+  app.post('/api/admin/economy/adjust-linh-thach', async (req, res) => {
+    const adminUser = await resolveUserFromReq(req);
     if (!isUserAdmin(adminUser) || !adminUser) {
       res.status(403).json({ success: false, error: 'Chỉ Quản Trị Viên mới có quyền thực hiện!' });
       return;
@@ -856,8 +953,8 @@ export function registerEconomyRoutes(
   });
 
   // 10. POST /api/admin/economy/tax-rate: Thay đổi thuế sàn Phường Thị
-  app.post('/api/admin/economy/tax-rate', (req, res) => {
-    const adminUser = resolveUserFromReq(req);
+  app.post('/api/admin/economy/tax-rate', async (req, res) => {
+    const adminUser = await resolveUserFromReq(req);
     if (!isUserAdmin(adminUser) || !adminUser) {
       res.status(403).json({ success: false, error: 'Chỉ Quản Trị Viên mới có quyền thực hiện!' });
       return;
@@ -887,8 +984,8 @@ export function registerEconomyRoutes(
   });
 
   // 11. POST /api/admin/market/takedown: Admin cưỡng chế gỡ bỏ gian hàng gian lận
-  app.post('/api/admin/market/takedown', (req, res) => {
-    const adminUser = resolveUserFromReq(req);
+  app.post('/api/admin/market/takedown', async (req, res) => {
+    const adminUser = await resolveUserFromReq(req);
     if (!isUserAdmin(adminUser) || !adminUser) {
       res.status(403).json({ success: false, error: 'Chỉ Quản Trị Viên mới có quyền thực hiện!' });
       return;
@@ -931,8 +1028,8 @@ export function registerEconomyRoutes(
   });
 
   // 12. POST /api/admin/shop/update-item: Chỉnh sửa giá, giới hạn, bật/tắt vật phẩm Vạn Bảo Các
-  app.post('/api/admin/shop/update-item', (req, res) => {
-    const adminUser = resolveUserFromReq(req);
+  app.post('/api/admin/shop/update-item', async (req, res) => {
+    const adminUser = await resolveUserFromReq(req);
     if (!isUserAdmin(adminUser)) {
       res.status(403).json({ success: false, error: 'Chỉ Quản Trị Viên mới có quyền thực hiện!' });
       return;
@@ -962,8 +1059,8 @@ export function registerEconomyRoutes(
   });
 
   // 13. GET /api/admin/economy/logs: Sổ cái kiểm toán giao dịch
-  app.get('/api/admin/economy/logs', (req, res) => {
-    const adminUser = resolveUserFromReq(req);
+  app.get('/api/admin/economy/logs', async (req, res) => {
+    const adminUser = await resolveUserFromReq(req);
     if (!isUserAdmin(adminUser)) {
       res.status(403).json({ success: false, error: 'Chỉ Quản Trị Viên mới có quyền xem sổ cái!' });
       return;

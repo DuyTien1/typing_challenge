@@ -955,6 +955,9 @@ export async function ensureDatabaseHydrated(): Promise<boolean> {
             // HỢP NHẤT TU VI TIÊN HIỆP: Giữ trọn vẹn cảnh giới cao nhất giữa DB và users.json
             u.cultivation = mergeServerCultivationStates(u.cultivation, existing.cultivation);
 
+            // Bảo toàn và hợp nhất phiên đăng nhập hoạt động giữa bộ nhớ và DB
+            u.sessionTokens = Array.from(new Set([...(u.sessionTokens || []), ...(existing.sessionTokens || [])]));
+
             // Bảo toàn kỷ lục WPM cao nhất giữa DB và bộ nhớ/users.json
             const maxWpm = Math.max(u.bestWpm || 0, existing.bestWpm || 0);
             u.bestWpm = maxWpm;
@@ -2907,6 +2910,20 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
             if (q.rows.length > 0) dbUserRow = q.rows[0];
           }
           if (dbUserRow) {
+            const existingMem = serverUsers.get(dbUserRow.id);
+            const memTokens = existingMem?.sessionTokens || [];
+            let parsedTokens: string[] = [];
+            if (Array.isArray(dbUserRow.session_tokens)) {
+              parsedTokens = dbUserRow.session_tokens;
+            } else if (typeof dbUserRow.session_tokens === 'string') {
+              try {
+                const parsed = JSON.parse(dbUserRow.session_tokens);
+                if (Array.isArray(parsed)) parsedTokens = parsed;
+              } catch {}
+            }
+            const cleanAuthToken = authHeader ? String(authHeader).replace(/^Bearer\s+/i, '').trim() : '';
+            const allTokens = Array.from(new Set([...memTokens, ...parsedTokens, ...(cleanAuthToken ? [cleanAuthToken] : [])]));
+
             user = {
               id: dbUserRow.id,
               username: dbUserRow.username,
@@ -2919,8 +2936,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
               authProvider: dbUserRow.auth_provider || 'email',
               passwordHash: dbUserRow.password_hash,
               salt: dbUserRow.salt,
-              sessionTokens: Array.isArray(dbUserRow.session_tokens) ? dbUserRow.session_tokens : [],
-              cultivation: dbUserRow.cultivation || null,
+              sessionTokens: allTokens,
+              cultivation: dbUserRow.cultivation || existingMem?.cultivation || null,
               createdAt: Number(dbUserRow.created_at) || Date.now(),
               updatedAt: Number(dbUserRow.updated_at) || Date.now(),
             };
@@ -3819,6 +3836,20 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
             if (q.rows.length > 0) dbUserRow = q.rows[0];
           }
           if (dbUserRow) {
+            const existingMem = serverUsers.get(dbUserRow.id);
+            const memTokens = existingMem?.sessionTokens || [];
+            let parsedTokens: string[] = [];
+            if (Array.isArray(dbUserRow.session_tokens)) {
+              parsedTokens = dbUserRow.session_tokens;
+            } else if (typeof dbUserRow.session_tokens === 'string') {
+              try {
+                const parsed = JSON.parse(dbUserRow.session_tokens);
+                if (Array.isArray(parsed)) parsedTokens = parsed;
+              } catch {}
+            }
+            const cleanAuthToken = authHeader ? String(authHeader).replace(/^Bearer\s+/i, '').trim() : '';
+            const allTokens = Array.from(new Set([...memTokens, ...parsedTokens, ...(cleanAuthToken ? [cleanAuthToken] : [])]));
+
             user = {
               id: dbUserRow.id,
               username: dbUserRow.username,
@@ -3831,8 +3862,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
               authProvider: dbUserRow.auth_provider || 'email',
               passwordHash: dbUserRow.password_hash,
               salt: dbUserRow.salt,
-              sessionTokens: Array.isArray(dbUserRow.session_tokens) ? dbUserRow.session_tokens : [],
-              cultivation: dbUserRow.cultivation || null,
+              sessionTokens: allTokens,
+              cultivation: dbUserRow.cultivation || existingMem?.cultivation || null,
               createdAt: Number(dbUserRow.created_at) || Date.now(),
               updatedAt: Number(dbUserRow.updated_at) || Date.now(),
             };

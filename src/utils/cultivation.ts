@@ -349,6 +349,8 @@ export interface CultivationState {
   sect?: CultivationSectMember;
   linhThach?: number;
   teaInventory?: Record<string, number>;
+  shopPurchasesToday?: Record<string, number>;
+  shopPurchasesDate?: string;
   historyLog: string[];
   updatedAt?: number;
   cultivationResetVersion?: number;
@@ -1308,6 +1310,18 @@ export function mergeCultivationStates(
     ? levelLeader.dailyQuests
     : (Array.isArray(levelFollower.dailyQuests) && levelFollower.dailyQuests.length === 4 ? levelFollower.dailyQuests : createDefaultDailyQuests());
 
+  // 11. Vạn Bảo Các: Bảo lưu số lần mua hàng ngày và ngày mua
+  const targetShopDate = newestState.shopPurchasesDate || oldestState.shopPurchasesDate || todayStr;
+  let mergedShopPurchases: Record<string, number> = {};
+  if (targetShopDate === todayStr) {
+    const p1 = (newestState.shopPurchasesDate === todayStr ? newestState.shopPurchasesToday : {}) || {};
+    const p2 = (oldestState.shopPurchasesDate === todayStr ? oldestState.shopPurchasesToday : {}) || {};
+    const allKeys = new Set([...Object.keys(p1), ...Object.keys(p2)]);
+    for (const k of allKeys) {
+      mergedShopPurchases[k] = Math.max(Number(p1[k]) || 0, Number(p2[k]) || 0);
+    }
+  }
+
   const mergedUpdatedAt = Math.max(currentTs, incomingTs, Date.now());
 
   return {
@@ -1328,6 +1342,8 @@ export function mergeCultivationStates(
     },
     dailyQuests,
     dailyQuestsDate: levelLeader.dailyQuestsDate || incoming.dailyQuestsDate || todayStr,
+    shopPurchasesToday: mergedShopPurchases,
+    shopPurchasesDate: targetShopDate,
     historyLog: combinedLog,
     sect: newestState.sect || oldestState.sect,
     artifacts: newestState.artifacts || oldestState.artifacts,
