@@ -143,6 +143,82 @@ export function getVietnamDateStr(): string {
 }
 
 /**
+ * Đảm bảo tài khoản Quản Trị Viên (Admin) luôn duy trì tối thiểu Cảnh Giới Hóa Thần Kỳ (Tầng 9)
+ * Tuyệt đối không bao giờ bị thụt lùi hay hạ cảnh giới về Luyện Khí Kỳ khi mở tab ẩn danh hoặc thiết bị mới.
+ */
+export function ensureAdminCultivation(user: any): boolean {
+  if (!user) return false;
+  const isAdm =
+    user.id === 'usr_admin_default' ||
+    String(user.username || '').toLowerCase() === 'admin' ||
+    Boolean(user.isAdmin);
+  if (!isAdm) return false;
+
+  const cult = user.cultivation;
+  if (!cult || typeof cult !== 'object' || Number(cult.realmIndex || 0) < 4 || !cult.realmName || cult.realmName === 'Luyện Khí Kỳ') {
+    const existingLog = Array.isArray(cult?.historyLog) ? cult.historyLog : [];
+    const restoredLog = [
+      '⚡ [Thiên Đạo Quy Nhất] Bảo toàn cảnh giới tối cao Hóa Thần Kỳ Tầng 9 cho Quản Trị Viên!',
+      ...existingLog.filter((l: string) => typeof l === 'string' && !l.includes('Luyện Khí Kỳ Tầng')),
+    ].slice(0, 30);
+
+    user.cultivation = {
+      ...(cult || {}),
+      level: Math.max(Number(cult?.level) || 0, 295),
+      realmIndex: 4,
+      tier: 9,
+      realmName: 'Hóa Thần Kỳ',
+      subStage: 'Hậu Kỳ',
+      titleName: 'Hóa Thần Tôn Giả',
+      exp: Math.max(Number(cult?.exp) || 0, 10000),
+      maxExp: 26940,
+      thoNguyen: Math.max(Number(cult?.thoNguyen) || 0, 3000),
+      maxThoNguyen: Math.max(Number(cult?.maxThoNguyen) || 0, 3000),
+      linhThach: Math.max(Number(cult?.linhThach) || 0, 55849),
+      pillCount: {
+        thoNguyen: Math.max(Number(cult?.pillCount?.thoNguyen) || 0, 10),
+        hoTam: Math.max(Number(cult?.pillCount?.hoTam) || 0, 10),
+        phaCanh: Math.max(Number(cult?.pillCount?.phaCanh) || 0, 10),
+        tuViDan: Number(cult?.pillCount?.tuViDan) || 5,
+        sieuCapTuViDan: Number(cult?.pillCount?.sieuCapTuViDan) || 2,
+        dinhTam: Math.max(Number(cult?.pillCount?.dinhTam) || 0, 5),
+        ngungThan: Math.max(Number(cult?.pillCount?.ngungThan) || 0, 5),
+      },
+      tamPhap: cult?.tamPhap || {
+        equipped: 'than_hanh',
+        matchesSinceHeal: 0,
+        levels: { than_hanh: 7, bat_dong: 1, cuu_chuyen: 1 },
+        exp: { than_hanh: 420, bat_dong: 0, cuu_chuyen: 0 },
+      },
+      artifacts: cult?.artifacts || {
+        equipped: 'thanh_van_kiem',
+        levels: { thanh_van_kiem: 1, hao_thien_kinh: 0, cuu_pham_lien: 0, ban_co_phu: 0 },
+        spiritAwakened: { thanh_van_kiem: false, hao_thien_kinh: false, cuu_pham_lien: false, ban_co_phu: false },
+        spiritAffection: { thanh_van_kiem: 10, hao_thien_kinh: 0, cuu_pham_lien: 0, ban_co_phu: 0 },
+      },
+      sect: cult?.sect || {
+        role: 'chuong_mon',
+        sectId: 'sect_custom_1791119453924',
+        sectTag: 'VẤN',
+        joinedAt: 1791119453938,
+        sectName: 'Vấn Đỉnh Các',
+        contribution: 1649,
+        tournamentWins: 1,
+      },
+      herbs: cult?.herbs || { uLan: 7, huyetTinh: 7, hoaAnh: 3, huyenThiet: 1, longTu: 1 },
+      historyLog: restoredLog,
+      updatedAt: Date.now(),
+      cultivationResetVersion: 2,
+    };
+    if (!user.frame || user.frame === 'default' || user.frame === 'wood') {
+      user.frame = 'frame_xianxia_hoathan';
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
  * Hợp nhất an toàn 2 trạng thái Tu Vi theo phiên bản thời gian (updatedAt)
  * Không bao giờ làm thụt lùi cảnh giới/tu vi, và không làm hồi sinh Linh Thạch đã tiêu
  */
@@ -248,15 +324,13 @@ export function mergeServerCultivationStates(current: any, incoming: any): any {
     : (Array.isArray(levelFollower.dailyQuests) && levelFollower.dailyQuests.length === 4 ? levelFollower.dailyQuests : levelLeader.dailyQuests);
 
   // 11. Vạn Bảo Các: Bảo lưu số lần mua hàng ngày và ngày mua
-  const targetShopDate = newestState.shopPurchasesDate || oldestState.shopPurchasesDate || todayStr;
+  const targetShopDate = todayStr;
+  const p1 = (newestState.shopPurchasesDate === todayStr && newestState.shopPurchasesToday && typeof newestState.shopPurchasesToday === 'object') ? newestState.shopPurchasesToday : {};
+  const p2 = (oldestState.shopPurchasesDate === todayStr && oldestState.shopPurchasesToday && typeof oldestState.shopPurchasesToday === 'object') ? oldestState.shopPurchasesToday : {};
+  const allKeys = new Set([...Object.keys(p1), ...Object.keys(p2)]);
   let mergedShopPurchases: Record<string, number> = {};
-  if (targetShopDate === todayStr) {
-    const p1 = (newestState.shopPurchasesDate === todayStr ? newestState.shopPurchasesToday : {}) || {};
-    const p2 = (oldestState.shopPurchasesDate === todayStr ? oldestState.shopPurchasesToday : {}) || {};
-    const allKeys = new Set([...Object.keys(p1), ...Object.keys(p2)]);
-    for (const k of allKeys) {
-      mergedShopPurchases[k] = Math.max(Number(p1[k]) || 0, Number(p2[k]) || 0);
-    }
+  for (const k of allKeys) {
+    mergedShopPurchases[k] = Math.max(Number(p1[k]) || 0, Number(p2[k]) || 0);
   }
 
   const mergedUpdatedAt = Math.max(currentTs, incomingTs, Date.now());

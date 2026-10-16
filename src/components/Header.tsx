@@ -682,7 +682,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
                           <div className="text-[10px] text-slate-400 truncate">
                             {!isLoggedIn 
                               ? 'Khóa ở chế độ Tán Tu (Đăng nhập để vào)'
-                              : `${cultivationRealmName || 'Luyện Khí'} T.${cultivationTier || 1} • ${cultivationSubStage || 'Sơ Kỳ'}`}
+                              : `${isAdmin && (!cultivationRealmName || cultivationRealmName === 'Luyện Khí' || cultivationRealmName === 'Luyện Khí Kỳ') ? 'Hóa Thần Kỳ' : (cultivationRealmName || 'Luyện Khí')} T.${isAdmin && (!cultivationTier || cultivationTier === 1) ? 9 : (cultivationTier || 1)} • ${isAdmin && (!cultivationSubStage || cultivationSubStage === 'Sơ Kỳ') ? 'Hậu Kỳ' : (cultivationSubStage || 'Sơ Kỳ')}`}
                           </div>
                         </div>
                       </div>

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { ShopItem, MarketListing, MarketLog, ServerUserRecord } from './types';
-import { getSafeStoragePath, safeWriteJsonFile, mergeServerCultivationStates } from './utils';
+import { getSafeStoragePath, safeWriteJsonFile, mergeServerCultivationStates, getVietnamDateStr } from './utils';
 import { isDatabaseConfigured, dbLoadMarket, dbSaveMarketListing, dbSaveMarketLog, dbSaveUser, getDbPool } from './db';
 
 const SHOP_CONFIG_FILE = getSafeStoragePath('shop_config.json');
@@ -357,11 +357,14 @@ export function registerEconomyRoutes(
   // Helper check user daily purchases date reset
   function ensureUserShopPurchases(user: ServerUserRecord): Record<string, number> {
     if (!user.cultivation) user.cultivation = {};
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getVietnamDateStr();
     if (!user.cultivation.shopPurchasesToday || typeof user.cultivation.shopPurchasesToday !== 'object') {
       user.cultivation.shopPurchasesToday = {};
     }
-    if (user.cultivation.shopPurchasesDate !== today) {
+    if (!user.cultivation.shopPurchasesDate) {
+      user.cultivation.shopPurchasesDate = today;
+      saveUsersToFile();
+    } else if (user.cultivation.shopPurchasesDate !== today) {
       user.cultivation.shopPurchasesDate = today;
       user.cultivation.shopPurchasesToday = {};
       saveUsersToFile();
@@ -454,9 +457,10 @@ export function registerEconomyRoutes(
     }
 
     // Cập nhật số lần mua hôm nay
+    const todayStr = getVietnamDateStr();
     purchasesToday[itemId] = currentBought + qty;
     user.cultivation.shopPurchasesToday = purchasesToday;
-    user.cultivation.shopPurchasesDate = new Date().toISOString().slice(0, 10);
+    user.cultivation.shopPurchasesDate = todayStr;
 
     // Lịch sử ký sự tu tiên
     if (!Array.isArray(user.cultivation.historyLog)) {

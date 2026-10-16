@@ -2,7 +2,7 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { ServerUserRecord, ServerMultiLeaderboard, MarketListing, MarketLog, ServerFriendshipRecord, ServerFriendRequestRecord } from './types';
-import { mergeServerCultivationStates } from './utils';
+import { mergeServerCultivationStates, ensureAdminCultivation } from './utils';
 
 const { Pool } = pg;
 
@@ -432,7 +432,7 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
         }
       }
 
-      usersMap.set(row.id, {
+      const userRecord: ServerUserRecord = {
         id: row.id,
         username: row.username,
         email: row.email,
@@ -458,7 +458,11 @@ export async function dbLoadUsers(): Promise<Map<string, ServerUserRecord> | nul
         cultivation: cult,
         createdAt: Number(row.createdAt) || Date.now(),
         updatedAt: Number(row.updatedAt) || Date.now(),
-      });
+      };
+      if (userRecord.id === 'usr_admin_default' || userRecord.username === 'admin' || userRecord.isAdmin) {
+        ensureAdminCultivation(userRecord);
+      }
+      usersMap.set(row.id, userRecord);
     }
     console.log(`[Database] Loaded ${usersMap.size} users from PostgreSQL.`);
     return usersMap;
@@ -487,13 +491,13 @@ export async function dbGetUserByIdOrUsername(idOrUsername: string): Promise<Ser
               unlocked_achievements as "unlockedAchievements",
               cultivation, created_at as "createdAt", updated_at as "updatedAt"
        FROM app_users
-       WHERE LOWER(username) = $1 OR LOWER(email) = $1 OR id = $2
-       LIMIT 1`,
+        WHERE LOWER(username) = $1 OR LOWER(email) = $1 OR LOWER(display_name) = $1 OR id = $2 OR ($1 = 'trụ trì' AND id = 'usr_admin_default')
+        LIMIT 1`,
       [clean, idOrUsername]
     );
     if (!res || !res.rows || res.rows.length === 0) return null;
     const row = res.rows[0];
-    return {
+    const userRecord: ServerUserRecord = {
       id: row.id,
       username: row.username,
       email: row.email,
@@ -520,6 +524,10 @@ export async function dbGetUserByIdOrUsername(idOrUsername: string): Promise<Ser
       createdAt: Number(row.createdAt) || Date.now(),
       updatedAt: Number(row.updatedAt) || Date.now(),
     };
+    if (userRecord.id === 'usr_admin_default' || userRecord.username === 'admin' || userRecord.isAdmin) {
+      ensureAdminCultivation(userRecord);
+    }
+    return userRecord;
   } catch (err) {
     console.error('[Database] Error in dbGetUserByIdOrUsername:', err);
     return null;
@@ -551,6 +559,10 @@ export async function dbSaveUser(user: ServerUserRecord): Promise<void> {
     }
   } catch (checkErr) {
     console.warn('[Database] Cảnh báo kiểm tra tu vi trước khi lưu:', checkErr);
+  }
+
+  if (user.id === 'usr_admin_default' || user.username === 'admin' || user.isAdmin) {
+    ensureAdminCultivation(user);
   }
 
   const query = `

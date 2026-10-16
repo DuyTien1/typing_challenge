@@ -870,6 +870,19 @@ export function ensureDailySync(state: CultivationState): { updatedState: Cultiv
     updated.dailyExpDate = today;
   }
 
+  // Quản lý hạn mức mua hàng Vạn Bảo Các: Duy trì và bảo toàn lượt mua trong ngày, chỉ reset khi qua ngày mới
+  if (!updated.shopPurchasesDate) {
+    updated.shopPurchasesDate = today;
+    if (!updated.shopPurchasesToday || typeof updated.shopPurchasesToday !== 'object') {
+      updated.shopPurchasesToday = {};
+    }
+  } else if (updated.shopPurchasesDate !== today) {
+    updated.shopPurchasesDate = today;
+    updated.shopPurchasesToday = {};
+  } else if (!updated.shopPurchasesToday || typeof updated.shopPurchasesToday !== 'object') {
+    updated.shopPurchasesToday = {};
+  }
+
   return { updatedState: updated, didResetQuests };
 }
 
@@ -1065,12 +1078,38 @@ export function loadStoredCultivationState(): CultivationState {
       }
     }
     // Nếu chưa có trong local storage, thử lấy từ thông tin tài khoản đã đăng nhập
+    const cached = getStoredCachedUser();
+    const isAdminAccount = Boolean(
+      cached?.isAdmin ||
+      String(cached?.username || '').toLowerCase() === 'admin' ||
+      (typeof localStorage !== 'undefined' && (localStorage.getItem('fasttyping_is_admin') === 'true' || localStorage.getItem('fasttyping_user')?.toLowerCase() === 'admin'))
+    );
+
     if (!parsed) {
-      const cached = getStoredCachedUser();
       if (cached?.cultivation) {
         parsed = cached.cultivation;
       }
     }
+
+    // Tài khoản Quản Trị Viên (Admin): Luôn duy trì cảnh giới Hóa Thần Kỳ Tầng 9 (Level 295), tuyệt đối không hạ về Luyện Khí Kỳ
+    if (isAdminAccount && (!parsed || Number(parsed.realmIndex || 0) < 4 || parsed.realmName === 'Luyện Khí Kỳ')) {
+      parsed = {
+        ...(parsed || {}),
+        level: Math.max(Number(parsed?.level) || 0, 295),
+        realmIndex: 4,
+        tier: 9,
+        realmName: 'Hóa Thần Kỳ',
+        subStage: 'Hậu Kỳ',
+        titleName: 'Hóa Thần Tôn Giả',
+        exp: Math.max(Number(parsed?.exp) || 0, 10000),
+        maxExp: 26940,
+        thoNguyen: Math.max(Number(parsed?.thoNguyen) || 0, 3000),
+        maxThoNguyen: 3000,
+        linhThach: Math.max(Number(parsed?.linhThach) || 0, 55849),
+        updatedAt: Date.now(),
+      };
+    }
+
     if (!parsed) {
       const fresh = createInitialCultivationState();
       try {
@@ -1192,6 +1231,10 @@ export function loadStoredCultivationState(): CultivationState {
         ? parsed.sect
         : undefined,
       linhThach: parsed.linhThach ?? 150,
+      shopPurchasesDate: parsed.shopPurchasesDate === today ? today : today,
+      shopPurchasesToday: (parsed.shopPurchasesDate === today && parsed.shopPurchasesToday && typeof parsed.shopPurchasesToday === 'object')
+        ? { ...parsed.shopPurchasesToday }
+        : {},
       cultivationResetVersion: 2,
       historyLog: Array.isArray(parsed.historyLog) ? parsed.historyLog.slice(-20) : [],
     };
@@ -1311,15 +1354,13 @@ export function mergeCultivationStates(
     : (Array.isArray(levelFollower.dailyQuests) && levelFollower.dailyQuests.length === 4 ? levelFollower.dailyQuests : createDefaultDailyQuests());
 
   // 11. Vạn Bảo Các: Bảo lưu số lần mua hàng ngày và ngày mua
-  const targetShopDate = newestState.shopPurchasesDate || oldestState.shopPurchasesDate || todayStr;
+  const targetShopDate = todayStr;
+  const p1 = (newestState.shopPurchasesDate === todayStr && newestState.shopPurchasesToday && typeof newestState.shopPurchasesToday === 'object') ? newestState.shopPurchasesToday : {};
+  const p2 = (oldestState.shopPurchasesDate === todayStr && oldestState.shopPurchasesToday && typeof oldestState.shopPurchasesToday === 'object') ? oldestState.shopPurchasesToday : {};
+  const allKeys = new Set([...Object.keys(p1), ...Object.keys(p2)]);
   let mergedShopPurchases: Record<string, number> = {};
-  if (targetShopDate === todayStr) {
-    const p1 = (newestState.shopPurchasesDate === todayStr ? newestState.shopPurchasesToday : {}) || {};
-    const p2 = (oldestState.shopPurchasesDate === todayStr ? oldestState.shopPurchasesToday : {}) || {};
-    const allKeys = new Set([...Object.keys(p1), ...Object.keys(p2)]);
-    for (const k of allKeys) {
-      mergedShopPurchases[k] = Math.max(Number(p1[k]) || 0, Number(p2[k]) || 0);
-    }
+  for (const k of allKeys) {
+    mergedShopPurchases[k] = Math.max(Number(p1[k]) || 0, Number(p2[k]) || 0);
   }
 
   const mergedUpdatedAt = Math.max(currentTs, incomingTs, Date.now());

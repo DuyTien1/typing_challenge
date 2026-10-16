@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CultivationState, mergeCultivationStates } from '../../utils/cultivation';
+import { CultivationState, mergeCultivationStates, getTodayDateString } from '../../utils/cultivation';
 import { soundFx } from '../../utils/audio';
 import { getStoredAuthToken, getStoredCachedUser } from '../../utils/auth';
 import { setStoredFrame } from '../../utils/frames';
@@ -34,6 +34,32 @@ interface VanBaoCacShopProps {
   onOpenAuthModal?: () => void;
 }
 
+const getLocalShopPurchases = (userKey: string): Record<string, number> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const today = getTodayDateString();
+    const raw = localStorage.getItem(`fasttyping_shop_purchases_${userKey}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.date === today && parsed.purchases && typeof parsed.purchases === 'object') {
+        return parsed.purchases;
+      }
+    }
+  } catch {}
+  return {};
+};
+
+const saveLocalShopPurchases = (userKey: string, purchases: Record<string, number>) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const today = getTodayDateString();
+    localStorage.setItem(`fasttyping_shop_purchases_${userKey}`, JSON.stringify({
+      date: today,
+      purchases,
+    }));
+  } catch {}
+};
+
 export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
   state,
   onUpdateState,
@@ -44,8 +70,24 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
   isLoggedIn = true,
   onOpenAuthModal,
 }) => {
+  const currentToken = getStoredAuthToken();
+  const cachedUser = getStoredCachedUser();
+  const actualUsername = cachedUser?.username || (username && !username.includes(' ') ? username : '') || (typeof window !== 'undefined' ? localStorage.getItem('fasttyping_user') : '') || username || 'default_user';
+  const effectiveUserKey = actualUsername.trim().toLowerCase();
+
   const [catalog, setCatalog] = useState<ShopItem[]>(DEFAULT_SHOP_CATALOG);
-  const [purchasesToday, setPurchasesToday] = useState<Record<string, number>>({});
+  const [purchasesToday, setPurchasesToday] = useState<Record<string, number>>(() => {
+    const today = getTodayDateString();
+    const localSaved = getLocalShopPurchases(effectiveUserKey);
+    const stateSaved = (state?.shopPurchasesDate === today && state?.shopPurchasesToday && typeof state.shopPurchasesToday === 'object')
+      ? state.shopPurchasesToday
+      : {};
+    const merged: Record<string, number> = { ...localSaved };
+    for (const [k, v] of Object.entries(stateSaved)) {
+      merged[k] = Math.max(Number(merged[k]) || 0, Number(v) || 0);
+    }
+    return merged;
+  });
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'herbs' | 'pills' | 'friendship' | 'customization'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,15 +99,48 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const userLinhThach = Number(state.linhThach) || 0;
-  const currentToken = getStoredAuthToken();
-  const cachedUser = getStoredCachedUser();
   const userIsAuthenticated = Boolean(isLoggedIn || currentToken || cachedUser);
+
+  // Helper tính số lượng đã mua hôm nay của 1 vật phẩm, kết hợp cả state và purchasesToday
+  const getEffectiveBoughtCount = (itemId: string): number => {
+    const today = getTodayDateString();
+    const countInState = (state?.shopPurchasesDate === today && state?.shopPurchasesToday && typeof state.shopPurchasesToday === 'object')
+      ? Number(state.shopPurchasesToday[itemId]) || 0
+      : 0;
+    const countInLocal = (purchasesToday && typeof purchasesToday === 'object')
+      ? Number(purchasesToday[itemId]) || 0
+      : 0;
+    return Math.max(countInState, countInLocal);
+  };
+
+  // Đồng bộ purchasesToday khi state bên ngoài thay đổi
+  useEffect(() => {
+    const today = getTodayDateString();
+    if (state?.shopPurchasesDate === today && state?.shopPurchasesToday && typeof state.shopPurchasesToday === 'object') {
+      setPurchasesToday((prev) => {
+        let hasChanges = false;
+        const merged: Record<string, number> = { ...(prev || {}) };
+        for (const [k, v] of Object.entries(state.shopPurchasesToday!)) {
+          const val = Number(v) || 0;
+          if ((merged[k] || 0) < val) {
+            merged[k] = val;
+            hasChanges = true;
+          }
+        }
+        if (hasChanges) {
+          saveLocalShopPurchases(effectiveUserKey, merged);
+          return merged;
+        }
+        return prev;
+      });
+    }
+  }, [state?.shopPurchasesToday, state?.shopPurchasesDate, effectiveUserKey]);
 
   const fetchCatalog = async () => {
     try {
       const token = getStoredAuthToken();
       const userObj = getStoredCachedUser();
-      const actualUsername = userObj?.username || (username && !username.includes(' ') ? username : '') || localStorage.getItem('fasttyping_user') || username;
+      const currentUname = userObj?.username || (username && !username.includes(' ') ? username : '') || localStorage.getItem('fasttyping_user') || username;
       const userId = userObj?.id || localStorage.getItem('fasttyping_player_id') || '';
 
       const headers: Record<string, string> = { 'Accept': 'application/json' };
@@ -73,7 +148,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
         headers['Authorization'] = `Bearer ${token}`;
         headers['x-auth-token'] = token;
       }
-      if (actualUsername) headers['x-username'] = actualUsername;
+      if (currentUname) headers['x-username'] = currentUname;
       if (displayName) headers['x-display-name'] = displayName;
       if (userId) headers['x-user-id'] = userId;
 
@@ -96,7 +171,14 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
           if (data && data.success && Array.isArray(data.items) && data.items.length > 0) {
             setCatalog(data.items);
             if (data.purchasesToday && typeof data.purchasesToday === 'object') {
-              setPurchasesToday(data.purchasesToday);
+              setPurchasesToday((prev) => {
+                const merged: Record<string, number> = { ...(prev || {}) };
+                for (const [k, v] of Object.entries(data.purchasesToday)) {
+                  merged[k] = Math.max(Number(merged[k]) || 0, Number(v) || 0);
+                }
+                saveLocalShopPurchases(effectiveUserKey, merged);
+                return merged;
+              });
             }
           }
         } catch {
@@ -116,6 +198,15 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
 
   const handleOpenBuy = (item: ShopItem) => {
     soundFx.playKeyClick();
+    const boughtCount = getEffectiveBoughtCount(item.id);
+    if (item.dailyLimit > 0 && boughtCount >= item.dailyLimit) {
+      soundFx.playError();
+      setNotice({
+        type: 'error',
+        message: `Đã hết hạn mức mua trong ngày của vật phẩm "${item.name}" (${boughtCount}/${item.dailyLimit})! Hãy quay lại vào ngày mai.`,
+      });
+      return;
+    }
     setBuyingItem(item);
     setBuyQuantity(1);
     setNotice(null);
@@ -140,6 +231,13 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
       }
     }
 
+    const today = getTodayDateString();
+    const currentPurchases: Record<string, number> = {
+      ...(state?.shopPurchasesToday || {}),
+      ...(purchasesToday || {}),
+    };
+    currentPurchases[item.id] = (currentPurchases[item.id] || 0) + qty;
+
     const logEntry = `[Vạn Bảo Các] Dùng ${totalCost.toLocaleString()} Linh Thạch mua ${qty}x ${item.name}`;
     const nextHistory = [logEntry, ...(state.historyLog || [])].slice(0, 30);
 
@@ -149,14 +247,14 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
       herbs: currentHerbs,
       pillCount: currentPills,
       teaInventory: currentTea,
+      shopPurchasesToday: currentPurchases,
+      shopPurchasesDate: today,
       historyLog: nextHistory,
       updatedAt: Date.now(),
     };
 
-    setPurchasesToday((prev) => ({
-      ...(prev || {}),
-      [item.id]: ((prev && prev[item.id]) || 0) + qty,
-    }));
+    setPurchasesToday(currentPurchases);
+    saveLocalShopPurchases(effectiveUserKey, currentPurchases);
 
     onUpdateState(updatedState);
     return updatedState;
@@ -182,7 +280,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
       setIsSubmitting(true);
       const token = getStoredAuthToken();
       const userObj = getStoredCachedUser();
-      const actualUsername = userObj?.username || (username && !username.includes(' ') ? username : '') || localStorage.getItem('fasttyping_user') || username;
+      const currentUname = userObj?.username || (username && !username.includes(' ') ? username : '') || localStorage.getItem('fasttyping_user') || username;
       const userId = userObj?.id || localStorage.getItem('fasttyping_player_id') || '';
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
@@ -190,7 +288,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
         headers['Authorization'] = `Bearer ${token}`;
         headers['x-auth-token'] = token;
       }
-      if (actualUsername) headers['x-username'] = actualUsername;
+      if (currentUname) headers['x-username'] = currentUname;
       if (displayName) headers['x-display-name'] = displayName;
       if (userId) headers['x-user-id'] = userId;
 
@@ -206,8 +304,8 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
             quantity: buyQuantity,
             token,
             userId,
-            username: actualUsername,
-            displayName: displayName || actualUsername,
+            username: currentUname,
+            displayName: displayName || currentUname,
             clientCultivation: state,
           }),
         });
@@ -222,12 +320,29 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
           if (res.ok && data?.success) {
             purchaseSucceeded = true;
             responseMessage = data.message || `Đã mua thành công ${buyQuantity}x ${buyingItem.name}!`;
-            if (data.purchasesToday && typeof data.purchasesToday === 'object') {
-              setPurchasesToday(data.purchasesToday);
-            }
-            if (data.updatedCultivation) {
-              onUpdateState(data.updatedCultivation);
-            }
+            const today = getTodayDateString();
+            const serverPurchases = (data.purchasesToday && typeof data.purchasesToday === 'object') ? data.purchasesToday : {};
+            const mergedPurchases: Record<string, number> = {
+              ...(state?.shopPurchasesToday || {}),
+              ...(purchasesToday || {}),
+              ...serverPurchases,
+            };
+            mergedPurchases[buyingItem.id] = Math.max(
+              Number(serverPurchases[buyingItem.id]) || 0,
+              Number(mergedPurchases[buyingItem.id]) || 0,
+              ((purchasesToday && purchasesToday[buyingItem.id]) || 0) + buyQuantity
+            );
+
+            setPurchasesToday(mergedPurchases);
+            saveLocalShopPurchases(effectiveUserKey, mergedPurchases);
+
+            const nextCultState: CultivationState = {
+              ...(data.updatedCultivation || state),
+              shopPurchasesToday: mergedPurchases,
+              shopPurchasesDate: today,
+              updatedAt: Date.now(),
+            };
+            onUpdateState(nextCultState);
           } else {
             // Máy chủ trả về lỗi cụ thể (ví dụ hết hạn mức hoặc thiếu Linh Thạch)
             soundFx.playError();
@@ -455,7 +570,7 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
           {filteredItems.map((item) => {
-            const boughtCount = (purchasesToday && typeof purchasesToday === 'object' && purchasesToday[item.id]) || 0;
+            const boughtCount = getEffectiveBoughtCount(item.id);
             const isSoldOut = item.dailyLimit > 0 && boughtCount >= item.dailyLimit;
             const discount = Math.max(0, Math.min(90, item.discountPercent || 0));
             const finalPrice = Math.round(item.price * (1 - discount / 100));
@@ -599,50 +714,59 @@ export const VanBaoCacShop: React.FC<VanBaoCacShopProps> = ({
             </p>
 
             {/* Quantity Selector if not a frame */}
-            {buyingItem.itemType !== 'frame' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>Số lượng muốn mua:</span>
-                  <span>
-                    Tối đa:{' '}
-                    <strong>
-                      {buyingItem.dailyLimit > 0
-                        ? Math.max(1, buyingItem.dailyLimit - ((purchasesToday && typeof purchasesToday === 'object' && purchasesToday[buyingItem.id]) || 0))
-                        : 99}
-                    </strong>
-                  </span>
+            {buyingItem.itemType !== 'frame' && (() => {
+              const itemBought = getEffectiveBoughtCount(buyingItem.id);
+              const maxAllowed = buyingItem.dailyLimit > 0
+                ? Math.max(1, buyingItem.dailyLimit - itemBought)
+                : 99;
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Số lượng muốn mua:</span>
+                    <span>
+                      Tối đa:{' '}
+                      <strong className="text-amber-300">
+                        {maxAllowed}
+                      </strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setBuyQuantity((q) => Math.max(1, q - 1));
+                      }}
+                      className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base hover:bg-slate-800"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={maxAllowed}
+                      value={buyQuantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (isNaN(val)) setBuyQuantity(1);
+                        else setBuyQuantity(Math.max(1, Math.min(maxAllowed, val)));
+                      }}
+                      className="flex-1 py-1.5 text-center font-mono font-black text-amber-300 bg-slate-900 border border-slate-700 rounded-xl text-base focus:outline-none focus:border-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playKeyClick();
+                        setBuyQuantity((q) => Math.min(maxAllowed, q + 1));
+                      }}
+                      className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base hover:bg-slate-800"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      soundFx.playKeyClick();
-                      setBuyQuantity((q) => Math.max(1, q - 1));
-                    }}
-                    className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base hover:bg-slate-800"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min={1}
-                    max={buyingItem.dailyLimit > 0 ? buyingItem.dailyLimit - ((purchasesToday && typeof purchasesToday === 'object' && purchasesToday[buyingItem.id]) || 0) : 99}
-                    value={buyQuantity}
-                    onChange={(e) => setBuyQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="flex-1 py-1.5 text-center font-mono font-black text-amber-300 bg-slate-900 border border-slate-700 rounded-xl text-base focus:outline-none focus:border-amber-400"
-                  />
-                  <button
-                    onClick={() => {
-                      soundFx.playKeyClick();
-                      const maxL = buyingItem.dailyLimit > 0 ? buyingItem.dailyLimit - ((purchasesToday && typeof purchasesToday === 'object' && purchasesToday[buyingItem.id]) || 0) : 99;
-                      setBuyQuantity((q) => Math.min(maxL, q + 1));
-                    }}
-                    className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-base hover:bg-slate-800"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Price breakdown */}
             <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5 text-xs">

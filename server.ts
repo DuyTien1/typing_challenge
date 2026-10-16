@@ -31,7 +31,7 @@ import {
   ServerMultiLeaderboard,
   ServerLeaderboardEntry,
 } from './server/types';
-import { normalizeRoomCode, getModeDisplayName, hashPassword, safeWriteJsonFile, mergeServerCultivationStates } from './server/utils';
+import { normalizeRoomCode, getModeDisplayName, hashPassword, safeWriteJsonFile, mergeServerCultivationStates, ensureAdminCultivation } from './server/utils';
 import { registerEconomyRoutes } from './server/economy';
 import { registerAdminDatabaseRoutes } from './server/adminDatabase';
 import {
@@ -399,6 +399,7 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
       createdAt: 1700000000000,
       updatedAt: Date.now(),
     };
+    ensureAdminCultivation(newAdmin);
     map.set(newAdmin.id, newAdmin);
     return true;
   } else {
@@ -412,8 +413,9 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
       adminUser.displayName = 'Admin';
     }
     if (!adminUser.frame || adminUser.frame === 'default') {
-      adminUser.frame = 'admin_gold';
+      adminUser.frame = 'frame_xianxia_hoathan';
     }
+    const cultFixed = ensureAdminCultivation(adminUser);
     // Clean up legacy invalid achievement IDs from existing admin record
     const legacyInvalid = new Set(['god_speed', 'boss_slayer', 'mythic_master', 'first_win', 'streak_3']);
     if (Array.isArray(adminUser.showcaseAchievements)) {
@@ -436,7 +438,7 @@ function ensureDefaultAdminUser(map: Map<string, ServerUserRecord>): boolean {
         ];
       }
     }
-    return false;
+    return cultFixed;
   }
 }
 
@@ -1419,6 +1421,9 @@ function resolvePlayerDisplayName(identifier?: string): string {
 }
 
 function sanitizeUser(u: ServerUserRecord) {
+  if (u && (u.id === 'usr_admin_default' || String(u.username || '').toLowerCase() === 'admin' || Boolean(u.isAdmin))) {
+    ensureAdminCultivation(u);
+  }
   return {
     id: u.id,
     email: u.email || '',
@@ -2848,6 +2853,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     user.sessionTokens.push(sessionToken);
     if (user.sessionTokens.length > 20) user.sessionTokens.shift();
 
+    if (user.id === 'usr_admin_default' || String(user.username || '').toLowerCase() === 'admin' || Boolean(user.isAdmin)) {
+      ensureAdminCultivation(user);
+    }
+
     if (user.cultivation && ensureServerDailyCultivationSync(user.cultivation)) {
       user.updatedAt = Date.now();
     }
@@ -2966,6 +2975,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
           serverUsers.set(user.id, user);
         }
       } catch {}
+    }
+
+    if (user.id === 'usr_admin_default' || String(user.username || '').toLowerCase() === 'admin' || Boolean(user.isAdmin)) {
+      ensureAdminCultivation(user);
     }
 
     if (user.cultivation && ensureServerDailyCultivationSync(user.cultivation)) {
@@ -3899,6 +3912,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
         } catch {}
       }
       user.cultivation = merged;
+      if (user.id === 'usr_admin_default' || String(user.username || '').toLowerCase() === 'admin' || Boolean(user.isAdmin)) {
+        ensureAdminCultivation(user);
+      }
       user.updatedAt = Date.now();
       serverUsers.set(user.id, user);
       saveUsersToFile();

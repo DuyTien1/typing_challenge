@@ -2989,9 +2989,69 @@ export default function App() {
 
     // Tiến độ tu vi tiên hiệp: Bảo toàn 100% tu vi chính thức từ tài khoản máy chủ
     try {
+      const isUserAdmin = Boolean(user?.isAdmin || String(user?.username || '').toLowerCase() === 'admin');
+
+      // Nếu là Admin, đảm bảo TUYỆT ĐỐI không bao giờ bị hạ về Luyện Khí Kỳ, luôn giữ vững Hóa Thần Kỳ trở lên!
+      if (isUserAdmin) {
+        if (!user.cultivation || Number(user.cultivation.realmIndex || 0) < 4 || user.cultivation.realmName === 'Luyện Khí Kỳ') {
+          user.cultivation = {
+            ...(user.cultivation || {}),
+            level: Math.max(Number(user.cultivation?.level) || 0, 295),
+            realmIndex: 4,
+            tier: 9,
+            realmName: 'Hóa Thần Kỳ',
+            subStage: 'Hậu Kỳ',
+            titleName: 'Hóa Thần Tôn Giả',
+            exp: Math.max(Number(user.cultivation?.exp) || 0, 10000),
+            maxExp: 26940,
+            thoNguyen: Math.max(Number(user.cultivation?.thoNguyen) || 0, 3000),
+            maxThoNguyen: Math.max(Number(user.cultivation?.maxThoNguyen) || 0, 3000),
+            linhThach: Math.max(Number(user.cultivation?.linhThach) || 0, 55849),
+            pillCount: {
+              thoNguyen: 10,
+              hoTam: 10,
+              phaCanh: 10,
+              tuViDan: 5,
+              sieuCapTuViDan: 2,
+              dinhTam: 5,
+              ngungThan: 5,
+            },
+            tamPhap: user.cultivation?.tamPhap || {
+              equipped: 'than_hanh',
+              matchesSinceHeal: 0,
+              levels: { than_hanh: 7, bat_dong: 1, cuu_chuyen: 1 },
+              exp: { than_hanh: 420, bat_dong: 0, cuu_chuyen: 0 },
+            },
+            artifacts: user.cultivation?.artifacts || {
+              equipped: 'thanh_van_kiem',
+              levels: { thanh_van_kiem: 1, hao_thien_kinh: 0, cuu_pham_lien: 0, ban_co_phu: 0 },
+              spiritAwakened: { thanh_van_kiem: false, hao_thien_kinh: false, cuu_pham_lien: false, ban_co_phu: false },
+              spiritAffection: { thanh_van_kiem: 10, hao_thien_kinh: 0, cuu_pham_lien: 0, ban_co_phu: 0 },
+            },
+            sect: user.cultivation?.sect || {
+              role: 'chuong_mon',
+              sectId: 'sect_custom_1791119453924',
+              sectTag: 'VẤN',
+              joinedAt: 1791119453938,
+              sectName: 'Vấn Đỉnh Các',
+              contribution: 1649,
+              tournamentWins: 1,
+            },
+            historyLog: [
+              '⚡ [Thiên Đạo Quy Nhất] Bảo toàn cảnh giới tối cao Hóa Thần Kỳ Tầng 9 cho Quản Trị Viên!',
+              ...(user.cultivation?.historyLog || []).filter((l: string) => typeof l === 'string' && !l.includes('Luyện Khí Kỳ Tầng')),
+            ].slice(0, 30),
+            updatedAt: Date.now(),
+          };
+        }
+      }
+
       const localCult = loadStoredCultivationState();
       let finalCult: CultivationState;
-      if (user.cultivation && (Number(user.cultivation.realmIndex) > 0 || Number(user.cultivation.level) > 1 || Number(user.cultivation.tier) > 1 || Number(user.cultivation.exp) > 0)) {
+      if (isUserAdmin) {
+        // Tài khoản Admin: Dữ liệu đám mây máy chủ là chân lý tuyệt đối, không lấy Luyện Khí từ máy khách / tab ẩn danh mới
+        finalCult = user.cultivation;
+      } else if (user.cultivation && (Number(user.cultivation.realmIndex) > 0 || Number(user.cultivation.level) > 1 || Number(user.cultivation.tier) > 1 || Number(user.cultivation.exp) > 0)) {
         // Tài khoản đã có tiến độ tu vi chính thức trên máy chủ: Dữ liệu đám mây của tài khoản là chân lý tuyệt đối!
         // Bảo toàn trọn vẹn cảnh giới, tầng, thọ nguyên, đan dược và linh thạch của tài khoản
         finalCult = mergeCultivationStates(user.cultivation, localCult);
@@ -3461,6 +3521,32 @@ export default function App() {
 
   const handleAdminLogin = (pwd: string) => {
     const isLocalMatch = pwd === adminPassword || pwd === 'admin123';
+    if (isLocalMatch) {
+      setIsAdmin(true);
+      setAdminStatus(true);
+      // Đảm bảo tức thì: Cảnh giới Quản Trị Viên luôn duy trì Hóa Thần Kỳ Tầng 9, không bao giờ xuất hiện Luyện Khí Kỳ
+      const currentCult = loadStoredCultivationState();
+      if (!currentCult || currentCult.realmIndex < 4 || currentCult.realmName === 'Luyện Khí Kỳ') {
+        const adminCult: CultivationState = {
+          ...currentCult,
+          level: 295,
+          realmIndex: 4,
+          tier: 9,
+          realmName: 'Hóa Thần Kỳ',
+          subStage: 'Hậu Kỳ',
+          titleName: 'Hóa Thần Tôn Giả',
+          exp: 10000,
+          maxExp: 26940,
+          thoNguyen: 3000,
+          maxThoNguyen: 3000,
+          linhThach: Math.max(currentCult?.linhThach || 0, 55849),
+          updatedAt: Date.now(),
+        };
+        setCultivationState(adminCult);
+        saveStoredCultivationState(adminCult);
+      }
+    }
+
     // Luôn gửi đăng nhập phiên tài khoản admin lên máy chủ backend để nạp tu vi Hóa Thần từ database
     loginWithEmail('admin', pwd)
       .then((res) => {
@@ -3472,12 +3558,7 @@ export default function App() {
       })
       .catch(() => {});
 
-    if (isLocalMatch) {
-      setIsAdmin(true);
-      setAdminStatus(true);
-      return true;
-    }
-    return false;
+    return isLocalMatch;
   };
 
   const handleChangeAdminPassword = (newPwd: string, oldPwd: string) => {
@@ -3662,13 +3743,13 @@ export default function App() {
           }
           setIsCultivationOpen(true);
         }}
-        cultivationLevel={currentUser ? cultivationState.level : undefined}
-        cultivationRealmName={currentUser ? XIANXIA_REALMS[cultivationState.realmIndex]?.name : 'Tán Tu'}
-        cultivationTier={currentUser ? cultivationState.tier : undefined}
-        cultivationSubStage={currentUser ? getSubStage(cultivationState.tier) : undefined}
-        cultivationIcon={currentUser ? XIANXIA_REALMS[cultivationState.realmIndex]?.icon : '🌱'}
-        cultivationThoNguyen={currentUser ? cultivationState.thoNguyen : undefined}
-        cultivationMaxThoNguyen={currentUser ? cultivationState.maxThoNguyen : undefined}
+        cultivationLevel={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? 295 : cultivationState.level) : undefined}
+        cultivationRealmName={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? 'Hóa Thần Kỳ' : (XIANXIA_REALMS[cultivationState.realmIndex]?.name || 'Hóa Thần Kỳ')) : 'Tán Tu'}
+        cultivationTier={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? 9 : cultivationState.tier) : undefined}
+        cultivationSubStage={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? 'Hậu Kỳ' : getSubStage(cultivationState.tier)) : undefined}
+        cultivationIcon={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? '⚡' : (XIANXIA_REALMS[cultivationState.realmIndex]?.icon || '⚡')) : '🌱'}
+        cultivationThoNguyen={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? 3000 : cultivationState.thoNguyen) : undefined}
+        cultivationMaxThoNguyen={currentUser ? (isAdmin && cultivationState.realmIndex === 0 ? 3000 : cultivationState.maxThoNguyen) : undefined}
         onOpenOnlineUsers={() => setIsOnlineUsersOpen(true)}
         onOpenAuthModal={() => {
           setAuthModalInitialTab('login');
